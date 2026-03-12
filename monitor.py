@@ -28,6 +28,13 @@ from googleapiclient.errors import HttpError
 
 load_dotenv()
 
+import base64, os
+if _cb64 := os.getenv('GOOGLE_CREDENTIALS_B64'):
+    open('credentials.json','wb').write(base64.b64decode(_cb64))
+if _tb64 := os.getenv('GOOGLE_TOKEN_B64'):
+    open('token.json','wb').write(base64.b64decode(_tb64))
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
