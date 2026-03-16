@@ -445,6 +445,17 @@ def run_poll_cycle(gmail_service, sheets_service,
 # ─────────────────────────────────────────────
 
 def main():
+
+    # Decode Google credentials from base64 env vars (used in Railway)
+    import base64 as _b64
+    _creds_b64 = os.getenv('GOOGLE_CREDENTIALS_B64')
+    _token_b64 = os.getenv('GOOGLE_TOKEN_B64')
+    if _creds_b64:
+        with open('credentials.json', 'wb') as _f:
+            _f.write(_b64.b64decode(_creds_b64))
+    if _token_b64:
+        with open('token.json', 'wb') as _f:
+            _f.write(_b64.b64decode(_token_b64))
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
     if not spreadsheet_id:
         raise EnvironmentError("SPREADSHEET_ID is not set in .env")
