@@ -28,13 +28,6 @@ from googleapiclient.errors import HttpError
 
 load_dotenv()
 
-import base64, os
-if _cb64 := os.getenv('GOOGLE_CREDENTIALS_B64'):
-    open('credentials.json','wb').write(base64.b64decode(_cb64))
-if _tb64 := os.getenv('GOOGLE_TOKEN_B64'):
-    open('token.json','wb').write(base64.b64decode(_tb64))
-
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -305,6 +298,23 @@ def find_sheet_id(sheets_service, spreadsheet_id: str, sheet_name: str) -> int |
     return None
 
 
+
+def get_existing_refs(sheets_service, spreadsheet_id: str) -> set:
+    """Fetch all TL-REF values already in Sheet1 to prevent duplicates."""
+    try:
+        result = sheets_service.spreadsheets().values().get(
+            spreadsheetId=spreadsheet_id,
+            range=f"'{SHEET_NAME}'!B:B"
+        ).execute()
+        values = result.get('values', [])
+        refs = {row[0].strip() for row in values if row and row[0].strip()}
+        log.info(f'Found {len(refs)} existing TL-REFs in sheet.')
+        return refs
+    except Exception as e:
+        log.warning(f'Could not fetch existing refs: {e}')
+        return set()
+
+
 def append_rows_to_sheet(sheets_service, spreadsheet_id: str, rows: list[list]) -> int:
     """
     Append rows to the UKDT Automation sheet.
@@ -337,6 +347,17 @@ def append_rows_to_sheet(sheets_service, spreadsheet_id: str, rows: list[list]) 
             body={"values": header},
         ).execute()
         log.info("Header row written.")
+
+    # Filter out rows whose TL-REF already exists in the sheet
+    existing_refs = get_existing_refs(sheets_service, spreadsheet_id)
+    original_count = len(rows)
+    rows = [r for r in rows if r[1] not in existing_refs]
+    skipped = original_count - len(rows)
+    if skipped:
+        log.info(f'Skipped {skipped} duplicate TL-REF(s) already in sheet.')
+    if not rows:
+        log.info('All rows were duplicates — nothing to append.')
+        return 0
 
     # Append data rows
     result = sheets_service.spreadsheets().values().append(
