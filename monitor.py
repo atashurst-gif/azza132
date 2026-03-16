@@ -50,6 +50,7 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 
 SENDER_EMAIL      = os.getenv("SENDER_EMAIL", "R.healey@arkleinsolvency.co.uk")
+SENDER_EMAIL_2    = os.getenv("SENDER_EMAIL_2", "d.yiu@arkleinsolvency.co.uk")
 GMAIL_ADDRESS     = os.getenv("GMAIL_ADDRESS", "regenmarketing26@gmail.com")
 SHEET_NAME        = os.getenv("SHEET_NAME", "Sheet1")
 POLL_INTERVAL_SEC = int(os.getenv("POLL_INTERVAL_SEC", "60"))
@@ -128,7 +129,7 @@ def search_unprocessed_emails(service, processed_ids: set) -> list:
     Query Gmail for emails from the target sender that have attachments.
     Returns only messages not yet in processed_ids.
     """
-    query = f"from:{SENDER_EMAIL} has:attachment"
+    query = f"from:{SENDER_EMAIL} OR from:{SENDER_EMAIL_2} has:attachment"
     try:
         result = service.users().messages().list(userId="me", q=query).execute()
         messages = result.get("messages", [])
