@@ -228,7 +228,7 @@ def extract_first_name(raw: str) -> str:
 # XLSX Processing
 # ─────────────────────────────────────────────
 
-REQUIRED_COLS = {"Reference", "Customer", "Source", "Stage", "Customer  Mobile", "Contact"}
+REQUIRED_COLS = {"Reference", "Customer"}
 
 
 def process_xlsx(raw_bytes: bytes) -> list[list]:
