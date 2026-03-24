@@ -257,10 +257,10 @@ def process_xlsx(raw_bytes: bytes) -> list[list]:
             skipped += 1
             continue
 
-        reference       = str(row.get("Reference", "")).strip()
-        customer        = str(row.get("Customer", "")).strip()
+        reference       = str(row["Reference"] if "Reference" in row.index else "").strip()
+        customer        = str(row["Customer"] if "Customer" in row.index else "").strip()
         source          = str(row.get("Source", "")).strip()
-        stage           = str(row.get("Stage", "")).strip()
+        stage           = str(row["Stage"] if "Stage" in row.index else "").strip()
         customer_mobile = str(row.get("Customer  Mobile", "Contact", "")).strip()
 
         # Skip rows where all key fields are blank/nan
