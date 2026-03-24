@@ -228,58 +228,71 @@ def extract_first_name(raw: str) -> str:
 # XLSX Processing
 # ─────────────────────────────────────────────
 
-REQUIRED_COLS = {"Reference", "Customer"}
+def get_col(df_columns, *names):
+    """Return the first column name from `names` that exists in df_columns."""
+    for name in names:
+        if name in df_columns:
+            return name
+    return None
 
 
 def process_xlsx(raw_bytes: bytes) -> list[list]:
     """
-    Read XLSX bytes with pandas, validate required columns exist,
-    transform each row per the field mapping, and return a list of
-    [TL-REF, First Name, Phone Number, Campaign, Status] rows.
+    Read XLSX bytes with pandas, auto-detect column names,
+    transform each row, and return a list of
+    [Date, TL-REF, First Name, Phone Number, Campaign, Status] rows.
 
-    Blank rows (all NaN) are silently skipped.
+    Handles multiple column name variants:
+    - Phone: 'Customer  Mobile', 'Customer Mobile', 'Contact'
+    - Campaign: 'Source'
+    - Status: 'Stage'
     """
     df = pd.read_excel(io.BytesIO(raw_bytes), dtype=str)
 
     # Normalise column names (strip whitespace)
     df.columns = df.columns.str.strip()
+    cols = list(df.columns)
 
-    missing = REQUIRED_COLS - set(df.columns)
-    if missing:
-        raise ValueError(f"XLSX is missing required columns: {missing}")
+    # Auto-detect column names
+    ref_col    = get_col(cols, "Reference")
+    cust_col   = get_col(cols, "Customer")
+    phone_col  = get_col(cols, "Customer  Mobile", "Customer Mobile", "Contact")
+    source_col = get_col(cols, "Source")
+    stage_col  = get_col(cols, "Stage")
+
+    if not ref_col or not cust_col:
+        raise ValueError(f"XLSX missing Reference or Customer column. Found: {cols}")
+
+    log.info(f"Columns detected — ref:{ref_col} cust:{cust_col} phone:{phone_col} source:{source_col} stage:{stage_col}")
+
+    def get_val(row, col):
+        if col is None or col not in row.index:
+            return ""
+        val = str(row[col]).strip()
+        return "" if val in ("nan", "None", "NaN") else val
 
     rows = []
     skipped = 0
 
     for _, row in df.iterrows():
-        # Skip fully blank rows
         if row.isnull().all():
             skipped += 1
             continue
 
-        reference       = str(row["Reference"] if "Reference" in row.index else "").strip()
-        customer        = str(row["Customer"] if "Customer" in row.index else "").strip()
-        source          = str(row.get("Source", "")).strip()
-        stage           = str(row["Stage"] if "Stage" in row.index else "").strip()
-        customer_mobile = str(row.get("Customer  Mobile", "Contact", "")).strip()
+        reference       = get_val(row, ref_col)
+        customer        = get_val(row, cust_col)
+        customer_mobile = get_val(row, phone_col)
+        source          = get_val(row, source_col)
+        stage           = get_val(row, stage_col)
 
-        # Skip rows where all key fields are blank/nan
-        if all(v in ("", "nan", "None") for v in [reference, customer, source, stage, customer_mobile]):
+        if all(v == "" for v in [reference, customer]):
             skipped += 1
             continue
 
-        # Clean 'nan' strings that pandas uses for empty cells
-        def clean(val):
-            return "" if val in ("nan", "None") else val
-
         first_name   = extract_first_name(customer)
-        phone_number = clean(customer_mobile)  # kept exactly as-is
-        campaign     = clean(source)            # kept exactly as-is
-        status       = clean(stage)             # kept exactly as-is
-        tl_ref       = clean(reference)
+        today        = datetime.datetime.now().strftime("%d/%m/%Y")
 
-        today = datetime.datetime.now().strftime("%d/%m/%Y")
-        rows.append([today, tl_ref, first_name, phone_number, campaign, status])
+        rows.append([today, reference, first_name, customer_mobile, source, stage])
 
     log.info(f"XLSX processed: {len(rows)} valid row(s), {skipped} blank row(s) skipped.")
     return rows
@@ -445,17 +458,6 @@ def run_poll_cycle(gmail_service, sheets_service,
 # ─────────────────────────────────────────────
 
 def main():
-
-    # Decode Google credentials from base64 env vars (used in Railway)
-    import base64 as _b64
-    _creds_b64 = os.getenv('GOOGLE_CREDENTIALS_B64')
-    _token_b64 = os.getenv('GOOGLE_TOKEN_B64')
-    if _creds_b64:
-        with open('credentials.json', 'wb') as _f:
-            _f.write(_b64.b64decode(_creds_b64))
-    if _token_b64:
-        with open('token.json', 'wb') as _f:
-            _f.write(_b64.b64decode(_token_b64))
     spreadsheet_id = os.getenv("SPREADSHEET_ID")
     if not spreadsheet_id:
         raise EnvironmentError("SPREADSHEET_ID is not set in .env")
