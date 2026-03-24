@@ -228,7 +228,7 @@ def extract_first_name(raw: str) -> str:
 # XLSX Processing
 # ─────────────────────────────────────────────
 
-REQUIRED_COLS = {"Reference", "Customer", "Source", "Stage", "Customer  Mobile"}
+REQUIRED_COLS = {"Reference", "Customer", "Source", "Stage", "Customer  Mobile", "Contact"}
 
 
 def process_xlsx(raw_bytes: bytes) -> list[list]:
@@ -261,7 +261,7 @@ def process_xlsx(raw_bytes: bytes) -> list[list]:
         customer        = str(row.get("Customer", "")).strip()
         source          = str(row.get("Source", "")).strip()
         stage           = str(row.get("Stage", "")).strip()
-        customer_mobile = str(row.get("Customer  Mobile", "")).strip()
+        customer_mobile = str(row.get("Customer  Mobile", "Contact", "")).strip()
 
         # Skip rows where all key fields are blank/nan
         if all(v in ("", "nan", "None") for v in [reference, customer, source, stage, customer_mobile]):
