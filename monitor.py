@@ -176,6 +176,151 @@ def get_xlsx_attachment(service, msg_id: str) -> tuple[str | None, bytes | None]
         return None, None
 
 
+def get_email_body_table(service, msg_id: str):
+    """
+    Extract a table from the email body (HTML or plain text).
+    Returns parsed rows or None.
+    """
+    try:
+        msg = service.users().messages().get(
+            userId="me", id=msg_id, format="full"
+        ).execute()
+
+        def extract_parts(payload):
+            parts = []
+            if payload.get("body", {}).get("data"):
+                parts.append((payload.get("mimeType", ""), payload["body"]["data"]))
+            for part in payload.get("parts", []):
+                parts.extend(extract_parts(part))
+            return parts
+
+        body_parts = extract_parts(msg.get("payload", {}))
+        html_body = ""
+        text_body = ""
+
+        for mime, data in body_parts:
+            decoded = base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="ignore")
+            if "html" in mime:
+                html_body = decoded
+            elif "plain" in mime or not html_body:
+                text_body = decoded
+
+        if html_body:
+            rows = _parse_html_table(html_body)
+            if rows:
+                log.info(f"Found HTML table with {len(rows)} rows in email body.")
+                return rows
+
+        if text_body:
+            rows = _parse_text_table(text_body)
+            if rows:
+                log.info(f"Found text table with {len(rows)} rows in email body.")
+                return rows
+
+        return None
+
+    except Exception as e:
+        log.error(f"Failed to extract email body for {msg_id}: {e}")
+        return None
+
+
+def _parse_html_table(html):
+    try:
+        row_pat  = re.compile(r'<tr[^>]*>(.*?)</tr>', re.DOTALL | re.IGNORECASE)
+        cell_pat = re.compile(r'<t[dh][^>]*>(.*?)</t[dh]>', re.DOTALL | re.IGNORECASE)
+        tag_pat  = re.compile(r'<[^>]+>')
+        rows = []
+        for rm in row_pat.finditer(html):
+            cells = []
+            for cm in cell_pat.finditer(rm.group(1)):
+                text = tag_pat.sub('', cm.group(1))
+                text = text.replace('&nbsp;', ' ').replace('&amp;', '&').strip()
+                cells.append(text)
+            if cells:
+                rows.append(cells)
+        return rows if len(rows) > 1 else None
+    except Exception:
+        return None
+
+
+def _parse_text_table(text):
+    try:
+        lines = text.splitlines()
+        header_idx = None
+        for i, line in enumerate(lines):
+            if "Reference" in line and "Customer" in line:
+                header_idx = i
+                break
+        if header_idx is None:
+            return None
+        rows = []
+        for line in lines[header_idx:]:
+            line = line.strip()
+            if not line:
+                continue
+            if '|' in line:
+                cells = [c.strip() for c in line.split('|') if c.strip()]
+            else:
+                cells = line.split()
+            if cells:
+                rows.append(cells)
+        return rows if len(rows) > 1 else None
+    except Exception:
+        return None
+
+
+def process_body_rows(raw_rows):
+    """Convert raw table rows from email body into standard format."""
+    if not raw_rows:
+        return []
+
+    header = [h.lower().strip() for h in raw_rows[0]]
+
+    def find_col(*names):
+        for name in names:
+            for i, h in enumerate(header):
+                if name.lower() in h:
+                    return i
+        return None
+
+    ref_idx    = find_col("reference")
+    cust_idx   = find_col("customer")
+    phone_idx  = find_col("mobile", "contact", "phone")
+    source_idx = find_col("source", "campaign")
+    stage_idx  = find_col("stage", "status")
+
+    if ref_idx is None or cust_idx is None:
+        log.warning(f"Could not find Reference/Customer in body table. Header: {header}")
+        return []
+
+    rows = []
+    today = datetime.datetime.now().strftime("%d/%m/%Y")
+
+    for row in raw_rows[1:]:
+        def get(idx):
+            if idx is None or idx >= len(row):
+                return ""
+            val = str(row[idx]).strip()
+            return "" if val in ("nan", "None") else val
+
+        reference = get(ref_idx)
+        customer  = get(cust_idx)
+        if not reference or not customer:
+            continue
+
+        rows.append([
+            today,
+            reference,
+            extract_first_name(customer),
+            get(phone_idx),
+            get(source_idx),
+            get(stage_idx),
+        ])
+
+    log.info(f"Body table processed: {len(rows)} valid row(s).")
+    return rows
+
+
 # ─────────────────────────────────────────────
 # Name Cleaning
 # ─────────────────────────────────────────────
@@ -404,20 +549,29 @@ def process_email(gmail_service, sheets_service, spreadsheet_id: str,
     """
     log.info(f"Processing message ID: {msg_id}")
 
-    # Step 1: Get attachment
+    # Step 1: Try XLSX attachment first, then fall back to email body table
     filename, raw_bytes = get_xlsx_attachment(gmail_service, msg_id)
-    if not filename or not raw_bytes:
-        log.warning(f"Skipping message {msg_id} — no XLSX attachment found.")
-        # Mark as processed so we don't keep hitting it
-        save_processed_id(msg_id, processed_ids)
-        return False
 
-    # Step 2: Parse XLSX
-    try:
-        rows = process_xlsx(raw_bytes)
-    except Exception as e:
-        log.error(f"Failed to parse XLSX from message {msg_id}: {e}")
-        return False  # Don't mark processed — may be retried
+    if filename and raw_bytes:
+        # Step 2a: Parse XLSX
+        try:
+            rows = process_xlsx(raw_bytes)
+        except Exception as e:
+            log.error(f"Failed to parse XLSX from message {msg_id}: {e}")
+            return False
+    else:
+        # Step 2b: No XLSX — try parsing table from email body
+        log.info(f"No XLSX found for {msg_id} — trying email body table...")
+        body_table = get_email_body_table(gmail_service, msg_id)
+        if not body_table:
+            log.warning(f"No usable data found in message {msg_id} — skipping.")
+            save_processed_id(msg_id, processed_ids)
+            return False
+        try:
+            rows = process_body_rows(body_table)
+        except Exception as e:
+            log.error(f"Failed to parse body table from message {msg_id}: {e}")
+            return False
 
     if not rows:
         log.warning(f"XLSX in message {msg_id} contained no usable rows.")
