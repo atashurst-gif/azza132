@@ -96,16 +96,22 @@ def save_processed_id(msg_id: str, processed_ids: set) -> None:
 # ─────────────────────────────────────────────
 
 def get_google_credentials():
-    """
-    Authenticate using Service Account — never expires, no browser needed.
-    """
-    from google.oauth2 import service_account
-    sa_file = os.getenv('SERVICE_ACCOUNT_FILE', 'service_account.json')
-    creds = service_account.Credentials.from_service_account_file(
-        sa_file, scopes=SCOPES
-    )
-    log.info("Service account credentials loaded successfully.")
-    return creds
+    from google.oauth2.credentials import Credentials
+    import json, tempfile
+    token_b64 = os.getenv("GOOGLE_TOKEN_B64", "")
+    if token_b64:
+        padded = token_b64 + "=" * (-len(token_b64) % 4)
+        token_json = base64.b64decode(padded).decode("utf-8")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write(token_json)
+            tmp = f.name
+        creds = Credentials.from_authorized_user_file(tmp, SCOPES)
+        if creds.expired and creds.refresh_token:
+            from google.auth.transport.requests import Request
+            creds.refresh(Request())
+        log.info("OAuth credentials loaded.")
+        return creds
+    raise EnvironmentError("GOOGLE_TOKEN_B64 not set")
 
 
 # ─────────────────────────────────────────────
