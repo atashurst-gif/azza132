@@ -14,6 +14,7 @@ import logging
 import datetime
 from pathlib import Path
 
+import requests
 import pandas as pd
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
