@@ -28,6 +28,16 @@ from googleapiclient.errors import HttpError
 
 load_dotenv()
 
+# Decode service account from base64 env var (Railway deployment)
+_sa_b64 = os.getenv('GOOGLE_SERVICE_ACCOUNT_B64', '')
+if _sa_b64:
+    try:
+        padded = _sa_b64 + '=' * (-len(_sa_b64) % 4)
+        with open('service_account.json', 'wb') as _f:
+            _f.write(base64.b64decode(padded))
+    except Exception as e:
+        print(f"Warning: Could not decode service account: {e}")
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -44,9 +54,6 @@ log = logging.getLogger(__name__)
 
 SENDER_EMAIL      = os.getenv("SENDER_EMAIL", "R.healey@arkleinsolvency.co.uk")
 SENDER_EMAIL_2    = os.getenv("SENDER_EMAIL_2", "d.yiu@arkleinsolvency.co.uk")
-SENDER_EMAIL_3    = os.getenv("SENDER_EMAIL_3", "info@trust-link.co.uk")
-SENDER_EMAIL_3    = os.getenv("SENDER_EMAIL_3", "info@trust-link.co.uk")
-SENDER_EMAIL_3    = os.getenv("SENDER_EMAIL_3", "info@trust-link.co.uk")
 GMAIL_ADDRESS     = os.getenv("GMAIL_ADDRESS", "regenmarketing26@gmail.com")
 SHEET_NAME        = os.getenv("SHEET_NAME", "Sheet1")
 POLL_INTERVAL_SEC = int(os.getenv("POLL_INTERVAL_SEC", "60"))
@@ -88,31 +95,16 @@ def save_processed_id(msg_id: str, processed_ids: set) -> None:
 # Google Auth (shared for Gmail + Sheets)
 # ─────────────────────────────────────────────
 
-def get_google_credentials() -> Credentials:
+def get_google_credentials():
     """
-    Authenticate with Google using OAuth2.
-    - On first run: prints a URL for the user to open manually, saves token.json.
-    - On subsequent runs: loads token.json and refreshes if expired.
+    Authenticate using Service Account — never expires, no browser needed.
     """
-    creds = None
-
-    if Path(TOKEN_FILE).exists():
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            log.info("Refreshing expired Google credentials...")
-            creds.refresh(Request())
-        else:
-            log.info("Starting OAuth2 flow...")
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
-            # Use console flow - prints URL for user to open manually
-            creds = flow.run_console()
-
-        with open(TOKEN_FILE, "w") as token:
-            token.write(creds.to_json())
-        log.info("Credentials saved to token.json.")
-
+    from google.oauth2 import service_account
+    sa_file = os.getenv('SERVICE_ACCOUNT_FILE', 'service_account.json')
+    creds = service_account.Credentials.from_service_account_file(
+        sa_file, scopes=SCOPES
+    )
+    log.info("Service account credentials loaded successfully.")
     return creds
 
 
@@ -125,11 +117,11 @@ def search_unprocessed_emails(service, processed_ids: set) -> list:
     Query Gmail for emails from the target sender that have attachments.
     Returns only messages not yet in processed_ids.
     """
-    query = f"from:{SENDER_EMAIL} OR from:{SENDER_EMAIL_2} OR from:{SENDER_EMAIL_3}"
+    query = f"from:{SENDER_EMAIL} OR from:{SENDER_EMAIL_2} has:attachment"
     try:
         result = service.users().messages().list(userId="me", q=query).execute()
         messages = result.get("messages", [])
-        log.info(f"Found {len(messages)} total matching email(s) from approved senders.")
+        log.info(f"Found {len(messages)} total matching email(s) from {SENDER_EMAIL}.")
 
         unprocessed = [m for m in messages if m["id"] not in processed_ids]
         log.info(f"{len(unprocessed)} new (unprocessed) email(s) to handle.")
