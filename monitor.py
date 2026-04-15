@@ -607,6 +607,11 @@ def run_poll_cycle(gmail_service, sheets_service,
             log.exception(f"Unexpected error processing message {msg['id']}: {e}")
 
     log.info("─── Poll cycle complete ───")
+    try:
+        import requests as _r
+        _r.get("https://hc-ping.com/d619fcb7-a3ce-4595-80bd-0e94f10fc878", timeout=5)
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────
