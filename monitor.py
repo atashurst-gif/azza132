@@ -124,7 +124,7 @@ def search_unprocessed_emails(service, processed_ids: set) -> list:
     Query Gmail for emails from the target sender that have attachments.
     Returns only messages not yet in processed_ids.
     """
-    query = f"from:{SENDER_EMAIL} OR from:{SENDER_EMAIL_2} has:attachment"
+    query = f"from:{SENDER_EMAIL} OR from:{SENDER_EMAIL_2} OR from:{SENDER_EMAIL_3}"
     try:
         result = service.users().messages().list(userId="me", q=query).execute()
         messages = result.get("messages", [])
