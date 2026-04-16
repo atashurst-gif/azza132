@@ -55,6 +55,7 @@ log = logging.getLogger(__name__)
 
 SENDER_EMAIL      = os.getenv("SENDER_EMAIL", "R.healey@arkleinsolvency.co.uk")
 SENDER_EMAIL_2    = os.getenv("SENDER_EMAIL_2", "d.yiu@arkleinsolvency.co.uk")
+SENDER_EMAIL_3    = os.getenv("SENDER_EMAIL_3", "info@trust-link.co.uk")
 GMAIL_ADDRESS     = os.getenv("GMAIL_ADDRESS", "regenmarketing26@gmail.com")
 SHEET_NAME        = os.getenv("SHEET_NAME", "Sheet1")
 POLL_INTERVAL_SEC = int(os.getenv("POLL_INTERVAL_SEC", "60"))
