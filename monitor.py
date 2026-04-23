@@ -21,6 +21,38 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+
+# ─────────────────────────────────────────────
+# Global 429 backoff — patches ALL Google API .execute() calls automatically
+# ─────────────────────────────────────────────
+
+def _install_sheets_backoff():
+    """Monkey-patch googleapiclient HttpRequest.execute with exponential backoff."""
+    import time as _time
+    from googleapiclient import http as _ghttp
+    from googleapiclient.errors import HttpError as _HttpError
+
+    _orig = _ghttp.HttpRequest.execute
+
+    def _execute_with_backoff(self, *args, **kwargs):
+        delay = 2
+        max_retries = 6
+        for attempt in range(max_retries):
+            try:
+                return _orig(self, *args, **kwargs)
+            except _HttpError as e:
+                status = int(e.resp.status)
+                if status in (429, 500, 502, 503) and attempt < max_retries - 1:
+                    log.warning(f"Google API {status} — retrying in {delay}s (attempt {attempt+1}/{max_retries})")
+                    _time.sleep(delay)
+                    delay = min(delay * 2, 120)
+                else:
+                    log.error(f"Google API {status} failed after {attempt+1} attempts")
+                    raise
+
+    _ghttp.HttpRequest.execute = _execute_with_backoff
+    log.info("✓ Google API backoff patch installed")
+
 from googleapiclient.errors import HttpError
 
 # ─────────────────────────────────────────────
@@ -625,6 +657,7 @@ def main():
         raise EnvironmentError("SPREADSHEET_ID is not set in .env")
 
     log.info("Starting Gmail → Google Sheets automation...")
+    _install_sheets_backoff()
     log.info(f"Monitoring: {GMAIL_ADDRESS}")
     log.info(f"Sender filter: {SENDER_EMAIL}")
     log.info(f"Target sheet: {SHEET_NAME}")
