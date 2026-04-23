@@ -14,12 +14,13 @@ import logging
 import datetime
 from pathlib import Path
 
+import imaplib
+import email
+import email.header
 import requests
 import pandas as pd
 from dotenv import load_dotenv
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # ─────────────────────────────────────────────
@@ -96,10 +97,7 @@ CREDENTIALS_FILE  = os.getenv("CREDENTIALS_FILE", "credentials.json")
 TOKEN_FILE        = os.getenv("TOKEN_FILE", "token.json")
 
 # Gmail API needs these scopes
-SCOPES = [
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/spreadsheets",
-]
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 # ─────────────────────────────────────────────
 # Duplicate Protection
@@ -130,114 +128,114 @@ def save_processed_id(msg_id: str, processed_ids: set) -> None:
 # ─────────────────────────────────────────────
 
 def get_google_credentials():
-    from google.oauth2.credentials import Credentials
-    import json, tempfile
-    token_b64 = os.getenv("GOOGLE_TOKEN_B64", "")
-    if token_b64:
-        padded = token_b64 + "=" * (-len(token_b64) % 4)
-        token_json = base64.b64decode(padded).decode("utf-8")
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write(token_json)
-            tmp = f.name
-        creds = Credentials.from_authorized_user_file(tmp, SCOPES)
-        if creds.expired and creds.refresh_token:
-            from google.auth.transport.requests import Request
-            creds.refresh(Request())
-        log.info("OAuth credentials loaded.")
+    """Load Google Service Account credentials for Sheets API."""
+    sa_b64 = os.getenv("GOOGLE_SERVICE_ACCOUNT_B64", "")
+    if sa_b64:
+        import json
+        padded = sa_b64 + "=" * (-len(sa_b64) % 4)
+        info = json.loads(base64.b64decode(padded).decode("utf-8"))
+        creds = service_account.Credentials.from_service_account_info(
+            info, scopes=SCOPES
+        )
+        log.info("Service account credentials loaded successfully.")
         return creds
-    raise EnvironmentError("GOOGLE_TOKEN_B64 not set")
+    raise EnvironmentError("GOOGLE_SERVICE_ACCOUNT_B64 not set")
+
+
+def get_imap_connection():
+    """Connect to Gmail via IMAP using App Password. Never expires."""
+    gmail_address = os.getenv("GMAIL_ADDRESS", "")
+    app_password   = os.getenv("GMAIL_APP_PASSWORD", "")
+    if not gmail_address or not app_password:
+        raise EnvironmentError("GMAIL_ADDRESS or GMAIL_APP_PASSWORD not set")
+    mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+    mail.login(gmail_address, app_password)
+    log.info(f"IMAP connected to {gmail_address}")
+    return mail
 
 
 # ─────────────────────────────────────────────
 # Gmail Helpers
 # ─────────────────────────────────────────────
 
-def search_unprocessed_emails(service, processed_ids: set) -> list:
+def search_unprocessed_emails(mail, processed_ids: set) -> list:
     """
-    Query Gmail for emails from the target sender that have attachments.
-    Returns only messages not yet in processed_ids.
+    Search Gmail via IMAP for emails from approved senders.
+    Returns list of (msg_id, email_message) tuples not yet processed.
     """
-    query = f"from:{SENDER_EMAIL} OR from:{SENDER_EMAIL_2} OR from:{SENDER_EMAIL_3}"
     try:
-        result = service.users().messages().list(userId="me", q=query).execute()
-        messages = result.get("messages", [])
-        log.info(f"Found {len(messages)} total matching email(s) from {SENDER_EMAIL}.")
+        mail.select("INBOX")
+        senders = [SENDER_EMAIL, SENDER_EMAIL_2, SENDER_EMAIL_3]
+        all_uids = set()
+        for sender in senders:
+            _, data = mail.search(None, f'(FROM "{sender}")')
+            uids = data[0].split()
+            all_uids.update(u.decode() for u in uids)
 
-        unprocessed = [m for m in messages if m["id"] not in processed_ids]
-        log.info(f"{len(unprocessed)} new (unprocessed) email(s) to handle.")
+        unprocessed = [uid for uid in all_uids if uid not in processed_ids]
+        log.info(f"Found {len(all_uids)} total email(s) | {len(unprocessed)} unprocessed")
         return unprocessed
-
-    except HttpError as e:
-        log.error(f"Gmail search failed: {e}")
+    except Exception as e:
+        log.error(f"IMAP search failed: {e}")
         return []
 
 
-def get_xlsx_attachment(service, msg_id: str) -> tuple[str | None, bytes | None]:
+def fetch_email(mail, uid: str):
+    """Fetch a full email message by UID."""
+    try:
+        _, data = mail.fetch(uid, "(RFC822)")
+        raw = data[0][1]
+        return email.message_from_bytes(raw)
+    except Exception as e:
+        log.error(f"Failed to fetch email UID {uid}: {e}")
+        return None
+
+
+def get_xlsx_attachment(mail, uid: str) -> tuple:
     """
-    Fetch the first XLSX attachment from a Gmail message.
-    Returns (filename, raw_bytes) or (None, None) if not found.
+    Fetch the first XLSX attachment from an email by UID.
+    Returns (filename, raw_bytes) or (None, None).
     """
     try:
-        msg = service.users().messages().get(userId="me", id=msg_id).execute()
-        parts = msg.get("payload", {}).get("parts", [])
-
-        for part in parts:
-            filename = part.get("filename", "")
-            mime = part.get("mimeType", "")
-
-            is_xlsx = filename.lower().endswith(".xlsx") or \
-                      mime in (
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                          "application/octet-stream",
-                      )
-
-            if is_xlsx and filename:
-                body = part.get("body", {})
-                attachment_id = body.get("attachmentId")
-
-                if attachment_id:
-                    att = service.users().messages().attachments().get(
-                        userId="me", messageId=msg_id, id=attachment_id
-                    ).execute()
-                    data = base64.urlsafe_b64decode(att["data"])
-                    log.info(f"Downloaded XLSX attachment: {filename} ({len(data):,} bytes)")
-                    return filename, data
-
-        log.info(f"No XLSX attachment found in message {msg_id}.")
+        msg = fetch_email(mail, uid)
+        if not msg:
+            return None, None
+        for part in msg.walk():
+            fname = part.get_filename()
+            ctype = part.get_content_type()
+            is_xlsx = (fname and fname.lower().endswith(".xlsx")) or \
+                      ctype == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            if is_xlsx and fname:
+                data = part.get_payload(decode=True)
+                log.info(f"Downloaded XLSX attachment: {fname} ({len(data):,} bytes)")
+                return fname, data
+        log.info(f"No XLSX attachment found in email UID {uid}.")
         return None, None
-
-    except HttpError as e:
-        log.error(f"Failed to fetch attachment from message {msg_id}: {e}")
+    except Exception as e:
+        log.error(f"Failed to get attachment from UID {uid}: {e}")
         return None, None
 
 
-def get_email_body_table(service, msg_id: str):
+def get_email_body_table(mail, uid: str):
     """
     Extract a table from the email body (HTML or plain text).
     Returns parsed rows or None.
     """
     try:
-        msg = service.users().messages().get(
-            userId="me", id=msg_id, format="full"
-        ).execute()
-
-        def extract_parts(payload):
-            parts = []
-            if payload.get("body", {}).get("data"):
-                parts.append((payload.get("mimeType", ""), payload["body"]["data"]))
-            for part in payload.get("parts", []):
-                parts.extend(extract_parts(part))
-            return parts
-
-        body_parts = extract_parts(msg.get("payload", {}))
+        msg = fetch_email(mail, uid)
+        if not msg:
+            return None
         html_body = ""
         text_body = ""
-
-        for mime, data in body_parts:
-            decoded = base64.urlsafe_b64decode(data + "==").decode("utf-8", errors="ignore")
-            if "html" in mime:
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+            decoded = payload.decode("utf-8", errors="ignore")
+            if ctype == "text/html":
                 html_body = decoded
-            elif "plain" in mime or not html_body:
+            elif ctype == "text/plain" and not html_body:
                 text_body = decoded
 
         if html_body:
@@ -245,17 +243,14 @@ def get_email_body_table(service, msg_id: str):
             if rows:
                 log.info(f"Found HTML table with {len(rows)} rows in email body.")
                 return rows
-
         if text_body:
             rows = _parse_text_table(text_body)
             if rows:
                 log.info(f"Found text table with {len(rows)} rows in email body.")
                 return rows
-
         return None
-
     except Exception as e:
-        log.error(f"Failed to extract email body for {msg_id}: {e}")
+        log.error(f"Failed to extract email body for UID {uid}: {e}")
         return None
 
 
@@ -570,7 +565,7 @@ def append_rows_to_sheet(sheets_service, spreadsheet_id: str, rows: list[list]) 
 # Core Processing Loop
 # ─────────────────────────────────────────────
 
-def process_email(gmail_service, sheets_service, spreadsheet_id: str,
+def process_email(mail, sheets_service, spreadsheet_id: str,
                   msg_id: str, processed_ids: set) -> bool:
     """
     Full pipeline for a single email:
@@ -585,7 +580,7 @@ def process_email(gmail_service, sheets_service, spreadsheet_id: str,
     log.info(f"Processing message ID: {msg_id}")
 
     # Step 1: Try XLSX attachment first, then fall back to email body table
-    filename, raw_bytes = get_xlsx_attachment(gmail_service, msg_id)
+    filename, raw_bytes = get_xlsx_attachment(mail, msg_id)
 
     if filename and raw_bytes:
         # Step 2a: Parse XLSX
@@ -597,7 +592,7 @@ def process_email(gmail_service, sheets_service, spreadsheet_id: str,
     else:
         # Step 2b: No XLSX — try parsing table from email body
         log.info(f"No XLSX found for {msg_id} — trying email body table...")
-        body_table = get_email_body_table(gmail_service, msg_id)
+        body_table = get_email_body_table(mail, msg_id)
         if not body_table:
             log.warning(f"No usable data found in message {msg_id} — skipping.")
             save_processed_id(msg_id, processed_ids)
@@ -626,18 +621,18 @@ def process_email(gmail_service, sheets_service, spreadsheet_id: str,
     return True
 
 
-def run_poll_cycle(gmail_service, sheets_service,
+def run_poll_cycle(mail, sheets_service,
                    spreadsheet_id: str, processed_ids: set) -> None:
     """Run one poll cycle: search inbox, process new emails."""
     log.info("─── Poll cycle started ───")
-    messages = search_unprocessed_emails(gmail_service, processed_ids)
+    uids = search_unprocessed_emails(mail, processed_ids)
 
-    for msg in messages:
+    for uid in uids:
         try:
-            process_email(gmail_service, sheets_service,
-                          spreadsheet_id, msg["id"], processed_ids)
+            process_email(mail, sheets_service,
+                          spreadsheet_id, uid, processed_ids)
         except Exception as e:
-            log.exception(f"Unexpected error processing message {msg['id']}: {e}")
+            log.exception(f"Unexpected error processing UID {uid}: {e}")
 
     log.info("─── Poll cycle complete ───")
     try:
@@ -664,7 +659,6 @@ def main():
     log.info(f"Poll interval: {POLL_INTERVAL_SEC}s")
 
     creds = get_google_credentials()
-    gmail_service  = build("gmail", "v1", credentials=creds)
     sheets_service = build("sheets", "v4", credentials=creds)
 
     processed_ids = load_processed_ids()
@@ -672,7 +666,12 @@ def main():
 
     while True:
         try:
-            run_poll_cycle(gmail_service, sheets_service, spreadsheet_id, processed_ids)
+            mail = get_imap_connection()
+            run_poll_cycle(mail, sheets_service, spreadsheet_id, processed_ids)
+            try:
+                mail.logout()
+            except Exception:
+                pass
         except Exception as e:
             log.exception(f"Fatal error in poll cycle — will retry: {e}")
 
