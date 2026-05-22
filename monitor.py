@@ -630,7 +630,8 @@ def process_xlsx_flt(raw_bytes: bytes) -> list[list]:
         ref        = f"FLT-{raw_id}"
 
         # First name only — never use last name
-        first_name = get_val(row, firstname_col).title() if firstname_col else ""
+        raw_first = get_val(row, firstname_col) if firstname_col else ""
+        first_name = raw_first.strip().split()[0].title() if raw_first.strip() else ""
         # If first_name is empty or "-", try last name as fallback
         if not first_name or first_name == "-":
             last_name = get_val(row, lastname_col).title() if lastname_col else ""
