@@ -628,9 +628,13 @@ def process_xlsx_flt(raw_bytes: bytes) -> list[list]:
             pass
 
         ref        = f"FLT-{raw_id}"
+
+        # First name only — never use last name
         first_name = get_val(row, firstname_col).title() if firstname_col else ""
-        last_name  = get_val(row, lastname_col).title() if lastname_col else ""
-        full_name  = f"{first_name} {last_name}".strip() if last_name else first_name
+        # If first_name is empty or "-", try last name as fallback
+        if not first_name or first_name == "-":
+            last_name = get_val(row, lastname_col).title() if lastname_col else ""
+            first_name = last_name if last_name and last_name != "-" else ""
 
         phone = get_val(row, mobile_col)
         # Clean scientific notation in phone numbers
@@ -639,10 +643,16 @@ def process_xlsx_flt(raw_bytes: bytes) -> list[list]:
         except Exception:
             pass
         # Normalise to 07... format
-        if phone.startswith("44") and len(phone) >= 11:
+        if phone.startswith("447") and len(phone) == 12:
+            phone = "0" + phone[2:]
+        elif phone.startswith("44") and len(phone) >= 11:
             phone = "0" + phone[2:]
 
-        rows.append([today, ref, first_name or full_name, phone, "FLT", "No contact"])
+        # Use Source column if present, else default to UKDT CT2
+        source_col = get_val(row, find(cols, "source", "campaign")) if find(cols, "source", "campaign") else ""
+        campaign = source_col if source_col and source_col not in ("-", "nan", "") else "UKDT CT2"
+
+        rows.append([today, ref, first_name, phone, campaign, "No contact"])
 
     log.info(f"FLT XLSX processed: {len(rows)} valid row(s), {skipped} skipped.")
     return rows
