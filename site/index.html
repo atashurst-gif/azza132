@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Candidate Summary Builder</title>
+    <meta
+      name="description"
+      content="Paste candidate notes, get back the formatted Candidate Summary PDF."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000'/%3E%3Crect x='9' y='6' width='3' height='20' fill='%23e41cbe'/%3E%3Crect x='16' y='10' width='3' height='16' fill='%23e41cbe'/%3E%3Crect x='23' y='4' width='3' height='22' fill='%23e41cbe'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="vendor/pdf-lib.min.js"></script>
+    <script src="vendor/fontkit.umd.min.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Candidate Summary Builder</h1>
+      <p>Drop the notes in, get the formatted PDF back.</p>
+    </header>
+
+    <main class="layout">
+      <section class="pane pane--input">
+        <label class="field">
+          <span class="field__label">Candidate notes</span>
+          <textarea
+            id="notes"
+            rows="16"
+            spellcheck="false"
+            placeholder="Client: ReGen&#10;Position: Sales Lead Generator (B2C)&#10;Name: Divan Cloete&#10;Age: 32&#10;Hobbies: ...&#10;Personality: ...&#10;Current Salary: ...&#10;Relevant Experience: ...&#10;Suitability: ...&#10;WiFi: ...&#10;Accent: ...&#10;Availability: ...&#10;Other: ..."
+          ></textarea>
+        </label>
+
+        <div class="row">
+          <button id="build" class="btn btn--primary" type="button">Build document</button>
+          <button id="sample" class="btn" type="button">Load example</button>
+          <button id="clear" class="btn" type="button">Clear</button>
+        </div>
+
+        <details id="tweaks" class="tweaks">
+          <summary>Document fields <span class="hint">edit before downloading</span></summary>
+
+          <div class="grid">
+            <label class="field">
+              <span class="field__label">Banner kicker</span>
+              <input id="kicker" type="text" value="Opinions and summary" />
+            </label>
+            <label class="field">
+              <span class="field__label">Name (banner &amp; Name section)</span>
+              <input id="name" type="text" />
+            </label>
+            <label class="field">
+              <span class="field__label">Heading</span>
+              <input id="heading" type="text" value="Candidate Summary" />
+            </label>
+            <label class="field">
+              <span class="field__label">Cost <span class="hint">blank = section hidden</span></span>
+              <input id="cost" type="text" placeholder="£1400 per month" />
+            </label>
+          </div>
+
+          <label class="field">
+            <span class="field__label">Candidate Summary</span>
+            <textarea id="summary" rows="12" spellcheck="false"></textarea>
+          </label>
+
+          <label class="check">
+            <input id="details" type="checkbox" />
+            <span
+              >Also list the raw detail fields (Client, Position, Age, Hobbies…) under the
+              summary</span
+            >
+          </label>
+
+          <label class="field">
+            <span class="field__label">Replace banner image <span class="hint">optional JPEG</span></span>
+            <input id="banner" type="file" accept="image/jpeg" />
+          </label>
+        </details>
+      </section>
+
+      <section class="pane pane--preview">
+        <div class="row row--between">
+          <span id="status" class="status">Paste the notes and press “Build document”.</span>
+          <button id="download" class="btn btn--primary" type="button" disabled>
+            Download PDF
+          </button>
+        </div>
+        <iframe id="preview" title="PDF preview"></iframe>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
