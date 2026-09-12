@@ -622,7 +622,6 @@ class TestInstallerNeverHidesAFailure:
     def test_big_steps_go_through_the_logged_runner(self):
         text = self.LIB.read_text()
         for needle in ("brew install --cask wine-stable",
-                       "gcenx/wine/wine-crossover",
                        "python-3.11.9-embed-amd64.zip",
                        "get-pip.py",
                        "mt5setup.exe"):
@@ -641,11 +640,13 @@ class TestInstallerNeverHidesAFailure:
                 f"link the command-line binary")
 
     def test_wine_fallbacks_are_ordered(self):
-        text = self.LIB.read_text()
-        first = text.index('"Installing wine-stable"')
-        refresh = text.index('"Refreshing Homebrew"')
-        alt = text.index('"Installing wine-crossover')
-        assert first < refresh < alt
+        """WineHQ's own package first; Homebrew only if that fails."""
+        body = self.LIB.read_text().split("ensure_wine() {")[1].split("\n}\n")[0]
+        direct = body.index("install_wine_from_winehq")
+        brew = body.index('"Installing wine-stable with Homebrew (fallback)"')
+        assert direct < brew
+        assert "wine-crossover" not in body, "that tap no longer ships it"
+        assert "gcenx" not in body
 
     def test_wine_helpers_are_not_assumed_to_be_on_path(self):
         for line in self._code_lines():
@@ -674,6 +675,116 @@ class TestInstallerNeverHidesAFailure:
                                                  "MINTEL_HOME": "/tmp/x"})
         assert result.stdout == "C:\\Program Files\\MetaTrader 5\\terminal64.exe", \
             (result.stdout, result.stderr)
+
+
+class TestWineComesFromWineHQ:
+    """Run four on the real Mac: Homebrew's wine-stable cask is disabled
+    ("does not pass the macOS Gatekeeper check", 2026-09-01) and the gcenx tap
+    no longer carries wine-crossover. The package Homebrew used to install is
+    still published by WineHQ's macOS maintainer, so fetch that directly.
+    """
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _code_lines(self):
+        return [l for l in self.LIB.read_text().splitlines()
+                if not l.strip().startswith("#")]
+
+    def _run(self, snippet, tmp_path, extra_env=None):
+        env = dict(os.environ)
+        env["MINTEL_HOME"] = str(tmp_path)
+        env.update(extra_env or {})
+        return subprocess.run(
+            ["bash", "-c", f'set -uo pipefail; source "{self.LIB}"; {snippet}'],
+            capture_output=True, text=True, env=env, timeout=120)
+
+    def test_the_package_is_pinned_by_version_and_checksum(self):
+        text = self.LIB.read_text()
+        assert 'WINEHQ_VERSION="11.0_1"' in text
+        import re
+        m = re.search(r'WINEHQ_SHA256="\$\{MINTEL_WINEHQ_SHA256:-([0-9a-f]{64})\}"', text)
+        assert m, "a full SHA-256 must be pinned"
+        assert ('WINEHQ_URL="${MINTEL_WINEHQ_URL:-https://github.com/Gcenx/macOS_Wine_builds/releases/'
+                'download/${WINEHQ_VERSION}/wine-stable-${WINEHQ_VERSION}-osx64.tar.xz}"') in text
+        # this is exactly what Homebrew's cask pointed at before it was disabled
+        assert "b50dc50ec7f41d58b115a6b685d4d1315ba3c797bd3aa0f49213f2703cb82388" in text
+
+    def test_no_homebrew_tap_is_relied_on(self):
+        for line in self._code_lines():
+            assert "gcenx" not in line, line
+            assert "brew tap" not in line, line
+            assert "brew trust" not in line, line
+
+    def test_our_copy_is_preferred_over_applications(self):
+        body = self.LIB.read_text().split("find_wine() {")[1].split("\n}\n")[0]
+        assert body.index("$WINE_APP/Contents/Resources/wine/bin/wine") \
+            < body.index("/Applications/Wine Stable.app")
+
+    def test_sha256_helper(self, tmp_path):
+        import hashlib
+        f = tmp_path / "blob"
+        f.write_bytes(b"hello wine\n" * 1000)
+        r = self._run(f'sha256_of "{f}"', tmp_path)
+        assert r.stdout.strip() == hashlib.sha256(f.read_bytes()).hexdigest(), r.stderr
+
+    def _fake_package(self, tmp_path):
+        """A tar.xz laid out like WineHQ's: Wine Stable.app/.../bin/wine."""
+        import tarfile
+        src = tmp_path / "src"
+        binpath = src / "Wine Stable.app" / "Contents" / "Resources" / "wine" / "bin"
+        binpath.mkdir(parents=True)
+        for name in ("wine", "wineboot", "wineserver", "winepath"):
+            exe = binpath / name
+            exe.write_text("#!/bin/sh\necho fake-wine \"$@\"\n")
+            exe.chmod(0o755)
+        pkg = tmp_path / "pkg.tar.xz"
+        with tarfile.open(pkg, "w:xz") as tf:
+            tf.add(src / "Wine Stable.app", arcname="Wine Stable.app")
+        return pkg
+
+    def test_a_wrong_checksum_is_refused_and_the_file_removed(self, tmp_path):
+        import hashlib
+        pkg = self._fake_package(tmp_path)
+        home = tmp_path / "home"
+        home.mkdir()
+        wrong = hashlib.sha256(b"not it").hexdigest()
+        r = self._run('install_wine_from_winehq; echo "rc=$?"; '
+                      'find_wine && echo "found=$WINE_BIN" || echo "found=none"',
+                      home, {"MINTEL_WINEHQ_URL": f"file://{pkg}", "MINTEL_WINEHQ_SHA256": wrong})
+        assert "rc=1" in r.stdout, (r.stdout, r.stderr)
+        assert "did not match its checksum" in r.stdout
+        assert not list(home.glob("wine-stable-*.tar.xz")), "a bad download must not linger"
+        assert not (home / "Wine Stable.app").exists()
+        assert "found=none" in r.stdout
+
+    def test_a_good_package_is_unpacked_and_found(self, tmp_path):
+        import hashlib
+        pkg = self._fake_package(tmp_path)
+        home = tmp_path / "home"
+        home.mkdir()
+        sha = hashlib.sha256(pkg.read_bytes()).hexdigest()
+        r = self._run('install_wine_from_winehq; echo "rc=$?"; '
+                      'find_wine && echo "found=$WINE_BIN"; '
+                      'echo "dir=$WINE_DIR"; echo "ws=$(wine_tool wineserver)"',
+                      home, {"MINTEL_WINEHQ_URL": f"file://{pkg}", "MINTEL_WINEHQ_SHA256": sha})
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "SHA-256 matches" in r.stdout
+        wine = home / "Wine Stable.app" / "Contents" / "Resources" / "wine" / "bin" / "wine"
+        assert wine.exists() and os.access(wine, os.X_OK)
+        assert f"found={wine}" in r.stdout
+        assert f"ws={wine.parent / 'wineserver'}" in r.stdout
+        # second run: the verified download is kept, not fetched again
+        r2 = self._run('install_wine_from_winehq; echo "rc=$?"', home,
+                       {"MINTEL_WINEHQ_URL": "file:///nonexistent/should-not-be-fetched",
+                        "MINTEL_WINEHQ_SHA256": sha})
+        assert "rc=0" in r2.stdout, (r2.stdout, r2.stderr)
+
+    def test_the_download_step_is_visible_and_retried(self):
+        body = self.LIB.read_text().split("install_wine_from_winehq() {")[1].split("\n}\n")[0]
+        assert 'run_logged "Downloading Wine' in body
+        assert "--retry 3" in body
+        assert 'run_logged "Unpacking Wine' in body
+        assert "xattr -dr com.apple.quarantine" in body
 
 
 class TestWineInstallOnCurrentHomebrew:

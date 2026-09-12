@@ -202,6 +202,15 @@ make_venv() {
 # ------------------------------------------------------------------- wine ----
 WINE_BIN=""
 WINE_DIR=""
+# The official WineHQ build for macOS, published on GitHub by its maintainer
+# (this is the exact package Homebrew's wine-stable cask installed). Pinned
+# by version and checksum so what runs is exactly what was tested.
+# (MINTEL_WINEHQ_URL / MINTEL_WINEHQ_SHA256 let an operator, or a test, pin a
+# different build on purpose. Both must be set together.)
+WINEHQ_VERSION="11.0_1"
+WINEHQ_SHA256="${MINTEL_WINEHQ_SHA256:-b50dc50ec7f41d58b115a6b685d4d1315ba3c797bd3aa0f49213f2703cb82388}"
+WINEHQ_URL="${MINTEL_WINEHQ_URL:-https://github.com/Gcenx/macOS_Wine_builds/releases/download/${WINEHQ_VERSION}/wine-stable-${WINEHQ_VERSION}-osx64.tar.xz}"
+WINE_APP="$MINTEL_HOME/Wine Stable.app"
 
 # find_wine - locate a usable wine binary. Checks PATH first, then the app
 # bundles the Homebrew casks install, because a cask can succeed in installing
@@ -212,6 +221,7 @@ find_wine() {
   for candidate in \
       "$(command -v wine64 2>/dev/null || true)" \
       "$(command -v wine 2>/dev/null || true)" \
+      "$WINE_APP/Contents/Resources/wine/bin/wine" \
       "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine64" \
       "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine" \
       "/Applications/Wine Crossover.app/Contents/Resources/wine/bin/wine64" \
@@ -254,6 +264,54 @@ wine_wait() {
   fi
 }
 
+# SHA-256 of a file, with whichever tool this Mac (or a test box) has.
+sha256_of() {
+  local f
+  f="${1:-}"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$f" | cut -d' ' -f1
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$f" | cut -d' ' -f1
+  else
+    openssl dgst -sha256 "$f" | sed 's/^.*= //'
+  fi
+}
+
+# Install Wine from WineHQ's own macOS package, into the bot's folder.
+# No Homebrew, no admin password, no Gatekeeper: Homebrew disabled its Wine
+# cask on 2026-09-01 (it no longer passes Homebrew's notarization policy),
+# but the package itself is unchanged and runs fine once unpacked here.
+install_wine_from_winehq() {
+  local tarball
+  local got
+  tarball="$MINTEL_HOME/wine-stable-${WINEHQ_VERSION}.tar.xz"
+  if [[ -f "$tarball" ]] && [[ "$(sha256_of "$tarball")" != "$WINEHQ_SHA256" ]]; then
+    rm -f "$tarball"
+  fi
+  if [[ ! -f "$tarball" ]]; then
+    run_logged "Downloading Wine ${WINEHQ_VERSION} from WineHQ (about 185 MB)" \
+      curl -fL --retry 3 --retry-delay 5 -o "$tarball" "$WINEHQ_URL" \
+      || { rm -f "$tarball"; return 1; }
+  fi
+  got="$(sha256_of "$tarball")"
+  if [[ "$got" != "$WINEHQ_SHA256" ]]; then
+    # Never run a download that is not the one that was tested.
+    bad "The Wine download did not match its checksum (got $got). Not using it."
+    rm -f "$tarball"
+    return 1
+  fi
+  good "Wine download verified (SHA-256 matches)"
+  rm -rf "$WINE_APP"
+  run_logged "Unpacking Wine into $MINTEL_HOME" tar -xJf "$tarball" -C "$MINTEL_HOME" \
+    || return 1
+  [[ -x "$WINE_APP/Contents/Resources/wine/bin/wine" ]] || {
+    bad "Wine unpacked but $WINE_APP/Contents/Resources/wine/bin/wine is missing."
+    return 1
+  }
+  xattr -dr com.apple.quarantine "$WINE_APP" >/dev/null 2>&1 || true
+  return 0
+}
+
 # Gatekeeper refuses to run a freshly downloaded app until its quarantine
 # flag is cleared. Homebrew used to do this for us with --no-quarantine; new
 # versions no longer accept the flag, so it is done here for whichever Wine
@@ -270,7 +328,7 @@ unquarantine_wine() {
       xattr -dr com.apple.quarantine "$bundle" >/dev/null 2>&1 || true
       ;;
   esac
-  for bundle in "/Applications/Wine Stable.app" "/Applications/Wine Crossover.app"; do
+  for bundle in "$WINE_APP" "/Applications/Wine Stable.app" "/Applications/Wine Crossover.app"; do
     [[ -d "$bundle" ]] && { xattr -dr com.apple.quarantine "$bundle" >/dev/null 2>&1 || true; }
   done
   return 0
@@ -281,25 +339,15 @@ ensure_wine() {
   if find_wine; then
     good "Wine is installed: $WINE_BIN"
   else
-    ensure_homebrew || return 1
     say "    Installing Wine. This is a large download; be patient."
-    say "    ${DIM}macOS may ask for your password. That is the installer, not the bot.${RESET}"
-    # Known-good options in order. wine-stable is the standard build; if the
-    # local Homebrew is too old to know it, refresh and retry; wine-crossover
-    # is the community build most often used for MetaTrader on Apple Silicon.
-    # No --no-quarantine: current Homebrew rejects the flag outright, so every
-    # attempt would fail before downloading anything. Quarantine is removed
-    # afterwards with xattr instead, which works on every Homebrew.
-    run_logged "Installing wine-stable" \
-      brew install --cask wine-stable || true
-    if ! find_wine; then
-      run_logged "Refreshing Homebrew" brew update || true
-      run_logged "Installing wine-stable (second attempt)" \
+    # WineHQ's own package first: it needs no Homebrew and no password.
+    # Homebrew's wine-stable cask is the same package but has been disabled
+    # there since 2026-09-01, so it is only a fallback in case that changes.
+    install_wine_from_winehq || true
+    if ! find_wine && ensure_homebrew; then
+      say "    ${DIM}macOS may ask for your password. That is the installer, not the bot.${RESET}"
+      run_logged "Installing wine-stable with Homebrew (fallback)" \
         brew install --cask wine-stable || true
-    fi
-    if ! find_wine; then
-      run_logged "Installing wine-crossover (alternative build)" \
-        brew install --cask gcenx/wine/wine-crossover || true
     fi
     if find_wine; then
       good "Wine installed: $WINE_BIN"
