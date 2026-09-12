@@ -1,0 +1,9 @@
+# Production dependencies for the Windows VPS.
+#
+# MetaTrader5 is Windows-only.  The intelligence layer itself needs nothing
+# beyond the standard library, which is deliberate: every extra dependency is
+# another thing that can break at 3am on a machine nobody is watching.
+MetaTrader5>=5.0.45 ; sys_platform == "win32"
+psutil>=5.9                 # memory and process checks (optional but useful)
+scikit-learn>=1.3           # optional: the calibrated meta-label model
+numpy>=1.24                 # required by scikit-learn

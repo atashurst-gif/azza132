@@ -1,0 +1,158 @@
+
+==========================================================================
+  PERFORMANCE VALIDATION - SYNTHETIC DATA
+==========================================================================
+  instruments : EURUSD, GBPUSD, GER40, USDJPY, XAUUSD
+  window      : 2026-03-23 16:00:00+00:00 to 2026-03-31 23:59:00+00:00
+  bars        : 12000 per instrument
+  costs       : spread + slippage + commission, charged per fill
+
+  NOTE: this data was generated, not observed. The run below
+  verifies that the machinery works end to end. It says
+  NOTHING about whether the strategy has an edge. For that,
+  re-run with --csv using real broker history.
+
+  CONSERVATIVE
+    aggression:CONSERVATIVE: 101 trades over 8.3 days (12.12/day), 50.5% win rate, expectancy +0.308R, net +791.74, max drawdown 1.66% - AFTER spread, slippage and commission.
+      trades/day 12.121   profit factor 1.4056412575084358   Sharpe 8.806   Sortino 35.572
+      avg win 27.8   avg loss -20.17   largest win 74.97   largest loss -40.89
+      MFE 1.048R   MAE 0.506R   MFE captured 35.32%   commission 121.17
+
+  NORMAL
+    aggression:NORMAL: 101 trades over 8.3 days (12.12/day), 50.5% win rate, expectancy +0.306R, net +1454.49, max drawdown 2.50% - AFTER spread, slippage and commission.
+      trades/day 12.121   profit factor 1.4554427692875378   Sharpe 9.427   Sortino 45.5
+      avg win 47.65   avg loss -33.39   largest win 133.28   largest loss -66.27
+      MFE 1.048R   MAE 0.506R   MFE captured 35.26%   commission 197.12
+
+  AGGRESSIVE
+    aggression:AGGRESSIVE: 101 trades over 8.3 days (12.12/day), 50.5% win rate, expectancy +0.306R, net +1479.37, max drawdown 2.53% - AFTER spread, slippage and commission.
+      trades/day 12.121   profit factor 1.4656632480089125   Sharpe 9.343   Sortino 44.018
+      avg win 47.55   avg loss -33.09   largest win 149.94   largest loss -66.27
+      MFE 1.048R   MAE 0.506R   MFE captured 35.25%   commission 198.17
+
+  MAXIMUM
+    aggression:MAXIMUM: 101 trades over 8.3 days (12.12/day), 50.5% win rate, expectancy +0.306R, net +1496.33, max drawdown 2.52% - AFTER spread, slippage and commission.
+      trades/day 12.121   profit factor 1.470678455593734   Sharpe 9.059   Sortino 42.564
+      avg win 48.04   avg loss -33.32   largest win 183.26   largest loss -75.4
+      MFE 1.048R   MAE 0.506R   MFE captured 35.26%   commission 199.01
+
+==========================================================================
+  AGGRESSION ANALYSIS
+==========================================================================
+  setting        trades   win%    expR        net   maxDD%  Sharpe     PF
+  -----------------------------------------------------------------------
+  CONSERVATIVE      101   50.5   0.308     791.74     1.66    8.81   1.41
+  NORMAL            101   50.5   0.306    1454.49     2.50    9.43   1.46
+  AGGRESSIVE        101   50.5   0.306    1479.37     2.53    9.34   1.47
+  MAXIMUM           101   50.5   0.306    1496.33     2.52    9.06   1.47
+
+  Aggression changes only how far risk climbs toward your ceiling
+  as calibrated confidence rises. It never raises the ceiling, and
+  it never disables a circuit breaker: the same trades are taken,
+  at different sizes.
+  Trade count identical across settings: True
+
+==========================================================================
+  OVER-FITTING CHECKS
+==========================================================================
+  trials recorded in the ledger : 4
+  observed Sharpe               : 9.4267
+  Sharpe expected from luck     : 4.7269
+  deflated Sharpe               : 0.8662
+  verdict                       : NOT distinguishable from luck given the number of trials run
+  probabilistic Sharpe          : 0.9869
+
+  MONTE CARLO
+    same trades, reordered: median drawdown 2.76%, 95th percentile 4.35%, worst 6.92%
+    resampled trades      : 5th percentile equity 9977.96, median 10744.3, 95th 11631.2
+    chance of ending down : 6.5%
+
+  COST STRESS (does the result survive worse execution?)
+    1.0x cost -> net 717.91
+    1.5x cost -> net 619.35
+    2.0x cost -> net 520.79
+    3.0x cost -> net 323.67
+
+  PARAMETER STABILITY (plateau or a fitted spike?)
+    min reward:risk 1.0   ->  111 trades, expectancy +0.290R, net +1506.62
+    min reward:risk 1.15  ->  101 trades, expectancy +0.306R, net +1454.49
+    min reward:risk 1.3   ->   93 trades, expectancy +0.337R, net +1456.71
+    min reward:risk 1.6   ->   81 trades, expectancy +0.327R, net +1190.35
+    sits on a plateau - safe to ship
+
+  BY INSTRUMENT
+    GER40                                  33 trades  win  51.5%  expectancy  +0.256R  net     217.57
+    EURUSD                                 26 trades  win  53.8%  expectancy  +0.369R  net     260.25
+    GBPUSD                                 22 trades  win  59.1%  expectancy  +0.561R  net     396.93
+    XAUUSD                                 20 trades  win  35.0%  expectancy  +0.028R  net    -114.34
+
+  BY SESSION
+    quiet hours                            29 trades  win  58.6%  expectancy  +0.613R  net     517.28
+    ASIA                                   23 trades  win  43.5%  expectancy  +0.225R  net      60.26
+    NEWYORK,US_CASH                        20 trades  win  35.0%  expectancy  -0.092R  net    -130.57
+    LONDON                                 13 trades  win  61.5%  expectancy  +0.320R  net     131.52
+    LONDON,NEWYORK,US_CASH,LONDON_NY_O      9 trades  win  55.6%  expectancy  +0.585R  net     191.84
+    NEWYORK                                 3 trades  win  66.7%  expectancy  +0.230R  net      -2.54
+    LONDON,NEWYORK,LONDON_NY_OVERLAP        3 trades  win  66.7%  expectancy  +0.152R  net      11.29
+    unknown                                 1 trades  win   0.0%  expectancy  -0.739R  net     -18.66
+
+  BY MARKET REGIME
+    TREND                                  96 trades  win  49.0%  expectancy  +0.290R  net     642.18
+    SQUEEZE                                 3 trades  win  66.7%  expectancy  -0.070R  net     -13.98
+    UNCLEAR                                 1 trades  win 100.0%  expectancy  +1.410R  net      67.40
+    HIGH_VOL                                1 trades  win 100.0%  expectancy  +1.865R  net      64.82
+
+  BY TACTIC
+    MOMENTUM_CONTINUATION                  73 trades  win  54.8%  expectancy  +0.419R  net     807.80
+    LIQUIDITY_SWEEP_REVERSAL               11 trades  win  27.3%  expectancy  -0.082R  net     -74.08
+    SESSION_EXPANSION                       8 trades  win  50.0%  expectancy  +0.276R  net     107.72
+    BREAKOUT_RETEST                         6 trades  win  66.7%  expectancy  +0.252R  net      28.82
+    TREND_PULLBACK                          2 trades  win   0.0%  expectancy  -0.718R  net     -54.21
+    BREAKOUT_ACCEPTANCE                     1 trades  win   0.0%  expectancy  -1.000R  net     -55.62
+
+  AROUND NEWS
+    no live release                       101 trades  win  50.5%  expectancy  +0.306R  net     760.42
+
+==========================================================================
+  HONESTY STATEMENT
+==========================================================================
+  data_kind: SYNTHETIC
+  news_aware: False
+  news_note: no calendar data was supplied, so this run is NOT news-aware and no news-based conclusion can be drawn from it
+  costs_included: spread, slippage and commission were charged by the replay broker; every figure above is net
+  not_modelled: queue position, liquidity-driven partial fills, and gaps beyond those present in the data
+  caveats: ['results on SYNTHETIC data verify mechanics only - they say nothing about whether an edge exists']
+  news_note: no calendar data was supplied, so this run is NOT news-aware and no news-based conclusion can be drawn from it
+
+  full detail written to data/validation.json
+
+--------------------------------------------------------------------------
+WHAT THIS FILE IS, AND WHAT IT IS NOT
+--------------------------------------------------------------------------
+This is the output of `python tools/validate.py` run on data produced by the
+built-in price generator, not on observed market data.
+
+It therefore demonstrates exactly one thing: that the whole machine runs
+end to end - discovery, multi-timeframe analysis, regime classification,
+tactic routing, scoring, sizing within the configured bounds, order safety,
+FlowLock management, journalling, and the statistics that keep a backtest
+honest - and that it produces coherent, internally consistent numbers after
+spread, slippage and commission.
+
+It says NOTHING about whether the system has a real edge. A price process we
+invented cannot answer that question, and the deflated Sharpe figure above
+says so explicitly.
+
+To get a result that means something, export real M1 history from your broker
+(MT5: Tools -> History Centre, or right-click a chart -> Save As) and run:
+
+    python tools/validate.py --csv EURUSD=eurusd_m1.csv GBPUSD=gbpusd_m1.csv \
+                             --calendar-csv calendar.csv
+
+The calendar CSV comes from the bot's own archive:
+
+    python -c "from mintel.news.calendar_store import CalendarStore; \
+               CalendarStore('data/calendar.sqlite').export_csv('calendar.csv')"
+
+Only with real data AND real calendar coverage does the report stop saying
+"news_aware: False" and start being evidence rather than a smoke test.
