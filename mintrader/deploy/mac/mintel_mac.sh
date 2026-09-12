@@ -203,14 +203,21 @@ make_venv() {
 WINE_BIN=""
 WINE_DIR=""
 # The official WineHQ build for macOS, published on GitHub by its maintainer
-# (this is the exact package Homebrew's wine-stable cask installed). Pinned
-# by version and checksum so what runs is exactly what was tested.
+# (the same packages Homebrew's wine casks installed). Pinned by version and
+# checksum so what runs is exactly what was tested.
+#
+# Why the development build and not "stable": MetaTrader's installer and
+# terminal refuse to run on Wine 10.3 through 11.0 ("A debugger has been found
+# running in your system"); 11.0 is the current stable. The 11.x development
+# releases carry the fix.
 # (MINTEL_WINEHQ_URL / MINTEL_WINEHQ_SHA256 let an operator, or a test, pin a
 # different build on purpose. Both must be set together.)
-WINEHQ_VERSION="11.0_1"
-WINEHQ_SHA256="${MINTEL_WINEHQ_SHA256:-b50dc50ec7f41d58b115a6b685d4d1315ba3c797bd3aa0f49213f2703cb82388}"
-WINEHQ_URL="${MINTEL_WINEHQ_URL:-https://github.com/Gcenx/macOS_Wine_builds/releases/download/${WINEHQ_VERSION}/wine-stable-${WINEHQ_VERSION}-osx64.tar.xz}"
-WINE_APP="$MINTEL_HOME/Wine Stable.app"
+WINEHQ_VERSION="11.17"
+WINEHQ_CHANNEL="devel"
+WINEHQ_APP="Wine Devel.app"
+WINEHQ_SHA256="${MINTEL_WINEHQ_SHA256:-c2b3a8274dbc594deaa64e40469b607cbc4aa8ef5656dec4c5f6f3dac0da770c}"
+WINEHQ_URL="${MINTEL_WINEHQ_URL:-https://github.com/Gcenx/macOS_Wine_builds/releases/download/${WINEHQ_VERSION}/wine-${WINEHQ_CHANNEL}-${WINEHQ_VERSION}-osx64.tar.xz}"
+WINE_APP="$MINTEL_HOME/$WINEHQ_APP"
 
 # find_wine - locate a usable wine binary. Checks PATH first, then the app
 # bundles the Homebrew casks install, because a cask can succeed in installing
@@ -219,9 +226,9 @@ find_wine() {
   local candidate
   local real
   for candidate in \
+      "$WINE_APP/Contents/Resources/wine/bin/wine" \
       "$(command -v wine64 2>/dev/null || true)" \
       "$(command -v wine 2>/dev/null || true)" \
-      "$WINE_APP/Contents/Resources/wine/bin/wine" \
       "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine64" \
       "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine" \
       "/Applications/Wine Crossover.app/Contents/Resources/wine/bin/wine64" \
@@ -284,7 +291,7 @@ sha256_of() {
 install_wine_from_winehq() {
   local tarball
   local got
-  tarball="$MINTEL_HOME/wine-stable-${WINEHQ_VERSION}.tar.xz"
+  tarball="$MINTEL_HOME/wine-${WINEHQ_CHANNEL}-${WINEHQ_VERSION}.tar.xz"
   if [[ -f "$tarball" ]] && [[ "$(sha256_of "$tarball")" != "$WINEHQ_SHA256" ]]; then
     rm -f "$tarball"
   fi
@@ -309,7 +316,57 @@ install_wine_from_winehq() {
     return 1
   }
   xattr -dr com.apple.quarantine "$WINE_APP" >/dev/null 2>&1 || true
+  # Older managed copies and downloads are dead weight now.
+  local other
+  for other in "$MINTEL_HOME"/Wine\ *.app "$MINTEL_HOME"/wine-*.tar.xz; do
+    [[ -e "$other" ]] || continue
+    [[ "$other" == "$WINE_APP" || "$other" == "$tarball" ]] && continue
+    rm -rf "$other"
+  done
   return 0
+}
+
+# Version of the Wine copy the installer manages ("" if there is none).
+managed_wine_version() {
+  local plist
+  plist="$WINE_APP/Contents/Info.plist"
+  [[ -f "$plist" ]] || return 0
+  # the string on the line after the CFBundleShortVersionString key
+  sed -n '/CFBundleShortVersionString/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' "$plist"
+}
+
+# Install or upgrade the managed Wine copy so that it is exactly the pinned
+# version. Returns 0 when a usable Wine is available afterwards.
+ensure_wine_package() {
+  local have
+  have="$(managed_wine_version)"
+  if [[ -n "$have" && "$have" != "$WINEHQ_VERSION" ]]; then
+    say "    Wine $have is installed but MetaTrader needs Wine $WINEHQ_VERSION. Replacing it."
+    install_wine_from_winehq || true
+  elif [[ -z "$have" ]] && ! find_wine; then
+    say "    Installing Wine. This is a large download; be patient."
+    install_wine_from_winehq || true
+  fi
+  WINE_BIN=""
+  find_wine
+}
+
+# Registry settings MetaTrader needs. Re-applied on every start because a
+# Wine update rewrites its defaults.
+#  - Windows 11: what MetaTrader's installer expects to see.
+#  - No JIT debugger: MetaTrader's anti-debugging check treats a registered
+#    debugger as one that is running, and an unattended bot has no use for a
+#    crash-handler window anyway.
+configure_prefix_for_mt5() {
+  local w
+  w="$(wine_bin)"
+  [[ -n "$w" ]] || return 0
+  run_logged "Telling Wine to present itself as Windows 11" \
+    "$w" reg add 'HKCU\Software\Wine' /v Version /t REG_SZ /d win11 /f || true
+  run_logged "Removing Wine's crash debugger hook (MetaTrader mistakes it for a debugger)" \
+    "$w" reg delete 'HKLM\Software\Microsoft\Windows NT\CurrentVersion\AeDebug' /v Debugger /f || true
+  "$w" reg delete 'HKLM\Software\Wow6432Node\Microsoft\Windows NT\CurrentVersion\AeDebug' /v Debugger /f >/dev/null 2>&1 || true
+  wine_wait
 }
 
 # Gatekeeper refuses to run a freshly downloaded app until its quarantine
@@ -336,29 +393,29 @@ unquarantine_wine() {
 
 ensure_wine() {
   step "Setting up Wine (this is what lets MetaTrader 5 run on a Mac)"
+  # WineHQ's own package: no Homebrew and no password. (Homebrew's wine casks
+  # are disabled since 2026-09-01, so Homebrew is only a fallback if that
+  # download fails and it happens to be available.)
+  ensure_wine_package || true
+  if ! find_wine && ensure_homebrew; then
+    say "    ${DIM}macOS may ask for your password. That is the installer, not the bot.${RESET}"
+    run_logged "Installing wine-stable with Homebrew (fallback)" \
+      brew install --cask wine-stable || true
+    find_wine || true
+  fi
   if find_wine; then
     good "Wine is installed: $WINE_BIN"
   else
-    say "    Installing Wine. This is a large download; be patient."
-    # WineHQ's own package first: it needs no Homebrew and no password.
-    # Homebrew's wine-stable cask is the same package but has been disabled
-    # there since 2026-09-01, so it is only a fallback in case that changes.
-    install_wine_from_winehq || true
-    if ! find_wine && ensure_homebrew; then
-      say "    ${DIM}macOS may ask for your password. That is the installer, not the bot.${RESET}"
-      run_logged "Installing wine-stable with Homebrew (fallback)" \
-        brew install --cask wine-stable || true
-    fi
-    if find_wine; then
-      good "Wine installed: $WINE_BIN"
-    else
-      bad "Wine could not be installed. The output above says why; the full log is $SETUP_LOG"
-      return 1
-    fi
+    bad "Wine could not be installed. The output above says why; the full log is $SETUP_LOG"
+    return 1
   fi
   unquarantine_wine
   export WINEPREFIX="$WINE_PREFIX"
   export WINEDEBUG="-all"
+  local stamp
+  local made_with
+  stamp="$WINE_PREFIX/.mintel-wine-version"
+  made_with="$(cat "$stamp" 2>/dev/null || true)"
   if [[ ! -d "$WINE_PREFIX/drive_c" ]]; then
     say "    ${DIM}Creating the Windows environment (first time only)...${RESET}"
     # wineboot is a Wine builtin, so it runs through wine itself rather than
@@ -366,13 +423,20 @@ ensure_wine() {
     WINEDLLOVERRIDES="mscoree,mshtml=" run_logged "Creating the Windows environment" \
       "$WINE_BIN" wineboot --init || true
     wine_wait
+  elif [[ "$made_with" != "$WINEHQ_VERSION" ]]; then
+    # A different Wine now owns this environment: let it update its files.
+    WINEDLLOVERRIDES="mscoree,mshtml=" run_logged "Updating the Windows environment for Wine $WINEHQ_VERSION" \
+      "$WINE_BIN" wineboot --update || true
+    wine_wait
   fi
   if [[ -d "$WINE_PREFIX/drive_c" ]]; then
+    printf '%s\n' "$WINEHQ_VERSION" > "$stamp"
     good "Windows environment ready at $WINE_PREFIX"
   else
     bad "The Windows environment could not be created. See $SETUP_LOG"
     return 1
   fi
+  configure_prefix_for_mt5
 }
 
 WINE_PY='C:\Python311\python.exe'

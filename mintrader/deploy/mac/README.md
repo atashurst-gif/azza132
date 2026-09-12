@@ -38,7 +38,7 @@ system-wide except Homebrew (for Python):
   data/              your settings, the trade journal, the news archive
   logs/              what it has been doing
   venv/              its own Python, separate from any Python you use
-  Wine Stable.app/   WineHQ's official macOS build of Wine (checksum-verified)
+  Wine Devel.app/    WineHQ's official macOS build of Wine (checksum-verified)
   wine/              a self-contained Windows environment for MetaTrader 5
 ```
 
@@ -156,7 +156,7 @@ No order can reach a broker in either case.
 | Symptom | What to do |
 |---|---|
 | Icon will not open | right-click → Open → Open |
-| "Wine could not be installed" | The output above that line says why (usually the download). Double-click the icon again; it resumes. Wine is WineHQ's official macOS package, downloaded from `github.com/Gcenx/macOS_Wine_builds` and checksum-verified, unpacked to `~/MarketBot/Wine Stable.app`. Homebrew's `wine-stable` cask is disabled (since 2026-09-01) and is only tried as a fallback. |
+| "Wine could not be installed" | The output above that line says why (usually the download). Double-click the icon again; it resumes. Wine is WineHQ's official macOS package, downloaded from `github.com/Gcenx/macOS_Wine_builds` and checksum-verified, unpacked to `~/MarketBot/Wine Devel.app`. (The development build, not 11.0 stable: MetaTrader refuses Wine 10.3–11.0 with "A debugger has been found".) Homebrew's `wine-stable` cask is disabled (since 2026-09-01) and is only tried as a fallback. |
 | MT5 window never appears | `WINEPREFIX=~/MarketBot/wine wine ~/MarketBot/wine/drive_c/Program\ Files/MetaTrader\ 5/terminal64.exe` |
 | Status page says SAFE MODE | it tells you why in plain English; usually MT5 is closed or logged out |
 | Nothing trades | normal. Check the "what it is looking at" list — it shows why each idea is being passed over |

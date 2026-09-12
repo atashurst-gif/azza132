@@ -642,7 +642,7 @@ class TestInstallerNeverHidesAFailure:
     def test_wine_fallbacks_are_ordered(self):
         """WineHQ's own package first; Homebrew only if that fails."""
         body = self.LIB.read_text().split("ensure_wine() {")[1].split("\n}\n")[0]
-        direct = body.index("install_wine_from_winehq")
+        direct = body.index("ensure_wine_package")
         brew = body.index('"Installing wine-stable with Homebrew (fallback)"')
         assert direct < brew
         assert "wine-crossover" not in body, "that tap no longer ships it"
@@ -737,14 +737,17 @@ class TestWineComesFromWineHQ:
 
     def test_the_package_is_pinned_by_version_and_checksum(self):
         text = self.LIB.read_text()
-        assert 'WINEHQ_VERSION="11.0_1"' in text
+        # 11.17 devel, not 11.0 stable: MetaTrader refuses Wine 10.3-11.0
+        # ("A debugger has been found running in your system").
+        assert 'WINEHQ_VERSION="11.17"' in text
+        assert 'WINEHQ_CHANNEL="devel"' in text
+        assert 'WINEHQ_APP="Wine Devel.app"' in text
         import re
         m = re.search(r'WINEHQ_SHA256="\$\{MINTEL_WINEHQ_SHA256:-([0-9a-f]{64})\}"', text)
         assert m, "a full SHA-256 must be pinned"
+        assert m.group(1) == "c2b3a8274dbc594deaa64e40469b607cbc4aa8ef5656dec4c5f6f3dac0da770c"
         assert ('WINEHQ_URL="${MINTEL_WINEHQ_URL:-https://github.com/Gcenx/macOS_Wine_builds/releases/'
-                'download/${WINEHQ_VERSION}/wine-stable-${WINEHQ_VERSION}-osx64.tar.xz}"') in text
-        # this is exactly what Homebrew's cask pointed at before it was disabled
-        assert "b50dc50ec7f41d58b115a6b685d4d1315ba3c797bd3aa0f49213f2703cb82388" in text
+                'download/${WINEHQ_VERSION}/wine-${WINEHQ_CHANNEL}-${WINEHQ_VERSION}-osx64.tar.xz}"') in text
 
     def test_no_homebrew_tap_is_relied_on(self):
         for line in self._code_lines():
@@ -764,19 +767,29 @@ class TestWineComesFromWineHQ:
         r = self._run(f'sha256_of "{f}"', tmp_path)
         assert r.stdout.strip() == hashlib.sha256(f.read_bytes()).hexdigest(), r.stderr
 
-    def _fake_package(self, tmp_path):
-        """A tar.xz laid out like WineHQ's: Wine Stable.app/.../bin/wine."""
-        import tarfile
-        src = tmp_path / "src"
-        binpath = src / "Wine Stable.app" / "Contents" / "Resources" / "wine" / "bin"
+    PLIST = ('<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>\n'
+             '\t<key>CFBundleShortVersionString</key>\n\t<string>{v}</string>\n'
+             '\t<key>LSMinimumSystemVersion</key>\n\t<string>10.15</string>\n'
+             '</dict></plist>\n')
+
+    def _fake_bundle(self, where, app="Wine Devel.app", version="11.17"):
+        """An app laid out like WineHQ's: <app>/Contents/Resources/wine/bin/wine."""
+        binpath = where / app / "Contents" / "Resources" / "wine" / "bin"
         binpath.mkdir(parents=True)
+        (where / app / "Contents" / "Info.plist").write_text(self.PLIST.format(v=version))
         for name in ("wine", "wineboot", "wineserver", "winepath"):
             exe = binpath / name
             exe.write_text("#!/bin/sh\necho fake-wine \"$@\"\n")
             exe.chmod(0o755)
+        return where / app
+
+    def _fake_package(self, tmp_path, version="11.17"):
+        import tarfile
+        src = tmp_path / "src"
+        self._fake_bundle(src, version=version)
         pkg = tmp_path / "pkg.tar.xz"
         with tarfile.open(pkg, "w:xz") as tf:
-            tf.add(src / "Wine Stable.app", arcname="Wine Stable.app")
+            tf.add(src / "Wine Devel.app", arcname="Wine Devel.app")
         return pkg
 
     def test_a_wrong_checksum_is_refused_and_the_file_removed(self, tmp_path):
@@ -791,7 +804,7 @@ class TestWineComesFromWineHQ:
         assert "rc=1" in r.stdout, (r.stdout, r.stderr)
         assert "did not match its checksum" in r.stdout
         assert not list(home.glob("wine-stable-*.tar.xz")), "a bad download must not linger"
-        assert not (home / "Wine Stable.app").exists()
+        assert not (home / "Wine Devel.app").exists()
         assert "found=none" in r.stdout
 
     def test_a_good_package_is_unpacked_and_found(self, tmp_path):
@@ -806,7 +819,7 @@ class TestWineComesFromWineHQ:
                       home, {"MINTEL_WINEHQ_URL": f"file://{pkg}", "MINTEL_WINEHQ_SHA256": sha})
         assert "rc=0" in r.stdout, (r.stdout, r.stderr)
         assert "SHA-256 matches" in r.stdout
-        wine = home / "Wine Stable.app" / "Contents" / "Resources" / "wine" / "bin" / "wine"
+        wine = home / "Wine Devel.app" / "Contents" / "Resources" / "wine" / "bin" / "wine"
         assert wine.exists() and os.access(wine, os.X_OK)
         assert f"found={wine}" in r.stdout
         assert f"ws={wine.parent / 'wineserver'}" in r.stdout
@@ -815,6 +828,61 @@ class TestWineComesFromWineHQ:
                        {"MINTEL_WINEHQ_URL": "file:///nonexistent/should-not-be-fetched",
                         "MINTEL_WINEHQ_SHA256": sha})
         assert "rc=0" in r2.stdout, (r2.stdout, r2.stderr)
+
+    def test_an_older_managed_wine_is_replaced(self, tmp_path):
+        """The real Mac had 11.0_1 (stable) installed by the previous version of
+        this installer; it must be swapped for the pinned build, not kept."""
+        import hashlib
+        pkg = self._fake_package(tmp_path)
+        home = tmp_path / "home"
+        home.mkdir()
+        old = self._fake_bundle(home, app="Wine Stable.app", version="11.0_1")
+        (home / "wine-stable-11.0_1.tar.xz").write_bytes(b"old download")
+        sha = hashlib.sha256(pkg.read_bytes()).hexdigest()
+        r = self._run('ensure_wine_package; echo "rc=$?"; echo "bin=$WINE_BIN"; '
+                      'echo "ver=$(managed_wine_version)"',
+                      home, {"MINTEL_WINEHQ_URL": f"file://{pkg}", "MINTEL_WINEHQ_SHA256": sha})
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "ver=11.17" in r.stdout
+        new = home / "Wine Devel.app" / "Contents" / "Resources" / "wine" / "bin" / "wine"
+        assert f"bin={new}" in r.stdout
+        assert not old.exists(), "the old copy must not linger"
+        assert not (home / "wine-stable-11.0_1.tar.xz").exists()
+
+    def test_a_managed_wine_of_the_wrong_version_is_replaced_too(self, tmp_path):
+        import hashlib
+        pkg = self._fake_package(tmp_path)
+        home = tmp_path / "home"
+        home.mkdir()
+        self._fake_bundle(home, version="11.6_1")
+        sha = hashlib.sha256(pkg.read_bytes()).hexdigest()
+        r = self._run('ensure_wine_package; echo "rc=$?"; echo "ver=$(managed_wine_version)"',
+                      home, {"MINTEL_WINEHQ_URL": f"file://{pkg}", "MINTEL_WINEHQ_SHA256": sha})
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "Replacing it" in r.stdout
+        assert "ver=11.17" in r.stdout
+
+    def test_a_current_managed_wine_is_kept_without_downloading(self, tmp_path):
+        home = tmp_path / "home"
+        home.mkdir()
+        self._fake_bundle(home)
+        r = self._run('ensure_wine_package; echo "rc=$?"; echo "bin=$WINE_BIN"', home,
+                      {"MINTEL_WINEHQ_URL": "file:///nonexistent/must-not-be-fetched",
+                       "MINTEL_WINEHQ_SHA256": "0" * 64})
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "Downloading" not in r.stdout
+        assert "Wine Devel.app/Contents/Resources/wine/bin/wine" in r.stdout
+
+    def test_the_prefix_is_updated_when_wine_changes_and_mt5_settings_applied(self):
+        text = self.LIB.read_text()
+        body = text.split("ensure_wine() {")[1].split("\n}\n")[0]
+        assert ".mintel-wine-version" in body
+        assert '"$WINE_BIN" wineboot --update' in body
+        assert body.rstrip().endswith("configure_prefix_for_mt5"), \
+            "registry settings go last, after any wineboot rewrote the defaults"
+        cfg = text.split("configure_prefix_for_mt5() {")[1].split("\n}\n")[0]
+        assert "/d win11" in cfg
+        assert "AeDebug' /v Debugger /f" in cfg
 
     def test_the_download_step_is_visible_and_retried(self):
         body = self.LIB.read_text().split("install_wine_from_winehq() {")[1].split("\n}\n")[0]
