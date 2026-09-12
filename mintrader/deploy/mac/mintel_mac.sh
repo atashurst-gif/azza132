@@ -13,6 +13,7 @@ DATA_DIR="$MINTEL_HOME/data"
 LOG_DIR="$MINTEL_HOME/logs"
 VENV_DIR="$MINTEL_HOME/venv"
 WINE_PREFIX="$MINTEL_HOME/wine"
+USING_EXISTING_MT5=""     # "yes" once use_existing_mt5 has taken over
 CONFIG="$DATA_DIR/config.json"
 SECRETS="$DATA_DIR/secrets.json"
 TOKEN_FILE="$DATA_DIR/bridge-token.txt"
@@ -263,12 +264,30 @@ wine_tool() {
 # wine_wait - let Wine finish whatever it is doing (installers run detached).
 wine_wait() {
   local ws
-  ws="$(wine_tool wineserver)"
-  if [[ -n "$ws" ]]; then
-    "$ws" -w 2>/dev/null || true
-  else
-    sleep 5
+  local pid
+  local waited
+  # A running MetaTrader keeps Wine's server alive on purpose, so waiting for
+  # it to go idle would wait forever. Give its files a moment and move on.
+  if [[ -n "$USING_EXISTING_MT5" ]] || pgrep -f "terminal64.exe" >/dev/null 2>&1; then
+    sleep 1
+    return 0
   fi
+  ws="$(wine_tool wineserver)"
+  if [[ -z "$ws" ]]; then
+    sleep 5
+    return 0
+  fi
+  # Bounded: never let a lingering Wine process hang the whole setup.
+  "$ws" -w 2>/dev/null &
+  pid=$!
+  waited=0
+  while kill -0 "$pid" 2>/dev/null && (( waited < 30 )); do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  return 0
 }
 
 # SHA-256 of a file, with whichever tool this Mac (or a test box) has.
@@ -397,7 +416,6 @@ unquarantine_wine() {
 # "debugger has been found" trouble newer Wine releases cause MetaTrader.
 MT5_APP="${MINTEL_MT5_APP:-/Applications/MetaTrader 5.app}"
 MT5_APP_PREFIX="${MINTEL_MT5_PREFIX:-$HOME/Library/Application Support/net.metaquotes.wine.metatrader5}"
-USING_EXISTING_MT5=""
 
 # Use the installed MetaTrader 5 app (Wine + environment) if it is complete.
 # Sets WINE_BIN/WINE_DIR/WINE_PREFIX/MT5_TERMINAL and returns 0 when it is.

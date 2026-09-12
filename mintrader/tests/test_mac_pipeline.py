@@ -714,6 +714,47 @@ class TestWindowsPythonHasATimeZoneDatabase:
         assert "--backend" in r.stdout
 
 
+class TestWaitingForWineNeverHangs:
+    """Run seven on the real Mac sat forever after installing the packages:
+    wine_wait ran `wineserver -w`, and with the user's MetaTrader open that
+    server never exits."""
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _fake_wineserver(self, tmp_path):
+        binpath = tmp_path / "wine" / "bin"
+        binpath.mkdir(parents=True)
+        ws = binpath / "wineserver"
+        ws.write_text("#!/bin/sh\nsleep 300\n")
+        ws.chmod(0o755)
+        wine = binpath / "wine"
+        wine.write_text("#!/bin/sh\ntrue\n")
+        wine.chmod(0o755)
+        return wine
+
+    def _run(self, snippet, tmp_path, extra=None):
+        env = {**os.environ, "MINTEL_HOME": str(tmp_path / "home"), **(extra or {})}
+        return subprocess.run(
+            ["bash", "-c", f'set -uo pipefail; source "{self.LIB}"; {snippet}'],
+            capture_output=True, text=True, env=env, timeout=120)
+
+    def test_bounded_even_if_the_server_never_exits(self, tmp_path):
+        wine = self._fake_wineserver(tmp_path)
+        t0 = time.monotonic()
+        r = self._run(f'WINE_BIN="{wine}"; WINE_DIR="{wine.parent}"; wine_wait; echo "rc=$?"', tmp_path)
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert time.monotonic() - t0 < 60
+        assert time.monotonic() - t0 >= 25, "it should still give a normal Wine time to settle"
+
+    def test_skipped_when_using_the_installed_metatrader(self, tmp_path):
+        wine = self._fake_wineserver(tmp_path)
+        t0 = time.monotonic()
+        r = self._run(f'WINE_BIN="{wine}"; WINE_DIR="{wine.parent}"; USING_EXISTING_MT5=yes; '
+                      'wine_wait; echo "rc=$?"', tmp_path)
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert time.monotonic() - t0 < 10
+
+
 class TestUsesTheMetaTraderAppAlreadyInstalled:
     """MetaQuotes' own MetaTrader 5 for Mac bundles a Wine that MetaTrader is
     tested against. When it is there, use it: no download, no installer, and
