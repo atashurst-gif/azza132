@@ -225,11 +225,13 @@ class HealthSupervisor:
     # -------------------------------------------------------------- healers --
     def _register_default_healers(self) -> None:
         if self.broker is not None:
+            # Deliberately a SINGLE attempt with no sleeping.  Healing runs
+            # inside the trading cycle; a retry loop here would stall position
+            # management and freeze the dashboard while the operator is trying
+            # to find out what went wrong.  The cycle repeats, and the healer's
+            # own hourly limit supplies the backoff.
             self.healers["BROKER_CONNECTION"] = Healer(
-                "MT5 connection",
-                lambda: (self.broker.reconnect()
-                         if hasattr(self.broker, "reconnect")
-                         else bool(self.broker.connect())),
+                "MT5 connection", self._reconnect_broker_once,
                 max_per_hour=self.cfg.ops.max_restarts_per_hour)
         if self.journal is not None:
             self.healers["DATABASE"] = Healer(
@@ -237,6 +239,15 @@ class HealthSupervisor:
         if self.news is not None:
             self.healers["NEWS"] = Healer(
                 "news engine", lambda: bool(self.news.refresh()))
+
+    def _reconnect_broker_once(self) -> bool:
+        reconnect = getattr(self.broker, "reconnect", None)
+        if reconnect is None:
+            return bool(self.broker.connect())
+        try:
+            return bool(reconnect(attempts=1, base_delay=0.0))
+        except TypeError:
+            return bool(reconnect())
 
     def register_healer(self, check_name: str, healer: Healer) -> None:
         self.healers[check_name] = healer

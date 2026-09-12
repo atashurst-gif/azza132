@@ -20,7 +20,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from ..clock import UTC
+from ..clock import UTC, utcnow
 from ..contracts import SymbolSpec, infer_group, classify_fx
 from .base import (AccountInfo, Bar, Broker, BrokerError, CalendarEvent,
                    NotConnected, OrderRequest, OrderResult, Position, RetCode,
@@ -81,7 +81,15 @@ class SimBroker:
                  start: Optional[dt.datetime] = None, balance: float = 10_000.0,
                  currency: str = "GBP", is_demo: bool = True,
                  server_offset_seconds: int = 3 * 3600,
-                 bar_seconds: int = 60, history_bars: int = 3000):
+                 bar_seconds: int = 60, history_bars: int = 3000,
+                 live: bool = False, speed: float = 1.0):
+        # ``live`` makes the simulation track the wall clock, so prices are
+        # genuinely fresh and every staleness check behaves as it would against
+        # a real feed.  That is what makes it usable as a demo and as a
+        # self-test, rather than only as a fixture with a frozen clock.
+        self.live = live
+        self.speed = max(speed, 0.01)
+        self._live_started = utcnow() if live else None
         self.rng = random.Random(seed)
         self.fault = Faults()
         self._connected = False
@@ -89,7 +97,8 @@ class SimBroker:
         self._selected: set[str] = set()
         self.server_offset_seconds = server_offset_seconds
         self.bar_seconds = bar_seconds
-        self.now = start or dt.datetime(2026, 3, 10, 8, 0, tzinfo=UTC)
+        self.now = start or (utcnow().replace(microsecond=0) if live
+                             else dt.datetime(2026, 3, 10, 8, 0, tzinfo=UTC))
         self._balance = balance
         self._equity = balance
         self.currency = currency
@@ -182,6 +191,16 @@ class SimBroker:
         )
 
     # ------------------------------------------------------- time stepping --
+    def _catch_up(self) -> None:
+        """In live mode, generate whatever bars wall-clock time has earned."""
+        if not self.live or self._live_started is None:
+            return
+        elapsed = (utcnow() - self._live_started).total_seconds() * self.speed
+        target = self._live_started + dt.timedelta(seconds=elapsed)
+        missed = int((target - self.now).total_seconds() // self.bar_seconds)
+        if missed > 0:
+            self.advance(min(missed, 500))
+
     def advance(self, bars: int = 1) -> None:
         """Advance simulated time by ``bars`` base bars, extending all series."""
         for _ in range(bars):
@@ -338,9 +357,14 @@ class SimBroker:
 
     def tick(self, symbol: str) -> Optional[Tick]:
         self._guard()
+        self._catch_up()
         t = self._last_tick.get(symbol)
         if t is None:
             return None
+        if self.live and not self.fault.stale_ticks:
+            # A real feed delivers ticks continuously between bars, so the
+            # timestamp is the moment of the quote, not the bar's open.
+            t = Tick(t.symbol, utcnow(), t.bid, t.ask, t.last, t.volume)
         if self.fault.spread_multiplier != 1.0:
             spec = self._specs[symbol]
             half = spec.typical_spread_points * spec.point * self.fault.spread_multiplier / 2.0
@@ -351,6 +375,7 @@ class SimBroker:
     def bars(self, symbol: str, tf: TF, count: int,
              end: Optional[dt.datetime] = None) -> list[Bar]:
         self._guard()
+        self._catch_up()
         base = self._bars.get(symbol, [])
         if end is not None:
             base = [b for b in base if b.time <= end]

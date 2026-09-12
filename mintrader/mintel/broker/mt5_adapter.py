@@ -130,11 +130,18 @@ class Mt5Broker:
             except Exception:
                 return False
 
-    def reconnect(self, attempts: int = 5, base_delay: float = 2.0) -> bool:
-        """Shut down cleanly and re-initialise with exponential backoff."""
-        for i in range(attempts):
+    def reconnect(self, attempts: int = 1, base_delay: float = 0.0) -> bool:
+        """Shut down cleanly and re-initialise.
+
+        Single-shot by default: this is called from inside the trading cycle,
+        and a blocking retry loop there would freeze position management and
+        the dashboard while it waited.  The health cycle provides the
+        repetition and the healer's rate limit provides the backoff.
+        """
+        for i in range(max(1, attempts)):
             self.shutdown()
-            time.sleep(min(base_delay * (2 ** i), 30.0))
+            if base_delay > 0:
+                time.sleep(min(base_delay * (2 ** i), 30.0))
             if self.connect():
                 log.info("MT5 reconnected on attempt %d", i + 1)
                 return True

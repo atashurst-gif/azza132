@@ -156,6 +156,15 @@ class Config:
     account_password: str = ""
     account_server: str = ""
     mt5_terminal_path: str = ""
+    # How the engine reaches MetaTrader 5.
+    #   "direct" - this Python imports MetaTrader5 itself (Windows).
+    #   "bridge" - MT5 and a small Windows Python run inside a Wine prefix and
+    #              are reached over a localhost socket (macOS and Linux).
+    broker_mode: str = "direct"
+    bridge_host: str = "127.0.0.1"
+    bridge_port: int = 8790
+    wine_prefix: str = ""
+    wine_python: str = ""
     aggression: str = "NORMAL"          # CONSERVATIVE|NORMAL|AGGRESSIVE|MAXIMUM
     risk: RiskConfig = field(default_factory=RiskConfig)
     universe: UniverseConfig = field(default_factory=UniverseConfig)
@@ -207,7 +216,16 @@ class Config:
             errs.append("confidence tiers must be strictly increasing")
         if self.magic <= 0:
             errs.append("magic must be a positive integer")
+        if self.broker_mode not in ("direct", "bridge"):
+            errs.append(f"broker_mode must be 'direct' or 'bridge', "
+                        f"got {self.broker_mode!r}")
+        if self.broker_mode == "bridge" and not (0 < self.bridge_port < 65536):
+            errs.append("bridge_port must be a valid port number")
         return errs
+
+    @property
+    def bridge_token_file(self) -> str:
+        return str(Path(self.ops.data_dir) / "bridge-token.txt")
 
     # ------------------------------------------------------------------- io --
     def to_dict(self) -> dict:

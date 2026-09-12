@@ -85,10 +85,18 @@ class Trader:
                  journal: Optional[Journal] = None,
                  news: Optional[NewsIntelligenceEngine] = None,
                  use_store_only_news: bool = False,
-                 enable_model: bool = True):
+                 enable_model: bool = True,
+                 dry_run: bool = False):
         self.broker = broker
         self.cfg = cfg
         self.clock = clock
+        # In dry-run everything is evaluated exactly as normal - regime,
+        # tactics, scoring, sizing, stop placement, idempotency - and the
+        # order is simply never sent.  It is what makes the verification smoke
+        # test genuinely safe to run against a live account, rather than
+        # merely claimed to be.
+        self.dry_run = bool(dry_run)
+        self.would_have_traded: list[dict] = []
         data_dir = Path(cfg.ops.data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -143,6 +151,8 @@ class Trader:
         self.top_opportunities: tuple[MarketState, ...] = ()
         self.cycles = 0
         self._cycle_marks: list[dt.datetime] = []
+        self._last_cycle_at: Optional[dt.datetime] = None
+        self.sleep_events: list[dict] = []
         self.started_utc = to_utc(clock())
         self._stop = threading.Event()
         self._bootstrapped = False
@@ -239,7 +249,9 @@ class Trader:
         if not self._bootstrapped:
             self.bootstrap()
         self.cycles += 1
-        self._cycle_marks = (self._cycle_marks + [now])[-12:]
+        slept = self._detect_sleep(now)
+        self._cycle_marks = ([] if slept else self._cycle_marks + [now])[-12:]
+        self._last_cycle_at = now
 
         # 1 - health -----------------------------------------------------------
         try:
@@ -348,6 +360,50 @@ class Trader:
             if self.scanner.universe else 0)
         self.last_cycle = result
         return result
+
+    def _detect_sleep(self, now: dt.datetime) -> bool:
+        """Notice that the machine was suspended, and say so.
+
+        On a laptop this is routine rather than exceptional: the lid closes,
+        the Mac sleeps, and the process resumes hours later with a wildly
+        stale view of the world.  Left undetected it looks like a mysterious
+        outage; detected, it is a known state with a known response - throw
+        away the cached view, re-read the calendar, and reconcile against the
+        broker before considering any trade.
+
+        The regular health checks would catch the stale data anyway.  This
+        exists so the cause is recorded honestly and the recovery is immediate
+        rather than incidental.
+        """
+        previous = self._last_cycle_at
+        if previous is None:
+            return False
+        gap = (now - previous).total_seconds()
+        expected = max(self.cfg.scan.scan_interval_seconds * 10, 120.0)
+        if gap < expected:
+            return False
+        minutes = gap / 60.0
+        message = (f"this machine appears to have been asleep or suspended "
+                   f"for about {minutes:.0f} minutes; discarding the stale "
+                   f"view and re-checking everything before trading again")
+        log.warning("%s", message)
+        self.sleep_events.append({"woke_utc": now.isoformat(),
+                                  "gap_seconds": round(gap, 1)})
+        self.sleep_events = self.sleep_events[-50:]
+        try:
+            self.journal.log_event("WAKE", message, "WARNING",
+                                   {"gap_seconds": round(gap, 1)})
+        except Exception:
+            pass
+        # Everything cached is now suspect.
+        self.last_news_refresh = None
+        self.scanner.last_scan_utc = None
+        self.top_opportunities = ()
+        try:
+            self.executor.reconcile()
+        except Exception as exc:
+            log.error("reconciliation after waking failed: %s", exc)
+        return True
 
     def _scan_stale_limit(self) -> Optional[float]:
         """Staleness limit scaled to how fast this instance actually cycles.
@@ -704,6 +760,24 @@ class Trader:
                                     snapshot, margin_per_lot)
             if not sizing.ok:
                 blocked.append(f"{state.symbol}: {sizing.rejected}")
+                continue
+
+            if self.dry_run:
+                intended = {
+                    "symbol": state.symbol, "side": state.side.value,
+                    "volume": sizing.volume, "entry": state.entry,
+                    "stop": state.stop, "target": state.target,
+                    "risk_pct": sizing.risk_pct,
+                    "risk_money": sizing.risk_money,
+                    "opportunity": state.opportunity, "tier": state.tier,
+                    "tactic": state.tactic,
+                }
+                self.would_have_traded.append(intended)
+                blocked.append(
+                    f"{state.symbol}: DRY RUN - would have {state.side.value} "
+                    f"{sizing.volume:g} lots risking {sizing.risk_pct:.2f}%, "
+                    f"but no order was sent")
+                log.warning("DRY RUN: would have opened %s", intended)
                 continue
 
             report = self.executor.submit(state, spec, sizing.volume)

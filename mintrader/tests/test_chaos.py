@@ -395,3 +395,55 @@ def _a_live_pid() -> int:
     """A PID that is certainly alive and is not this process."""
     p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     return p.pid
+
+
+class TestSleepAndWake:
+    """A laptop sleeps. That is routine, and must be handled as such."""
+
+    def test_a_long_gap_is_recognised_as_sleep(self, sim, cfg):
+        t = make_trader(sim, cfg)
+        t.cycle()
+        sim.advance(240)                      # four hours with the lid shut
+        result = t.cycle()
+        assert t.sleep_events, "the suspension must be noticed"
+        assert t.sleep_events[-1]["gap_seconds"] > 3600
+        kinds = [e["kind"] for e in t.journal.recent_events()]
+        assert "WAKE" in kinds, "and recorded honestly"
+
+    def test_waking_discards_the_stale_view(self, sim, cfg):
+        t = make_trader(sim, cfg)
+        t.cycle()
+        assert t.top_opportunities
+        sim.advance(300)
+        t._detect_sleep(sim.now)
+        assert t.top_opportunities == (), "old rankings must not survive sleep"
+        assert t.last_news_refresh is None, "the calendar must be re-read"
+
+    def test_waking_reconciles_against_the_broker(self, sim, cfg):
+        from mintel.broker.base import OrderRequest
+        t = make_trader(sim, cfg)
+        t.cycle()
+        # A position appears while the machine is asleep, as a broker-side
+        # stop or a manual trade would.
+        sim.send(OrderRequest("EURUSD", Side.BUY, 0.05, sl=0.0,
+                              magic=cfg.magic))
+        sim.advance(300)
+        t.cycle()
+        assert all(p.sl > 0 for p in sim.positions()), (
+            "anything found after waking must be protected at once")
+
+    def test_a_normal_gap_is_not_mistaken_for_sleep(self, sim, cfg):
+        t = make_trader(sim, cfg)
+        t.cycle()
+        sim.advance(1)
+        t.cycle()
+        assert not t.sleep_events
+
+    def test_trading_does_not_resume_until_data_is_fresh(self, sim, cfg):
+        t = make_trader(sim, cfg)
+        t.cycle()
+        sim.fault.stale_ticks = True
+        sim.advance(300)                      # asleep, and no new prices since
+        result = t.cycle()
+        assert result.acted is None
+        assert not result.entries_allowed

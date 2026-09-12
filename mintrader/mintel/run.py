@@ -180,12 +180,20 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
 
 
 def build_broker(cfg: Config):
+    """Direct on Windows, over the Wine bridge on macOS and Linux."""
+    if cfg.broker_mode == "bridge":
+        from .broker.bridge_client import BridgeBroker
+        return BridgeBroker(host=cfg.bridge_host, port=cfg.bridge_port,
+                            token_file=cfg.bridge_token_file,
+                            magic=cfg.magic)
     if not mt5_available():
         raise SystemExit(
-            "MetaTrader5 is not available in this Python environment.\n"
-            "The trader must run on the Windows VPS where MT5 is installed.\n"
-            "For development and testing off-Windows, use the simulator "
-            "(see tests/ and mintel.research.backtest).")
+            "MetaTrader5 is not importable in this Python environment.\n"
+            "On Windows: install it with `pip install MetaTrader5`.\n"
+            "On macOS or Linux: set broker_mode to 'bridge' so MT5 runs inside\n"
+            "a Wine prefix and this process talks to it over a socket.\n"
+            "For development, use the simulator (see tests/ and "
+            "mintel.research.backtest).")
     return Mt5Broker(login=cfg.account_login, password=cfg.account_password,
                      server=cfg.account_server,
                      terminal_path=cfg.mt5_terminal_path, magic=cfg.magic)
@@ -226,8 +234,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         broker = build_broker(cfg)
         if not broker.connect():
-            log.error("could not connect to MetaTrader 5 - is the terminal "
-                      "running and logged in?")
+            if cfg.broker_mode == "bridge":
+                log.error("could not reach the MetaTrader bridge on %s:%d - "
+                          "is MetaTrader 5 running inside Wine?",
+                          cfg.bridge_host, cfg.bridge_port)
+            else:
+                log.error("could not connect to MetaTrader 5 - is the terminal "
+                          "running and logged in?")
             return 4
         trader = Trader(broker, cfg)
         state = DashboardState()
@@ -256,6 +269,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         cycles = 0
         last_scan = 0.0
+        last_safe_mode = None
         while not trader._stop.is_set():
             started = time.time()
             scan_due = started - last_scan >= cfg.scan.scan_interval_seconds
@@ -272,7 +286,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         log.info("%s", note)
             except Exception as exc:
                 log.exception("cycle failed: %s", exc)
-            if scan_due:
+            # Refresh the page on every scan, and immediately whenever the
+            # bot enters or leaves SAFE MODE - that is precisely the moment
+            # somebody is looking at it, and waiting for the next scan would
+            # leave them staring at a stale green banner.
+            if scan_due or trader.health.safe_mode != last_safe_mode:
+                last_safe_mode = trader.health.safe_mode
                 try:
                     push_dashboard(state, trader)
                 except Exception as exc:

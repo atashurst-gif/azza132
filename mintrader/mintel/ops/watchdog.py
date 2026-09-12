@@ -32,7 +32,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from ..clock import to_utc, utcnow
 from ..config import Config
@@ -41,6 +41,7 @@ from .health import Heartbeat, read_all_heartbeats
 log = logging.getLogger("mintel.watchdog")
 
 IS_WINDOWS = os.name == "nt"
+IS_MACOS = sys.platform == "darwin"
 
 
 @dataclass
@@ -53,6 +54,9 @@ class ManagedProcess:
     cwd: str = ""
     max_restarts_per_hour: int = 12
     grace_seconds: float = 45.0
+    # Optional liveness probe, used instead of a heartbeat file for services
+    # that answer on a socket.  Returning None means "cannot tell".
+    probe: Optional[Callable[[], Optional[bool]]] = None
     restarts: list[dt.datetime] = field(default_factory=list)
     last_start: Optional[dt.datetime] = None
     backoff: float = 0.0
@@ -87,9 +91,12 @@ class ManagedProcess:
                 return False
         return True
 
-    def start(self, now: dt.datetime) -> tuple[bool, str]:
+    def start(self, now: dt.datetime,
+              env: Optional[dict] = None) -> tuple[bool, str]:
         try:
             kwargs: dict = {"cwd": self.cwd or None}
+            if env:
+                kwargs["env"] = env
             if IS_WINDOWS:
                 kwargs["creationflags"] = getattr(
                     subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -142,7 +149,12 @@ def pid_alive(pid: int) -> bool:
 
 
 def process_running(image_name: str) -> Optional[bool]:
-    """Is a named executable running?  ``None`` when we cannot tell."""
+    """Is a named executable running?  ``None`` when we cannot tell.
+
+    On macOS and Linux this also finds a Windows executable running under
+    Wine, because to the operating system ``terminal64.exe`` under Wine is
+    simply a process whose command line contains that name.
+    """
     if IS_WINDOWS:
         try:
             out = subprocess.run(
@@ -161,12 +173,27 @@ def process_running(image_name: str) -> Optional[bool]:
     return None
 
 
+def port_open(host: str, port: int, timeout: float = 2.0) -> bool:
+    """Liveness for a socket service.
+
+    The bridge is judged by whether it actually answers, not by whether a
+    process with the right name exists - a hung process still holds its name.
+    """
+    import socket as _socket
+    try:
+        with _socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 class Watchdog:
     def __init__(self, cfg: Config, processes: Sequence[ManagedProcess],
                  *, mt5_image: str = "terminal64.exe",
                  mt5_command: Sequence[str] = (),
-                 clock=utcnow):
+                 clock=utcnow, env: Optional[dict] = None):
         self.cfg = cfg
+        self.env = env
         self.processes = list(processes)
         self.mt5_image = mt5_image
         self.mt5_command = list(mt5_command)
@@ -189,6 +216,13 @@ class Watchdog:
             alive = mp.alive_by_pid()
             if alive is False:
                 reason = "the process is not running"
+            elif mp.probe is not None:
+                answered = mp.probe()
+                if answered is False and (
+                        mp.last_start is None
+                        or (now - mp.last_start).total_seconds()
+                        > mp.grace_seconds):
+                    reason = "it is not answering"
             elif mp.heartbeat:
                 beat = beats.get(mp.heartbeat)
                 if beat is None:
@@ -213,7 +247,7 @@ class Watchdog:
                 # A hung process must be killed before a replacement is started,
                 # or two traders end up fighting over the same account.
                 mp.stop()
-            ok, msg = mp.start(now)
+            ok, msg = mp.start(now, self.env)
             actions.append(msg)
 
         actions.extend(self._check_mt5(now))
@@ -242,6 +276,10 @@ class Watchdog:
             if IS_WINDOWS:
                 kwargs["creationflags"] = getattr(
                     subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            else:
+                kwargs["start_new_session"] = True
+            if self.env:
+                kwargs["env"] = self.env
             subprocess.Popen(self.mt5_command, **kwargs)
             self._mt5_restarts.append(now)
             return ["MetaTrader 5 was not running - started it again"]
@@ -279,25 +317,74 @@ class Watchdog:
         self._stop = True
 
 
+def wine_command(cfg: Config, target: str,
+                 extra: Sequence[str] = ()) -> list[str]:
+    """Command to run a Windows executable inside the configured Wine prefix."""
+    wine = shutil.which("wine64") or shutil.which("wine") or "wine"
+    return [wine, target, *extra]
+
+
+def wine_env(cfg: Config) -> dict:
+    env = dict(os.environ)
+    if cfg.wine_prefix:
+        env["WINEPREFIX"] = cfg.wine_prefix
+    # Wine's debug chatter is enormous and fills the disk on a long-running
+    # machine, which would eventually trip the disk-space health check.
+    env.setdefault("WINEDEBUG", "-all")
+    return env
+
+
 def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                   project_dir: str = "") -> Watchdog:
-    """The standard production arrangement: watch the trader and MT5."""
+    """The standard production arrangement.
+
+    On Windows: watch the trader and the MT5 terminal.
+    On macOS and Linux: watch the trader, the Wine-side bridge, and the MT5
+    terminal running under Wine.
+    """
     python = python or sys.executable
     project = project_dir or str(Path(__file__).resolve().parents[2])
     data = Path(cfg.ops.data_dir)
     config_path = str(Path(config_path).resolve()) if config_path \
         else str((data / "config.json").resolve())
-    trader = ManagedProcess(
+
+    processes = [ManagedProcess(
         name="trader",
         command=[python, "-m", "mintel.run", "--config", config_path],
         heartbeat="strategy",
         pid_file=str(data / "trader.pid"),
         cwd=project,
-        max_restarts_per_hour=cfg.ops.max_restarts_per_hour)
+        max_restarts_per_hour=cfg.ops.max_restarts_per_hour)]
+
     mt5_cmd: list[str] = []
-    if cfg.mt5_terminal_path:
+    if cfg.broker_mode == "bridge":
+        # The bridge runs the Windows Python that lives inside the Wine prefix.
+        if cfg.wine_python:
+            bridge_cmd = wine_command(cfg, cfg.wine_python, [
+                "-m", "mintel.broker.bridge_server",
+                "--port", str(cfg.bridge_port),
+                "--token-file", cfg.bridge_token_file,
+                "--login", str(cfg.account_login),
+                "--server", cfg.account_server,
+                "--secrets-file", str(data / "secrets.json"),
+                "--terminal", cfg.mt5_terminal_path,
+                "--magic", str(cfg.magic)])
+            processes.append(ManagedProcess(
+                name="bridge",
+                command=bridge_cmd,
+                pid_file=str(data / "bridge.pid"),
+                cwd=project,
+                grace_seconds=90.0,
+                probe=lambda: port_open(cfg.bridge_host, cfg.bridge_port),
+                max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
+        if cfg.mt5_terminal_path:
+            mt5_cmd = wine_command(cfg, cfg.mt5_terminal_path)
+    elif cfg.mt5_terminal_path:
         mt5_cmd = [cfg.mt5_terminal_path]
-    return Watchdog(cfg, [trader], mt5_command=mt5_cmd)
+
+    wd = Watchdog(cfg, processes, mt5_command=mt5_cmd)
+    wd.env = wine_env(cfg) if cfg.broker_mode == "bridge" else None
+    return wd
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

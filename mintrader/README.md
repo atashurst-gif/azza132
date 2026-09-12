@@ -18,9 +18,32 @@ CONTROL THE DAMAGE WHEN WRONG.  PRESS THE ADVANTAGE WHEN RIGHT.
 
 ---
 
-## Install and run — one command
+## Install and run
 
-On the Windows VPS, in PowerShell:
+### On a MacBook — one icon
+
+Double-click **`deploy/mac/Start Trading Bot.command`** in the folder you
+downloaded. It installs everything, asks for your account once, starts
+trading, and puts a permanent **Start Trading Bot** icon on your Desktop —
+after which you can delete the download. Every double-click after that starts
+it if it is stopped and reports healthy if it is not. It restarts itself if it
+ever crashes and starts again when you log in.
+
+MetaTrader 5's Python interface is Windows-only, so on a Mac MT5 and one small
+Windows Python run inside a self-contained Wine folder while the entire
+intelligence layer runs as native macOS Python and talks to them over a
+localhost socket. Full detail, including exactly what happens when you close
+the lid, is in **[deploy/mac/README.md](deploy/mac/README.md)**.
+
+Want to see it work before involving a broker? Double-click
+**`Self Test.command`** — it runs the real bridge, the real trader and the real
+dashboard against a live-tracking simulation, with no account and nothing at
+risk.
+
+### On a Windows VPS — one command
+
+For trading that continues with your laptop shut and in your bag. In
+PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\deploy\SETUP-AND-START.ps1
@@ -43,7 +66,7 @@ It is safe to run as often as you like. If everything is already running it
 reports that it is healthy and starts nothing — it will never start a second
 trader, because two traders on one account would double every trade.
 
-Then open **http://127.0.0.1:8787** for status and
+Either way, open **http://127.0.0.1:8787** for status and
 **http://127.0.0.1:8787/results** for what happened and why.
 
 ---
@@ -325,9 +348,27 @@ position found without a stop gets one immediately.
 
 ---
 
-## How the VPS keeps it running with your Mac closed
+## How it keeps running
 
-Your Mac is a viewing device. Nothing about trading depends on it.
+### On the MacBook
+
+A LaunchAgent starts the watchdog when you log in and restarts it if it ever
+stops. The watchdog then owns everything else: it starts the trader, starts the
+bridge, restarts MetaTrader 5 under Wine if the terminal dies, and kills a hung
+process *before* starting a replacement so two traders can never fight over one
+account. `caffeinate` stops the Mac dozing off while it trades.
+
+The honest limit: **closing the lid sleeps the Mac and pauses the bot.** No
+software can prevent that on battery. Your open positions keep their stop
+losses, because those are held by the broker rather than by this program, and
+on waking the bot detects the suspension, discards its stale view, re-reads the
+calendar and reconciles against the broker before trading again. For lid-closed
+trading you need clamshell mode — mains power plus an external monitor and
+keyboard — or the VPS below.
+
+### On the Windows VPS, with your Mac closed
+
+Your Mac is then only a viewing device. Nothing about trading depends on it.
 
 Everything runs on the Windows VPS: MetaTrader 5, the trader, the news engine,
 the SQLite state, the watchdog, the logs and the dashboard. Closing your laptop
@@ -371,7 +412,9 @@ mintel/
   clock.py            timezone, DST, trade-server offset
   config.py           settings, risk bounds, the demo/live gate
   contracts.py        symbol specs, pip/tick/money math
-  broker/             base protocol, MT5 adapter, deterministic simulator
+  broker/             base protocol, MT5 adapter, deterministic simulator,
+                      and the bridge (wire format, server, client) that lets
+                      the engine run natively on macOS
   data/               structure, momentum, sessions, headroom,
                       currency strength, cross-market, regime
   news/               calendar store, adapters, surprise, the news engine
@@ -382,7 +425,9 @@ mintel/
   run.py              the trading process
   verify.py           prove every dependency works
   status.py           command-line status
-deploy/               SETUP-AND-START.ps1, START-BOT.ps1, STOP-BOT.ps1, MQL5
+deploy/               Windows: SETUP-AND-START.ps1, START-BOT.ps1, STOP-BOT.ps1
+  mac/                macOS: the desktop icons, the installer, the self test
+  mql5/               broker-side guardian EA
 tests/                unit, integration and chaos tests
 tools/validate.py     performance validation and aggression analysis
 ```

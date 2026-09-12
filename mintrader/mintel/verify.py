@@ -66,15 +66,28 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
         r.warn("trading mode", "LIVE - real money is at risk")
 
     # ---------------------------------------------------------- MetaTrader --
-    from .broker.mt5_adapter import Mt5Broker, mt5_available
-    if not r.add("MetaTrader5 Python package", mt5_available(),
-                 "" if mt5_available() else
-                 "not installed, or this is not Windows"):
-        return 1
-
-    broker = Mt5Broker(login=cfg.account_login, password=cfg.account_password,
-                       server=cfg.account_server,
-                       terminal_path=cfg.mt5_terminal_path, magic=cfg.magic)
+    if cfg.broker_mode == "bridge":
+        from .broker.bridge_client import BridgeBroker
+        broker = BridgeBroker(host=cfg.bridge_host, port=cfg.bridge_port,
+                              token_file=cfg.bridge_token_file,
+                              magic=cfg.magic)
+        info = broker.ping()
+        if not r.add("MetaTrader bridge", info is not None,
+                     f"{cfg.bridge_host}:{cfg.bridge_port}"
+                     + (f" (backend {info['backend']})" if info else
+                        " - not answering; is MetaTrader 5 running in Wine?")):
+            return 1
+    else:
+        from .broker.mt5_adapter import Mt5Broker, mt5_available
+        if not r.add("MetaTrader5 Python package", mt5_available(),
+                     "" if mt5_available() else
+                     "not installed, or this is not Windows"):
+            return 1
+        broker = Mt5Broker(login=cfg.account_login,
+                           password=cfg.account_password,
+                           server=cfg.account_server,
+                           terminal_path=cfg.mt5_terminal_path,
+                           magic=cfg.magic)
     if not r.add("MetaTrader 5 connection", broker.connect(),
                  "check the terminal is running and logged in"):
         return 1
@@ -182,7 +195,11 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
         print("SAFE SMOKE TEST (no order will be sent)")
         print("-" * 62)
         from .engine.trader import Trader
-        trader = Trader(broker, cfg, journal=journal, news=news)
+        # dry_run: the cycle below does everything a real cycle does EXCEPT
+        # send the order.  Without it this "safe smoke test" could open a
+        # position on a live account, which is the opposite of what it says on
+        # the tin.
+        trader = Trader(broker, cfg, journal=journal, news=news, dry_run=True)
         info = trader.bootstrap()
         r.add("engine bootstrap", "universe" in info,
               f"{len(info.get('universe', []))} instruments, "
@@ -214,7 +231,13 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
             from .engine.execution import make_key
             key = make_key(best, spec)
             r.add("idempotency key generated", len(key) == 24, key)
-        print("  [ OK ] no order was sent")
+        if trader.would_have_traded:
+            intended = trader.would_have_traded[0]
+            print(f"  [ OK ] it would have opened {intended['side']} "
+                  f"{intended['volume']:g} lots of {intended['symbol']} "
+                  f"risking {intended['risk_pct']:.2f}% - not sent")
+        r.add("no order was sent", not sent_any_order(broker, trader),
+              "the smoke test ran in dry-run mode")
 
     # ----------------------------------------------------------- dashboard --
     url = f"http://{cfg.ops.dashboard_host}:{cfg.ops.dashboard_port}/health"
@@ -227,7 +250,12 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
         r.warn("dashboard", f"not answering on {url} ({exc}). It starts with "
                             f"the trader; check again in a minute.")
 
-    broker.shutdown()
+    # Close OUR connection only.  Calling shutdown() on a shared bridge would
+    # log MetaTrader out from underneath a trader that is running right now.
+    if hasattr(broker, "disconnect"):
+        broker.disconnect()
+    else:
+        broker.shutdown()
     journal.close()
     store.close()
 
@@ -240,6 +268,14 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
         return 1
     print("RESULT: EVERYTHING NEEDED TO TRADE IS WORKING")
     return 0
+
+
+def sent_any_order(broker, trader) -> bool:
+    """Belt and braces: confirm the dry run really sent nothing."""
+    if trader.executor.intents:
+        return True
+    log = getattr(broker, "order_log", None)
+    return bool(log)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

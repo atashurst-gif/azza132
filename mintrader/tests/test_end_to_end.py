@@ -406,3 +406,51 @@ class TestEntryTiming:
             assert ok is True, "waiting out normal noise means never entering"
         finally:
             sim.bars = original
+
+
+class TestDryRun:
+    """A "safe" check that could open a position would be worse than useless."""
+
+    def test_dry_run_never_sends_an_order(self, sim, cfg):
+        cfg.account_login = sim.login
+        cfg.account_server = sim.server
+        from mintel.engine.trader import Trader
+        t = Trader(sim, cfg, clock=lambda: sim.now, enable_model=False,
+                   dry_run=True)
+        t.bootstrap()
+        for _ in range(60):
+            t.cycle()
+            sim.advance(3)
+        assert sim.positions() == [], "dry run must not open anything"
+        assert sim.order_log == [], "not even a rejected attempt"
+        assert t.executor.intents == {}, "and no intent may be recorded"
+
+    def test_dry_run_still_evaluates_everything(self, sim, cfg):
+        cfg.account_login = sim.login
+        cfg.account_server = sim.server
+        from mintel.engine.trader import Trader
+        t = Trader(sim, cfg, clock=lambda: sim.now, enable_model=False,
+                   dry_run=True)
+        t.bootstrap()
+        for _ in range(60):
+            t.cycle()
+            sim.advance(3)
+        assert t.top_opportunities, "it must still rank markets"
+        if t.would_have_traded:
+            intended = t.would_have_traded[0]
+            assert intended["volume"] > 0
+            assert intended["risk_pct"] <= cfg.risk.max_risk_pct
+            assert intended["stop"] != intended["entry"]
+
+    def test_a_normal_trader_is_not_dry_run(self, sim, cfg):
+        t = make_trader(sim, cfg)
+        assert t.dry_run is False
+
+    def test_verify_uses_dry_run(self):
+        import inspect
+        from mintel import verify
+        src = inspect.getsource(verify)
+        assert "dry_run=True" in src
+        # The comment wraps across lines, so compare on normalised whitespace.
+        flat = " ".join(src.replace("#", " ").split())
+        assert "open a position on a live account" in flat
