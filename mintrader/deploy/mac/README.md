@@ -155,7 +155,7 @@ No order can reach a broker in either case.
 | Symptom | What to do |
 |---|---|
 | Icon will not open | right-click → Open → Open |
-| "Wine could not be installed" | `brew install --cask wine-stable` |
+| "Wine could not be installed" | The output above that line says why. Then double-click the icon again. (Manual: `brew install --cask wine-stable`, then `xattr -dr com.apple.quarantine "/Applications/Wine Stable.app"`.) |
 | MT5 window never appears | `WINEPREFIX=~/MarketBot/wine wine ~/MarketBot/wine/drive_c/Program\ Files/MetaTrader\ 5/terminal64.exe` |
 | Status page says SAFE MODE | it tells you why in plain English; usually MT5 is closed or logged out |
 | Nothing trades | normal. Check the "what it is looking at" list — it shows why each idea is being passed over |

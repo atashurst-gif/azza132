@@ -274,6 +274,7 @@ class TestConfigWrittenByTheInstaller:
             "bridge_port": 8790,
             "wine_prefix": "/Users/me/MarketBot/wine",
             "wine_python": "C:\\Python311\\python.exe",
+            "wine_binary": "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine",
             "aggression": "NORMAL",
             "risk": {"base_risk_pct": 0.5, "max_risk_pct": 1.5,
                      "max_daily_loss_pct": 3.0},
@@ -286,6 +287,7 @@ class TestConfigWrittenByTheInstaller:
         assert cfg.validate() == []
         assert cfg.broker_mode == "bridge"
         assert cfg.wine_python.endswith("python.exe")
+        assert cfg.wine_binary.endswith("/bin/wine")
         assert cfg.effective_mode == "DEMO"
         assert cfg.risk.max_risk_pct == 1.5
         assert cfg.bridge_token_file.endswith("bridge-token.txt")
@@ -619,7 +621,7 @@ class TestInstallerNeverHidesAFailure:
 
     def test_big_steps_go_through_the_logged_runner(self):
         text = self.LIB.read_text()
-        for needle in ("brew install --cask --no-quarantine wine-stable",
+        for needle in ("brew install --cask wine-stable",
                        "gcenx/wine/wine-crossover",
                        "python-3.11.9-embed-amd64.zip",
                        "get-pip.py",
@@ -672,6 +674,143 @@ class TestInstallerNeverHidesAFailure:
                                                  "MINTEL_HOME": "/tmp/x"})
         assert result.stdout == "C:\\Program Files\\MetaTrader 5\\terminal64.exe", \
             (result.stdout, result.stderr)
+
+
+class TestWineInstallOnCurrentHomebrew:
+    """The third real-Mac run failed three times in a row on one thing:
+    `brew install --cask --no-quarantine` — current Homebrew rejects the flag
+    ("Error: invalid option: --no-quarantine") before downloading anything.
+    """
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _code_lines(self):
+        return [l for l in self.LIB.read_text().splitlines()
+                if not l.strip().startswith("#")]
+
+    def test_no_quarantine_flag_is_never_passed_to_brew(self):
+        for line in self._code_lines():
+            assert "--no-quarantine" not in line, line
+
+    def test_quarantine_is_cleared_with_xattr_instead(self):
+        text = self.LIB.read_text()
+        assert "xattr -dr com.apple.quarantine" in text
+        body = text.split("ensure_wine() {")[1].split("\n}\n")[0]
+        assert "unquarantine_wine" in body, \
+            "ensure_wine must clear quarantine after installing"
+
+    def test_windows_wheels_are_fetched_by_the_native_python(self):
+        """Nothing for Wine to download: a Wine TLS quirk cannot stall setup."""
+        body = self.LIB.read_text().split("ensure_wine_python() {")[1]
+        assert "pip download MetaTrader5" in body
+        assert "--platform win_amd64" in body
+        assert "--only-binary=:all:" in body
+        assert "--no-index --find-links" in body
+
+    def test_a_wheel_can_be_unpacked_without_pip(self):
+        body = self.LIB.read_text().split("ensure_wine_python() {")[1]
+        assert 'unzip -q -o "$whl" -d "$WINE_PY_DIR/Lib/site-packages"' in body
+
+    def test_site_packages_is_named_in_the_pth_file(self):
+        body = self.LIB.read_text().split("ensure_wine_python() {")[1]
+        assert "Lib\\\\site-packages" in body
+
+    def test_the_bridge_is_proven_to_load_before_config_is_written(self):
+        text = self.LIB.read_text()
+        body = text.split("ensure_wine_python() {")[1].split("\nto_z_path() {")[0]
+        assert "bridge_server.py" in body and "--help" in body
+        # and that step is visible + logged, never silenced
+        for line in body.splitlines():
+            if "bridge_server.py" in line and not line.strip().startswith("#"):
+                assert ">/dev/null" not in line
+
+    def test_wine_binary_is_recorded_for_launchd(self):
+        text = self.LIB.read_text()
+        assert '"wine_binary": os.environ.get("MINTEL_WINEBIN", "")' in text
+        assert text.count('MINTEL_WINEBIN="$WINE_BIN"') == 2, \
+            "both the first write and the refresh must carry it"
+        assert '("wine_binary", "MINTEL_WINEBIN")' in text
+        assert "<key>WINEDLLOVERRIDES</key><string>mscoree,mshtml=</string>" in text
+
+    def test_z_paths_are_converted_correctly(self):
+        result = subprocess.run(
+            ["bash", "-c",
+             f'set -uo pipefail; source "{self.LIB}"; '
+             f'to_z_path "/Users/me/MarketBot/app/mintel/broker/bridge_server.py"'],
+            capture_output=True, text=True, env={**os.environ,
+                                                 "MINTEL_HOME": "/tmp/x"})
+        assert result.stdout == \
+            "Z:\\Users\\me\\MarketBot\\app\\mintel\\broker\\bridge_server.py", \
+            (result.stdout, result.stderr)
+
+
+class TestWatchdogLaunchesTheBridgeUnderLaunchd:
+    """launchd starts the watchdog with a bare PATH, and the embeddable Windows
+    Python ignores PYTHONPATH and the working directory. Both would have
+    broken the very first start after a clean install.
+    """
+
+    def _cfg(self, tmp_path):
+        from mintel.config import Config
+        cfg = Config()
+        cfg.ops.data_dir = str(tmp_path)
+        cfg.broker_mode = "bridge"
+        cfg.wine_python = "C:\\Python311\\python.exe"
+        cfg.wine_prefix = str(tmp_path / "wine")
+        cfg.account_login = 12345
+        cfg.account_server = "Broker-Demo"
+        cfg.mt5_terminal_path = "C:\\MT5\\terminal64.exe"
+        return cfg
+
+    def test_windows_path_helper(self):
+        from mintel.ops.watchdog import windows_path
+        assert windows_path("/Users/a b/MarketBot/app/x.py") == \
+            "Z:\\Users\\a b\\MarketBot\\app\\x.py"
+        assert windows_path("C:\\Python311\\python.exe") == \
+            "C:\\Python311\\python.exe"
+        assert windows_path("D:/x/y.exe") == "D:/x/y.exe"
+
+    def test_configured_wine_binary_wins_over_path_lookup(self, tmp_path):
+        from mintel.ops.watchdog import build_default
+        cfg = self._cfg(tmp_path)
+        cfg.wine_binary = "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine"
+        wd = build_default(cfg, str(tmp_path / "c.json"), project_dir="/Users/me/MarketBot/app")
+        bridge = next(p for p in wd.processes if p.name == "bridge")
+        assert bridge.command[0] == cfg.wine_binary
+        assert wd.mt5_command[0] == cfg.wine_binary
+        assert wd.mt5_command[1] == cfg.mt5_terminal_path
+
+    def test_bridge_is_started_by_script_path_not_dash_m(self, tmp_path):
+        from mintel.ops.watchdog import build_default
+        cfg = self._cfg(tmp_path)
+        cfg.wine_binary = "/opt/homebrew/bin/wine"
+        wd = build_default(cfg, str(tmp_path / "c.json"), project_dir="/Users/me/MarketBot/app")
+        bridge = next(p for p in wd.processes if p.name == "bridge")
+        assert bridge.command[1] == cfg.wine_python
+        assert bridge.command[2] == \
+            "Z:\\Users\\me\\MarketBot\\app\\mintel\\broker\\bridge_server.py"
+        assert "-m" not in bridge.command
+        assert "--secrets-file" in bridge.command
+
+    def test_no_gecko_dialog_can_block_a_launchd_start(self, tmp_path):
+        from mintel.ops.watchdog import wine_env
+        env = wine_env(self._cfg(tmp_path))
+        assert env["WINEDLLOVERRIDES"] == "mscoree,mshtml="
+        assert env["WINEDEBUG"] == "-all"
+        assert env["WINEPREFIX"] == str(tmp_path / "wine")
+
+    def test_the_bridge_script_adds_its_own_project_root(self, tmp_path):
+        """What makes running it by file path work at all."""
+        import shutil
+        # copy the package to a fresh place so nothing on sys.path helps it
+        dst = tmp_path / "somewhere" / "app"
+        shutil.copytree(ROOT / "mintel", dst / "mintel",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        r = subprocess.run(
+            [sys.executable, "-P", "-I", str(dst / "mintel" / "broker" / "bridge_server.py"), "--help"],
+            capture_output=True, text=True, timeout=60, cwd=str(tmp_path))
+        assert r.returncode == 0, r.stderr
+        assert "--backend" in r.stdout
 
 
 class TestLoggedRunner:

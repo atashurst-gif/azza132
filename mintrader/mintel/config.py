@@ -165,6 +165,9 @@ class Config:
     bridge_port: int = 8790
     wine_prefix: str = ""
     wine_python: str = ""
+    # Full path to the wine binary. launchd starts the watchdog with a bare
+    # PATH, so "wine" is not findable there unless we are told where it is.
+    wine_binary: str = ""
     aggression: str = "NORMAL"          # CONSERVATIVE|NORMAL|AGGRESSIVE|MAXIMUM
     risk: RiskConfig = field(default_factory=RiskConfig)
     universe: UniverseConfig = field(default_factory=UniverseConfig)

@@ -25,6 +25,7 @@ import datetime as dt
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -319,9 +320,25 @@ class Watchdog:
 
 def wine_command(cfg: Config, target: str,
                  extra: Sequence[str] = ()) -> list[str]:
-    """Command to run a Windows executable inside the configured Wine prefix."""
-    wine = shutil.which("wine64") or shutil.which("wine") or "wine"
+    """Command to run a Windows executable inside the configured Wine prefix.
+
+    The configured binary wins: under launchd PATH is bare, so a which() lookup
+    that works in a Terminal finds nothing there.
+    """
+    wine = (cfg.wine_binary or shutil.which("wine64") or shutil.which("wine")
+            or "wine")
     return [wine, target, *extra]
+
+
+def windows_path(path: str) -> str:
+    """A path Windows Python inside Wine can open.
+
+    Windows-style paths pass through unchanged. Unix paths are mapped through
+    Wine's Z: drive, which a fresh prefix points at the root of the file system.
+    """
+    if re.match(r"^[A-Za-z]:[\\/]", path):
+        return path
+    return "Z:" + path.replace("/", "\\")
 
 
 def wine_env(cfg: Config) -> dict:
@@ -331,6 +348,9 @@ def wine_env(cfg: Config) -> dict:
     # Wine's debug chatter is enormous and fills the disk on a long-running
     # machine, which would eventually trip the disk-space health check.
     env.setdefault("WINEDEBUG", "-all")
+    # Without these, the first HTML panel MetaTrader opens makes Wine pop a
+    # "install Gecko?" dialog that a launchd-started process can never answer.
+    env.setdefault("WINEDLLOVERRIDES", "mscoree,mshtml=")
     return env
 
 
@@ -360,8 +380,13 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
     if cfg.broker_mode == "bridge":
         # The bridge runs the Windows Python that lives inside the Wine prefix.
         if cfg.wine_python:
+            # By file path, not "-m": the embeddable Windows Python ignores
+            # PYTHONPATH and the working directory (its ._pth file puts it in
+            # isolated mode), and the script adds the project root itself.
+            bridge_script = windows_path(
+                str(Path(project) / "mintel" / "broker" / "bridge_server.py"))
             bridge_cmd = wine_command(cfg, cfg.wine_python, [
-                "-m", "mintel.broker.bridge_server",
+                bridge_script,
                 "--port", str(cfg.bridge_port),
                 "--token-file", cfg.bridge_token_file,
                 "--login", str(cfg.account_login),

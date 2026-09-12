@@ -254,6 +254,28 @@ wine_wait() {
   fi
 }
 
+# Gatekeeper refuses to run a freshly downloaded app until its quarantine
+# flag is cleared. Homebrew used to do this for us with --no-quarantine; new
+# versions no longer accept the flag, so it is done here for whichever Wine
+# bundle is in use. Errors are ignored: a bundle that was never quarantined
+# (or was installed some other way) has nothing to clear.
+unquarantine_wine() {
+  local real
+  local bundle
+  [[ -n "$WINE_BIN" ]] || return 0
+  real="$(resolve_path "$WINE_BIN")"
+  case "$real" in
+    *.app/*)
+      bundle="${real%%.app/*}.app"
+      xattr -dr com.apple.quarantine "$bundle" >/dev/null 2>&1 || true
+      ;;
+  esac
+  for bundle in "/Applications/Wine Stable.app" "/Applications/Wine Crossover.app"; do
+    [[ -d "$bundle" ]] && { xattr -dr com.apple.quarantine "$bundle" >/dev/null 2>&1 || true; }
+  done
+  return 0
+}
+
 ensure_wine() {
   step "Setting up Wine (this is what lets MetaTrader 5 run on a Mac)"
   if find_wine; then
@@ -265,16 +287,19 @@ ensure_wine() {
     # Known-good options in order. wine-stable is the standard build; if the
     # local Homebrew is too old to know it, refresh and retry; wine-crossover
     # is the community build most often used for MetaTrader on Apple Silicon.
+    # No --no-quarantine: current Homebrew rejects the flag outright, so every
+    # attempt would fail before downloading anything. Quarantine is removed
+    # afterwards with xattr instead, which works on every Homebrew.
     run_logged "Installing wine-stable" \
-      brew install --cask --no-quarantine wine-stable || true
+      brew install --cask wine-stable || true
     if ! find_wine; then
       run_logged "Refreshing Homebrew" brew update || true
       run_logged "Installing wine-stable (second attempt)" \
-        brew install --cask --no-quarantine wine-stable || true
+        brew install --cask wine-stable || true
     fi
     if ! find_wine; then
       run_logged "Installing wine-crossover (alternative build)" \
-        brew install --cask --no-quarantine gcenx/wine/wine-crossover || true
+        brew install --cask gcenx/wine/wine-crossover || true
     fi
     if find_wine; then
       good "Wine installed: $WINE_BIN"
@@ -283,6 +308,7 @@ ensure_wine() {
       return 1
     fi
   fi
+  unquarantine_wine
   export WINEPREFIX="$WINE_PREFIX"
   export WINEDEBUG="-all"
   if [[ ! -d "$WINE_PREFIX/drive_c" ]]; then
@@ -338,33 +364,88 @@ ensure_wine_python() {
     fi
   fi
 
-  if ! "$wine" "$WINE_PY" -m pip --version >/dev/null 2>&1; then
-    local getpip
-    getpip="$WINE_PREFIX/drive_c/get-pip.py"
-    run_logged "Downloading pip" curl -fL -o "$getpip" "https://bootstrap.pypa.io/get-pip.py" \
-      || { bad "Could not download pip."; return 1; }
-    run_logged "Installing pip inside Wine" "$wine" "$WINE_PY" 'C:\get-pip.py' --no-warn-script-location \
-      || { bad "pip could not be installed inside Wine."; return 1; }
-    wine_wait
+  # Windows Python only sees the paths its ._pth file lists, so name the
+  # site-packages folder explicitly rather than trusting the site module.
+  if [[ -f "$WINE_PY_DIR/python311._pth" ]] \
+     && ! grep -q 'Lib\\site-packages' "$WINE_PY_DIR/python311._pth"; then
+    printf 'Lib\\site-packages\n' >> "$WINE_PY_DIR/python311._pth"
   fi
-  if "$wine" "$WINE_PY" -c "import MetaTrader5" >/dev/null 2>&1; then
+  mkdir -p "$WINE_PY_DIR/Lib/site-packages"
+
+  if "$wine" "$WINE_PY" -c "import MetaTrader5, numpy" >/dev/null 2>&1; then
     good "MetaTrader5 package already working inside Wine"
-    return 0
-  fi
-  run_logged "Installing the MetaTrader5 package inside Wine" \
-    "$wine" "$WINE_PY" -m pip install --no-warn-script-location MetaTrader5 \
-    || { bad "The MetaTrader5 package could not be installed inside Wine."; return 1; }
-  wine_wait
-  if "$wine" "$WINE_PY" -c "import MetaTrader5" >/dev/null 2>&1; then
-    good "MetaTrader5 package working inside Wine"
   else
-    bad "The MetaTrader5 package installed but does not import. See $SETUP_LOG"
+    # Fetch the Windows wheels with the Mac's own Python. That leaves nothing
+    # for Wine to download, so a Wine networking quirk cannot stall the setup.
+    local wheels
+    wheels="$WINE_PREFIX/drive_c/wheels"
+    mkdir -p "$wheels"
+    run_logged "Downloading the MetaTrader5 package (Windows build)" \
+      "$VENV_DIR/bin/python" -m pip download MetaTrader5 \
+        --platform win_amd64 --python-version 3.11 --implementation cp \
+        --only-binary=:all: --dest "$wheels" || true
+
+    if ! "$wine" "$WINE_PY" -m pip --version >/dev/null 2>&1; then
+      local getpip
+      getpip="$WINE_PREFIX/drive_c/get-pip.py"
+      if [[ ! -f "$getpip" ]]; then
+        run_logged "Downloading pip" curl -fL -o "$getpip" "https://bootstrap.pypa.io/get-pip.py" || true
+      fi
+      # get-pip carries pip inside itself; this needs no network under Wine.
+      [[ -f "$getpip" ]] && run_logged "Installing pip inside Wine" \
+        "$wine" "$WINE_PY" 'C:\get-pip.py' --no-warn-script-location || true
+      wine_wait
+    fi
+
+    if "$wine" "$WINE_PY" -m pip --version >/dev/null 2>&1; then
+      if ls "$wheels"/[Mm]eta[Tt]rader5-*.whl >/dev/null 2>&1; then
+        run_logged "Installing the MetaTrader5 package inside Wine (offline)" \
+          "$wine" "$WINE_PY" -m pip install --no-warn-script-location \
+            --no-index --find-links 'C:\wheels' MetaTrader5 || true
+      else
+        run_logged "Installing the MetaTrader5 package inside Wine" \
+          "$wine" "$WINE_PY" -m pip install --no-warn-script-location MetaTrader5 || true
+      fi
+      wine_wait
+    fi
+
+    if ! "$wine" "$WINE_PY" -c "import MetaTrader5" >/dev/null 2>&1 \
+       && ls "$wheels"/[Mm]eta[Tt]rader5-*.whl >/dev/null 2>&1; then
+      # pip itself would not run under Wine. A wheel is a zip laid out exactly
+      # as site-packages expects, so unpack the two we need straight in.
+      local whl
+      for whl in "$wheels"/*.whl; do
+        run_logged "Unpacking $(basename "$whl") into Windows Python" \
+          unzip -q -o "$whl" -d "$WINE_PY_DIR/Lib/site-packages" || true
+      done
+    fi
+
+    if run_logged "Checking the MetaTrader5 package inside Wine" \
+         "$wine" "$WINE_PY" -c "import MetaTrader5, numpy; print('MetaTrader5', MetaTrader5.__version__)"; then
+      good "MetaTrader5 package working inside Wine"
+    else
+      bad "The MetaTrader5 package does not work inside Wine. The output above says why; full log: $SETUP_LOG"
+      return 1
+    fi
+  fi
+
+  # The bridge is what the bot talks to. Prove Windows Python can load it
+  # (and therefore the bot's own code) before anything depends on that.
+  if run_logged "Checking the bridge loads inside Wine" \
+       "$wine" "$WINE_PY" "$(to_z_path "$APP_DIR/mintel/broker/bridge_server.py")" --help; then
+    good "Bridge loads inside Wine"
+  else
+    bad "The bridge does not load inside Wine. The output above says why; full log: $SETUP_LOG"
     return 1
   fi
 }
 
-MT5_TERMINAL=""
-# to_windows_path /Users/x/MarketBot/wine/drive_c/... -> C:\...
+# A Mac path as Windows Python inside Wine sees it (Wine's Z: drive is /).
+to_z_path() {
+  printf 'Z:%s' "${1:-}" | tr '/' '\\'
+}
+
+# A path inside the prefix's drive_c as Windows sees it.
 to_windows_path() {
   local p
   p="${1:-}"
@@ -459,6 +540,7 @@ write_config() {
   MINTEL_MARKER="$marker" MINTEL_BASE="$base_risk" MINTEL_MAX="$max_risk" \
   MINTEL_DAILY="$daily" MINTEL_AGGR="$aggr" MINTEL_DATA="$DATA_DIR" \
   MINTEL_LOGS="$LOG_DIR" MINTEL_WINE="$WINE_PREFIX" MINTEL_WINEPY="$WINE_PY" \
+  MINTEL_WINEBIN="$WINE_BIN" \
   MINTEL_TERMINAL="$MT5_TERMINAL" MINTEL_DASH="$DASH_PORT" \
   MINTEL_BRIDGE="$BRIDGE_PORT" MINTEL_PASSWORD="$password" \
   "$VENV_DIR/bin/python" - <<'PYEOF'
@@ -487,6 +569,7 @@ cfg = {
     "bridge_port": int(os.environ.get("MINTEL_BRIDGE") or 8790),
     "wine_prefix": os.environ.get("MINTEL_WINE", ""),
     "wine_python": os.environ.get("MINTEL_WINEPY", ""),
+    "wine_binary": os.environ.get("MINTEL_WINEBIN", ""),
     "aggression": os.environ.get("MINTEL_AGGR", "NORMAL"),
     "risk": {
         "base_risk_pct": f("MINTEL_BASE", 0.5),
@@ -553,14 +636,15 @@ refresh_config_paths() {
   # stored settings but re-point them at what actually exists now.
   [[ -f "$CONFIG" ]] || return 0
   MINTEL_TERMINAL="$MT5_TERMINAL" MINTEL_WINE="$WINE_PREFIX" \
-  MINTEL_WINEPY="$WINE_PY" CONFIG="$CONFIG" \
+  MINTEL_WINEPY="$WINE_PY" MINTEL_WINEBIN="$WINE_BIN" CONFIG="$CONFIG" \
   "$VENV_DIR/bin/python" - <<'PYEOF'
 import json, os, pathlib
 path = pathlib.Path(os.environ["CONFIG"])
 cfg = json.loads(path.read_text())
 for key, env in (("mt5_terminal_path", "MINTEL_TERMINAL"),
                  ("wine_prefix", "MINTEL_WINE"),
-                 ("wine_python", "MINTEL_WINEPY")):
+                 ("wine_python", "MINTEL_WINEPY"),
+                 ("wine_binary", "MINTEL_WINEBIN")):
     value = os.environ.get(env, "")
     if value:
         cfg[key] = value
@@ -592,7 +676,8 @@ install_launch_agent() {
   <dict>
     <key>WINEPREFIX</key><string>$WINE_PREFIX</string>
     <key>WINEDEBUG</key><string>-all</string>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>WINEDLLOVERRIDES</key><string>mscoree,mshtml=</string>
+    <key>PATH</key><string>${WINE_DIR:+$WINE_DIR:}/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
