@@ -641,7 +641,7 @@ class TestInstallerNeverHidesAFailure:
 
     def test_wine_fallbacks_are_ordered(self):
         """WineHQ's own package first; Homebrew only if that fails."""
-        body = self.LIB.read_text().split("ensure_wine() {")[1].split("\n}\n")[0]
+        body = self.LIB.read_text().split("ensure_wine_standalone() {")[1].split("\n}\n")[0]
         direct = body.index("ensure_wine_package")
         brew = body.index('"Installing wine-stable with Homebrew (fallback)"')
         assert direct < brew
@@ -712,6 +712,97 @@ class TestWindowsPythonHasATimeZoneDatabase:
                            capture_output=True, text=True, timeout=60, env=env)
         assert r.returncode == 0, r.stderr
         assert "--backend" in r.stdout
+
+
+class TestUsesTheMetaTraderAppAlreadyInstalled:
+    """MetaQuotes' own MetaTrader 5 for Mac bundles a Wine that MetaTrader is
+    tested against. When it is there, use it: no download, no installer, and
+    none of the "debugger has been found" trouble newer Wine causes.
+    """
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _layout(self, tmp_path, with_wine=True, with_terminal=True):
+        app = tmp_path / "MetaTrader 5.app"
+        binpath = app / "Contents" / "SharedSupport" / "wine" / "bin"
+        binpath.mkdir(parents=True)
+        if with_wine:
+            for name in ("wine64", "wineserver"):
+                exe = binpath / name
+                exe.write_text("#!/bin/sh\necho mq-wine \"$@\"\n")
+                exe.chmod(0o755)
+        prefix = tmp_path / "net.metaquotes.wine.metatrader5"
+        term = prefix / "drive_c" / "Program Files" / "MetaTrader 5"
+        term.mkdir(parents=True)
+        if with_terminal:
+            (term / "terminal64.exe").write_bytes(b"MZ")
+        return app, prefix
+
+    def _run(self, snippet, tmp_path, app, prefix):
+        env = dict(os.environ)
+        env["MINTEL_HOME"] = str(tmp_path / "home")
+        env["MINTEL_MT5_APP"] = str(app)
+        env["MINTEL_MT5_PREFIX"] = str(prefix)
+        return subprocess.run(
+            ["bash", "-c", f'set -uo pipefail; source "{self.LIB}"; {snippet}'],
+            capture_output=True, text=True, env=env, timeout=120)
+
+    def test_an_installed_app_is_used_for_wine_prefix_and_terminal(self, tmp_path):
+        app, prefix = self._layout(tmp_path)
+        r = self._run('use_existing_mt5; echo "rc=$?"; echo "bin=$WINE_BIN"; '
+                      'echo "prefix=$WINE_PREFIX"; echo "term=$MT5_TERMINAL"; '
+                      'echo "ws=$(wine_tool wineserver)"; echo "using=$USING_EXISTING_MT5"',
+                      tmp_path, app, prefix)
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert f"bin={app}/Contents/SharedSupport/wine/bin/wine64" in r.stdout
+        assert f"prefix={prefix}" in r.stdout
+        assert "term=C:\\Program Files\\MetaTrader 5\\terminal64.exe" in r.stdout
+        assert f"ws={app}/Contents/SharedSupport/wine/bin/wineserver" in r.stdout
+        assert "using=yes" in r.stdout
+
+    def test_ensure_wine_takes_that_route_and_drops_the_separate_wine(self, tmp_path):
+        app, prefix = self._layout(tmp_path)
+        home = tmp_path / "home"
+        (home / "Wine Devel.app").mkdir(parents=True)
+        (home / "wine-devel-11.17.tar.xz").write_bytes(b"x")
+        (home / "wine" / "drive_c").mkdir(parents=True)
+        r = self._run('ensure_wine; echo "rc=$?"; echo "prefix=$WINE_PREFIX"',
+                      tmp_path, app, prefix)
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "Using the MetaTrader 5 app you already have" in r.stdout
+        assert "Downloading Wine" not in r.stdout
+        assert f"prefix={prefix}" in r.stdout
+        assert not (home / "Wine Devel.app").exists()
+        assert not (home / "wine-devel-11.17.tar.xz").exists()
+        assert not (home / "wine").exists()
+
+    def test_ensure_mt5_does_not_run_the_installer_then(self, tmp_path):
+        app, prefix = self._layout(tmp_path)
+        r = self._run('ensure_wine >/dev/null; ensure_mt5; echo "rc=$?"; echo "term=$MT5_TERMINAL"',
+                      tmp_path, app, prefix)
+        assert "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "already installed" in r.stdout
+        assert "installer is about to open" not in r.stdout
+        assert "term=C:\\Program Files\\MetaTrader 5\\terminal64.exe" in r.stdout
+
+    def test_an_incomplete_app_is_not_used(self, tmp_path):
+        app, prefix = self._layout(tmp_path, with_terminal=False)
+        r = self._run('use_existing_mt5; echo "rc=$?"', tmp_path, app, prefix)
+        assert "rc=1" in r.stdout
+        app, prefix = self._layout(tmp_path / "b", with_wine=False)
+        r = self._run('use_existing_mt5; echo "rc=$?"', tmp_path / "b", app, prefix)
+        assert "rc=1" in r.stdout
+
+    def test_the_real_paths_are_the_defaults(self):
+        text = self.LIB.read_text()
+        assert 'MT5_APP="${MINTEL_MT5_APP:-/Applications/MetaTrader 5.app}"' in text
+        assert ('MT5_APP_PREFIX="${MINTEL_MT5_PREFIX:-$HOME/Library/Application Support/'
+                'net.metaquotes.wine.metatrader5}"') in text
+        body = text.split("ensure_wine() {")[1].split("\n}\n")[0]
+        assert body.lstrip().startswith('step ')
+        assert "use_existing_mt5" in body
+        # the existing app's environment is never rebooted or re-registered
+        assert "wineboot" not in body and "configure_prefix_for_mt5" not in body
 
 
 class TestWineComesFromWineHQ:
@@ -875,7 +966,7 @@ class TestWineComesFromWineHQ:
 
     def test_the_prefix_is_updated_when_wine_changes_and_mt5_settings_applied(self):
         text = self.LIB.read_text()
-        body = text.split("ensure_wine() {")[1].split("\n}\n")[0]
+        body = text.split("ensure_wine_standalone() {")[1].split("\n}\n")[0]
         assert ".mintel-wine-version" in body
         assert '"$WINE_BIN" wineboot --update' in body
         assert body.rstrip().endswith("configure_prefix_for_mt5"), \
@@ -911,9 +1002,9 @@ class TestWineInstallOnCurrentHomebrew:
     def test_quarantine_is_cleared_with_xattr_instead(self):
         text = self.LIB.read_text()
         assert "xattr -dr com.apple.quarantine" in text
-        body = text.split("ensure_wine() {")[1].split("\n}\n")[0]
+        body = text.split("ensure_wine_standalone() {")[1].split("\n}\n")[0]
         assert "unquarantine_wine" in body, \
-            "ensure_wine must clear quarantine after installing"
+            "the standalone route must clear quarantine after installing"
 
     def test_windows_wheels_are_fetched_by_the_native_python(self):
         """Nothing for Wine to download: a Wine TLS quirk cannot stall setup."""

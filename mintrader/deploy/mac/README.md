@@ -27,6 +27,15 @@ Two more icons land on your Desktop alongside it:
 - **Stop Trading Bot** — stops it. Open trades stay open and keep their stop
   loss at the broker.
 
+## If you already have MetaTrader 5 for Mac
+
+The installer uses it. MetaQuotes' MetaTrader 5 app carries its own Wine
+(`/Applications/MetaTrader 5.app/Contents/SharedSupport/wine`) and keeps its
+Windows environment in `~/Library/Application Support/net.metaquotes.wine.metatrader5`.
+The bot puts a small Windows Python next to it and talks to that terminal, so
+there is no Wine download and no second MetaTrader. Log in to MetaTrader as
+you normally do; the bot uses the account you give it in setup.
+
 ## What actually gets installed
 
 Everything lives in one folder, `~/MarketBot`, and nothing is installed

@@ -391,7 +391,57 @@ unquarantine_wine() {
   return 0
 }
 
+# MetaQuotes' own MetaTrader 5 for Mac ships with a Wine that MetaTrader is
+# built and tested against, and keeps its Windows environment here. Using
+# it means no Wine download, no MetaTrader installer, and none of the
+# "debugger has been found" trouble newer Wine releases cause MetaTrader.
+MT5_APP="${MINTEL_MT5_APP:-/Applications/MetaTrader 5.app}"
+MT5_APP_PREFIX="${MINTEL_MT5_PREFIX:-$HOME/Library/Application Support/net.metaquotes.wine.metatrader5}"
+USING_EXISTING_MT5=""
+
+# Use the installed MetaTrader 5 app (Wine + environment) if it is complete.
+# Sets WINE_BIN/WINE_DIR/WINE_PREFIX/MT5_TERMINAL and returns 0 when it is.
+use_existing_mt5() {
+  local w
+  local term
+  term="$MT5_APP_PREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+  [[ -f "$term" ]] || return 1
+  for w in "$MT5_APP/Contents/SharedSupport/wine/bin/wine64" \
+           "$MT5_APP/Contents/SharedSupport/wine/bin/wine"; do
+    [[ -x "$w" ]] || continue
+    WINE_BIN="$w"
+    WINE_DIR="$(cd "$(dirname "$w")" && pwd -P)"
+    WINE_PREFIX="$MT5_APP_PREFIX"
+    MT5_TERMINAL='C:\Program Files\MetaTrader 5\terminal64.exe'
+    USING_EXISTING_MT5="yes"
+    return 0
+  done
+  return 1
+}
+
 ensure_wine() {
+  step "Setting up Wine (this is what lets MetaTrader 5 run on a Mac)"
+  if use_existing_mt5; then
+    export WINEPREFIX="$WINE_PREFIX"
+    export WINEDEBUG="-all"
+    good "Using the MetaTrader 5 app you already have: $MT5_APP"
+    good "Its Wine: $WINE_BIN"
+    good "Its Windows environment: $WINE_PREFIX"
+    if run_logged "Checking that Wine runs" "$WINE_BIN" --version; then
+      # The separate Wine and environment from earlier runs are dead weight.
+      rm -rf "$MINTEL_HOME"/Wine\ *.app "$MINTEL_HOME"/wine-*.tar.xz "$MINTEL_HOME/wine"
+      return 0
+    fi
+    bad "That Wine did not start. Falling back to a separate Wine."
+    USING_EXISTING_MT5=""
+    WINE_BIN=""; WINE_DIR=""; WINE_PREFIX="$MINTEL_HOME/wine"; MT5_TERMINAL=""
+  fi
+  ensure_wine_standalone
+}
+
+# The original route: WineHQ's package plus MetaTrader's installer, both
+# inside the bot's own folder. Only used when there is no MetaTrader 5 app.
+ensure_wine_standalone() {
   step "Setting up Wine (this is what lets MetaTrader 5 run on a Mac)"
   # WineHQ's own package: no Homebrew and no password. (Homebrew's wine casks
   # are disabled since 2026-09-01, so Homebrew is only a fallback if that
@@ -575,6 +625,11 @@ ensure_mt5() {
   local wine
   local found
   wine="$(wine_bin)"
+  if [[ -n "$USING_EXISTING_MT5" ]]; then
+    good "MetaTrader 5 is already installed: $MT5_TERMINAL"
+    good "Log in there with your account as usual; the bot will use that login."
+    return 0
+  fi
   found="$(find "$WINE_PREFIX/drive_c" -maxdepth 6 -name terminal64.exe 2>/dev/null | head -1)"
   if [[ -n "$found" ]]; then
     MT5_TERMINAL="$(to_windows_path "$found")"
