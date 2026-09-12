@@ -677,6 +677,43 @@ class TestInstallerNeverHidesAFailure:
             (result.stdout, result.stderr)
 
 
+class TestWindowsPythonHasATimeZoneDatabase:
+    """Run five on the real Mac got all the way to the bridge check and died
+    with 'No time zone found with key Asia/Tokyo': Windows Python ships no
+    tz database, so zoneinfo needs the tzdata package there.
+    """
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def test_tzdata_is_fetched_installed_and_checked(self):
+        body = self.LIB.read_text().split("ensure_wine_python() {")[1]
+        assert "pip download MetaTrader5 tzdata" in body
+        assert "MetaTrader5 tzdata || true" in body
+        assert body.count("ZoneInfo('Asia/Tokyo')") >= 2, \
+            "both the skip-check and the final check must do a real lookup"
+
+    def test_the_bridge_loads_with_no_system_tz_database(self, tmp_path):
+        """Reproduces the Mac failure, then proves the tzdata package fixes it."""
+        env = {**os.environ, "PYTHONTZPATH": "/nonexistent"}
+        script = str(ROOT / "mintel" / "broker" / "bridge_server.py")
+        r = subprocess.run([sys.executable, "-I", script, "--help"],
+                           capture_output=True, text=True, timeout=60, env=env)
+        if r.returncode == 0:
+            pytest.skip("this Python has tzdata installed; cannot reproduce")
+        assert "No time zone found" in r.stderr
+        target = tmp_path / "site"
+        dl = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet",
+                             "--no-deps", "--target", str(target), "tzdata"],
+                            capture_output=True, text=True, timeout=300)
+        if dl.returncode != 0:
+            pytest.skip(f"could not fetch tzdata here: {dl.stderr[-200:]}")
+        env["PYTHONPATH"] = str(target)
+        r = subprocess.run([sys.executable, script, "--help"],
+                           capture_output=True, text=True, timeout=60, env=env)
+        assert r.returncode == 0, r.stderr
+        assert "--backend" in r.stdout
+
+
 class TestWineComesFromWineHQ:
     """Run four on the real Mac: Homebrew's wine-stable cask is disabled
     ("does not pass the macOS Gatekeeper check", 2026-09-01) and the gcenx tap

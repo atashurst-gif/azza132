@@ -420,7 +420,9 @@ ensure_wine_python() {
   fi
   mkdir -p "$WINE_PY_DIR/Lib/site-packages"
 
-  if "$wine" "$WINE_PY" -c "import MetaTrader5, numpy" >/dev/null 2>&1; then
+  # tzdata: Windows Python has no time-zone database of its own, and the bot
+  # needs one for session times. Check a real lookup, not just the import.
+  if "$wine" "$WINE_PY" -c "import MetaTrader5, numpy, tzdata; from zoneinfo import ZoneInfo; ZoneInfo('Asia/Tokyo')" >/dev/null 2>&1; then
     good "MetaTrader5 package already working inside Wine"
   else
     # Fetch the Windows wheels with the Mac's own Python. That leaves nothing
@@ -429,7 +431,7 @@ ensure_wine_python() {
     wheels="$WINE_PREFIX/drive_c/wheels"
     mkdir -p "$wheels"
     run_logged "Downloading the MetaTrader5 package (Windows build)" \
-      "$VENV_DIR/bin/python" -m pip download MetaTrader5 \
+      "$VENV_DIR/bin/python" -m pip download MetaTrader5 tzdata \
         --platform win_amd64 --python-version 3.11 --implementation cp \
         --only-binary=:all: --dest "$wheels" || true
 
@@ -449,10 +451,10 @@ ensure_wine_python() {
       if ls "$wheels"/[Mm]eta[Tt]rader5-*.whl >/dev/null 2>&1; then
         run_logged "Installing the MetaTrader5 package inside Wine (offline)" \
           "$wine" "$WINE_PY" -m pip install --no-warn-script-location \
-            --no-index --find-links 'C:\wheels' MetaTrader5 || true
+            --no-index --find-links 'C:\wheels' MetaTrader5 tzdata || true
       else
         run_logged "Installing the MetaTrader5 package inside Wine" \
-          "$wine" "$WINE_PY" -m pip install --no-warn-script-location MetaTrader5 || true
+          "$wine" "$WINE_PY" -m pip install --no-warn-script-location MetaTrader5 tzdata || true
       fi
       wine_wait
     fi
@@ -469,7 +471,7 @@ ensure_wine_python() {
     fi
 
     if run_logged "Checking the MetaTrader5 package inside Wine" \
-         "$wine" "$WINE_PY" -c "import MetaTrader5, numpy; print('MetaTrader5', MetaTrader5.__version__)"; then
+         "$wine" "$WINE_PY" -c "import MetaTrader5, numpy, tzdata; from zoneinfo import ZoneInfo; ZoneInfo('Asia/Tokyo'); print('MetaTrader5', MetaTrader5.__version__, 'tzdata', tzdata.__version__)"; then
       good "MetaTrader5 package working inside Wine"
     else
       bad "The MetaTrader5 package does not work inside Wine. The output above says why; full log: $SETUP_LOG"
