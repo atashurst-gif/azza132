@@ -26,6 +26,43 @@ YELLOW=$'\033[33m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
 
 FAILURES=()
 WARNINGS=()
+SETUP_LOG="$LOG_DIR/setup.log"
+
+# run_logged "what it is" command args...
+#
+# Runs a long or fallible step with its output shown live AND appended to the
+# setup log. The first version of this installer silenced these steps, and when
+# Wine failed on a real Mac there was nothing to read - not for the user, not
+# for anyone helping them. Live output also means a sudo or "press RETURN"
+# prompt is visible instead of looking like a hang.
+run_logged() {
+  local what
+  local code
+  what="${1:-command}"
+  shift
+  mkdir -p "$(dirname "$SETUP_LOG")" 2>/dev/null
+  printf '\n===== %s =====\n' "$what" >> "$SETUP_LOG"
+  say "    ${DIM}--- $what ---${RESET}"
+  "$@" 2>&1 | tee -a "$SETUP_LOG" | sed 's/^/        /'
+  code=${PIPESTATUS[0]}
+  if (( code != 0 )); then
+    say "    ${RED}--- $what failed (exit $code). Full log: $SETUP_LOG ---${RESET}"
+  fi
+  return "$code"
+}
+
+# resolve_path PATH - follow symlinks (macOS has no readlink -f).
+resolve_path() {
+  local p
+  local dir
+  p="${1:-}"
+  while [[ -L "$p" ]]; do
+    dir="$(cd "$(dirname "$p")" && pwd -P)"
+    p="$(readlink "$p")"
+    [[ "$p" = /* ]] || p="$dir/$p"
+  done
+  printf '%s' "$p"
+}
 
 # "${*:-}" rather than "$*": bash 3.2 with `set -u` treats an unset "$*" as an
 # unbound variable, so a bare `say` with no arguments would kill the script.
@@ -117,7 +154,7 @@ find_native_python() {
   if [[ -z "$NATIVE_PY" ]]; then
     warn "No suitable Python found. Installing it with Homebrew."
     ensure_homebrew || return 1
-    brew install python@3.11 >/dev/null 2>&1
+    run_logged "Installing Python with Homebrew" brew install python@3.11
     NATIVE_PY="$(command -v python3.11 || command -v python3)"
   fi
   if [[ -z "$NATIVE_PY" ]]; then
@@ -163,19 +200,86 @@ make_venv() {
 }
 
 # ------------------------------------------------------------------- wine ----
+WINE_BIN=""
+WINE_DIR=""
+
+# find_wine - locate a usable wine binary. Checks PATH first, then the app
+# bundles the Homebrew casks install, because a cask can succeed in installing
+# the app while its command-line symlink step does not.
+find_wine() {
+  local candidate
+  local real
+  for candidate in \
+      "$(command -v wine64 2>/dev/null || true)" \
+      "$(command -v wine 2>/dev/null || true)" \
+      "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine64" \
+      "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine" \
+      "/Applications/Wine Crossover.app/Contents/Resources/wine/bin/wine64" \
+      "/Applications/Wine Crossover.app/Contents/Resources/wine/bin/wine" \
+      "/Applications/Wine Staging.app/Contents/Resources/wine/bin/wine" \
+      "/Applications/Wine Devel.app/Contents/Resources/wine/bin/wine" \
+      "/opt/homebrew/bin/wine" \
+      "/usr/local/bin/wine"; do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    real="$(resolve_path "$candidate")"
+    WINE_BIN="$candidate"
+    WINE_DIR="$(cd "$(dirname "$real")" && pwd -P)"
+    return 0
+  done
+  return 1
+}
+
+wine_bin() {
+  [[ -n "$WINE_BIN" ]] || find_wine || true
+  printf '%s' "$WINE_BIN"
+}
+
+# wine_tool NAME - path to a wine helper (wineserver, wineboot) next to the
+# real wine binary, or empty if the build does not ship it.
+wine_tool() {
+  local name
+  name="${1:-}"
+  [[ -n "$WINE_DIR" && -x "$WINE_DIR/$name" ]] && printf '%s' "$WINE_DIR/$name"
+  return 0
+}
+
+# wine_wait - let Wine finish whatever it is doing (installers run detached).
+wine_wait() {
+  local ws
+  ws="$(wine_tool wineserver)"
+  if [[ -n "$ws" ]]; then
+    "$ws" -w 2>/dev/null || true
+  else
+    sleep 5
+  fi
+}
+
 ensure_wine() {
   step "Setting up Wine (this is what lets MetaTrader 5 run on a Mac)"
-  if command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1; then
-    good "Wine is installed: $(command -v wine64 || command -v wine)"
+  if find_wine; then
+    good "Wine is installed: $WINE_BIN"
   else
     ensure_homebrew || return 1
-    say "    ${DIM}Installing Wine. This is a large download; be patient.${RESET}"
-    brew install --cask --no-quarantine wine-stable >/dev/null 2>&1 \
-      || brew install --cask wine-stable >/dev/null 2>&1
-    if command -v wine64 >/dev/null 2>&1 || command -v wine >/dev/null 2>&1; then
-      good "Wine installed"
+    say "    Installing Wine. This is a large download; be patient."
+    say "    ${DIM}macOS may ask for your password. That is the installer, not the bot.${RESET}"
+    # Known-good options in order. wine-stable is the standard build; if the
+    # local Homebrew is too old to know it, refresh and retry; wine-crossover
+    # is the community build most often used for MetaTrader on Apple Silicon.
+    run_logged "Installing wine-stable" \
+      brew install --cask --no-quarantine wine-stable || true
+    if ! find_wine; then
+      run_logged "Refreshing Homebrew" brew update || true
+      run_logged "Installing wine-stable (second attempt)" \
+        brew install --cask --no-quarantine wine-stable || true
+    fi
+    if ! find_wine; then
+      run_logged "Installing wine-crossover (alternative build)" \
+        brew install --cask --no-quarantine gcenx/wine/wine-crossover || true
+    fi
+    if find_wine; then
+      good "Wine installed: $WINE_BIN"
     else
-      bad "Wine could not be installed. Install it manually: brew install --cask wine-stable"
+      bad "Wine could not be installed. The output above says why; the full log is $SETUP_LOG"
       return 1
     fi
   fi
@@ -183,77 +287,109 @@ ensure_wine() {
   export WINEDEBUG="-all"
   if [[ ! -d "$WINE_PREFIX/drive_c" ]]; then
     say "    ${DIM}Creating the Windows environment (first time only)...${RESET}"
-    WINEDLLOVERRIDES="mscoree,mshtml=" wineboot --init >/dev/null 2>&1
+    # wineboot is a Wine builtin, so it runs through wine itself rather than
+    # relying on a wineboot script being on PATH.
+    WINEDLLOVERRIDES="mscoree,mshtml=" run_logged "Creating the Windows environment" \
+      "$WINE_BIN" wineboot --init || true
+    wine_wait
   fi
-  [[ -d "$WINE_PREFIX/drive_c" ]] && good "Windows environment ready at $WINE_PREFIX" \
-    || { bad "The Windows environment could not be created."; return 1; }
+  if [[ -d "$WINE_PREFIX/drive_c" ]]; then
+    good "Windows environment ready at $WINE_PREFIX"
+  else
+    bad "The Windows environment could not be created. See $SETUP_LOG"
+    return 1
+  fi
 }
 
-WINE_BIN=""
-wine_bin() {
-  WINE_BIN="$(command -v wine64 || command -v wine)"
-  printf '%s' "$WINE_BIN"
-}
-
-WINE_PY=""
+WINE_PY='C:\Python311\python.exe'
+WINE_PY_DIR=""
 ensure_wine_python() {
   step "Installing Windows Python inside Wine"
   export WINEPREFIX="$WINE_PREFIX"
   export WINEDEBUG="-all"
-  local wine; wine="$(wine_bin)"
-  local target="$WINE_PREFIX/drive_c/Python311/python.exe"
-  if [[ -f "$target" ]]; then
-    WINE_PY='C:\Python311\python.exe'
+  WINE_PY_DIR="$WINE_PREFIX/drive_c/Python311"
+  local wine
+  wine="$(wine_bin)"
+  if [[ -f "$WINE_PY_DIR/python.exe" ]]; then
     good "Windows Python already installed"
   else
-    local installer="$MINTEL_HOME/python-win.exe"
-    if [[ ! -f "$installer" ]]; then
-      say "    ${DIM}Downloading Windows Python...${RESET}"
-      curl -fsSL -o "$installer" \
-        "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" \
+    # The "embeddable" build: a plain zip, no MSI installer to go wrong under
+    # Wine. It only needs site-packages switching on and pip bootstrapped.
+    local zip
+    zip="$MINTEL_HOME/python-win-embed.zip"
+    if [[ ! -f "$zip" ]]; then
+      run_logged "Downloading Windows Python" \
+        curl -fL -o "$zip" \
+        "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip" \
         || { bad "Could not download Windows Python."; return 1; }
     fi
-    say "    ${DIM}Installing it inside Wine (a few minutes)...${RESET}"
-    "$wine" "$installer" /quiet InstallAllUsers=0 PrependPath=0 Include_test=0 \
-      TargetDir='C:\Python311' >/dev/null 2>&1
-    wineserver -w 2>/dev/null
-    if [[ -f "$target" ]]; then
-      WINE_PY='C:\Python311\python.exe'
+    mkdir -p "$WINE_PY_DIR"
+    run_logged "Unpacking Windows Python" unzip -q -o "$zip" -d "$WINE_PY_DIR" \
+      || { bad "Could not unpack Windows Python."; return 1; }
+    # Enable site-packages (the embeddable build ships with it commented out).
+    if [[ -f "$WINE_PY_DIR/python311._pth" ]]; then
+      sed -i '' 's/^#import site/import site/' "$WINE_PY_DIR/python311._pth"
+    fi
+    if [[ -f "$WINE_PY_DIR/python.exe" ]]; then
       good "Windows Python installed"
     else
-      bad "Windows Python did not install inside Wine."
+      bad "Windows Python did not unpack correctly."
       return 1
     fi
   fi
-  say "    ${DIM}Installing the MetaTrader 5 package inside Wine...${RESET}"
-  "$wine" "$WINE_PY" -m pip install --quiet --upgrade pip >/dev/null 2>&1
-  "$wine" "$WINE_PY" -m pip install --quiet MetaTrader5 >/dev/null 2>&1
-  wineserver -w 2>/dev/null
+
+  if ! "$wine" "$WINE_PY" -m pip --version >/dev/null 2>&1; then
+    local getpip
+    getpip="$WINE_PREFIX/drive_c/get-pip.py"
+    run_logged "Downloading pip" curl -fL -o "$getpip" "https://bootstrap.pypa.io/get-pip.py" \
+      || { bad "Could not download pip."; return 1; }
+    run_logged "Installing pip inside Wine" "$wine" "$WINE_PY" 'C:\get-pip.py' --no-warn-script-location \
+      || { bad "pip could not be installed inside Wine."; return 1; }
+    wine_wait
+  fi
+  if "$wine" "$WINE_PY" -c "import MetaTrader5" >/dev/null 2>&1; then
+    good "MetaTrader5 package already working inside Wine"
+    return 0
+  fi
+  run_logged "Installing the MetaTrader5 package inside Wine" \
+    "$wine" "$WINE_PY" -m pip install --no-warn-script-location MetaTrader5 \
+    || { bad "The MetaTrader5 package could not be installed inside Wine."; return 1; }
+  wine_wait
   if "$wine" "$WINE_PY" -c "import MetaTrader5" >/dev/null 2>&1; then
     good "MetaTrader5 package working inside Wine"
   else
-    bad "The MetaTrader5 package is not working inside Wine."
+    bad "The MetaTrader5 package installed but does not import. See $SETUP_LOG"
     return 1
   fi
 }
 
 MT5_TERMINAL=""
+# to_windows_path /Users/x/MarketBot/wine/drive_c/... -> C:\...
+to_windows_path() {
+  local p
+  p="${1:-}"
+  p="${p#$WINE_PREFIX/drive_c}"
+  p="C:${p}"
+  printf '%s' "$p" | tr '/' '\\'
+}
+
 ensure_mt5() {
   step "Installing MetaTrader 5"
   export WINEPREFIX="$WINE_PREFIX"
   export WINEDEBUG="-all"
-  local wine; wine="$(wine_bin)"
+  local wine
   local found
-  found="$(find "$WINE_PREFIX/drive_c" -maxdepth 5 -name terminal64.exe 2>/dev/null | head -1)"
+  wine="$(wine_bin)"
+  found="$(find "$WINE_PREFIX/drive_c" -maxdepth 6 -name terminal64.exe 2>/dev/null | head -1)"
   if [[ -n "$found" ]]; then
-    MT5_TERMINAL="$(printf '%s' "$found" | sed "s|$WINE_PREFIX/drive_c|C:|" | tr '/' '\\')"
+    MT5_TERMINAL="$(to_windows_path "$found")"
     good "MetaTrader 5 found: $MT5_TERMINAL"
     return 0
   fi
-  local installer="$MINTEL_HOME/mt5setup.exe"
+  local installer
+  installer="$MINTEL_HOME/mt5setup.exe"
   if [[ ! -f "$installer" ]]; then
-    say "    ${DIM}Downloading MetaTrader 5...${RESET}"
-    curl -fsSL -o "$installer" \
+    run_logged "Downloading MetaTrader 5" curl -fL -o "$installer" \
       "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" \
       || { bad "Could not download MetaTrader 5."; return 1; }
   fi
@@ -264,14 +400,14 @@ ensure_mt5() {
   say "    ${DIM}Come back to this window when MetaTrader is showing charts.${RESET}"
   say ""
   read -r -p "    Press Enter to open the installer... " _ </dev/tty
-  "$wine" "$installer" >/dev/null 2>&1
-  wineserver -w 2>/dev/null
+  run_logged "Running the MetaTrader 5 installer" "$wine" "$installer" || true
+  wine_wait
   found="$(find "$WINE_PREFIX/drive_c" -maxdepth 6 -name terminal64.exe 2>/dev/null | head -1)"
   if [[ -n "$found" ]]; then
-    MT5_TERMINAL="$(printf '%s' "$found" | sed "s|$WINE_PREFIX/drive_c|C:|" | tr '/' '\\')"
+    MT5_TERMINAL="$(to_windows_path "$found")"
     good "MetaTrader 5 installed: $MT5_TERMINAL"
   else
-    bad "MetaTrader 5 was not found after installation."
+    bad "MetaTrader 5 was not found after installation. See $SETUP_LOG"
     return 1
   fi
 }
@@ -535,8 +671,10 @@ start_mt5() {
     return 0
   fi
   [[ -n "$MT5_TERMINAL" ]] || { bad "MetaTrader 5 is not installed."; return 1; }
-  local wine; wine="$(wine_bin)"
-  nohup "$wine" "$MT5_TERMINAL" >/dev/null 2>&1 &
+  local wine
+  wine="$(wine_bin)"
+  mkdir -p "$LOG_DIR"
+  nohup "$wine" "$MT5_TERMINAL" >>"$LOG_DIR/mt5.out.log" 2>&1 &
   local waited=0
   while (( waited < 60 )); do
     pgrep -f "terminal64.exe" >/dev/null 2>&1 && break
@@ -636,6 +774,21 @@ final_report() {
   fi
   say "=============================================================="
   say ""
+  if (( ${#FAILURES[@]} )); then
+    say "  Nothing has been started. Fix the problem below and double-click"
+    say "  the icon again - everything already done is skipped."
+    say "  Setup log: $SETUP_LOG"
+    say ""
+    say "  ${RED}Problems:${RESET}"
+    printf '    - %s\n' "${FAILURES[@]}"
+    say ""
+    if (( ${#WARNINGS[@]} )); then
+      say "  ${YELLOW}Warnings:${RESET}"
+      printf '    - %s\n' "${WARNINGS[@]}"
+      say ""
+    fi
+    return 1
+  fi
   say "  Status page :  http://127.0.0.1:$DASH_PORT"
   say "  Results page:  http://127.0.0.1:$DASH_PORT/results"
   say "  Everything  :  $MINTEL_HOME"
@@ -655,12 +808,6 @@ final_report() {
     say "  ${YELLOW}Warnings:${RESET}"
     printf '    - %s\n' "${WARNINGS[@]}"
     say ""
-  fi
-  if (( ${#FAILURES[@]} )); then
-    say "  ${RED}Problems:${RESET}"
-    printf '    - %s\n' "${FAILURES[@]}"
-    say ""
-    return 1
   fi
   return 0
 }

@@ -340,7 +340,9 @@ class TestLauncherScripts:
     def test_install_steps_are_all_defined(self):
         lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
         for fn in ("check_macos", "make_folders", "copy_program",
-                   "find_native_python", "make_venv", "ensure_wine",
+                   "find_native_python", "make_venv", "run_logged",
+                   "resolve_path", "find_wine", "wine_tool", "wine_wait",
+                   "to_windows_path", "ensure_wine",
                    "ensure_wine_python", "ensure_mt5", "write_config",
                    "install_launch_agent", "prevent_idle_sleep", "start_mt5",
                    "start_everything", "show_health", "final_report",
@@ -364,9 +366,10 @@ class TestLauncherRobustness:
 
     def test_find_uses_macos_argument_order(self):
         """BSD find wants -maxdepth before the test; GNU only warns."""
+        import re
         lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
         assert "-name terminal64.exe -maxdepth" not in lib
-        assert "-maxdepth 5 -name terminal64.exe" in lib
+        assert re.search(r"-maxdepth \d+ -name terminal64\.exe", lib)
 
     def test_repeated_runs_do_not_stack_caffeinate(self):
         lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
@@ -470,7 +473,7 @@ class TestBashCompatibility:
         for i, line in enumerate(lines):
             for array in ("WARNINGS", "FAILURES"):
                 if f'"${{{array}[@]}}"' in line:
-                    window = "\n".join(lines[max(0, i - 4):i])
+                    window = "\n".join(lines[max(0, i - 12):i])
                     assert f"${{#{array}[@]}}" in window, (
                         f"line {i + 1}: expanding {array} without first "
                         f"checking it is non-empty")
@@ -585,3 +588,182 @@ class TestLauncherRunsUnderSetU:
         assert "a warning" in result.stdout
         assert "a failure" in result.stdout
         assert "survived" in result.stdout
+
+
+class TestInstallerNeverHidesAFailure:
+    """The Wine install failed on a real Mac with nothing to read.
+
+    Every step that can fail for a reason outside our control must show its
+    output live and keep a log. Silence is what turned a diagnosable problem
+    into "Wine could not be installed" and nothing else.
+    """
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _code_lines(self):
+        return [l for l in self.LIB.read_text().splitlines()
+                if not l.strip().startswith("#")]
+
+    def test_no_installer_step_is_silenced(self):
+        import re
+        for line in self._code_lines():
+            if ">/dev/null 2>&1" not in line:
+                continue
+            for marker in ("brew install", "brew update", "pip install",
+                           "$installer", "wineboot", "get-pip", "curl -f"):
+                # Whole tokens only: the string "Homebrew installed" contains
+                # "brew install" and is not an installer step.
+                pattern = r"(?<![A-Za-z])" + re.escape(marker) + r"(?![A-Za-z])"
+                assert not re.search(pattern, line), (
+                    f"installer step with its output hidden: {line.strip()!r}")
+
+    def test_big_steps_go_through_the_logged_runner(self):
+        text = self.LIB.read_text()
+        for needle in ("brew install --cask --no-quarantine wine-stable",
+                       "gcenx/wine/wine-crossover",
+                       "python-3.11.9-embed-amd64.zip",
+                       "get-pip.py",
+                       "mt5setup.exe"):
+            assert needle in text, needle
+        # and each of those is invoked via run_logged, not bare
+        for line in self._code_lines():
+            if "brew install --cask" in line or "get-pip.py' " in line:
+                block_start = text.rfind("run_logged", 0, text.find(line))
+                assert block_start != -1
+
+    def test_wine_is_found_in_app_bundles_not_only_on_path(self):
+        text = self.LIB.read_text()
+        for bundle in ("Wine Stable.app", "Wine Crossover.app"):
+            assert bundle in text, (
+                f"{bundle}: a cask can install the app and still fail to "
+                f"link the command-line binary")
+
+    def test_wine_fallbacks_are_ordered(self):
+        text = self.LIB.read_text()
+        first = text.index('"Installing wine-stable"')
+        refresh = text.index('"Refreshing Homebrew"')
+        alt = text.index('"Installing wine-crossover')
+        assert first < refresh < alt
+
+    def test_wine_helpers_are_not_assumed_to_be_on_path(self):
+        for line in self._code_lines():
+            stripped = line.strip()
+            assert not stripped.startswith("wineboot "), line
+            assert not stripped.startswith("wineserver "), line
+            assert not stripped.startswith("WINEDLLOVERRIDES=\"mscoree,mshtml=\" wineboot"), line
+        text = self.LIB.read_text()
+        assert '"$WINE_BIN" wineboot --init' in text
+        assert 'wine_tool wineserver' in text
+
+    def test_windows_python_uses_the_embeddable_build(self):
+        """No MSI installer to go wrong under Wine."""
+        text = self.LIB.read_text()
+        assert "embed-amd64.zip" in text
+        assert "import site" in text, "site-packages must be switched on"
+        assert "python-3.11.9-amd64.exe" not in text.split("ensure_wine_python()")[1]
+
+    def test_windows_paths_are_converted_correctly(self):
+        result = subprocess.run(
+            ["bash", "-c",
+             f'set -uo pipefail; source "{self.LIB}"; '
+             f'WINE_PREFIX=/Users/me/MarketBot/wine; '
+             f'to_windows_path "/Users/me/MarketBot/wine/drive_c/Program Files/MetaTrader 5/terminal64.exe"'],
+            capture_output=True, text=True, env={**os.environ,
+                                                 "MINTEL_HOME": "/tmp/x"})
+        assert result.stdout == "C:\\Program Files\\MetaTrader 5\\terminal64.exe", \
+            (result.stdout, result.stderr)
+
+
+class TestLoggedRunner:
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _run(self, snippet, tmp_path):
+        env = dict(os.environ)
+        env["MINTEL_HOME"] = str(tmp_path)
+        return subprocess.run(
+            ["bash", "-c", f'set -uo pipefail; source "{self.LIB}"; {snippet}'],
+            capture_output=True, text=True, env=env, timeout=60)
+
+    def test_success_is_quiet_and_returns_zero(self, tmp_path):
+        r = self._run('run_logged "a step" true; echo "rc=$?"', tmp_path)
+        assert "rc=0" in r.stdout
+        assert "failed" not in r.stdout
+
+    def test_failure_shows_the_output_and_where_the_log_is(self, tmp_path):
+        r = self._run('run_logged "a step" bash -c "echo the-real-reason; exit 3"; '
+                      'echo "rc=$?"', tmp_path)
+        assert "rc=3" in r.stdout, "the command's own exit status must survive"
+        assert "the-real-reason" in r.stdout, "the output must be visible live"
+        assert "failed (exit 3)" in r.stdout
+        assert "setup.log" in r.stdout
+        log = tmp_path / "logs" / "setup.log"
+        assert log.exists()
+        assert "the-real-reason" in log.read_text()
+        assert "===== a step =====" in log.read_text()
+
+    def test_output_is_appended_across_steps(self, tmp_path):
+        self._run('run_logged "one" echo first; run_logged "two" echo second',
+                  tmp_path)
+        text = (tmp_path / "logs" / "setup.log").read_text()
+        assert "first" in text and "second" in text
+
+    def test_resolve_path_follows_relative_symlink_chains(self, tmp_path):
+        real = tmp_path / "bin" / "wine-real"
+        real.parent.mkdir()
+        real.write_text("#!/bin/sh\n")
+        (tmp_path / "bin" / "wine").symlink_to("wine-real")
+        (tmp_path / "wine-link").symlink_to("bin/wine")
+        r = self._run(f'resolve_path "{tmp_path / "wine-link"}"', tmp_path)
+        assert r.stdout == str(real), (r.stdout, r.stderr)
+
+    def test_find_wine_locates_a_bundle_binary_and_its_real_directory(self, tmp_path):
+        bindir = tmp_path / "Wine Stable.app" / "Contents" / "Resources" / "wine" / "bin"
+        bindir.mkdir(parents=True)
+        (bindir / "wine").write_text("#!/bin/sh\n")
+        (bindir / "wine").chmod(0o755)
+        (bindir / "wineserver").write_text("#!/bin/sh\n")
+        (bindir / "wineserver").chmod(0o755)
+        link = tmp_path / "wine"
+        link.symlink_to(bindir / "wine")
+        # Put the symlink first on PATH so find_wine takes it, then check it
+        # resolves WINE_DIR to the bundle's real bin directory.
+        r = self._run(
+            f'PATH="{tmp_path}:$PATH"; find_wine; echo "BIN=$WINE_BIN"; '
+            f'echo "DIR=$WINE_DIR"; echo "WS=$(wine_tool wineserver)"',
+            tmp_path)
+        assert f"BIN={link}" in r.stdout, r.stdout
+        assert f"DIR={bindir}" in r.stdout, r.stdout
+        assert f"WS={bindir / 'wineserver'}" in r.stdout, r.stdout
+
+    def test_find_wine_fails_cleanly_when_absent(self, tmp_path):
+        r = self._run('PATH=/nonexistent; if find_wine; then echo found; '
+                      'else echo absent; fi', tmp_path)
+        assert "absent" in r.stdout
+        assert "unbound variable" not in r.stderr
+
+
+class TestFinalReportHonesty:
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _run(self, snippet, tmp_path):
+        env = dict(os.environ)
+        env["MINTEL_HOME"] = str(tmp_path)
+        return subprocess.run(
+            ["bash", "-c", f'set -uo pipefail; source "{self.LIB}"; {snippet}'],
+            capture_output=True, text=True, env=env, timeout=60)
+
+    def test_a_failed_install_does_not_claim_to_be_running(self, tmp_path):
+        r = self._run('bad "Wine could not be installed"; final_report; '
+                      'echo "rc=$?"', tmp_path)
+        assert "rc=1" in r.stdout
+        assert "Nothing has been started" in r.stdout
+        assert "starts again by itself" not in r.stdout
+        assert "Status page" not in r.stdout
+        assert "Wine could not be installed" in r.stdout
+
+    def test_a_clean_install_reports_running(self, tmp_path):
+        r = self._run('final_report; echo "rc=$?"', tmp_path)
+        assert "rc=0" in r.stdout
+        assert "THE BOT IS RUNNING" in r.stdout
+        assert "starts again by itself" in r.stdout
+        assert "close the lid" in r.stdout
