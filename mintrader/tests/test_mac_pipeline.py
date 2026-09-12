@@ -406,3 +406,182 @@ class TestLauncherRobustness:
         text = (self.ROOT_DEPLOY / "Self Test.command").read_text()
         assert "--sim-live" in text, (
             "a frozen clock would make fresh prices read as stale")
+
+
+class TestBashCompatibility:
+    """macOS ships bash 3.2 (2007). The launcher must run on it.
+
+    This is not hypothetical: the first release of these scripts died on the
+    very first line it executed, because bash 3.2 does not make the first
+    variable in a `local a=... b=...` statement visible to the second
+    assignment, and `set -u` turns that into a fatal error rather than an
+    empty string. These checks are static because the bash available in CI is
+    5.x and simply cannot reproduce 3.2's behaviour.
+    """
+
+    ROOT_DEPLOY = ROOT / "deploy" / "mac"
+    SCRIPTS = ("mintel_mac.sh", "Start Trading Bot.command",
+               "Stop Trading Bot.command", "Self Test.command")
+
+    def _scripts(self):
+        for name in self.SCRIPTS:
+            yield name, (self.ROOT_DEPLOY / name).read_text()
+
+    def test_no_local_statement_references_its_own_earlier_variable(self):
+        import re
+        # `local a=1 b=$a` - the exact shape that broke on the user's Mac.
+        pattern = re.compile(r"^\s*local\s+(\w+)=[^;]*?\s+\w+=[^;]*?\$\{?\1\b",
+                             re.MULTILINE)
+        for name, text in self._scripts():
+            code = "\n".join(l for l in text.splitlines()
+                             if not l.strip().startswith("#"))
+            match = pattern.search(code)
+            assert match is None, (
+                f"{name}: `{match.group(0).strip()}` - bash 3.2 cannot see the "
+                f"first variable in the second assignment")
+
+    def test_no_bash_4_only_syntax(self):
+        import re
+        banned = {
+            r"\$\{\w+,,": "${var,,} lowercase expansion is bash 4+",
+            r"\$\{\w+\^\^": "${var^^} uppercase expansion is bash 4+",
+            r"\bmapfile\b": "mapfile is bash 4+",
+            r"\breadarray\b": "readarray is bash 4+",
+            r"\bdeclare\s+-A\b": "associative arrays are bash 4+",
+            r"\bdeclare\s+-g\b": "declare -g is bash 4+",
+            r"&>>": "&>> append redirection is bash 4+",
+        }
+        for name, text in self._scripts():
+            for pattern, why in banned.items():
+                assert not re.search(pattern, text), f"{name}: {why}"
+
+    def test_output_helpers_tolerate_no_arguments(self):
+        """bash 3.2 + set -u treats an unset "$*" as unbound."""
+        lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
+        for helper in ("say()", "step()", "good()", "warn()", "bad()"):
+            line = next(l for l in lib.splitlines() if l.strip().startswith(helper))
+            assert '"$*"' not in line, (
+                f"{helper} uses \"$*\"; use \"${{*:-}}\" so a bare call is safe")
+
+    def test_array_expansions_are_guarded(self):
+        """bash 3.2 + set -u dies on "${arr[@]}" when arr is empty."""
+        lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
+        lines = lib.splitlines()
+        for i, line in enumerate(lines):
+            for array in ("WARNINGS", "FAILURES"):
+                if f'"${{{array}[@]}}"' in line:
+                    window = "\n".join(lines[max(0, i - 4):i])
+                    assert f"${{#{array}[@]}}" in window, (
+                        f"line {i + 1}: expanding {array} without first "
+                        f"checking it is non-empty")
+
+    def test_positional_parameters_are_defaulted(self):
+        """`$1` in a function must be written `${1:-}` under set -u."""
+        import re
+        for name, text in self._scripts():
+            for line_no, line in enumerate(text.splitlines(), 1):
+                if line.strip().startswith("#"):
+                    continue          # comments may quote the bad pattern
+                match = re.search(r'"\$(\d)"', line)
+                if match is None:
+                    continue
+                assert "${" in line or "local" not in line, (
+                    f"{name} line {line_no}: {line.strip()!r} - use "
+                    f'"${{{match.group(1)}:-}}" so an absent argument is not fatal')
+
+    def test_every_script_declares_a_bash_shebang(self):
+        for name, text in self._scripts():
+            assert text.startswith("#!/bin/bash"), name
+
+    def test_the_launcher_keeps_the_window_open_on_failure(self):
+        """A .command window closes on exit; an error would vanish unread."""
+        launcher = (self.ROOT_DEPLOY / "Start Trading Bot.command").read_text()
+        assert "trap on_unexpected_exit EXIT" in launcher
+        assert "BASH_LINENO" in launcher, "it must say WHERE it failed"
+
+    def test_interactive_installers_are_given_a_terminal(self):
+        """Homebrew asks for RETURN and a password; </dev/null is an instant
+        invisible failure."""
+        lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
+        brew_line = next(l for l in lib.splitlines()
+                         if "install.sh" in l and "curl" in l)
+        assert "</dev/null" not in brew_line
+        assert "</dev/tty" in brew_line
+
+    def test_rosetta_failure_is_not_fatal(self):
+        lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
+        block = lib.split("Rosetta 2 is needed")[1].split("fi\n  fi")[0]
+        assert "warn " in block, "a Rosetta failure must warn, not abort"
+        assert ">/dev/null" not in block, (
+            "hiding the output hides the password prompt it may show")
+
+
+class TestLauncherRunsUnderSetU:
+    """Actually execute the library's pure functions with `set -u` on."""
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def _run(self, snippet: str, env_extra=None):
+        script = f'set -uo pipefail\nsource "{self.LIB}"\n{snippet}\n'
+        env = dict(os.environ)
+        env["MINTEL_HOME"] = "/tmp/mintel-nonexistent-home"
+        env.update(env_extra or {})
+        return subprocess.run(["bash", "-c", script], capture_output=True,
+                              text=True, env=env, timeout=60)
+
+    def test_library_sources_cleanly(self):
+        result = self._run('echo sourced-ok')
+        assert result.returncode == 0, result.stderr
+        assert "sourced-ok" in result.stdout
+        assert "unbound variable" not in result.stderr
+
+    def test_is_running_on_a_missing_pid_file(self):
+        result = self._run('if is_running watchdog; then echo yes; '
+                           'else echo no; fi')
+        assert result.returncode == 0, result.stderr
+        assert "unbound variable" not in result.stderr
+        assert "no" in result.stdout
+
+    def test_is_running_with_no_argument_is_safe(self):
+        result = self._run('if is_running; then echo yes; else echo no; fi')
+        assert result.returncode == 0, result.stderr
+        assert "unbound variable" not in result.stderr
+        assert "no" in result.stdout
+
+    def test_is_running_detects_a_live_process(self, tmp_path):
+        pid_dir = tmp_path / "data"
+        pid_dir.mkdir()
+        (pid_dir / "self.pid").write_text(str(os.getpid()))
+        result = self._run(
+            f'DATA_DIR="{pid_dir}"; if is_running self; then echo yes; '
+            f'else echo no; fi')
+        assert "yes" in result.stdout, result.stderr
+
+    def test_is_running_rejects_a_dead_pid(self, tmp_path):
+        pid_dir = tmp_path / "data"
+        pid_dir.mkdir()
+        (pid_dir / "ghost.pid").write_text("4194303")
+        result = self._run(
+            f'DATA_DIR="{pid_dir}"; if is_running ghost; then echo yes; '
+            f'else echo no; fi')
+        assert "no" in result.stdout, result.stderr
+
+    def test_output_helpers_with_no_arguments(self):
+        result = self._run('say; step; good; warn; bad; echo survived')
+        assert result.returncode == 0, result.stderr
+        assert "unbound variable" not in result.stderr
+        assert "survived" in result.stdout
+
+    def test_final_report_with_empty_arrays(self):
+        result = self._run('final_report || true; echo survived')
+        assert "unbound variable" not in result.stderr
+        assert "survived" in result.stdout
+
+    def test_final_report_with_warnings_and_failures(self):
+        result = self._run(
+            'warn "a warning"; bad "a failure"; final_report || true; '
+            'echo survived')
+        assert "unbound variable" not in result.stderr
+        assert "a warning" in result.stdout
+        assert "a failure" in result.stdout
+        assert "survived" in result.stdout

@@ -27,20 +27,25 @@ YELLOW=$'\033[33m'; CYAN=$'\033[36m'; RESET=$'\033[0m'
 FAILURES=()
 WARNINGS=()
 
-say()  { printf '%s\n' "$*"; }
-step() { printf '\n%s==> %s%s\n' "$CYAN" "$*" "$RESET"; }
-good() { printf '    %s[ OK ]%s %s\n' "$GREEN" "$RESET" "$*"; }
-warn() { printf '    %s[WARN]%s %s\n' "$YELLOW" "$RESET" "$*"; WARNINGS+=("$*"); }
-bad()  { printf '    %s[FAIL]%s %s\n' "$RED" "$RESET" "$*"; FAILURES+=("$*"); }
+# "${*:-}" rather than "$*": bash 3.2 with `set -u` treats an unset "$*" as an
+# unbound variable, so a bare `say` with no arguments would kill the script.
+say()  { printf '%s\n' "${*:-}"; }
+step() { printf '\n%s==> %s%s\n' "$CYAN" "${*:-}" "$RESET"; }
+good() { printf '    %s[ OK ]%s %s\n' "$GREEN" "$RESET" "${*:-}"; }
+warn() { printf '    %s[WARN]%s %s\n' "$YELLOW" "$RESET" "${*:-}"
+         WARNINGS[${#WARNINGS[@]}]="${*:-}"; }
+bad()  { printf '    %s[FAIL]%s %s\n' "$RED" "$RESET" "${*:-}"
+         FAILURES[${#FAILURES[@]}]="${*:-}"; }
 
 # --------------------------------------------------------------- machine -----
 check_macos() {
   step "Checking this Mac"
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    bad "This launcher is for macOS."
+    bad "This launcher is for macOS. On Windows use deploy/SETUP-AND-START.ps1"
     return 1
   fi
-  local version arch
+  local version
+  local arch
   version="$(sw_vers -productVersion)"
   arch="$(uname -m)"
   good "macOS $version on $arch"
@@ -48,10 +53,16 @@ check_macos() {
     if /usr/bin/pgrep -q oahd; then
       good "Rosetta 2 is installed (needed to run MetaTrader under Wine)"
     else
-      warn "Rosetta 2 is not installed yet. Installing it now."
-      softwareupdate --install-rosetta --agree-to-license >/dev/null 2>&1 \
-        && good "Rosetta 2 installed" \
-        || bad "Rosetta 2 could not be installed. Run: softwareupdate --install-rosetta"
+      say "    Rosetta 2 is needed to run MetaTrader on this Mac. Installing it."
+      say "    ${DIM}macOS may ask for your password here.${RESET}"
+      # Output is deliberately NOT hidden: this can prompt, and a silent
+      # prompt looks like a hang. A failure is a warning, not a fatal error -
+      # Wine may still work, and the user can install Rosetta separately.
+      if softwareupdate --install-rosetta --agree-to-license; then
+        good "Rosetta 2 installed"
+      else
+        warn "Rosetta 2 did not install. If Wine fails later, run this yourself: softwareupdate --install-rosetta"
+      fi
     fi
   fi
   local free_gb
@@ -71,7 +82,9 @@ make_folders() {
 }
 
 copy_program() {
-  local source_dir="$1"
+  local source_dir
+  source_dir="${1:-}"
+  [[ -n "$source_dir" ]] || { bad "No source folder given."; return 1; }
   step "Installing the program files"
   if [[ "$source_dir" == "$APP_DIR" ]]; then
     good "Already running from the install folder"
@@ -121,7 +134,9 @@ ensure_homebrew() {
   fi
   warn "Homebrew is not installed. Installing it (this can take a few minutes)."
   say "    ${DIM}macOS may ask for your password. That is Homebrew, not the bot.${RESET}"
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/null
+  # </dev/tty, never </dev/null: the installer asks the user to press RETURN
+  # and then for a password, and a prompt with no input is an invisible hang.
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/tty
   local brew_path
   for brew_path in /opt/homebrew/bin/brew /usr/local/bin/brew; do
     [[ -x "$brew_path" ]] && eval "$("$brew_path" shellenv)" && break
@@ -497,9 +512,17 @@ install_desktop_icon() {
 
 # ------------------------------------------------------------ start / check --
 is_running() {
-  local name="$1" pidfile="$DATA_DIR/$name.pid"
+  # NOTE: each `local` gets its own statement on purpose. macOS ships bash 3.2,
+  # where `local a="$1" b="$a"` does NOT see `a` in the second assignment, and
+  # under `set -u` that is a fatal error rather than a quiet empty string.
+  local name
+  local pidfile
+  local pid
+  name="${1:-}"
+  [[ -n "$name" ]] || return 1
+  pidfile="$DATA_DIR/$name.pid"
   [[ -f "$pidfile" ]] || return 1
-  local pid; pid="$(tr -d '[:space:]' < "$pidfile")"
+  pid="$(tr -d '[:space:]' < "$pidfile" 2>/dev/null || true)"
   [[ -n "$pid" ]] || return 1
   kill -0 "$pid" 2>/dev/null
 }
@@ -564,7 +587,10 @@ start_everything() {
 
 show_health() {
   step "Health"
-  local waited=0 body=""
+  local waited
+  local body
+  waited=0
+  body=""
   while (( waited < 60 )); do
     body="$(curl -fsS --max-time 5 "http://127.0.0.1:$DASH_PORT/api" 2>/dev/null)" && break
     sleep 3; waited=$((waited + 3))

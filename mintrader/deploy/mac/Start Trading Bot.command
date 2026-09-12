@@ -11,6 +11,20 @@
 
 set -uo pipefail
 
+# A .command window closes the moment the script exits, so an unexpected error
+# would flash past unread. This keeps the window open and shows exactly what
+# happened and where, whatever goes wrong.
+on_unexpected_exit() {
+  local code=$?
+  if (( code != 0 )); then
+    printf '\n'
+    printf 'Something went wrong (exit code %s, line %s).\n' "$code" "${BASH_LINENO[0]:-?}"
+    printf 'Copy the last few lines above and send them to me and I will fix it.\n\n'
+    read -r -p 'Press Enter to close. ' _ </dev/tty || true
+  fi
+}
+trap on_unexpected_exit EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # The icon can live on the Desktop while the program lives somewhere else, so
@@ -67,6 +81,7 @@ say "=============================================================="
 MODE="${1:-start}"
 if [[ "$MODE" == "stop" ]]; then
   stop_everything
+  trap - EXIT
   read -r -p "Press Enter to close. " _ </dev/tty
   exit 0
 fi
@@ -86,6 +101,7 @@ if is_running watchdog && is_running trader; then
   open_dashboard
   say "  ${DIM}This window can be closed.${RESET}"
   say ""
+  trap - EXIT
   read -r -p "Press Enter to close. " _ </dev/tty
   exit 0
 fi
@@ -95,15 +111,15 @@ say ""
 say "  Setting things up. Anything already done is skipped."
 say "  ${DIM}The first run downloads a lot and can take 20-30 minutes.${RESET}"
 
-check_macos          || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+check_macos          || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
 make_folders
 copy_program "$SOURCE_DIR"
-find_native_python   || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-make_venv            || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-ensure_wine          || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-ensure_wine_python   || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-ensure_mt5           || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-write_config         || { final_report; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+find_native_python   || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+make_venv            || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+ensure_wine          || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+ensure_wine_python   || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+ensure_mt5           || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+write_config         || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
 install_launch_agent
 install_desktop_icon
 prevent_idle_sleep
@@ -120,5 +136,6 @@ STATUS=$?
 open_dashboard
 say "  ${DIM}This window can be closed.${RESET}"
 say ""
+trap - EXIT
 read -r -p "Press Enter to close. " _ </dev/tty
 exit $STATUS
