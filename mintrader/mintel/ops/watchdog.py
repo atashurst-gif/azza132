@@ -53,6 +53,12 @@ class ManagedProcess:
     heartbeat: str = ""            # heartbeat file name to judge liveness by
     pid_file: str = ""
     cwd: str = ""
+    # Where the process's own output goes. Also what makes Windows Python
+    # under Wine start at all: handed launchd's /dev/null as standard input
+    # it dies with "can't initialize sys standard streams / Invalid handle",
+    # so every child gets a pipe for stdin and a real file for its output.
+    log_file: str = ""
+    _log_fh: Optional[object] = field(default=None, repr=False, compare=False)
     max_restarts_per_hour: int = 12
     grace_seconds: float = 45.0
     # Optional liveness probe, used instead of a heartbeat file for services
@@ -98,6 +104,14 @@ class ManagedProcess:
             kwargs: dict = {"cwd": self.cwd or None}
             if env:
                 kwargs["env"] = env
+            if self.log_file:
+                os.makedirs(os.path.dirname(self.log_file) or ".", exist_ok=True)
+                self._close_log()
+                self._log_fh = open(self.log_file, "ab")
+                kwargs["stdout"] = self._log_fh
+                kwargs["stderr"] = subprocess.STDOUT
+            if not IS_WINDOWS:
+                kwargs["stdin"] = subprocess.PIPE
             if IS_WINDOWS:
                 kwargs["creationflags"] = getattr(
                     subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
@@ -113,6 +127,14 @@ class ManagedProcess:
                           f"next retry no sooner than {self.backoff:.0f}s")
         except Exception as exc:
             return False, f"{self.name}: could not start - {exc}"
+
+    def _close_log(self) -> None:
+        if self._log_fh is not None:
+            try:
+                self._log_fh.close()
+            except Exception:
+                pass
+            self._log_fh = None
 
     def stop(self) -> None:
         if self.proc is None:
@@ -374,6 +396,7 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
         heartbeat="strategy",
         pid_file=str(data / "trader.pid"),
         cwd=project,
+        log_file=str(Path(cfg.ops.log_dir) / "trader.out.log"),
         max_restarts_per_hour=cfg.ops.max_restarts_per_hour)]
 
     mt5_cmd: list[str] = []
@@ -399,6 +422,7 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                 command=bridge_cmd,
                 pid_file=str(data / "bridge.pid"),
                 cwd=project,
+                log_file=str(Path(cfg.ops.log_dir) / "bridge.out.log"),
                 grace_seconds=90.0,
                 probe=lambda: port_open(cfg.bridge_host, cfg.bridge_port),
                 max_restarts_per_hour=cfg.ops.max_restarts_per_hour))

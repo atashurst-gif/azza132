@@ -714,6 +714,50 @@ class TestWindowsPythonHasATimeZoneDatabase:
         assert "--backend" in r.stdout
 
 
+class TestManagedProcessesGetRealStandardStreams:
+    """The first live start on the real Mac: the watchdog (under launchd,
+    stdin=/dev/null) started the Wine-side bridge and Windows Python died at
+    once with "can't initialize sys standard streams: Invalid handle".
+    Children get a pipe for stdin and a real file for their output."""
+
+    def test_child_sees_a_pipe_on_stdin_and_its_output_lands_in_the_log(self, tmp_path):
+        import datetime as dt
+        from mintel.ops.watchdog import ManagedProcess
+        log = tmp_path / "logs" / "child.out.log"
+        mp = ManagedProcess(
+            name="child",
+            command=[sys.executable, "-c",
+                     "import sys, os; print('stdin-is-tty', sys.stdin.isatty()); "
+                     "print('stdin-fstat-ok', os.fstat(0).st_mode > 0); "
+                     "print('to-stderr', file=sys.stderr); print('hello-from-child')"],
+            log_file=str(log))
+        ok, msg = mp.start(dt.datetime.now(dt.timezone.utc))
+        assert ok, msg
+        mp.proc.wait(timeout=30)
+        mp._close_log()
+        text = log.read_text()
+        assert "hello-from-child" in text
+        assert "to-stderr" in text, "stderr must go to the same log"
+        assert "stdin-is-tty False" in text
+        assert "stdin-fstat-ok True" in text
+        assert mp.proc.stdin is not None, "stdin must be a pipe we hold open"
+
+    def test_build_default_gives_trader_and_bridge_their_own_logs(self, tmp_path):
+        from mintel.config import Config
+        from mintel.ops.watchdog import build_default
+        cfg = Config()
+        cfg.ops.data_dir = str(tmp_path / "data")
+        cfg.ops.log_dir = str(tmp_path / "logs")
+        cfg.broker_mode = "bridge"
+        cfg.wine_python = "C:\\Python311\\python.exe"
+        cfg.wine_binary = "/x/wine64"
+        cfg.mt5_terminal_path = "C:\\MT5\\terminal64.exe"
+        wd = build_default(cfg, str(tmp_path / "c.json"), project_dir=str(tmp_path))
+        logs = {p.name: p.log_file for p in wd.processes}
+        assert logs["trader"].endswith("logs/trader.out.log")
+        assert logs["bridge"].endswith("logs/bridge.out.log")
+
+
 class TestRiskAnswersWithPercentSigns:
     """The first real setup answered "3%", "5%", "10%"; the parser only knew
     bare numbers, kept the defaults, and the summary echoed what was typed."""
