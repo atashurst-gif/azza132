@@ -556,7 +556,7 @@ ensure_wine_python() {
 
   # tzdata: Windows Python has no time-zone database of its own, and the bot
   # needs one for session times. Check a real lookup, not just the import.
-  if "$wine" "$WINE_PY" -c "import MetaTrader5, numpy, tzdata; from zoneinfo import ZoneInfo; ZoneInfo('Asia/Tokyo')" >/dev/null 2>&1; then
+  if wine_py -c "import MetaTrader5, numpy, tzdata; from zoneinfo import ZoneInfo; ZoneInfo('Asia/Tokyo')" >/dev/null 2>&1; then
     good "MetaTrader5 package already working inside Wine"
   else
     # Fetch the Windows wheels with the Mac's own Python. That leaves nothing
@@ -569,7 +569,7 @@ ensure_wine_python() {
         --platform win_amd64 --python-version 3.11 --implementation cp \
         --only-binary=:all: --dest "$wheels" || true
 
-    if ! "$wine" "$WINE_PY" -m pip --version >/dev/null 2>&1; then
+    if ! wine_py -m pip --version >/dev/null 2>&1; then
       local getpip
       getpip="$WINE_PREFIX/drive_c/get-pip.py"
       if [[ ! -f "$getpip" ]]; then
@@ -581,7 +581,7 @@ ensure_wine_python() {
       wine_wait
     fi
 
-    if "$wine" "$WINE_PY" -m pip --version >/dev/null 2>&1; then
+    if wine_py -m pip --version >/dev/null 2>&1; then
       if ls "$wheels"/[Mm]eta[Tt]rader5-*.whl >/dev/null 2>&1; then
         run_logged "Installing the MetaTrader5 package inside Wine (offline)" \
           "$wine" "$WINE_PY" -m pip install --no-warn-script-location \
@@ -593,7 +593,7 @@ ensure_wine_python() {
       wine_wait
     fi
 
-    if ! "$wine" "$WINE_PY" -c "import MetaTrader5" >/dev/null 2>&1 \
+    if ! wine_py -c "import MetaTrader5" >/dev/null 2>&1 \
        && ls "$wheels"/[Mm]eta[Tt]rader5-*.whl >/dev/null 2>&1; then
       # pip itself would not run under Wine. A wheel is a zip laid out exactly
       # as site-packages expects, so unpack the two we need straight in.
@@ -604,11 +604,38 @@ ensure_wine_python() {
       done
     fi
 
-    if run_logged "Checking the MetaTrader5 package inside Wine" \
-         "$wine" "$WINE_PY" -c "import MetaTrader5, numpy, tzdata; from zoneinfo import ZoneInfo; ZoneInfo('Asia/Tokyo'); print('MetaTrader5', MetaTrader5.__version__, 'tzdata', tzdata.__version__)"; then
+    # One package at a time, so a crash names its culprit.
+    wine_py_imports tzdata || { bad "Windows Python cannot even load a pure-Python package. See $SETUP_LOG"; return 1; }
+    if ! wine_py_imports numpy; then
+      # The newest numpy can crash under an older Wine (MetaTrader's own
+      # Wine is 8.0). numpy 1.26 is the last of the previous line and is
+      # what most people run MetaTrader's Python package with under Wine.
+      warn "The current numpy crashes under this Wine. Trying numpy 1.26 instead."
+      run_logged "Downloading numpy 1.26 (Windows build)" \
+        "$VENV_DIR/bin/python" -m pip download "numpy==1.26.4" \
+          --platform win_amd64 --python-version 3.11 --implementation cp \
+          --only-binary=:all: --dest "$wheels" || true
+      if wine_py -m pip --version >/dev/null 2>&1; then
+        run_logged "Installing numpy 1.26 inside Wine (offline)" \
+          wine_py -m pip install --no-warn-script-location --no-index \
+            --find-links 'C:\wheels' --force-reinstall --no-deps "numpy==1.26.4" || true
+      else
+        rm -rf "$WINE_PY_DIR/Lib/site-packages/numpy" "$WINE_PY_DIR/Lib/site-packages/numpy.libs" \
+               "$WINE_PY_DIR"/Lib/site-packages/numpy-*.dist-info
+        for whl in "$wheels"/numpy-1.26.4-*.whl; do
+          [[ -f "$whl" ]] && run_logged "Unpacking $(basename "$whl") into Windows Python" \
+            unzip -q -o "$whl" -d "$WINE_PY_DIR/Lib/site-packages" || true
+        done
+      fi
+      wine_wait
+      wine_py_imports numpy || { bad "numpy does not work inside this Wine, even the older one. See $SETUP_LOG"; return 1; }
+    fi
+    wine_py_imports MetaTrader5 || { bad "The MetaTrader5 package does not load inside this Wine. See $SETUP_LOG"; return 1; }
+    if run_logged "Checking time zones inside Wine" \
+         wine_py -c "from zoneinfo import ZoneInfo; print(ZoneInfo('Asia/Tokyo'))"; then
       good "MetaTrader5 package working inside Wine"
     else
-      bad "The MetaTrader5 package does not work inside Wine. The output above says why; full log: $SETUP_LOG"
+      bad "Time zones do not work inside Wine. See $SETUP_LOG"
       return 1
     fi
   fi
@@ -616,12 +643,26 @@ ensure_wine_python() {
   # The bridge is what the bot talks to. Prove Windows Python can load it
   # (and therefore the bot's own code) before anything depends on that.
   if run_logged "Checking the bridge loads inside Wine" \
-       "$wine" "$WINE_PY" "$(to_z_path "$APP_DIR/mintel/broker/bridge_server.py")" --help; then
+       wine_py "$(to_z_path "$APP_DIR/mintel/broker/bridge_server.py")" --help; then
     good "Bridge loads inside Wine"
   else
     bad "The bridge does not load inside Wine. The output above says why; full log: $SETUP_LOG"
     return 1
   fi
+}
+
+# Run Windows Python without Wine's "Program Error" popup: that dialog sits
+# there until someone clicks it, which is a hang for an unattended setup.
+# A crash then simply comes back as a non-zero exit status.
+wine_py() {
+  WINEDLLOVERRIDES="winedbg.exe=d" WINEDEBUG="-all" "$(wine_bin)" "$WINE_PY" "$@"
+}
+
+# Does `import <module>` work in Windows Python? Visible and logged.
+wine_py_imports() {
+  local mod
+  mod="${1:-}"
+  run_logged "Checking $mod inside Wine" wine_py -c "import $mod; print('$mod ok', getattr($mod, '__version__', ''))"
 }
 
 # A Mac path as Windows Python inside Wine sees it (Wine's Z: drive is /).

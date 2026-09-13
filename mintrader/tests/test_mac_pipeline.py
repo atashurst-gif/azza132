@@ -714,6 +714,45 @@ class TestWindowsPythonHasATimeZoneDatabase:
         assert "--backend" in r.stdout
 
 
+class TestWindowsPythonCrashesAreDiagnosedNotDialogs:
+    """Run eight on the real Mac: Wine popped "python.exe has encountered a
+    serious problem" while loading the packages, and the setup sat behind
+    that dialog. The check must name the package and never block."""
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def test_windows_python_runs_with_the_crash_dialog_disabled(self):
+        body = self.LIB.read_text().split("wine_py() {")[1].split("\n}\n")[0]
+        assert 'WINEDLLOVERRIDES="winedbg.exe=d"' in body
+
+    def test_packages_are_checked_one_at_a_time_with_a_numpy_fallback(self):
+        body = self.LIB.read_text().split("ensure_wine_python() {")[1].split("\nwine_py() {")[0]
+        assert "wine_py_imports tzdata" in body
+        assert "wine_py_imports numpy" in body
+        assert "wine_py_imports MetaTrader5" in body
+        assert 'pip download "numpy==1.26.4"' in body
+        assert "--force-reinstall --no-deps" in body
+        # the old direct invocations of python.exe must be gone from the checks
+        for line in body.splitlines():
+            if "import " in line and not line.strip().startswith("#"):
+                assert '"$wine" "$WINE_PY"' not in line, line
+
+    def test_import_check_is_visible_and_reports_status(self, tmp_path):
+        """wine_py_imports goes through run_logged with a stand-in 'wine'."""
+        fake = tmp_path / "wine"
+        fake.write_text("#!/bin/sh\nshift\nexec " + sys.executable + " \"$@\"\n")
+        fake.chmod(0o755)
+        env = {**os.environ, "MINTEL_HOME": str(tmp_path / "home")}
+        r = subprocess.run(
+            ["bash", "-c", f'set -uo pipefail; source "{self.LIB}"; WINE_BIN="{fake}"; '
+             'WINE_PY=python; wine_py_imports json; echo "rc=$?"; '
+             'wine_py_imports no_such_module_xyz; echo "rc2=$?"'],
+            capture_output=True, text=True, env=env, timeout=120)
+        assert "json ok" in r.stdout and "rc=0" in r.stdout, (r.stdout, r.stderr)
+        assert "rc2=1" in r.stdout
+        assert "no_such_module_xyz" in r.stdout and "failed" in r.stdout
+
+
 class TestWaitingForWineNeverHangs:
     """Run seven on the real Mac sat forever after installing the packages:
     wine_wait ran `wineserver -w`, and with the user's MetaTrader open that
