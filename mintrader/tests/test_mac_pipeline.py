@@ -742,6 +742,49 @@ class TestManagedProcessesGetRealStandardStreams:
         assert "stdin-fstat-ok True" in text
         assert mp.proc.stdin is not None, "stdin must be a pipe we hold open"
 
+    def test_a_pty_child_sees_a_real_terminal_and_its_output_is_logged(self, tmp_path):
+        """What Wine 8's Windows Python needs; a plain pipe was not enough
+        on the real Mac."""
+        import datetime as dt
+        from mintel.ops.watchdog import ManagedProcess
+        log = tmp_path / "logs" / "bridge.out.log"
+        mp = ManagedProcess(
+            name="bridge",
+            command=[sys.executable, "-c",
+                     "import sys; print('stdin-is-tty', sys.stdin.isatty()); "
+                     "print('stdout-is-tty', sys.stdout.isatty()); "
+                     "print('to-stderr', file=sys.stderr); print('bye')"],
+            log_file=str(log), use_pty=True)
+        ok, msg = mp.start(dt.datetime.now(dt.timezone.utc))
+        assert ok, msg
+        mp.proc.wait(timeout=30)
+        mp._close_log()
+        text = log.read_text()
+        assert "stdin-is-tty True" in text, text
+        assert "stdout-is-tty True" in text
+        assert "to-stderr" in text and "bye" in text
+
+    def test_a_pty_child_that_keeps_running_does_not_block_on_output(self, tmp_path):
+        import datetime as dt, time as _t
+        from mintel.ops.watchdog import ManagedProcess
+        log = tmp_path / "bridge.out.log"
+        mp = ManagedProcess(
+            name="bridge",
+            command=[sys.executable, "-c",
+                     "import sys\nfor i in range(3000): print('x' * 200)\n"
+                     "sys.stdout.flush(); print('done-writing'); sys.stdout.flush()\n"
+                     "import time; time.sleep(60)"],
+            log_file=str(log), use_pty=True)
+        ok, msg = mp.start(dt.datetime.now(dt.timezone.utc))
+        assert ok, msg
+        deadline = _t.monotonic() + 30
+        while _t.monotonic() < deadline and "done-writing" not in log.read_text(errors="replace"):
+            _t.sleep(0.2)
+        assert "done-writing" in log.read_text(errors="replace"), "600 KB must drain through the pty"
+        assert mp.proc.poll() is None
+        mp.stop()
+        mp._close_log()
+
     def test_build_default_gives_trader_and_bridge_their_own_logs(self, tmp_path):
         from mintel.config import Config
         from mintel.ops.watchdog import build_default
@@ -756,6 +799,7 @@ class TestManagedProcessesGetRealStandardStreams:
         logs = {p.name: p.log_file for p in wd.processes}
         assert logs["trader"].endswith("logs/trader.out.log")
         assert logs["bridge"].endswith("logs/bridge.out.log")
+        assert next(p for p in wd.processes if p.name == "bridge").use_pty is True
 
 
 class TestRiskAnswersWithPercentSigns:

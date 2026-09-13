@@ -58,7 +58,16 @@ class ManagedProcess:
     # it dies with "can't initialize sys standard streams / Invalid handle",
     # so every child gets a pipe for stdin and a real file for its output.
     log_file: str = ""
+    # Run the child inside a pseudo-terminal. Windows Python under Wine 8
+    # refuses to start unless its standard streams look like a console
+    # ("can't initialize sys standard streams: Invalid handle" otherwise),
+    # which is exactly what it gets from a Terminal window and exactly what
+    # launchd does not give it. Output is pumped from the terminal into the
+    # log file by a thread.
+    use_pty: bool = False
     _log_fh: Optional[object] = field(default=None, repr=False, compare=False)
+    _pty_master: int = field(default=-1, repr=False, compare=False)
+    _pump: Optional[object] = field(default=None, repr=False, compare=False)
     max_restarts_per_hour: int = 12
     grace_seconds: float = 45.0
     # Optional liveness probe, used instead of a heartbeat file for services
@@ -108,16 +117,31 @@ class ManagedProcess:
                 os.makedirs(os.path.dirname(self.log_file) or ".", exist_ok=True)
                 self._close_log()
                 self._log_fh = open(self.log_file, "ab")
-                kwargs["stdout"] = self._log_fh
-                kwargs["stderr"] = subprocess.STDOUT
-            if not IS_WINDOWS:
-                kwargs["stdin"] = subprocess.PIPE
+            slave = -1
+            if self.use_pty and not IS_WINDOWS:
+                import pty
+                self._pty_master, slave = pty.openpty()
+                kwargs["stdin"] = slave
+                kwargs["stdout"] = slave
+                kwargs["stderr"] = slave
+            else:
+                if self._log_fh is not None:
+                    kwargs["stdout"] = self._log_fh
+                    kwargs["stderr"] = subprocess.STDOUT
+                if not IS_WINDOWS:
+                    kwargs["stdin"] = subprocess.PIPE
             if IS_WINDOWS:
                 kwargs["creationflags"] = getattr(
                     subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             else:
                 kwargs["start_new_session"] = True
-            self.proc = subprocess.Popen(list(self.command), **kwargs)
+            try:
+                self.proc = subprocess.Popen(list(self.command), **kwargs)
+            finally:
+                if slave >= 0:
+                    os.close(slave)
+            if self._pty_master >= 0:
+                self._start_pump()
             self.restarts.append(now)
             self.last_start = now
             # Exponential backoff so a component that crashes on start-up does
@@ -128,7 +152,40 @@ class ManagedProcess:
         except Exception as exc:
             return False, f"{self.name}: could not start - {exc}"
 
+    def _start_pump(self) -> None:
+        """Copy everything the child writes to its terminal into the log."""
+        import threading
+        master, fh = self._pty_master, self._log_fh
+
+        def pump() -> None:
+            try:
+                while True:
+                    try:
+                        chunk = os.read(master, 4096)
+                    except OSError:
+                        break          # child gone: the terminal is closed
+                    if not chunk:
+                        break
+                    if fh is not None:
+                        try:
+                            fh.write(chunk)
+                            fh.flush()
+                        except Exception:
+                            pass
+            finally:
+                try:
+                    os.close(master)
+                except OSError:
+                    pass
+
+        self._pump = threading.Thread(target=pump, name=f"{self.name}-pty", daemon=True)
+        self._pump.start()
+
     def _close_log(self) -> None:
+        if self._pump is not None:
+            self._pump.join(timeout=2)
+            self._pump = None
+            self._pty_master = -1
         if self._log_fh is not None:
             try:
                 self._log_fh.close()
@@ -423,6 +480,7 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                 pid_file=str(data / "bridge.pid"),
                 cwd=project,
                 log_file=str(Path(cfg.ops.log_dir) / "bridge.out.log"),
+                use_pty=True,
                 grace_seconds=90.0,
                 probe=lambda: port_open(cfg.bridge_host, cfg.bridge_port),
                 max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
