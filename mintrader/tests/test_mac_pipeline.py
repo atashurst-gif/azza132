@@ -744,6 +744,9 @@ class TestWaitingForWineNeverHangs:
         r = self._run(f'WINE_BIN="{wine}"; WINE_DIR="{wine.parent}"; wine_wait; echo "rc=$?"', tmp_path)
         assert "rc=0" in r.stdout, (r.stdout, r.stderr)
         assert time.monotonic() - t0 < 60
+        exe = "terminal64" + ".exe"     # keep the literal out of this process's argv
+        if subprocess.run(["pgrep", "-f", exe], capture_output=True).returncode == 0:
+            pytest.skip("something on this box looks like a running terminal")
         assert time.monotonic() - t0 >= 25, "it should still give a normal Wine time to settle"
 
     def test_skipped_when_using_the_installed_metatrader(self, tmp_path):

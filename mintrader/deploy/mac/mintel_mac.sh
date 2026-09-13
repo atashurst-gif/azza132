@@ -278,7 +278,9 @@ wine_wait() {
     return 0
   fi
   # Bounded: never let a lingering Wine process hang the whole setup.
-  "$ws" -w 2>/dev/null &
+  # Detached from our output so that nothing it leaves behind can hold the
+  # setup window open either.
+  "$ws" -w >/dev/null 2>&1 </dev/null &
   pid=$!
   waited=0
   while kill -0 "$pid" 2>/dev/null && (( waited < 30 )); do
