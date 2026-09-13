@@ -714,6 +714,33 @@ class TestWindowsPythonHasATimeZoneDatabase:
         assert "--backend" in r.stdout
 
 
+class TestRiskAnswersWithPercentSigns:
+    """The first real setup answered "3%", "5%", "10%"; the parser only knew
+    bare numbers, kept the defaults, and the summary echoed what was typed."""
+
+    LIB = ROOT / "deploy" / "mac" / "mintel_mac.sh"
+
+    def test_percent_signs_are_accepted(self, tmp_path):
+        import re
+        text = self.LIB.read_text()
+        m = re.search(r'def f\(name, default\):.*?return float\(default\)\n', text, re.S)
+        assert m
+        ns = {"os": __import__("os")}
+        os.environ.update({"T_A": "3%", "T_B": " 5 % ", "T_C": "10", "T_D": "junk", "T_E": ""})
+        exec(m.group(0), ns)
+        f = ns["f"]
+        assert f("T_A", 0.5) == 3.0
+        assert f("T_B", 1.5) == 5.0
+        assert f("T_C", 3.0) == 10.0
+        assert f("T_D", 3.0) == 3.0
+        assert f("T_E", 0.5) == 0.5
+
+    def test_summary_reports_what_was_saved(self):
+        text = self.LIB.read_text()
+        assert "Report what was saved, not what was typed." in text
+        assert "c['base_risk_pct']:g" in text
+
+
 class TestWindowsPythonCrashesAreDiagnosedNotDialogs:
     """Run eight on the real Mac: Wine popped "python.exe has encountered a
     serious problem" while loading the packages, and the setup sat behind

@@ -780,8 +780,11 @@ data = pathlib.Path(os.environ["MINTEL_DATA"])
 data.mkdir(parents=True, exist_ok=True)
 
 def f(name, default):
+    # "3", "3%", " 3 % " all mean 3 percent. Anything else falls back to
+    # the default, and the shell side reports which value was actually used.
+    raw = (os.environ.get(name) or "").replace("%", "").strip()
     try:
-        return float(os.environ.get(name) or default)
+        return float(raw or default)
     except ValueError:
         return float(default)
 
@@ -854,7 +857,10 @@ PYEOF
   if [[ -f "$CONFIG" ]]; then
     good "Settings saved to $CONFIG"
     good "Password saved separately, readable only by you"
-    good "Mode: $mode   Normal risk: ${base_risk}%   Maximum risk: ${max_risk}%"
+    # Report what was saved, not what was typed.
+    local saved
+    saved="$("$VENV_DIR/bin/python" -c "import json,sys; c=json.load(open(sys.argv[1]))['risk']; print(f\"Normal risk: {c['base_risk_pct']:g}%   Maximum risk: {c['max_risk_pct']:g}%   Daily stop: {c['max_daily_loss_pct']:g}%\")" "$CONFIG" 2>/dev/null || true)"
+    good "Mode: $mode   ${saved:-Normal risk: ${base_risk}%   Maximum risk: ${max_risk}%}"
   else
     bad "Settings could not be saved."
     return 1
