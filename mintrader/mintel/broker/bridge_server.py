@@ -149,11 +149,12 @@ class BridgeService:
             out["time"] = wire._iso(when)
         return out
 
-    def do_deals_since(self, since: str, magic: int = 0) -> list:
+    def do_deals_since(self, since: str, magic: int = 0,
+                       closing_only: bool = True) -> list:
         fn = getattr(self.broker, "deals_since", None)
         if fn is None:
             return []
-        rows = fn(wire._dt(since), int(magic or 0)) or []
+        rows = fn(wire._dt(since), int(magic or 0), bool(closing_only)) or []
         out = []
         for r in rows:
             r = dict(r)

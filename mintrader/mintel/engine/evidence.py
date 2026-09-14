@@ -125,11 +125,17 @@ class ExecutionQuality:
     expected_slippage_pips: float
     tradable: bool
     reason: str = ""
+    commission_pips: float = 0.0     # round-trip commission expressed in pips
 
     @property
     def cost_pips(self) -> float:
-        """Round-trip cost estimate: spread plus expected slippage."""
-        return self.spread_pips + self.expected_slippage_pips
+        """Round-trip cost estimate: spread, expected slippage AND commission.
+
+        Commission was the invisible cost on the first live day: the spread
+        said 0.1 pips, the broker charged the equivalent of 0.7, and every
+        tiny scalp looked cheaper than it was.
+        """
+        return self.spread_pips + self.expected_slippage_pips + self.commission_pips
 
     def score_0_100(self) -> float:
         if not self.tradable:

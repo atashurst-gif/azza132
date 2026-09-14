@@ -282,10 +282,12 @@ class BridgeBroker:
             out["time"] = wire._dt(out["time"])
         return out
 
-    def deals_since(self, since_utc, magic: int = 0) -> list[dict]:
+    def deals_since(self, since_utc, magic: int = 0,
+                    closing_only: bool = True) -> list[dict]:
         try:
             rows = self._rpc("deals_since", since=wire._iso(since_utc),
-                             magic=int(magic or 0)) or []
+                             magic=int(magic or 0),
+                             closing_only=bool(closing_only)) or []
         except Exception:
             return []
         out = []

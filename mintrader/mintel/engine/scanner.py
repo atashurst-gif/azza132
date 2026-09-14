@@ -157,6 +157,10 @@ class Scanner:
         self.calibrator = calibrator or Calibrator()
         self.history_match = history_match     # callable(MarketState-ish) -> (score, conf, note)
         self.universe: Optional[Universe] = None
+        # Round-trip commission per lot in account currency, learned from the
+        # broker's deals (see Trader.refresh_commissions) or set in config.
+        self.commission_per_lot: dict[str, float] = {}
+        self.commission_default: float = float(getattr(cfg.risk, "commission_per_lot", 0.0) or 0.0)
         self.last_scan_utc: Optional[dt.datetime] = None
         self.last_error = ""
         self._bar_cache: dict[tuple[str, TF], tuple[dt.datetime, list[Bar]]] = {}
@@ -213,6 +217,7 @@ class Scanner:
         # Slippage expectation grows with the spread ratio: when the book is
         # thin the fill is worse, and that has to be priced before entry.
         slip = (0.25 + 0.5 * max(0.0, ratio - 1.0)) * spread / pip
+        commission_pips = self.commission_pips(symbol, spec)
 
         tradable, reason = True, ""
         if age > limit:
@@ -229,7 +234,22 @@ class Scanner:
             spread_percentile=round(pct, 3), tick_age_seconds=round(age, 2),
             min_stop_distance_pips=spec.min_stop_distance_price(spread) / pip,
             expected_slippage_pips=round(slip, 3), tradable=tradable,
-            reason=reason)
+            reason=reason, commission_pips=round(commission_pips, 3))
+
+    def commission_money_per_lot(self, symbol: str) -> float:
+        configured = float(getattr(self.cfg.risk, "commission_per_lot", 0.0) or 0.0)
+        if configured > 0:
+            return configured
+        return float(self.commission_per_lot.get(symbol)
+                     or self.commission_per_lot.get("*") or 0.0)
+
+    def commission_pips(self, symbol: str, spec: SymbolSpec) -> float:
+        """Round-trip commission for this symbol, in pips of its price."""
+        money = self.commission_money_per_lot(symbol)
+        if money <= 0:
+            return 0.0
+        per_pip = spec.money_per_lot(max(spec.pip_size, 1e-12))
+        return money / per_pip if per_pip > 0 else 0.0
 
     # -------------------------------------------------------------- context --
     def build_context(self, symbol: str, now: dt.datetime,
@@ -433,7 +453,9 @@ class Scanner:
             ev[Family.EXECUTION] = Evidence(
                 Family.EXECUTION, ctx.execution.score_0_100(), 1.0,
                 f"spread {ctx.execution.spread_pips:.1f} pips "
-                f"({ctx.execution.spread_ratio:.1f}x normal)")
+                f"({ctx.execution.spread_ratio:.1f}x normal)"
+                + (f", commission {ctx.execution.commission_pips:.1f} pips"
+                   if ctx.execution.commission_pips > 0 else ""))
 
         if ctx.regime is not None:
             # Regime evidence rewards a *clearly characterised* market, whatever

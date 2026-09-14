@@ -526,7 +526,8 @@ class Mt5Broker:
                             ticket, exc)
                 return None
 
-    def deals_since(self, since_utc: dt.datetime, magic: int = 0) -> list[dict]:
+    def deals_since(self, since_utc: dt.datetime, magic: int = 0,
+                    closing_only: bool = True) -> list[dict]:
         """Every closing deal since ``since_utc`` from MT5's own history.
 
         This is what the status page measures with: the broker's record of
@@ -544,7 +545,8 @@ class Mt5Broker:
                 DEAL_ENTRY_IN = 0
                 out = []
                 for d in deals:
-                    if int(getattr(d, "entry", 0)) == DEAL_ENTRY_IN:
+                    is_entry = int(getattr(d, "entry", 0)) == DEAL_ENTRY_IN
+                    if is_entry and closing_only:
                         continue
                     if int(getattr(d, "type", 0)) not in (0, 1):
                         continue           # balance, credit, charges...
@@ -560,6 +562,8 @@ class Mt5Broker:
                         "volume": float(d.volume),
                         "profit": float(d.profit) + float(getattr(d, "commission", 0.0))
                                   + float(getattr(d, "swap", 0.0)),
+                        "commission": float(getattr(d, "commission", 0.0)),
+                        "is_entry": is_entry,
                         "time": when,
                     })
                 return out

@@ -40,6 +40,11 @@ class RiskConfig:
     # --- software-failure breakers -------------------------------------------
     max_rejects_per_10min: int = 6
     max_spread_multiple: float = 3.0     # vs typical spread
+    # Round-trip commission per 1.0 lot in account currency. 0 means "learn it
+    # from the broker's own deal records" (what IC Markets etc. actually
+    # charged on this account); set it to override. Counted in every
+    # reward:risk test, because on a 3-pip scalp it is most of the cost.
+    commission_per_lot: float = 0.0
     max_orders_per_hour: int = 30
     # --- Kelly (conservative, capped) ---------------------------------------
     use_fractional_kelly: bool = True

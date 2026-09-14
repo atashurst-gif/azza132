@@ -150,6 +150,7 @@ class Trader:
         self.hb_news = Heartbeat(hb_dir, "news", clock)
 
         self.last_news_refresh: Optional[dt.datetime] = None
+        self.last_commission_refresh: Optional[dt.datetime] = None
         self.last_cycle: Optional[CycleResult] = None
         self.top_opportunities: tuple[MarketState, ...] = ()
         self.cycles = 0
@@ -246,6 +247,51 @@ class Trader:
         self.last_news_refresh = now
         return ok
 
+    def refresh_commissions(self, now: dt.datetime, force: bool = False) -> None:
+        """Learn what the broker really charges per lot, from its own deals.
+
+        MT5 does not publish commission per symbol, but every deal records
+        what was charged.  Round-trip commission per lot per symbol is
+        summed |commission| over all of a position's deals divided by the
+        closed volume, over the last 30 days of this bot's trades.  A
+        symbol not traded yet uses the volume-weighted average of the rest.
+        Refreshed every 10 minutes; overridden by risk.commission_per_lot.
+        """
+        if float(getattr(self.cfg.risk, "commission_per_lot", 0.0) or 0.0) > 0:
+            return
+        if (not force and self.last_commission_refresh is not None
+                and (now - self.last_commission_refresh).total_seconds() < 600):
+            return
+        self.last_commission_refresh = now
+        fn = getattr(self.broker, "deals_since", None)
+        if fn is None:
+            return
+        try:
+            rows = fn(now - dt.timedelta(days=30), self.cfg.magic, False) or []
+        except Exception as exc:
+            log.debug("commission refresh failed: %s", exc)
+            return
+        fees: dict[str, float] = {}
+        closed: dict[str, float] = {}
+        for r in rows:
+            sym = str(r.get("symbol") or "")
+            if not sym:
+                continue
+            fees[sym] = fees.get(sym, 0.0) + abs(float(r.get("commission") or 0.0))
+            if not r.get("is_entry"):
+                closed[sym] = closed.get(sym, 0.0) + float(r.get("volume") or 0.0)
+        learned: dict[str, float] = {}
+        for sym, vol in closed.items():
+            if vol > 0 and fees.get(sym, 0.0) > 0:
+                learned[sym] = round(fees[sym] / vol, 4)
+        total_vol = sum(v for s_, v in closed.items() if s_ in learned)
+        if total_vol > 0:
+            learned["*"] = round(sum(fees[s_] for s_ in learned) / total_vol, 4)
+        if learned:
+            self.scanner.commission_per_lot = learned
+            log.info("commission per lot learned from the broker: %s",
+                     {k: v for k, v in learned.items()})
+
     # ------------------------------------------------------------- one cycle --
     def cycle(self) -> CycleResult:
         now = to_utc(self.clock())
@@ -319,6 +365,7 @@ class Trader:
 
         # 4 - news, then scan --------------------------------------------------
         self.refresh_news()
+        self.refresh_commissions(to_utc(self.clock()))
         try:
             states = self.scanner.scan(now, positions)
         except Exception as exc:

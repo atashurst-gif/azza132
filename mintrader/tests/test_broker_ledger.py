@@ -57,7 +57,7 @@ class FakeBroker:
         self.rows = rows
         self.calls = []
 
-    def deals_since(self, since, magic=0):
+    def deals_since(self, since, magic=0, closing_only=True):
         self.calls.append((since, magic))
         return [r for r in self.rows if r["time"] >= since]
 
