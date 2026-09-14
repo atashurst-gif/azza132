@@ -492,16 +492,20 @@ class Mt5Broker:
         with self._lock:
             try:
                 mt5 = self.mt5
-                now = utcnow()
-                deals = mt5.history_deals_get(
-                    self._clock.utc_to_server(now - dt.timedelta(days=7)),
-                    self._clock.utc_to_server(now + dt.timedelta(minutes=5)),
-                    position=int(ticket))
+                # history_deals_get() has three mutually exclusive forms:
+                # (from, to[, group]), (ticket=), (position=).  Passing dates
+                # together with position= makes the package ignore the
+                # position and return every deal in the window - which on a
+                # live account was the sum of the whole week's deals booked
+                # against each trade.  Ask by position alone, and then filter
+                # by position id ourselves so no package quirk can do it again.
+                deals = mt5.history_deals_get(position=int(ticket))
                 if not deals:
                     return None
                 DEAL_ENTRY_IN = 0
                 closing = [d for d in deals
-                           if int(getattr(d, "entry", 0)) != DEAL_ENTRY_IN]
+                           if int(getattr(d, "position_id", ticket)) == int(ticket)
+                           and int(getattr(d, "entry", 0)) != DEAL_ENTRY_IN]
                 if not closing:
                     return None
                 volume = sum(float(d.volume) for d in closing)
@@ -512,6 +516,8 @@ class Mt5Broker:
                               if volume else float(closing[-1].price))
                 return {"exit_price": exit_price, "pnl": pnl,
                         "volume": volume,
+                        "symbol": str(getattr(closing[-1], "symbol", "") or ""),
+                        "position": int(ticket),
                         "time": self._clock.server_to_utc(
                             dt.datetime.utcfromtimestamp(int(closing[-1].time))),
                         "reason": str(getattr(closing[-1], "comment", ""))}

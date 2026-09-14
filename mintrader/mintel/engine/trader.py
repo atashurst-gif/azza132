@@ -616,6 +616,12 @@ class Trader:
                 deal = self.broker.closed_deal(ticket)
         except Exception:
             deal = None
+        if deal and not self._deal_matches(deal, tracker):
+            # A deal for some other symbol or position is not this trade's
+            # result.  Better to reconstruct from prices than to book it.
+            log.warning("%s: closing deal from the broker does not match this "
+                        "position (%s) - ignoring it", tracker.symbol, deal)
+            deal = None
         if deal:
             # Prefer the broker's VOLUME-WEIGHTED exit over the price of the
             # final fill.  A position that banked a partial at +1.4R and then
@@ -653,6 +659,22 @@ class Trader:
             self.calibrator.load(self.journal.calibration_rows())
         except Exception as exc:
             log.warning("could not finalise trade %s: %s", ticket, exc)
+
+    @staticmethod
+    def _deal_matches(deal: dict, tracker) -> bool:
+        """Is this closing deal plausibly the result of ``tracker``?"""
+        symbol = str(deal.get("symbol") or "")
+        if symbol and symbol != tracker.symbol:
+            return False
+        try:
+            exit_price = float(deal.get("exit_price") or 0.0)
+        except (TypeError, ValueError):
+            return False
+        if exit_price <= 0 or tracker.entry <= 0:
+            return False
+        # No instrument moves by more than a quarter of its price between
+        # entry and exit within one trade; anything like that is a mix-up.
+        return abs(exit_price - tracker.entry) / tracker.entry < 0.25
 
     def _recover_exit_price(self, tracker) -> float:
         """Ask the broker what actually happened, do not assume the stop price."""
