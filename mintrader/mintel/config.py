@@ -100,6 +100,20 @@ class ScanConfig:
     min_reward_risk: float = 1.15
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
+    # --- lessons from the first live day ------------------------------------
+    # Round-trip costs (spread + slippage + commission) may not exceed this
+    # fraction of the stop distance: a 3-pip stop with 0.9 pips of cost is a
+    # coin toss that pays the broker whichever way it lands.
+    max_cost_fraction_of_stop: float = 0.30
+    # The stop is never closer than this many ATRs (decision timeframe) from
+    # the entry, whatever the structure says: inside that band is noise, and
+    # noise took out most of day one's trades within minutes.
+    stop_noise_floor_atr: float = 0.5
+    # After a losing trade, no re-entry in the same direction on that market
+    # for this long; and after this many losses on one market in a day, no
+    # more entries there until tomorrow. Re-entry stays possible - churn does not.
+    cooldown_seconds_after_loss: float = 1800.0
+    max_losses_per_symbol_per_day: int = 3
 
 
 @dataclass

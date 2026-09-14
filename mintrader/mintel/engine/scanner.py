@@ -19,7 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from ..broker.base import Bar, Broker, Position, Side, TF, Tick
 from ..clock import is_weekend_gap, to_utc, utcnow
@@ -161,6 +161,8 @@ class Scanner:
         # broker's deals (see Trader.refresh_commissions) or set in config.
         self.commission_per_lot: dict[str, float] = {}
         self.commission_default: float = float(getattr(cfg.risk, "commission_per_lot", 0.0) or 0.0)
+        # callable(symbol) -> number of losing trades on it today (set by Trader)
+        self.losses_today: Optional[Callable[[str], int]] = None
         self.last_scan_utc: Optional[dt.datetime] = None
         self.last_error = ""
         self._bar_cache: dict[tuple[str, TF], tuple[dt.datetime, list[Bar]]] = {}
@@ -574,6 +576,11 @@ class Scanner:
         min_dist = spec.min_stop_distance_price(spread, 1.5)
         if abs(entry - stop) < min_dist:
             stop = entry - side * min_dist
+        # Noise floor: a stop inside half an ATR is a stop inside the normal
+        # wobble of the market, and day one proved what happens to those.
+        noise_floor = self.cfg.scan.stop_noise_floor_atr * max(ctx.atr_ref, 0.0)
+        if noise_floor > 0 and abs(entry - stop) < noise_floor:
+            stop = entry - side * noise_floor
         stop = spec.normalise_price(stop)
 
         # If price has run so far past its own invalidation level that the stop
@@ -627,6 +634,20 @@ class Scanner:
             blockers.append("stop distance computed as zero")
         if rr is not None and rr < self.cfg.scan.min_reward_risk:
             blockers.append(f"reward:risk only {rr:.2f} after costs")
+        cost_limit = self.cfg.scan.max_cost_fraction_of_stop
+        if risk > 0 and cost_limit > 0 and cost_pips * pip > cost_limit * risk:
+            blockers.append(
+                f"costs would be {cost_pips * pip / risk:.0%} of the stop "
+                f"distance (limit {cost_limit:.0%}) - too small a trade to pay for itself")
+        if self.losses_today is not None:
+            try:
+                n_lost = int(self.losses_today(ctx.symbol))
+            except Exception:
+                n_lost = 0
+            limit_l = self.cfg.scan.max_losses_per_symbol_per_day
+            if limit_l > 0 and n_lost >= limit_l:
+                blockers.append(f"{n_lost} losing trades here today - "
+                                f"leaving this market alone until tomorrow")
         if chased:
             blockers.append(
                 f"entry is {stop_atr:.1f} ATR from the level that invalidates "

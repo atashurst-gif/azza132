@@ -128,6 +128,7 @@ class Trader:
         self.scanner = Scanner(broker, cfg, self.news, self.calibrator,
                                history_match=self.matcher)
         self.risk = RiskManager(cfg, self.journal)
+        self.scanner.losses_today = self.losses_today
         self.executor = Executor(broker, cfg, self.journal, self.risk, clock)
         self.flowlock = FlowLock(cfg.flowlock)
         self.thesis = ThesisTracker()
@@ -151,6 +152,8 @@ class Trader:
 
         self.last_news_refresh: Optional[dt.datetime] = None
         self.last_commission_refresh: Optional[dt.datetime] = None
+        # losing trades per symbol today, rebuilt from the journal on a new day
+        self._losses: dict = {"date": None, "counts": {}}
         self.last_cycle: Optional[CycleResult] = None
         self.top_opportunities: tuple[MarketState, ...] = ()
         self.cycles = 0
@@ -246,6 +249,38 @@ class Trader:
         ok = self.news.refresh(now, force=force)
         self.last_news_refresh = now
         return ok
+
+    # --------------------------------------------------- losses per market --
+    def losses_today(self, symbol: str) -> int:
+        """Losing trades on ``symbol`` since midnight UTC (journal-backed)."""
+        today = to_utc(self.clock()).date()
+        if self._losses["date"] != today:
+            counts: dict = {}
+            try:
+                start = dt.datetime.combine(today, dt.time(0, 0), tzinfo=dt.timezone.utc)
+                for t in self.journal.closed_trades(limit=1000, since=start):
+                    if (t.get("pnl_money") or 0.0) < 0:
+                        counts[t["symbol"]] = counts.get(t["symbol"], 0) + 1
+            except Exception:
+                counts = {}
+            self._losses = {"date": today, "counts": counts}
+        return int(self._losses["counts"].get(symbol, 0))
+
+    def _after_close(self, tracker, pnl_money: float, now: dt.datetime) -> None:
+        """Bookkeeping that shapes re-entry: a loss earns a long cooldown in
+        the same direction and counts toward the day's limit on that market."""
+        if pnl_money >= 0:
+            return
+        today = to_utc(now).date()
+        if self._losses["date"] != today:
+            self.losses_today(tracker.symbol)     # rebuilds for the new day
+        counts = self._losses["counts"]
+        counts[tracker.symbol] = counts.get(tracker.symbol, 0) + 1
+        try:
+            self.executor.set_cooldown(tracker.symbol, tracker.side,
+                                       self.cfg.scan.cooldown_seconds_after_loss)
+        except Exception:
+            pass
 
     def refresh_commissions(self, now: dt.datetime, force: bool = False) -> None:
         """Learn what the broker really charges per lot, from its own deals.
@@ -699,6 +734,7 @@ class Trader:
         elif spec is not None and tracker.volume > 0:
             pnl_money = spec.money(moved, tracker.volume)
         learned = self._lesson(tracker, stats, reason, thesis)
+        self._after_close(tracker, pnl_money, now)
         try:
             self.journal.close_trade(
                 ticket, exit_price=exit_price, closed_utc=now,
