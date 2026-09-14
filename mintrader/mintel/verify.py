@@ -203,6 +203,9 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
         # position on a live account, which is the opposite of what it says on
         # the tin.
         trader = Trader(broker, cfg, journal=journal, news=news, dry_run=True)
+        # Intents restored from the journal belong to the LIVE trader running
+        # alongside; only intents created during this run would mean a leak.
+        intents_before = set(trader.executor.intents)
         info = trader.bootstrap()
         r.add("engine bootstrap", "universe" in info,
               f"{len(info.get('universe', []))} instruments, "
@@ -239,7 +242,7 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
             print(f"  [ OK ] it would have opened {intended['side']} "
                   f"{intended['volume']:g} lots of {intended['symbol']} "
                   f"risking {intended['risk_pct']:.2f}% - not sent")
-        r.add("no order was sent", not sent_any_order(broker, trader),
+        r.add("no order was sent", not sent_any_order(broker, trader, intents_before),
               "the smoke test ran in dry-run mode")
 
     # ----------------------------------------------------------- dashboard --
@@ -273,9 +276,13 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
     return 0
 
 
-def sent_any_order(broker, trader) -> bool:
-    """Belt and braces: confirm the dry run really sent nothing."""
-    if trader.executor.intents:
+def sent_any_order(broker, trader, intents_before=frozenset()) -> bool:
+    """Belt and braces: confirm the dry run really sent nothing.
+
+    Only intents that appeared during this run count: the executor loads
+    the journal's intents at start-up, and those are the live trader's.
+    """
+    if set(trader.executor.intents) - set(intents_before):
         return True
     log = getattr(broker, "order_log", None)
     return bool(log)

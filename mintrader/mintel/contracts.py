@@ -192,10 +192,29 @@ INDEX_HINTS = ("GER", "DAX", "US30", "US500", "SPX", "NAS", "UK100", "FTSE",
 ENERGY_HINTS = ("WTI", "BRENT", "USOIL", "UKOIL", "XTI", "XBR", "OIL")
 
 
+EQUITY_SUFFIXES = (".NAS", ".NYSE", ".NYS", ".US", ".LSE", ".L", ".XETRA", ".DE",
+                   ".AS", ".PA", ".MI", ".MC", ".SW", ".HK", ".AX", ".TO", ".N", ".O")
+
+
+def is_equity_cfd(name: str, path: str = "") -> bool:
+    """Single-share CFDs: BILI.NAS, AAPL.US, VOD.LSE ... and anything the broker
+    files under Stocks/Shares/Equities.  Day one on a live account: their
+    prices were hours stale, spreads 10-300x normal, and two of them alone
+    pushed the margin level under the floor.  Not an index, whatever the
+    suffix looks like."""
+    up = name.upper()
+    if "." in up and any(up.endswith(sfx) for sfx in EQUITY_SUFFIXES):
+        return True
+    pl = (path or "").upper()
+    return any(h in pl for h in ("STOCK", "SHARE", "EQUIT"))
+
+
 def infer_group(name: str, base_ccy: str = "", profit_ccy: str = "",
                 path: str = "") -> str:
     """Classify an instrument, preferring the symbol name then the broker path."""
     up = name.upper()
+    if is_equity_cfd(name, path):
+        return "EQUITY"
     for hint, group in METAL_HINTS.items():
         if up.startswith(hint) or hint in up:
             return group

@@ -1105,7 +1105,11 @@ show_health() {
   fi
   printf '%s' "$body" | "$VENV_DIR/bin/python" - <<'PYEOF'
 import json, sys
-snap = json.load(sys.stdin)
+try:
+    snap = json.load(sys.stdin)
+except Exception:
+    print("    The status page is still starting. Open http://127.0.0.1:8787 in a minute.")
+    sys.exit(0)
 status = snap.get("status") or {}
 health = snap.get("health") or {}
 running = status.get("bot") == "RUNNING" and not health.get("safe_mode")
