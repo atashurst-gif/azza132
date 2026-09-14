@@ -120,25 +120,41 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
         except ValueError:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        # "Today" never reaches back before the measuring start: on the day
+        # the start is set, today begins then, not at midnight.
+        today_from = max(day_start, start)
         earliest = min(start, day_start)
         try:
-            rows = fn(earliest, cfg.magic) or []
+            rows = fn(earliest, cfg.magic, False) or []     # entries too
         except Exception as exc:
             log.debug("deal history unavailable: %s", exc)
             rows = None
         if rows is not None:
+            # A position counts only if it was OPENED at or after the start.
+            # One opened before (the previous method's trades) is ignored
+            # even when it closes afterwards, so the new numbers are the new
+            # trading's alone.
+            opened_at: dict = {}
+            for r in rows:
+                if r.get("is_entry") and r.get("time"):
+                    pos = r.get("position") or 0
+                    opened_at[pos] = min(opened_at.get(pos, r["time"]), r["time"])
+
             def summarise(since):
-                sel = [r for r in rows if r.get("time") and r["time"] >= since]
-                # a position may close in several deals: group by position
                 by_pos: dict = {}
-                for r in sel:
-                    by_pos[r.get("position") or id(r)] = \
-                        by_pos.get(r.get("position") or id(r), 0.0) + float(r["profit"])
+                for r in rows:
+                    if r.get("is_entry") or not r.get("time"):
+                        continue
+                    pos = r.get("position") or id(r)
+                    when = opened_at.get(pos)
+                    if when is None or when < since:
+                        continue
+                    by_pos[pos] = by_pos.get(pos, 0.0) + float(r["profit"])
                 wins = sum(1 for v in by_pos.values() if v > 0)
                 return {"net": round(sum(by_pos.values()), 2),
                         "trades": len(by_pos), "wins": wins,
                         "win_rate": round(wins / len(by_pos) * 100, 1) if by_pos else None}
-            out = {"today": summarise(day_start),
+            out = {"today": summarise(today_from),
                    "since_start": summarise(start),
                    "tracking_start": start.isoformat(),
                    "source": "broker"}

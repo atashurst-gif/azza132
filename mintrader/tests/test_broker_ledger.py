@@ -63,15 +63,20 @@ class FakeBroker:
 
 
 def _rows():
+    def entry(pos, sym, when):
+        return {"position": pos, "symbol": sym, "volume": 0.1, "profit": -0.3,
+                "commission": -0.3, "is_entry": True, "time": when}
+    def exit_(pos, sym, profit, when):
+        return {"position": pos, "symbol": sym, "volume": 0.1, "profit": profit,
+                "commission": -0.3, "is_entry": False, "time": when}
     return [
-        {"position": 10, "symbol": "EURUSD", "volume": 0.1, "profit": 5.0,
-         "time": dt.datetime(2026, 9, 13, 23, 30, tzinfo=UTC)},   # yesterday
-        {"position": 11, "symbol": "GBPUSD", "volume": 0.1, "profit": -3.0,
-         "time": dt.datetime(2026, 9, 14, 9, 0, tzinfo=UTC)},
-        {"position": 12, "symbol": "XAUUSD", "volume": 0.01, "profit": 4.0,
-         "time": dt.datetime(2026, 9, 14, 10, 0, tzinfo=UTC)},
-        {"position": 12, "symbol": "XAUUSD", "volume": 0.01, "profit": -1.0,
-         "time": dt.datetime(2026, 9, 14, 10, 5, tzinfo=UTC)},    # same position, 2nd deal
+        entry(10, "EURUSD", dt.datetime(2026, 9, 13, 23, 0, tzinfo=UTC)),
+        exit_(10, "EURUSD", 5.0, dt.datetime(2026, 9, 13, 23, 30, tzinfo=UTC)),   # yesterday
+        entry(11, "GBPUSD", dt.datetime(2026, 9, 14, 8, 30, tzinfo=UTC)),
+        exit_(11, "GBPUSD", -3.0, dt.datetime(2026, 9, 14, 9, 0, tzinfo=UTC)),
+        entry(12, "XAUUSD", dt.datetime(2026, 9, 14, 9, 40, tzinfo=UTC)),
+        exit_(12, "XAUUSD", 4.0, dt.datetime(2026, 9, 14, 10, 0, tzinfo=UTC)),
+        exit_(12, "XAUUSD", -1.0, dt.datetime(2026, 9, 14, 10, 5, tzinfo=UTC)),  # 2nd deal
     ]
 
 
@@ -79,7 +84,7 @@ class TestBridgeCarriesDealHistory:
     def test_roundtrip(self):
         svc = BridgeService(FakeBroker(_rows()), magic=990311)
         out = svc.handle("deals_since", {"since": wire._iso(T0 - dt.timedelta(days=1)), "magic": 990311})
-        assert len(out) == 4
+        assert len(out) == 7
         assert isinstance(out[0]["time"], str)
         assert wire._dt(out[0]["time"]) == _rows()[0]["time"]
         assert svc.broker.calls[0][1] == 990311
@@ -105,6 +110,25 @@ class TestLedger:
         assert led["tracking_start"].startswith("2026-09-13T20:00")
         # asked the broker once, for the bot's magic, from the earlier of the two starts
         assert tr.broker.calls == [(dt.datetime(2026, 9, 13, 20, 0, tzinfo=UTC), 990311)]
+
+    def test_a_start_in_the_middle_of_the_day_ignores_earlier_positions(self):
+        # start at 09:30: position 11 (opened 08:30, closed 09:00) is out;
+        # position 12 (opened 09:40) is in - and "today" starts at 09:30 too
+        tr = self._trader(_rows(), "2026-09-14T09:30:00+00:00")
+        led = broker_ledger(tr, T0)
+        assert led["since_start"] == {"net": 3.0, "trades": 1, "wins": 1, "win_rate": 100.0}
+        assert led["today"] == led["since_start"]
+
+    def test_a_position_opened_before_the_start_but_closed_after_is_ignored(self):
+        rows = _rows() + [
+            {"position": 13, "symbol": "USDJPY", "volume": 0.1, "profit": -0.3,
+             "commission": -0.3, "is_entry": True, "time": dt.datetime(2026, 9, 14, 9, 20, tzinfo=UTC)},
+            {"position": 13, "symbol": "USDJPY", "volume": 0.1, "profit": -9.0,
+             "commission": -0.3, "is_entry": False, "time": dt.datetime(2026, 9, 14, 11, 0, tzinfo=UTC)},
+        ]
+        tr = self._trader(rows, "2026-09-14T09:30:00+00:00")
+        led = broker_ledger(tr, T0)
+        assert led["since_start"]["trades"] == 1 and led["since_start"]["net"] == 3.0
 
     def test_no_start_means_today(self):
         tr = self._trader(_rows())
@@ -132,5 +156,5 @@ class TestStatusPageShowsSinceStart:
                            "currency": "GBP", "today_pnl": -12.0},
                 "health": {}, "thinking": [], "positions": [], "events": [], "results": {}}
         html = render_status(snap)
-        assert "Since start (2026-09-14)" in html
+        assert "Since start (2026-09-14 00:00 UTC)" in html
         assert "over 97 trades" in html

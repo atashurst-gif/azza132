@@ -227,7 +227,7 @@ def render_status(snap: dict) -> str:
         tile("Win rate today",
              "-" if st.get("win_rate_today") is None
              else f"{st['win_rate_today']:.0f}%"),
-        tile("Since start" + (f" ({str(st['tracking_start'])[:10]})"
+        tile("Since start" + (f" ({str(st['tracking_start'])[:16].replace('T', ' ')} UTC)"
                               if st.get("tracking_start") else ""),
              ("-" if st.get("since_start_pnl") is None else
               _fmt_money(st.get("since_start_pnl") or 0.0, st.get("currency", ""))
