@@ -146,6 +146,11 @@ class BaseAdapter:
 
 
 def _http_get(url: str, timeout: float) -> bytes:
+    # MINTEL_OFFLINE=1 (tests, air-gapped runs) makes every external call fail
+    # fast instead of waiting on a network that is not there.
+    import os
+    if os.environ.get("MINTEL_OFFLINE"):
+        raise urllib.error.URLError("offline (MINTEL_OFFLINE is set)")
     req = urllib.request.Request(url, headers={"User-Agent": "mintel/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
@@ -163,7 +168,18 @@ class Mt5CalendarAdapter(BaseAdapter):
     def fetch_calendar(self, start: dt.datetime,
                        end: dt.datetime) -> list[CalendarEvent]:
         key = f"cal:{start.isoformat()}:{end.isoformat()}"
-        return list(self._cached(key, lambda: self.broker.calendar(start, end)))
+        try:
+            return list(self._cached(key, lambda: self.broker.calendar(start, end)))
+        except Exception as exc:
+            # The MetaTrader5 Python package (used by the bridge on macOS and
+            # Linux) has no calendar API. That is permanent for this session,
+            # not a failure to retry every minute: step aside and let the
+            # other sources carry the calendar.
+            if "no calendar api" in str(exc).lower():
+                self.health.enabled = False
+                self.health.last_error = str(exc)
+                return []
+            raise
 
 
 class StoreBackedAdapter(BaseAdapter):
@@ -233,6 +249,54 @@ class JsonCalendarAdapter(BaseAdapter):
             except Exception:
                 continue
         return out
+
+
+class ForexFactoryAdapter(JsonCalendarAdapter):
+    """The public weekly economic calendar (this week + next week, tier 4).
+
+    Scheduled events with forecast and previous; the feed carries actuals
+    only for some releases, so the surprise engine falls back to reading the
+    price reaction - which outranks the headline anyway.  Refreshed at most
+    every 30 minutes: the feed is free and asks not to be hammered.
+    """
+    name = "forexfactory"
+    tier = 4
+    URLS = ("https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            "https://nfs.faireconomy.media/ff_calendar_nextweek.json")
+
+    def __init__(self, **kw):
+        kw.setdefault("cache_seconds", 1800.0)
+        kw.setdefault("timeout", 12.0)
+        super().__init__(self.URLS[0], {
+            "id": "id", "time": "date", "currency": "country",
+            "name": "title", "importance": "impact", "actual": "actual",
+            "forecast": "forecast", "previous": "previous",
+        }, name=self.name, tier=self.tier, **kw)
+
+    RETRY_AFTER_FAILURE = 120.0
+
+    def fetch_calendar(self, start: dt.datetime,
+                       end: dt.datetime) -> list[CalendarEvent]:
+        out: list[CalendarEvent] = []
+        errors = []
+        # A failed fetch is not retried on every cycle: back off for a while
+        # so an outage costs one attempt every couple of minutes, not one per
+        # scan, and the engine keeps using the archived calendar meanwhile.
+        next_try = getattr(self, "_next_try", 0.0)
+        if time.time() < next_try:
+            raise RuntimeError(self.health.last_error or "feed backing off after a failure")
+        for url in self.URLS:
+            self.url_template = url
+            try:
+                out.extend(super().fetch_calendar(start, end))
+            except Exception as exc:
+                errors.append(exc)
+        if errors and not out:
+            self._next_try = time.time() + self.RETRY_AFTER_FAILURE
+            raise errors[0]
+        # the feed is a whole week; the engine asked for a window
+        return [e for e in out if start <= e.time_utc <= end
+                and e.currency and e.name]
 
 
 def _parse_time(v) -> Optional[dt.datetime]:

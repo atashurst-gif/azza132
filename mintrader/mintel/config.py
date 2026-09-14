@@ -120,6 +120,10 @@ class FlowLockConfig:
 class NewsConfig:
     enabled: bool = True
     use_mt5_calendar: bool = True
+    # A public weekly calendar feed as a second source. Needed on macOS and
+    # Linux: the MetaTrader5 Python package that the bridge uses has no
+    # calendar API at all, so without this the bot trades on charts alone.
+    public_calendar_feed: bool = True
     store_path: str = "data/calendar.sqlite"
     external_adapters: tuple[str, ...] = ()
     api_keys: dict[str, str] = field(default_factory=dict)

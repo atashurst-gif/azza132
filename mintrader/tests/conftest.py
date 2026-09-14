@@ -6,6 +6,9 @@ any operating system, with no MetaTrader 5 installation and no network.
 """
 from __future__ import annotations
 
+import os
+os.environ.setdefault("MINTEL_OFFLINE", "1")   # no test reaches the internet
+
 import datetime as dt
 import shutil
 import sys

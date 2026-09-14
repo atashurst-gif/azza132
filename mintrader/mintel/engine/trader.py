@@ -36,7 +36,7 @@ from ..broker.base import Bar, Broker, Position, Side, TF, Tick
 from ..clock import to_utc, utcnow
 from ..config import Config
 from ..data.series import atr
-from ..news.adapters import AdapterRegistry, Mt5CalendarAdapter, StoreBackedAdapter
+from ..news.adapters import AdapterRegistry, ForexFactoryAdapter, Mt5CalendarAdapter, StoreBackedAdapter
 from ..news.calendar_store import CalendarStore
 from ..news.engine import NewsIntelligenceEngine
 from ..ops.health import Heartbeat, HealthSupervisor
@@ -112,8 +112,11 @@ class Trader:
                 # Backtests read ONLY the archive, so a "news-aware backtest"
                 # is genuinely news-aware and never silently empty.
                 adapters.append(StoreBackedAdapter(self.calendar_store))
-            elif cfg.news.enabled and cfg.news.use_mt5_calendar:
-                adapters.append(Mt5CalendarAdapter(broker))
+            elif cfg.news.enabled:
+                if cfg.news.use_mt5_calendar:
+                    adapters.append(Mt5CalendarAdapter(broker))
+                if cfg.news.public_calendar_feed:
+                    adapters.append(ForexFactoryAdapter())
                 adapters.append(StoreBackedAdapter(self.calendar_store))
             self.news = NewsIntelligenceEngine(AdapterRegistry(adapters),
                                                self.calendar_store, cfg.news)

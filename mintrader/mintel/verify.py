@@ -162,9 +162,12 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
     store_path = Path(cfg.ops.data_dir) / Path(cfg.news.store_path).name
     store = CalendarStore(store_path)
     r.add("trade database / calendar store", store.healthy(), str(store_path))
-    news = NewsIntelligenceEngine(
-        AdapterRegistry([Mt5CalendarAdapter(broker),
-                         StoreBackedAdapter(store)]), store, cfg.news)
+    from .news.adapters import ForexFactoryAdapter
+    adapters = [Mt5CalendarAdapter(broker)]
+    if cfg.news.public_calendar_feed:
+        adapters.append(ForexFactoryAdapter())
+    adapters.append(StoreBackedAdapter(store))
+    news = NewsIntelligenceEngine(AdapterRegistry(adapters), store, cfg.news)
     news_ok = news.refresh(force=True)
     if news_ok and news.health.events_known:
         r.add("economic calendar", True,
