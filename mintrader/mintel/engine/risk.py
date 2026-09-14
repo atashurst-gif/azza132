@@ -32,7 +32,7 @@ import datetime as dt
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from ..broker.base import AccountInfo, Position, Side
 from ..clock import to_utc, utcnow
@@ -132,6 +132,12 @@ class RiskManager:
         self.peak_equity = 0.0
         self._day: Optional[dt.date] = None
         self._day_start_equity = 0.0
+        # callable() -> today's realised P&L of the bot's trades from the
+        # BROKER's records.  When set, the daily-loss breaker no longer
+        # depends on an equity snapshot taken at start-up - which every
+        # restart quietly reset, so on the first live day an 11% loss never
+        # tripped a 3% limit.
+        self.realised_today: Optional[Callable[[], float]] = None
         self._rejects: list[dt.datetime] = []
         self._orders: list[dt.datetime] = []
         self._manual_halt = ""
@@ -183,6 +189,16 @@ class RiskManager:
 
         daily_pnl = account.equity - (self._day_start_equity or account.equity)
         daily_pct = daily_pnl / max(self._day_start_equity, 1e-9) * 100.0
+        if self.realised_today is not None:
+            try:
+                realised = float(self.realised_today())
+            except Exception:
+                realised = None
+            if realised is not None:
+                floating = sum(float(getattr(p, "profit", 0.0) or 0.0) for p in positions)
+                daily_pnl = realised + floating
+                base = account.equity - daily_pnl
+                daily_pct = daily_pnl / max(base, 1e-9) * 100.0
         dd = 0.0
         if self.peak_equity > 0:
             dd = max(0.0, (self.peak_equity - account.equity)

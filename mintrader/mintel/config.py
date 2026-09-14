@@ -114,6 +114,13 @@ class ScanConfig:
     # more entries there until tomorrow. Re-entry stays possible - churn does not.
     cooldown_seconds_after_loss: float = 1800.0
     max_losses_per_symbol_per_day: int = 3
+    # No bursts: day one's new build opened eight trades in forty seconds at
+    # the Asian open and lost six of them inside half an hour. One entry at a
+    # time, spaced out, capped per hour, and none during the daily rollover
+    # when spreads are at their widest (times are UTC, "HH:MM-HH:MM").
+    min_seconds_between_entries: float = 180.0
+    max_new_positions_per_hour: int = 4
+    no_entry_utc_windows: tuple[str, ...] = ("21:45-23:30",)
 
 
 @dataclass

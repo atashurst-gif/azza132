@@ -128,6 +128,10 @@ class Trader:
         self.scanner = Scanner(broker, cfg, self.news, self.calibrator,
                                history_match=self.matcher)
         self.risk = RiskManager(cfg, self.journal)
+        self.risk.realised_today = self.realised_today
+        self.last_entry_utc: Optional[dt.datetime] = None
+        self._entry_times: list[dt.datetime] = []
+        self._realised_cache: dict = {"at": None, "value": 0.0}
         self.scanner.losses_today = self.losses_today
         self.executor = Executor(broker, cfg, self.journal, self.risk, clock)
         self.flowlock = FlowLock(cfg.flowlock)
@@ -249,6 +253,56 @@ class Trader:
         ok = self.news.refresh(now, force=force)
         self.last_news_refresh = now
         return ok
+
+    # ----------------------------------------------------- broker's ledger --
+    def realised_today(self) -> float:
+        """Today's realised P&L of the bot's trades, from the broker (30s cache)."""
+        now = to_utc(self.clock())
+        at = self._realised_cache["at"]
+        if at is not None and (now - at).total_seconds() < 30:
+            return float(self._realised_cache["value"])
+        fn = getattr(self.broker, "deals_since", None)
+        if fn is None:
+            raise RuntimeError("broker has no deal history")
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        rows = fn(start, self.cfg.magic) or []
+        value = float(sum(float(r.get("profit") or 0.0) for r in rows))
+        self._realised_cache = {"at": now, "value": value}
+        return value
+
+    # --------------------------------------------------------- entry pacing --
+    def _entry_gate(self, now: dt.datetime) -> str:
+        """Why no new entry may be placed right now ("" when one may)."""
+        sc = self.cfg.scan
+        now = to_utc(now)
+        for window in sc.no_entry_utc_windows:
+            try:
+                a, b = window.split("-")
+                ah, am = (int(x) for x in a.split(":"))
+                bh, bm = (int(x) for x in b.split(":"))
+            except ValueError:
+                continue
+            t = now.hour * 60 + now.minute
+            lo, hi = ah * 60 + am, bh * 60 + bm
+            inside = lo <= t < hi if lo <= hi else (t >= lo or t < hi)
+            if inside:
+                return f"no new entries during the rollover window ({window} UTC)"
+        if self.last_entry_utc is not None:
+            gap = (now - self.last_entry_utc).total_seconds()
+            if gap < sc.min_seconds_between_entries:
+                return (f"spacing entries out: {sc.min_seconds_between_entries - gap:.0f}s "
+                        f"until the next one may be placed")
+        hour_ago = now - dt.timedelta(hours=1)
+        self._entry_times = [t for t in self._entry_times if t >= hour_ago]
+        if sc.max_new_positions_per_hour > 0 and len(self._entry_times) >= sc.max_new_positions_per_hour:
+            return (f"{len(self._entry_times)} new positions in the last hour "
+                    f"(limit {sc.max_new_positions_per_hour})")
+        return ""
+
+    def _note_entry(self, now: dt.datetime) -> None:
+        now = to_utc(now)
+        self.last_entry_utc = now
+        self._entry_times.append(now)
 
     # --------------------------------------------------- losses per market --
     def losses_today(self, symbol: str) -> int:
@@ -813,6 +867,10 @@ class Trader:
             now: dt.datetime) -> tuple[Optional[MarketState], str, list[str]]:
         """Take the best tradable opportunity, if there is one."""
         blocked: list[str] = []
+        gate = self._entry_gate(now)
+        if gate:
+            blocked.append(gate)
+            return None, "", blocked
         per_symbol: dict[str, int] = {}
         for p in positions:
             per_symbol[p.symbol] = per_symbol.get(p.symbol, 0) + 1
@@ -923,6 +981,7 @@ class Trader:
                    f"{sizing.risk_pct:.2f}% ({sizing.risk_money:.2f} "
                    f"{account.currency}) with a {sizing.stop_pips:.1f} pip "
                    f"stop; {report.message}")
+            self._note_entry(now)
             return state, msg, blocked
         return None, "", blocked
 
