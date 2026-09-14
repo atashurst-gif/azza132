@@ -337,7 +337,8 @@ class TestLauncherScripts:
         lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()
         assert "mintel.ops.watchdog" in lib
         assert "-m mintel.run" not in launcher
-        assert "mintel.run" not in lib.split("start_everything()")[1][:1500]
+        # killing a stray trader by name is fine; STARTING one here is not
+        assert "-m mintel.run" not in lib.split("start_everything()")[1][:2500]
 
     def test_install_steps_are_all_defined(self):
         lib = (self.ROOT_DEPLOY / "mintel_mac.sh").read_text()

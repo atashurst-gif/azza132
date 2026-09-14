@@ -142,6 +142,14 @@ class ManagedProcess:
                     os.close(slave)
             if self._pty_master >= 0:
                 self._start_pump()
+            # Record the pid so "Stop" can find this process even if the
+            # watchdog itself is gone (a child that writes its own pid file
+            # overwrites this with the same number).
+            if self.pid_file:
+                try:
+                    Path(self.pid_file).write_text(str(self.proc.pid))
+                except Exception:
+                    pass
             self.restarts.append(now)
             self.last_start = now
             # Exponential backoff so a component that crashes on start-up does
@@ -391,6 +399,15 @@ class Watchdog:
             if max_iterations and n >= max_iterations:
                 break
             time.sleep(self.cfg.ops.watchdog_interval_seconds)
+        if self._stop:
+            # Asked to stop (Stop icon, launchctl unload, SIGTERM): take the
+            # children with us. Leaving them running with old code, unwatched,
+            # is exactly what made an "upgrade" silently run last week's bridge.
+            for mp in self.processes:
+                try:
+                    mp.stop()
+                except Exception:
+                    pass
         return n
 
     def stop(self, *_args) -> None:

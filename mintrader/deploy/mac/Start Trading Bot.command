@@ -87,7 +87,7 @@ if [[ "$MODE" == "stop" ]]; then
 fi
 
 # ---- Fast path: already healthy? Then say so and stop touching things. -------
-if is_running watchdog && is_running trader; then
+if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR"; then
   say ""
   say "  ${GREEN}It is already running.${RESET} Checking it over..."
   # Keep these cheap and idempotent, so a routine double-click stays fast.

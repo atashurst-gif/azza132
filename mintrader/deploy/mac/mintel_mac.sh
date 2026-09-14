@@ -129,6 +129,9 @@ copy_program() {
     return 0
   fi
   local item
+  if source_changed "$source_dir"; then
+    CODE_CHANGED="yes"
+  fi
   for item in mintel tests deploy tools pytest.ini requirements.txt \
               requirements-dev.txt README.md config; do
     if [[ -e "$source_dir/$item" ]]; then
@@ -136,8 +139,33 @@ copy_program() {
       cp -R "$source_dir/$item" "$APP_DIR/"
     fi
   done
-  good "Program files installed to $APP_DIR"
+  mkdir -p "$DATA_DIR"
+  code_hash "$source_dir" > "$DATA_DIR/app.version"
+  if [[ -n "$CODE_CHANGED" ]]; then
+    good "Program files installed to $APP_DIR (new version)"
+  else
+    good "Program files installed to $APP_DIR"
+  fi
 }
+
+# Fingerprint of the program's code, so a double-click can tell "same code,
+# already running" from "new code copied in, a restart is needed".
+code_hash() {
+  local dir
+  dir="${1:-}"
+  ( cd "$dir" 2>/dev/null && find mintel deploy -type f \( -name '*.py' -o -name '*.sh' -o -name '*.command' \) -print0 2>/dev/null \
+      | sort -z | xargs -0 cat 2>/dev/null | sha256_of /dev/stdin )
+}
+
+source_changed() {
+  local dir
+  local have
+  dir="${1:-}"
+  have="$(cat "$DATA_DIR/app.version" 2>/dev/null || true)"
+  [[ -z "$have" ]] && return 0
+  [[ "$(code_hash "$dir")" != "$have" ]]
+}
+CODE_CHANGED=""
 
 # ------------------------------------------------------------ native python --
 NATIVE_PY=""
@@ -1015,6 +1043,21 @@ start_everything() {
   step "Starting the bot"
   # The watchdog owns the trader and the bridge; starting it is enough, and
   # starting it twice is prevented by its own PID file.
+  if is_running watchdog && [[ -n "$CODE_CHANGED" ]]; then
+    say "    A new version was installed. Restarting the bot so it runs it."
+    launchctl unload "$PLIST_PATH" >/dev/null 2>&1
+    local name
+    for name in watchdog trader bridge; do
+      [[ -f "$DATA_DIR/$name.pid" ]] && kill "$(tr -d '[:space:]' < "$DATA_DIR/$name.pid")" 2>/dev/null
+      rm -f "$DATA_DIR/$name.pid"
+    done
+    sleep 2
+    pkill -f "mintel/broker/bridge_server.py" 2>/dev/null || true
+    pkill -f "mintel.run --config" 2>/dev/null || true
+    pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
+    sleep 2
+    launchctl load "$PLIST_PATH" >/dev/null 2>&1
+  fi
   if is_running watchdog; then
     good "already running - nothing to start"
   else
@@ -1147,6 +1190,12 @@ stop_everything() {
       rm -f "$pidfile"
     fi
   done
+  # Belt and braces: anything of ours still alive by name, whatever happened
+  # to the pid files (a bridge started under Wine survived the pid file once).
+  sleep 1
+  pkill -f "mintel/broker/bridge_server.py" 2>/dev/null || true
+  pkill -f "mintel.run --config" 2>/dev/null || true
+  pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
   if [[ -f "$DATA_DIR/caffeinate.pid" ]]; then
     kill "$(cat "$DATA_DIR/caffeinate.pid")" 2>/dev/null
     rm -f "$DATA_DIR/caffeinate.pid"
