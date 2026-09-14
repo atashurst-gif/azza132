@@ -957,7 +957,7 @@ install_desktop_icon() {
   local desktop="$HOME/Desktop"
   [[ -d "$desktop" ]] || { warn "No Desktop folder found."; return 0; }
   local name
-  for name in "Start Trading Bot" "Stop Trading Bot" "Self Test"; do
+  for name in "Start Trading Bot" "Stop Trading Bot" "Self Test" "Day Review"; do
     local src="$APP_DIR/deploy/mac/$name.command"
     [[ -f "$src" ]] || continue
     cp -f "$src" "$desktop/$name.command"

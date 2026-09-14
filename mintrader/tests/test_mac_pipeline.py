@@ -426,7 +426,7 @@ class TestBashCompatibility:
 
     ROOT_DEPLOY = ROOT / "deploy" / "mac"
     SCRIPTS = ("mintel_mac.sh", "Start Trading Bot.command",
-               "Stop Trading Bot.command", "Self Test.command")
+               "Stop Trading Bot.command", "Self Test.command", "Day Review.command")
 
     def _scripts(self):
         for name in self.SCRIPTS:
