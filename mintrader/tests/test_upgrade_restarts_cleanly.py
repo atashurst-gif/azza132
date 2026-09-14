@@ -56,7 +56,7 @@ class TestStopAndStartMechanics:
 
     def test_new_code_restarts_a_running_bot(self):
         body = LIB.read_text().split("start_everything() {")[1].split("\n}\n")[0]
-        assert 'is_running watchdog && [[ -n "$CODE_CHANGED" ]]' in body
+        assert 'if [[ -n "$CODE_CHANGED" ]]; then' in body
         assert "A new version was installed" in body
         assert 'pkill -f "mintel/broker/bridge_server.py"' in body
 

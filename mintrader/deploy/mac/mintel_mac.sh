@@ -1043,7 +1043,10 @@ start_everything() {
   step "Starting the bot"
   # The watchdog owns the trader and the bridge; starting it is enough, and
   # starting it twice is prevented by its own PID file.
-  if is_running watchdog && [[ -n "$CODE_CHANGED" ]]; then
+  # A new version must replace EVERYTHING that is running, whether or not
+  # the supervisor looks alive: an older supervisor does not stop its
+  # children when replaced, and the old trader would carry on unwatched.
+  if [[ -n "$CODE_CHANGED" ]]; then
     say "    A new version was installed. Restarting the bot so it runs it."
     launchctl unload "$PLIST_PATH" >/dev/null 2>&1
     local name
