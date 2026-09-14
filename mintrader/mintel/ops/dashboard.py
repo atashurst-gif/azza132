@@ -227,6 +227,13 @@ def render_status(snap: dict) -> str:
         tile("Win rate today",
              "-" if st.get("win_rate_today") is None
              else f"{st['win_rate_today']:.0f}%"),
+        tile("Since start" + (f" ({str(st['tracking_start'])[:10]})"
+                              if st.get("tracking_start") else ""),
+             ("-" if st.get("since_start_pnl") is None else
+              _fmt_money(st.get("since_start_pnl") or 0.0, st.get("currency", ""))
+              + (f" over {st.get('since_start_trades')} trades"
+                 if st.get("since_start_trades") is not None else "")),
+             "ok" if (st.get("since_start_pnl") or 0) >= 0 else "bad"),
         tile("Last scan", html.escape(str(st.get("last_scan", "never")))),
         tile("Last trade", html.escape(str(st.get("last_trade", "none yet")))),
         tile("Equity", _fmt_money(st.get("equity", 0.0),

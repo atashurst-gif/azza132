@@ -152,6 +152,10 @@ class Config:
     mode: str = "DEMO"                  # DEMO | LIVE
     live_marker: str = ""
     magic: int = 990_311
+    # Where "since start" measurement begins (ISO UTC). Set by the installer
+    # the first time the bot is set up; the status page measures the bot's
+    # own trades from here using the broker's records.
+    tracking_start_utc: str = ""
     account_login: int = 0
     account_password: str = ""
     account_server: str = ""

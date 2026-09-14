@@ -794,6 +794,8 @@ cfg = {
     "mode": os.environ["MINTEL_MODE"],
     "live_marker": os.environ.get("MINTEL_MARKER", ""),
     "magic": 990311,
+    "tracking_start_utc": __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc).replace(microsecond=0).isoformat(),
     "account_login": int(os.environ.get("MINTEL_LOGIN") or 0),
     "account_server": os.environ.get("MINTEL_SERVER", ""),
     "mt5_terminal_path": os.environ.get("MINTEL_TERMINAL", ""),

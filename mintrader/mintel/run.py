@@ -93,12 +93,71 @@ class PidFile:
                 pass
 
 
+_LEDGER_CACHE: dict = {"at": None, "value": {}}
+
+
+def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
+    """Today's and since-start results from the BROKER's deal history.
+
+    The journal explains trades; the broker's records are what they earned.
+    Only the bot's own deals (its magic number) are counted, so trading by
+    hand on the same account does not blur the measurement.  Refreshed at
+    most every 30 seconds.
+    """
+    cached_at = _LEDGER_CACHE["at"]
+    if cached_at and (now - cached_at).total_seconds() < 30:
+        return _LEDGER_CACHE["value"]
+    fn = getattr(trader.broker, "deals_since", None)
+    out: dict = {}
+    if fn is not None:
+        cfg = trader.cfg
+        start_txt = cfg.tracking_start_utc or ""
+        try:
+            start = dt.datetime.fromisoformat(start_txt.replace("Z", "+00:00")) \
+                if start_txt else now.replace(hour=0, minute=0, second=0, microsecond=0)
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=dt.timezone.utc)
+        except ValueError:
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        earliest = min(start, day_start)
+        try:
+            rows = fn(earliest, cfg.magic) or []
+        except Exception as exc:
+            log.debug("deal history unavailable: %s", exc)
+            rows = None
+        if rows is not None:
+            def summarise(since):
+                sel = [r for r in rows if r.get("time") and r["time"] >= since]
+                # a position may close in several deals: group by position
+                by_pos: dict = {}
+                for r in sel:
+                    by_pos[r.get("position") or id(r)] = \
+                        by_pos.get(r.get("position") or id(r), 0.0) + float(r["profit"])
+                wins = sum(1 for v in by_pos.values() if v > 0)
+                return {"net": round(sum(by_pos.values()), 2),
+                        "trades": len(by_pos), "wins": wins,
+                        "win_rate": round(wins / len(by_pos) * 100, 1) if by_pos else None}
+            out = {"today": summarise(day_start),
+                   "since_start": summarise(start),
+                   "tracking_start": start.isoformat(),
+                   "source": "broker"}
+    _LEDGER_CACHE["at"] = now
+    _LEDGER_CACHE["value"] = out
+    return out
+
+
 def push_dashboard(state: DashboardState, trader: Trader) -> None:
     """Copy the trader's current view into the dashboard snapshot."""
     try:
         account = trader.broker.account()
     except Exception:
         account = None
+    ledger = {}
+    try:
+        ledger = broker_ledger(trader, trader.clock())
+    except Exception as exc:
+        log.debug("broker ledger failed: %s", exc)
     try:
         positions = trader.broker.positions(trader.cfg.magic)
     except Exception:
@@ -163,8 +222,15 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "equity": account.equity if account else 0.0,
             "balance": account.balance if account else 0.0,
             "currency": account.currency if account else "",
-            "today_pnl": results.get("net", 0.0),
-            "win_rate_today": results.get("win_rate"),
+            # Broker's figures when it can give them; the journal otherwise.
+            "today_pnl": (ledger.get("today") or {}).get("net", results.get("net", 0.0)),
+            "win_rate_today": (ledger.get("today") or {}).get("win_rate", results.get("win_rate")),
+            "today_trades": (ledger.get("today") or {}).get("trades", results.get("trades", 0)),
+            "since_start_pnl": (ledger.get("since_start") or {}).get("net"),
+            "since_start_trades": (ledger.get("since_start") or {}).get("trades"),
+            "since_start_win_rate": (ledger.get("since_start") or {}).get("win_rate"),
+            "tracking_start": ledger.get("tracking_start", trader.cfg.tracking_start_utc),
+            "pnl_source": ledger.get("source", "journal"),
             "last_scan": (trader.scanner.last_scan_utc.strftime("%H:%M:%S UTC")
                           if trader.scanner.last_scan_utc else "never"),
             "last_trade": last_trade,

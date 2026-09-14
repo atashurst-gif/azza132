@@ -149,6 +149,19 @@ class BridgeService:
             out["time"] = wire._iso(when)
         return out
 
+    def do_deals_since(self, since: str, magic: int = 0) -> list:
+        fn = getattr(self.broker, "deals_since", None)
+        if fn is None:
+            return []
+        rows = fn(wire._dt(since), int(magic or 0)) or []
+        out = []
+        for r in rows:
+            r = dict(r)
+            if isinstance(r.get("time"), dt.datetime):
+                r["time"] = wire._iso(r["time"])
+            out.append(r)
+        return out
+
     # -------------------------------------------------------------- trading --
     def do_send(self, request: dict) -> dict:
         return wire.order_result_out(self.broker.send(wire.request_in(request)))

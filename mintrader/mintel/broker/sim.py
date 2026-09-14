@@ -518,6 +518,11 @@ class SimBroker:
         return OrderResult(True, RetCode.DONE.value, ticket=ticket,
                            filled_volume=vol, price=px)
 
+    def deals_since(self, since_utc, magic: int = 0) -> list[dict]:
+        return [{"position": c["ticket"], "symbol": c["symbol"],
+                 "volume": c["volume"], "profit": c["pnl"], "time": c["time"]}
+                for c in self.closed if c["time"] >= since_utc]
+
     def closed_deal(self, ticket: int) -> Optional[dict]:
         rows = [c for c in self.closed if c["ticket"] == ticket]
         if not rows:

@@ -282,6 +282,20 @@ class BridgeBroker:
             out["time"] = wire._dt(out["time"])
         return out
 
+    def deals_since(self, since_utc, magic: int = 0) -> list[dict]:
+        try:
+            rows = self._rpc("deals_since", since=wire._iso(since_utc),
+                             magic=int(magic or 0)) or []
+        except Exception:
+            return []
+        out = []
+        for r in rows:
+            r = dict(r)
+            if isinstance(r.get("time"), str):
+                r["time"] = wire._dt(r["time"])
+            out.append(r)
+        return out
+
     # -------------------------------------------------------------- trading --
     def send(self, req: OrderRequest) -> OrderResult:
         try:
