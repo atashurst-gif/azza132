@@ -44,12 +44,14 @@ class TestAdapterDealHistory:
         # without a magic filter, the hand trade counts too
         assert [r["position"] for r in b.deals_since(T0, magic=0)] == [1, 2]
 
-    def test_failure_is_an_empty_list(self):
+    def test_failure_is_an_error_not_an_empty_list(self):
         b = Mt5Broker()
         def boom(*a, **k):
             raise RuntimeError("no connection")
         b._mt5 = SimpleNamespace(history_deals_get=boom)
-        assert b.deals_since(T0, 1) == []
+        from mintel.broker.base import BrokerError
+        with pytest.raises(BrokerError):
+            b.deals_since(T0, 1)
 
 
 class FakeBroker:

@@ -65,6 +65,10 @@ class ManagedProcess:
     # launchd does not give it. Output is pumped from the terminal into the
     # log file by a thread.
     use_pty: bool = False
+    # A process pattern (as for pkill -f) that identifies stray copies of this
+    # service started by an earlier run; stop() kills them too, so an upgrade
+    # never leaves last week's bridge answering the new trader.
+    kill_pattern: str = ""
     _log_fh: Optional[object] = field(default=None, repr=False, compare=False)
     _pty_master: int = field(default=-1, repr=False, compare=False)
     _pump: Optional[object] = field(default=None, repr=False, compare=False)
@@ -202,14 +206,33 @@ class ManagedProcess:
             self._log_fh = None
 
     def stop(self) -> None:
-        if self.proc is None:
-            return
-        try:
-            self.proc.terminate()
-            self.proc.wait(timeout=15)
-        except Exception:
+        if self.proc is not None:
             try:
-                self.proc.kill()
+                self.proc.terminate()
+                self.proc.wait(timeout=15)
+            except Exception:
+                try:
+                    self.proc.kill()
+                except Exception:
+                    pass
+        elif self.pid_file:
+            # Adopted from a PID file (an earlier watchdog started it).
+            try:
+                pid = int(Path(self.pid_file).read_text().strip())
+                if pid > 0 and pid != os.getpid():
+                    os.kill(pid, signal.SIGTERM)
+                    for _ in range(30):
+                        if not pid_alive(pid):
+                            break
+                        time.sleep(0.5)
+                    if pid_alive(pid):
+                        os.kill(pid, signal.SIGKILL)
+            except Exception:
+                pass
+        if self.kill_pattern and not IS_WINDOWS:
+            try:
+                subprocess.run(["pkill", "-f", self.kill_pattern],
+                               capture_output=True, timeout=15)
             except Exception:
                 pass
 
@@ -259,6 +282,33 @@ def process_running(image_name: str) -> Optional[bool]:
         except Exception:
             return None
     return None
+
+
+def bridge_current(host: str, port: int) -> bool:
+    """Is a bridge answering on the port AND running the installed code?
+
+    A bridge that survived an upgrade answers the port but not the trader's
+    newer questions; reporting it as "not answering" makes the watchdog stop
+    it and start the installed code in its place.
+    """
+    if not port_open(host, port):
+        return False
+    try:
+        from ..broker.bridge_client import BridgeBroker
+        client = BridgeBroker(host=host, port=port)
+        try:
+            why = client.outdated()
+        finally:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+        if why:
+            log.warning("%s", why)
+            return False
+    except Exception:
+        return True          # answering; cannot judge its version
+    return True
 
 
 def port_open(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -498,8 +548,9 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                 cwd=project,
                 log_file=str(Path(cfg.ops.log_dir) / "bridge.out.log"),
                 use_pty=True,
+                kill_pattern="bridge_server.py",
                 grace_seconds=90.0,
-                probe=lambda: port_open(cfg.bridge_host, cfg.bridge_port),
+                probe=lambda: bridge_current(cfg.bridge_host, cfg.bridge_port),
                 max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
         if cfg.mt5_terminal_path:
             mt5_cmd = wine_command(cfg, cfg.mt5_terminal_path)

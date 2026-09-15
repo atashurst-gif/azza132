@@ -286,6 +286,13 @@ class HealthSupervisor:
             else:
                 add(Check("BROKER_CONNECTION", Severity.OK,
                           "MetaTrader 5 is connected"))
+                stale = ""
+                try:
+                    stale = str(getattr(self.broker, "outdated", lambda: "")() or "")
+                except Exception:
+                    stale = ""
+                if stale:
+                    add(Check("BRIDGE_VERSION", Severity.FAIL, stale, critical=True))
                 try:
                     account = self.broker.account()
                 except Exception as exc:

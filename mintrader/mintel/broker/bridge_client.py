@@ -200,6 +200,24 @@ class BridgeBroker:
         except Exception:
             return None
 
+    def outdated(self) -> str:
+        """Why the running bridge is not the installed code ("" when it is).
+
+        A bridge that survived an upgrade runs last week's code: it may lack
+        methods the trader now relies on, and it fails them silently.
+        """
+        info = self.ping()
+        if not info:
+            return ""
+        from .stamp import code_stamp
+        theirs = str(info.get("code_stamp") or "")
+        ours = code_stamp()
+        if theirs != ours:
+            return (f"the MetaTrader bridge is running old code "
+                    f"({theirs or 'unstamped'} vs installed {ours}) - it must "
+                    f"be restarted (Stop, then Start)")
+        return ""
+
     # ---------------------------------------------------------------- clock --
     def _sync_clock(self) -> None:
         try:
@@ -284,12 +302,11 @@ class BridgeBroker:
 
     def deals_since(self, since_utc, magic: int = 0,
                     closing_only: bool = True) -> list[dict]:
-        try:
-            rows = self._rpc("deals_since", since=wire._iso(since_utc),
-                             magic=int(magic or 0),
-                             closing_only=bool(closing_only)) or []
-        except Exception:
-            return []
+        # Errors propagate on purpose: an empty list means "no deals", and a
+        # bridge that cannot answer must never be mistaken for that.
+        rows = self._rpc("deals_since", since=wire._iso(since_utc),
+                         magic=int(magic or 0),
+                         closing_only=bool(closing_only)) or []
         out = []
         for r in rows:
             r = dict(r)

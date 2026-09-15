@@ -43,7 +43,10 @@ from mintel.broker.base import TF, Side                           # noqa: E402
 
 log = logging.getLogger("mintel.bridge.server")
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
+# Frozen at start-up: the stamp of the code THIS process is running.
+from mintel.broker.stamp import code_stamp                       # noqa: E402
+CODE_STAMP = code_stamp()
 MAX_REQUEST_BYTES = 1 << 20
 
 
@@ -69,6 +72,7 @@ class BridgeService:
     # ------------------------------------------------------------ lifecycle --
     def do_ping(self) -> dict:
         return {"protocol": PROTOCOL_VERSION, "pid": os.getpid(),
+                "code_stamp": CODE_STAMP,
                 "backend": type(self.broker).__name__,
                 "calls": self.calls, "errors": self.errors}
 

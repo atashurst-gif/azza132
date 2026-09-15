@@ -146,6 +146,33 @@ def reset_measurement_for_new_strategy(cfg: Config, path, now: Optional[dt.datet
     return changed
 
 
+def journal_ledger(trader: Trader, start: dt.datetime, today_from: dt.datetime) -> dict:
+    """The same figures from the bot's own journal (positions opened after
+    ``start``), for when the broker's history cannot be read."""
+    try:
+        rows = trader.journal.closed_trades(limit=2000, since=start)
+    except Exception:
+        rows = []
+
+    def summarise(since):
+        by = {}
+        for r in rows:
+            opened = r.get("opened_utc") or ""
+            try:
+                when = dt.datetime.fromisoformat(opened)
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=dt.timezone.utc)
+            except ValueError:
+                continue
+            if when < since:
+                continue
+            by[r.get("ticket")] = float(r.get("pnl_money") or 0.0)
+        wins = sum(1 for v in by.values() if v > 0)
+        return {"net": round(sum(by.values()), 2), "trades": len(by), "wins": wins,
+                "win_rate": round(wins / len(by) * 100, 1) if by else None}
+    return {"today": summarise(today_from), "since_start": summarise(start)}
+
+
 def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
     """Today's and since-start results from the BROKER's deal history.
 
@@ -174,12 +201,20 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
         # the start is set, today begins then, not at midnight.
         today_from = max(day_start, start)
         earliest = min(start, day_start)
+        error = ""
         try:
             rows = fn(earliest, cfg.magic, False) or []     # entries too
         except Exception as exc:
-            log.debug("deal history unavailable: %s", exc)
+            log.warning("deal history unavailable: %s", exc)
             rows = None
-        if rows is not None:
+            error = str(exc)
+        if rows is None:
+            # Never a false £0.00: say the broker could not be asked, and
+            # fall back to the bot's own records for this strategy.
+            out = journal_ledger(trader, start, today_from)
+            out.update({"tracking_start": start.isoformat(),
+                        "source": "journal", "error": error})
+        else:
             # A position counts only if it was OPENED at or after the start.
             # One opened before (the previous method's trades) is ignored
             # even when it closes afterwards, so the new numbers are the new
@@ -298,6 +333,7 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "tracking_start": ledger.get("tracking_start", trader.cfg.tracking_start_utc),
             "strategy": trader.cfg.tracking_strategy,
             "pnl_source": ledger.get("source", "journal"),
+            "pnl_error": ledger.get("error", ""),
             "last_scan": (trader.scanner.last_scan_utc.strftime("%H:%M:%S UTC")
                           if trader.scanner.last_scan_utc else "never"),
             "last_trade": last_trade,

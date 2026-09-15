@@ -271,6 +271,17 @@ def render_status(snap: dict) -> str:
         think_html = ('<h2>What the bot is looking at right now</h2>'
                       '<div class="card small">No scan has completed yet.</div>')
 
+    src = str(st.get("pnl_source") or "")
+    if src == "broker":
+        src_html = ('<div class="small">Profit figures come from the broker\'s own '
+                    'deal records, commission included, for this strategy\'s trades only.</div>')
+    elif st.get("pnl_error"):
+        src_html = ('<div class="card small bad"><b>The broker\'s trade history could not '
+                    'be read</b>, so the profit figures above are from the bot\'s own records '
+                    'and may lag: ' + html.escape(str(st.get("pnl_error"))) + '</div>')
+    else:
+        src_html = ('<div class="small">Profit figures are from the bot\'s own records.</div>')
+
     why = [str(r) for r in (st.get("not_trading_because") or []) if r]
     rules = st.get("strategy_rules") or {}
     rules_txt = ""
@@ -316,7 +327,7 @@ def render_status(snap: dict) -> str:
 <a href="/health">Health (JSON)</a></nav>
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div>
 <div class="row">{tiles}</div>
-{prob_html}{pos_html}{why_html}{think_html}
+{prob_html}{src_html}{pos_html}{why_html}{think_html}
 <p class="small">Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
 </div></body></html>"""

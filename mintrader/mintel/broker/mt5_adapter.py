@@ -536,40 +536,55 @@ class Mt5Broker:
         account is not counted.
         """
         with self._lock:
+            mt5 = self.mt5
+            now = utcnow()
+            # Bounds are integer seconds in the broker's own clock, padded by
+            # a day each side, and every deal is then filtered by its
+            # converted UTC time. Passing datetimes lets the MetaTrader5
+            # package apply the machine's local time zone (under Wine, an
+            # unpredictable one), which can put the whole day outside the
+            # window and return nothing at all.
+            import calendar
+            lo = calendar.timegm(self._clock.utc_to_server(
+                since_utc - dt.timedelta(days=1)).timetuple())
+            hi = calendar.timegm(self._clock.utc_to_server(
+                now + dt.timedelta(days=1)).timetuple())
             try:
-                mt5 = self.mt5
-                now = utcnow()
-                deals = mt5.history_deals_get(
-                    self._clock.utc_to_server(since_utc),
-                    self._clock.utc_to_server(now + dt.timedelta(minutes=5))) or ()
-                DEAL_ENTRY_IN = 0
-                out = []
-                for d in deals:
-                    is_entry = int(getattr(d, "entry", 0)) == DEAL_ENTRY_IN
-                    if is_entry and closing_only:
-                        continue
-                    if int(getattr(d, "type", 0)) not in (0, 1):
-                        continue           # balance, credit, charges...
-                    if magic and int(getattr(d, "magic", 0)) != int(magic):
-                        continue
-                    when = self._clock.server_to_utc(
-                        dt.datetime.utcfromtimestamp(int(d.time)))
-                    if when < since_utc:
-                        continue
-                    out.append({
-                        "position": int(getattr(d, "position_id", 0)),
-                        "symbol": str(getattr(d, "symbol", "") or ""),
-                        "volume": float(d.volume),
-                        "profit": float(d.profit) + float(getattr(d, "commission", 0.0))
-                                  + float(getattr(d, "swap", 0.0)),
-                        "commission": float(getattr(d, "commission", 0.0)),
-                        "is_entry": is_entry,
-                        "time": when,
-                    })
-                return out
+                deals = mt5.history_deals_get(int(lo), int(hi))
             except Exception as exc:
-                log.warning("could not read deal history: %s", exc)
-                return []
+                raise BrokerError(f"deal history query failed: {exc}") from exc
+            if deals is None:
+                err = None
+                try:
+                    err = mt5.last_error()
+                except Exception:
+                    pass
+                raise BrokerError(f"deal history unavailable from MetaTrader ({err})")
+            DEAL_ENTRY_IN = 0
+            out = []
+            for d in deals:
+                is_entry = int(getattr(d, "entry", 0)) == DEAL_ENTRY_IN
+                if is_entry and closing_only:
+                    continue
+                if int(getattr(d, "type", 0)) not in (0, 1):
+                    continue           # balance, credit, charges...
+                if magic and int(getattr(d, "magic", 0)) != int(magic):
+                    continue
+                when = self._clock.server_to_utc(
+                    dt.datetime.utcfromtimestamp(int(d.time)))
+                if when < since_utc:
+                    continue
+                out.append({
+                    "position": int(getattr(d, "position_id", 0)),
+                    "symbol": str(getattr(d, "symbol", "") or ""),
+                    "volume": float(d.volume),
+                    "profit": float(d.profit) + float(getattr(d, "commission", 0.0))
+                              + float(getattr(d, "swap", 0.0)),
+                    "commission": float(getattr(d, "commission", 0.0)),
+                    "is_entry": is_entry,
+                    "time": when,
+                })
+            return out
 
     def calc_margin(self, symbol: str, side: Side, volume: float,
                     price: float) -> Optional[float]:

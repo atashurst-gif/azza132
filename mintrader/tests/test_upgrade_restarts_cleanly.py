@@ -51,14 +51,14 @@ class TestCodeFingerprint:
 class TestStopAndStartMechanics:
     def test_stop_kills_the_bridge_by_name_too(self):
         body = LIB.read_text().split("stop_everything() {")[1].split("\n}\n")[0]
-        assert 'pkill -f "mintel/broker/bridge_server.py"' in body
+        assert 'pkill -f "bridge_server.py"' in body
         assert 'pkill -f "mintel.run --config"' in body
 
     def test_new_code_restarts_a_running_bot(self):
         body = LIB.read_text().split("start_everything() {")[1].split("\n}\n")[0]
         assert 'if [[ -n "$CODE_CHANGED" ]]; then' in body
         assert "A new version was installed" in body
-        assert 'pkill -f "mintel/broker/bridge_server.py"' in body
+        assert 'pkill -f "bridge_server.py"' in body
 
     def test_launcher_fast_path_checks_the_code(self):
         text = (ROOT / "deploy" / "mac" / "Start Trading Bot.command").read_text()

@@ -1055,7 +1055,7 @@ start_everything() {
       rm -f "$DATA_DIR/$name.pid"
     done
     sleep 2
-    pkill -f "mintel/broker/bridge_server.py" 2>/dev/null || true
+    pkill -f "bridge_server.py" 2>/dev/null || true
     pkill -f "mintel.run --config" 2>/dev/null || true
     pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
     sleep 2
@@ -1200,7 +1200,7 @@ stop_everything() {
   # Belt and braces: anything of ours still alive by name, whatever happened
   # to the pid files (a bridge started under Wine survived the pid file once).
   sleep 1
-  pkill -f "mintel/broker/bridge_server.py" 2>/dev/null || true
+  pkill -f "bridge_server.py" 2>/dev/null || true
   pkill -f "mintel.run --config" 2>/dev/null || true
   pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
   if [[ -f "$DATA_DIR/caffeinate.pid" ]]; then

@@ -96,7 +96,8 @@ class TestBridgeTransport:
     def test_ping_reports_the_protocol(self, bridge):
         client, *_ = bridge
         info = client.ping()
-        assert info["protocol"] == 1
+        assert info["protocol"] >= 2
+        assert len(info["code_stamp"]) == 12
         assert info["backend"] == "SimBroker"
 
     def test_connect_and_basic_reads(self, bridge):
