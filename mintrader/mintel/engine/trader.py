@@ -131,6 +131,7 @@ class Trader:
         self.risk.realised_today = self.realised_today
         self.last_entry_utc: Optional[dt.datetime] = None
         self._entry_times: list[dt.datetime] = []
+        self._entries_today: list[dt.datetime] = []
         self._realised_cache: dict = {"at": None, "value": 0.0}
         self.scanner.losses_today = self.losses_today
         self.executor = Executor(broker, cfg, self.journal, self.risk, clock)
@@ -297,12 +298,24 @@ class Trader:
         if sc.max_new_positions_per_hour > 0 and len(self._entry_times) >= sc.max_new_positions_per_hour:
             return (f"{len(self._entry_times)} new positions in the last hour "
                     f"(limit {sc.max_new_positions_per_hour})")
+        limit_d = int(getattr(sc, "max_new_positions_per_day", 0) or 0)
+        if limit_d > 0:
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            n_today = sum(1 for t in getattr(self, "_entries_today", ()) if t >= day_start)
+            try:
+                n_today = max(n_today, int(self.journal.opened_since(day_start)))
+            except Exception:
+                pass  # no journal (tests) - the in-memory count still holds
+            if n_today >= limit_d:
+                return (f"{n_today} trades taken today (limit {limit_d}) - "
+                        f"done for the day, no more entries until tomorrow")
         return ""
 
     def _note_entry(self, now: dt.datetime) -> None:
         now = to_utc(now)
         self.last_entry_utc = now
         self._entry_times.append(now)
+        self._entries_today.append(now)
 
     # --------------------------------------------------- losses per market --
     def losses_today(self, symbol: str) -> int:

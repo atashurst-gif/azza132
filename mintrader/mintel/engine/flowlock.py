@@ -257,7 +257,8 @@ class FlowLock:
             against = (structure.bos_down if t.side is Side.BUY
                        else structure.bos_up)
             if against and structure.bos_bars_ago is not None \
-                    and structure.bos_bars_ago <= 2 and r_now < 0.6:
+                    and structure.bos_bars_ago <= 2 \
+                    and r_now < c.structure_break_max_r:
                 return FlowState.REVERSAL
 
         aligned = momentum is not None and momentum.direction == t.side.sign

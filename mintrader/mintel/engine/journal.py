@@ -245,6 +245,13 @@ class Journal:
         cur = self._exec(sql, args)
         return [dict(r) for r in (cur.fetchall() if cur else [])]
 
+    def opened_since(self, since: dt.datetime) -> int:
+        """How many trades were OPENED at or after ``since`` (open or closed)."""
+        cur = self._exec("SELECT COUNT(*) FROM trades WHERE opened_utc >= ?",
+                         (to_utc(since).isoformat(),))
+        row = cur.fetchone() if cur else None
+        return int(row[0]) if row else 0
+
     def open_trades(self) -> list[dict]:
         cur = self._exec("SELECT * FROM trades WHERE closed_utc IS NULL")
         return [dict(r) for r in (cur.fetchall() if cur else [])]

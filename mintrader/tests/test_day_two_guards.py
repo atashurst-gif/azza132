@@ -64,7 +64,8 @@ class TestEntryPacing:
         cfg = Config()
         for k, v in over.items():
             setattr(cfg.scan, k, v)
-        return SimpleNamespace(cfg=cfg, last_entry_utc=None, _entry_times=[])
+        return SimpleNamespace(cfg=cfg, last_entry_utc=None, _entry_times=[],
+                               _entries_today=[])
 
     def test_rollover_window_blocks(self):
         ns = self._ns()
@@ -80,7 +81,8 @@ class TestEntryPacing:
         assert Trader._entry_gate(ns, NOW.replace(hour=0, minute=20)) == ""
 
     def test_entries_are_spaced_and_capped(self):
-        ns = self._ns(min_seconds_between_entries=180.0, max_new_positions_per_hour=2)
+        ns = self._ns(min_seconds_between_entries=180.0, max_new_positions_per_hour=2,
+                      max_new_positions_per_day=0)
         assert Trader._entry_gate(ns, NOW) == ""
         Trader._note_entry(ns, NOW)
         assert "spacing" in Trader._entry_gate(ns, NOW + dt.timedelta(seconds=40))
@@ -91,6 +93,6 @@ class TestEntryPacing:
 
     def test_defaults(self):
         sc = Config().scan
-        assert sc.min_seconds_between_entries == 180.0
-        assert sc.max_new_positions_per_hour == 4
+        assert sc.min_seconds_between_entries == 900.0
+        assert sc.max_new_positions_per_hour == 1
         assert sc.no_entry_utc_windows == ("21:45-23:30",)

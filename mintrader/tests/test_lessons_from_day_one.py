@@ -86,7 +86,7 @@ class TestLossesCloseAMarketForTheDay:
             assert any("losing trades here today" in b for b in st.blockers)
 
     def test_below_the_limit_no_blocker(self):
-        states, _ = _scan(losses_today=lambda sym: 2)
+        states, _ = _scan(losses_today=lambda sym: 0)
         assert not any("losing trades here today" in b for st in states for b in st.blockers)
 
 

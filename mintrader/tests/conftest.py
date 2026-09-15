@@ -52,6 +52,27 @@ def cfg(workdir) -> Config:
     # A smaller universe keeps the suite fast; universe discovery itself is
     # tested separately against the full symbol list.
     c.universe.max_symbols = 6
+    # The lifecycle suite exercises the machinery (entries, management,
+    # journal, learning) on synthetic markets, so it runs on the permissive
+    # day-one profile.  The selective "big moves only" defaults have their
+    # own tests in test_big_moves_only.py.
+    lifecycle_profile(c)
+    return c
+
+
+def lifecycle_profile(c: Config) -> Config:
+    c.scan.entry_tier = "NORMAL"
+    c.scan.min_reward_risk = 1.15
+    c.scan.max_cost_fraction_of_stop = 0.30
+    c.scan.max_losses_per_symbol_per_day = 3
+    c.scan.min_seconds_between_entries = 180.0
+    c.scan.max_new_positions_per_hour = 4
+    c.scan.max_new_positions_per_day = 0
+    c.flowlock.breakeven_at_r = 1.0
+    c.flowlock.partial_at_r = 1.4
+    c.flowlock.partial_fraction = 0.4
+    c.flowlock.reversal_thesis_floor = 25.0
+    c.flowlock.structure_break_max_r = 0.6
     return c
 
 

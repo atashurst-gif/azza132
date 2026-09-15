@@ -626,6 +626,11 @@ class Scanner:
         tier = tier_for(breakdown.final, self.cfg.scan)
 
         blockers: list[str] = []
+        from .opportunity import TIERS
+        want = str(self.cfg.scan.entry_tier or "NORMAL").upper()
+        if tier != "NO_TRADE" and want in TIERS and \
+                TIERS.index(tier) < TIERS.index(want):
+            blockers.append(f"{tier} setup - only {want} or better is traded")
         if ctx.execution and not ctx.execution.tradable:
             blockers.append(ctx.execution.reason)
         if ctx.news and ctx.news.blackout:

@@ -183,7 +183,7 @@ class TestExcursions:
 
 class TestPartialsAndBreakeven:
     def test_partial_fires_once_at_the_configured_r(self):
-        fl, p = FlowLock(), pos()
+        fl, p = FlowLock(FlowLockConfig(partial_at_r=1.4, partial_fraction=0.4)), pos()
         out = drive(fl, p, [1.1000 + 0.0004 * i for i in range(20)], Mom())
         partials = [d.partial_volume for _px, d in out if d.partial_volume > 0]
         assert len(partials) == 1
