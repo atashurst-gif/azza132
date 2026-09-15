@@ -93,7 +93,7 @@ class ScanConfig:
     max_tick_age_seconds_weekend: float = 4 * 3600.0
     top_n_reported: int = 12
     # Confidence tiers on the 0-100 opportunity scale.
-    tier_normal: float = 58.0
+    tier_normal: float = 60.0
     tier_strong: float = 70.0
     tier_exceptional: float = 82.0
     # --- half the pace, wiser choices ----------------------------------------
@@ -101,8 +101,13 @@ class ScanConfig:
     # when half of them win. NORMAL setups are still traded, but only when the
     # realistic move is at least this many times the risk after every cost
     # (day one accepted 1.15), and at half day one's pace.
+    #
+    # The move estimate is a fixed multiple of ATR while structural stops are
+    # often ~2 ATR wide, so it rarely exceeds ~1.3 even on good setups; the
+    # afternoon on 1.8 placed nothing at all. Winners run further than the
+    # estimate because the exit trails; the estimate is a floor, not a target.
     entry_tier: str = "NORMAL"
-    min_reward_risk: float = 1.8
+    min_reward_risk: float = 1.3
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
     # --- lessons from the first live day ------------------------------------
@@ -191,7 +196,7 @@ class OpsConfig:
 
 # Bump this whenever the trading rules change in a way that makes earlier
 # results a different experiment. The status page resets to it automatically.
-STRATEGY_VERSION = "2026-09-15 balanced - half the pace, wiser choices"
+STRATEGY_VERSION = "2026-09-15 balanced v2 - 1.3:1 after costs, score 60+"
 
 
 @dataclass
