@@ -96,20 +96,20 @@ class ScanConfig:
     tier_normal: float = 58.0
     tier_strong: float = 70.0
     tier_exceptional: float = 82.0
-    # --- big moves only ------------------------------------------------------
+    # --- half the pace, wiser choices ----------------------------------------
     # Day two's lesson: many small-edge trades lose to the broker's fees even
-    # when half of them win. So: only STRONG setups or better are traded
-    # (NORMAL ones are watched and shown, never entered), and only when the
-    # realistic move is at least this many times the risk after every cost.
-    entry_tier: str = "STRONG"
-    min_reward_risk: float = 2.5
+    # when half of them win. NORMAL setups are still traded, but only when the
+    # realistic move is at least this many times the risk after every cost
+    # (day one accepted 1.15), and at half day one's pace.
+    entry_tier: str = "NORMAL"
+    min_reward_risk: float = 1.8
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
     # --- lessons from the first live day ------------------------------------
     # Round-trip costs (spread + slippage + commission) may not exceed this
     # fraction of the stop distance: a 3-pip stop with 0.9 pips of cost is a
     # coin toss that pays the broker whichever way it lands.
-    max_cost_fraction_of_stop: float = 0.15
+    max_cost_fraction_of_stop: float = 0.20
     # The stop is never closer than this many ATRs (decision timeframe) from
     # the entry, whatever the structure says: inside that band is noise, and
     # noise took out most of day one's trades within minutes.
@@ -118,15 +118,15 @@ class ScanConfig:
     # for this long; and after this many losses on one market in a day, no
     # more entries there until tomorrow. Re-entry stays possible - churn does not.
     cooldown_seconds_after_loss: float = 1800.0
-    max_losses_per_symbol_per_day: int = 1
+    max_losses_per_symbol_per_day: int = 2
     # No bursts: day one's new build opened eight trades in forty seconds at
     # the Asian open and lost six of them inside half an hour. One entry at a
     # time, spaced out, capped per hour, and none during the daily rollover
     # when spreads are at their widest (times are UTC, "HH:MM-HH:MM").
-    min_seconds_between_entries: float = 900.0
-    max_new_positions_per_hour: int = 1
-    # A hard cap on new trades per day (UTC). Few trades, each worth taking.
-    max_new_positions_per_day: int = 4
+    min_seconds_between_entries: float = 600.0
+    max_new_positions_per_hour: int = 2
+    # A hard cap on new trades per day (UTC): half of what day one did.
+    max_new_positions_per_day: int = 8
     no_entry_utc_windows: tuple[str, ...] = ("21:45-23:30",)
 
 
@@ -138,8 +138,8 @@ class FlowLockConfig:
     normal_flow_atr: float = 1.5
     decay_atr: float = 0.7
     # Winners are given room: nothing is locked in until +1.5R, a third is
-    # banked only at +3R and the rest is trailed loosely, so a real move can
-    # pay for several small losses.
+    # banked only at +2.5R and the rest is trailed loosely, so a real move
+    # can pay for several small losses.
     breakeven_at_r: float = 1.5
     mfe_giveback_normal: float = 0.50  # fraction of MFE we allow back
     mfe_giveback_strong: float = 0.65
@@ -150,7 +150,7 @@ class FlowLockConfig:
     # travelled this far in our favour; later on, the trailed stop decides.
     structure_break_max_r: float = 0.3
     partial_enabled: bool = True
-    partial_at_r: float = 3.0
+    partial_at_r: float = 2.5
     partial_fraction: float = 0.3
     min_stop_step_points: float = 1.0   # ignore microscopic improvements
 
@@ -191,7 +191,7 @@ class OpsConfig:
 
 # Bump this whenever the trading rules change in a way that makes earlier
 # results a different experiment. The status page resets to it automatically.
-STRATEGY_VERSION = "2026-09-15 big moves only"
+STRATEGY_VERSION = "2026-09-15 balanced - half the pace, wiser choices"
 
 
 @dataclass

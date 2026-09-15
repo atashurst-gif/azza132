@@ -1,4 +1,4 @@
-"""Day two's lesson: few trades, each worth taking, and winners held.
+"""Day two's lesson: half the pace, wiser choices, and winners held.
 
 Day one and two lost mostly to fees: many NORMAL-tier trades with a reward
 barely above the risk, banked early, stopped often.  The defaults now trade
@@ -27,18 +27,18 @@ SYMS = ("EURUSD", "GBPUSD", "USDJPY")
 class TestDefaultsAreSelective:
     def test_entry_rules(self):
         sc = Config().scan
-        assert sc.entry_tier == "STRONG"
-        assert sc.min_reward_risk >= 2.5
-        assert sc.max_cost_fraction_of_stop <= 0.15
-        assert sc.max_new_positions_per_day == 4
-        assert sc.max_new_positions_per_hour == 1
-        assert sc.min_seconds_between_entries >= 900
-        assert sc.max_losses_per_symbol_per_day == 1
+        assert sc.entry_tier == "NORMAL"
+        assert sc.min_reward_risk >= 1.8
+        assert sc.max_cost_fraction_of_stop <= 0.20
+        assert sc.max_new_positions_per_day == 8       # half of day one
+        assert sc.max_new_positions_per_hour == 2      # half of day one
+        assert sc.min_seconds_between_entries >= 600
+        assert sc.max_losses_per_symbol_per_day == 2
 
     def test_winners_get_room(self):
         fl = Config().flowlock
         assert fl.breakeven_at_r >= 1.5
-        assert fl.partial_at_r >= 3.0
+        assert fl.partial_at_r >= 2.5
         assert fl.partial_fraction <= 0.3
         assert fl.reversal_thesis_floor <= 15.0
         assert fl.structure_break_max_r <= 0.3
@@ -52,6 +52,7 @@ class TestOnlyStrongSetupsAreTraded:
 
     def test_normal_tier_is_watched_not_traded(self):
         cfg = Config()
+        cfg.scan.entry_tier = "STRONG"
         cfg.scan.min_reward_risk = 0.0
         cfg.scan.max_cost_fraction_of_stop = 0.0
         cfg.scan.tier_normal = 1.0            # everything is at least NORMAL
@@ -65,6 +66,7 @@ class TestOnlyStrongSetupsAreTraded:
 
     def test_strong_tier_is_not_blocked_by_the_tier_rule(self):
         cfg = Config()
+        cfg.scan.entry_tier = "STRONG"
         cfg.scan.min_reward_risk = 0.0
         cfg.scan.max_cost_fraction_of_stop = 0.0
         cfg.scan.tier_normal = 1.0
@@ -147,19 +149,19 @@ class TestWinnersAreHeld:
             t += dt.timedelta(minutes=15)
         return out
 
-    def test_nothing_is_banked_before_three_r(self):
+    def test_nothing_is_banked_before_two_and_a_half_r(self):
         fl = FlowLock(Config().flowlock)
-        # 0.5R steps up to +2.9R - a day-one bot would have banked at 1.4R
-        out = self._drive(fl, _pos(), [1.1000 + 0.00025 * i for i in range(59)])
+        # up to +2.4R - a day-one bot would have banked at 1.4R
+        out = self._drive(fl, _pos(), [1.1000 + 0.00025 * i for i in range(49)])
         assert not any(d.partial_volume > 0 for _px, d in out)
 
-    def test_partial_fires_at_three_r_and_leaves_most_running(self):
+    def test_partial_fires_at_two_and_a_half_r_and_leaves_most_running(self):
         fl = FlowLock(Config().flowlock)
         out = self._drive(fl, _pos(), [1.1000 + 0.00025 * i for i in range(70)])
         partials = [(d.r_now, d.partial_volume) for _px, d in out if d.partial_volume > 0]
         assert len(partials) == 1
         r, vol = partials[0]
-        assert r >= 3.0
+        assert r >= 2.5
         assert vol == pytest.approx(0.3)
 
     def test_breakeven_lock_waits_for_one_and_a_half_r(self):
