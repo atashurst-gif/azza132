@@ -102,20 +102,48 @@ def reset_measurement_for_new_strategy(cfg: Config, path, now: Optional[dt.datet
     Returns True when the clock was reset. The trades of the previous
     strategy stay in the broker's history and the journal; the status page
     simply stops counting them.
+
+    Only the two clock fields are written into the settings file. The
+    strategy rules (the ``scan`` and ``flowlock`` sections) belong to the
+    code, so any copy of them found in the file is removed: a saved copy of
+    an older version's rules would otherwise silently override the new
+    build's, which is exactly what happened on day two.
     """
     from .config import STRATEGY_VERSION
-    if cfg.tracking_strategy == STRATEGY_VERSION:
-        return False
-    now = to_utc(now or utcnow()).replace(microsecond=0)
-    cfg.tracking_start_utc = now.isoformat()
-    cfg.tracking_strategy = STRATEGY_VERSION
-    _LEDGER_CACHE["at"] = None
+    changed = cfg.tracking_strategy != STRATEGY_VERSION
+    if changed:
+        now = to_utc(now or utcnow()).replace(microsecond=0)
+        cfg.tracking_start_utc = now.isoformat()
+        cfg.tracking_strategy = STRATEGY_VERSION
+        _LEDGER_CACHE["at"] = None
     try:
-        cfg.save(path)
+        from pathlib import Path
+        p = Path(path)
+        raw = json.loads(p.read_text()) if p.exists() else {}
+        if not isinstance(raw, dict):
+            raw = {}
+        frozen = [k for k in ("scan", "flowlock") if k in raw]
+        if changed or frozen:
+            raw["tracking_start_utc"] = cfg.tracking_start_utc
+            raw["tracking_strategy"] = cfg.tracking_strategy
+            for section in frozen:
+                raw.pop(section, None)
+            tmp = p.with_suffix(p.suffix + ".tmp")
+            tmp.write_text(json.dumps(raw, indent=2, sort_keys=True))
+            tmp.replace(p)
+        if frozen:
+            # The in-memory rules are the file's stale copy; use the code's.
+            fresh = Config()
+            cfg.scan = fresh.scan
+            cfg.flowlock = fresh.flowlock
+            log.warning("removed a saved copy of the %s rules from the settings "
+                        "file - the code's rules apply", " and ".join(frozen))
     except Exception as exc:
-        log.warning("could not save the new measuring start: %s", exc)
-    log.info("strategy is now %r - measuring from %s", STRATEGY_VERSION, cfg.tracking_start_utc)
-    return True
+        log.warning("could not update the settings file: %s", exc)
+    if changed:
+        log.info("strategy is now %r - measuring from %s", STRATEGY_VERSION,
+                 cfg.tracking_start_utc)
+    return changed
 
 
 def broker_ledger(trader: Trader, now: dt.datetime) -> dict:

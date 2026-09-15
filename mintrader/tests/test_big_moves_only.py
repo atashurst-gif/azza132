@@ -218,3 +218,63 @@ class TestMeasurementFollowsTheStrategy:
         cfg.tracking_strategy = STRATEGY_VERSION
         assert reset_measurement_for_new_strategy(cfg, workdir / "c.json", NOW + dt.timedelta(hours=5)) is False
         assert cfg.tracking_start_utc == "2026-09-15T09:20:00+00:00"
+
+    def test_reset_never_freezes_the_rules_into_the_file(self, workdir):
+        """Day two: a saved copy of the old rules overrode the new build's."""
+        import json
+        from mintel.config import STRATEGY_VERSION
+        from mintel.run import reset_measurement_for_new_strategy
+        path = workdir / "config.json"
+        stale = Config()
+        stale.tracking_strategy = "old"
+        stale.scan.entry_tier = "STRONG"
+        stale.scan.min_reward_risk = 2.5
+        stale.save(path)                       # the old behaviour: everything
+        cfg = Config.load(path)
+        assert cfg.scan.entry_tier == "STRONG"  # the file's stale copy wins
+        assert reset_measurement_for_new_strategy(cfg, path, NOW) is True
+        raw = json.loads(path.read_text())
+        assert "scan" not in raw and "flowlock" not in raw
+        assert raw["tracking_strategy"] == STRATEGY_VERSION
+        assert raw["risk"]["max_open_positions"] == 8     # user's settings kept
+        assert cfg.scan.entry_tier == Config().scan.entry_tier
+        assert cfg.scan.min_reward_risk == Config().scan.min_reward_risk
+        assert Config.load(path).scan.entry_tier == Config().scan.entry_tier
+
+    def test_daily_cap_counts_only_this_strategys_trades(self, workdir):
+        from mintel.engine.journal import Journal
+        from mintel.engine.trader import Trader
+        j = Journal(workdir / "j2.sqlite")
+        try:
+            for i in range(8):        # eight trades this morning, old rules
+                j._exec("INSERT INTO trades (ticket, symbol, opened_utc) VALUES (?, ?, ?)",
+                        (200 + i, "EURUSD", (NOW - dt.timedelta(hours=3)).isoformat()))
+            cfg = Config()
+            cfg.scan.min_seconds_between_entries = 0.0
+            cfg.scan.max_new_positions_per_hour = 0
+            cfg.scan.max_new_positions_per_day = 8
+            cfg.tracking_start_utc = (NOW - dt.timedelta(minutes=30)).isoformat()
+            ns = SimpleNamespace(cfg=cfg, last_entry_utc=None, _entry_times=[],
+                                 _entries_today=[], journal=j)
+            assert Trader._entry_gate(ns, NOW) == ""
+            cfg.tracking_start_utc = ""
+            assert "done for the day" in Trader._entry_gate(ns, NOW)
+        finally:
+            j.close()
+
+    def test_frozen_rules_are_stripped_even_when_the_clock_is_current(self, workdir):
+        import json
+        from mintel.config import STRATEGY_VERSION
+        from mintel.run import reset_measurement_for_new_strategy
+        path = workdir / "config2.json"
+        stale = Config()
+        stale.tracking_strategy = STRATEGY_VERSION          # clock already current
+        stale.tracking_start_utc = "2026-09-15T12:59:00+00:00"
+        stale.scan.entry_tier = "STRONG"
+        stale.save(path)
+        cfg = Config.load(path)
+        assert reset_measurement_for_new_strategy(cfg, path, NOW) is False
+        assert cfg.tracking_start_utc == "2026-09-15T12:59:00+00:00"   # kept
+        assert cfg.scan.entry_tier == Config().scan.entry_tier          # code's rules
+        raw = json.loads(path.read_text())
+        assert "scan" not in raw and raw["tracking_start_utc"] == "2026-09-15T12:59:00+00:00"

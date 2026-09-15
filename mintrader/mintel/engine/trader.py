@@ -301,6 +301,16 @@ class Trader:
         limit_d = int(getattr(sc, "max_new_positions_per_day", 0) or 0)
         if limit_d > 0:
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Only THIS strategy's trades count: the day the rules change,
+            # the earlier rules' trades must not use up the new allowance.
+            start_txt = getattr(self.cfg, "tracking_start_utc", "") or ""
+            try:
+                start = dt.datetime.fromisoformat(start_txt.replace("Z", "+00:00")) \
+                    if start_txt else None
+                if start is not None:
+                    day_start = max(day_start, to_utc(start))
+            except ValueError:
+                pass
             n_today = sum(1 for t in getattr(self, "_entries_today", ()) if t >= day_start)
             try:
                 n_today = max(n_today, int(self.journal.opened_since(day_start)))
