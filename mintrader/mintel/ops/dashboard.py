@@ -271,6 +271,24 @@ def render_status(snap: dict) -> str:
         think_html = ('<h2>What the bot is looking at right now</h2>'
                       '<div class="card small">No scan has completed yet.</div>')
 
+    why = [str(r) for r in (st.get("not_trading_because") or []) if r]
+    rules = st.get("strategy_rules") or {}
+    rules_txt = ""
+    if rules:
+        rules_txt = (f'<div class="small">Rules in force: {html.escape(str(rules.get("entry_tier", "")))} '
+                     f'setups or better, at least {rules.get("min_reward_risk", "?")}x the risk after '
+                     f'costs, costs under {int(float(rules.get("max_cost_fraction_of_stop", 0) or 0) * 100)}% '
+                     f'of the stop, {rules.get("max_new_positions_per_hour", "?")} an hour and '
+                     f'{rules.get("max_new_positions_per_day", "?")} a day.</div>')
+    if why:
+        why_html = ('<h2>Why no new trade right now</h2><div class="card small"><ul>'
+                    + "".join(f'<li>{html.escape(w)}</li>' for w in why)
+                    + '</ul>' + rules_txt + '</div>')
+    else:
+        why_html = ('<h2>Why no new trade right now</h2><div class="card small">'
+                    'Nothing is holding entries back overall - each market below '
+                    'shows its own reason for waiting.' + rules_txt + '</div>')
+
     pos = snap.get("positions") or []
     if pos:
         rows = "".join(
@@ -298,7 +316,7 @@ def render_status(snap: dict) -> str:
 <a href="/health">Health (JSON)</a></nav>
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div>
 <div class="row">{tiles}</div>
-{prob_html}{pos_html}{think_html}
+{prob_html}{pos_html}{why_html}{think_html}
 <p class="small">Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
 </div></body></html>"""

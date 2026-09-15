@@ -301,6 +301,18 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "last_scan": (trader.scanner.last_scan_utc.strftime("%H:%M:%S UTC")
                           if trader.scanner.last_scan_utc else "never"),
             "last_trade": last_trade,
+            # The overall reasons no NEW trade was placed in the last cycle
+            # (risk breakers, daily cap, spacing, timing) - the per-market
+            # reasons live in the thinking table.
+            "not_trading_because": list(
+                (trader.last_cycle.blocked_reasons if trader.last_cycle else ())),
+            "strategy_rules": {
+                "entry_tier": trader.cfg.scan.entry_tier,
+                "min_reward_risk": trader.cfg.scan.min_reward_risk,
+                "max_cost_fraction_of_stop": trader.cfg.scan.max_cost_fraction_of_stop,
+                "max_new_positions_per_hour": trader.cfg.scan.max_new_positions_per_hour,
+                "max_new_positions_per_day": trader.cfg.scan.max_new_positions_per_day,
+            },
             "cycles": trader.cycles,
             "uptime_minutes": round(
                 (utcnow() - trader.started_utc).total_seconds() / 60, 1),

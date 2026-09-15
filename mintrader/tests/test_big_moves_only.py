@@ -278,3 +278,25 @@ class TestMeasurementFollowsTheStrategy:
         assert cfg.scan.entry_tier == Config().scan.entry_tier          # code's rules
         raw = json.loads(path.read_text())
         assert "scan" not in raw and raw["tracking_start_utc"] == "2026-09-15T12:59:00+00:00"
+
+
+class TestThePageSaysWhyItIsNotTrading:
+    def test_overall_reasons_and_rules_are_shown(self):
+        from mintel.ops.dashboard import render_status
+        snap = {"status": {"not_trading_because": ["8 trades taken today (limit 8) - done for the day"],
+                           "strategy_rules": {"entry_tier": "NORMAL", "min_reward_risk": 1.8,
+                                              "max_cost_fraction_of_stop": 0.2,
+                                              "max_new_positions_per_hour": 2,
+                                              "max_new_positions_per_day": 8}},
+                "health": {}, "thinking": [], "results": {}, "positions": [], "events": []}
+        page = render_status(snap)
+        assert "Why no new trade right now" in page
+        assert "done for the day" in page
+        assert "NORMAL setups or better, at least 1.8x the risk" in page
+        assert "2 an hour and 8 a day" in page
+
+    def test_no_overall_block_says_so(self):
+        from mintel.ops.dashboard import render_status
+        snap = {"status": {"not_trading_because": []}, "health": {}, "thinking": [],
+                "results": {}, "positions": [], "events": []}
+        assert "Nothing is holding entries back overall" in render_status(snap)
