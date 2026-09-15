@@ -102,12 +102,11 @@ class ScanConfig:
     # realistic move is at least this many times the risk after every cost
     # (day one accepted 1.15), and at half day one's pace.
     #
-    # The move estimate is a fixed multiple of ATR while structural stops are
-    # often ~2 ATR wide, so it rarely exceeds ~1.3 even on good setups; the
-    # afternoon on 1.8 placed nothing at all. Winners run further than the
-    # estimate because the exit trails; the estimate is a floor, not a target.
+    # 1.8 sat out a whole London afternoon, then found four trades in the
+    # evening including a 3.3:1 index trade that ran to its target - the best
+    # trade so far. Quiet spells are the rule doing its job.
     entry_tier: str = "NORMAL"
-    min_reward_risk: float = 1.3
+    min_reward_risk: float = 1.8
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
     # --- lessons from the first live day ------------------------------------
@@ -196,7 +195,7 @@ class OpsConfig:
 
 # Bump this whenever the trading rules change in a way that makes earlier
 # results a different experiment. The status page resets to it automatically.
-STRATEGY_VERSION = "2026-09-15 balanced v2 - 1.3:1 after costs, score 60+"
+STRATEGY_VERSION = "2026-09-15 balanced - half the pace, wiser choices"
 
 
 @dataclass

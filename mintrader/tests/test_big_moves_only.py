@@ -28,7 +28,7 @@ class TestDefaultsAreSelective:
     def test_entry_rules(self):
         sc = Config().scan
         assert sc.entry_tier == "NORMAL"
-        assert sc.min_reward_risk == 1.3
+        assert sc.min_reward_risk == 1.8
         assert sc.tier_normal >= 60.0
         assert sc.max_cost_fraction_of_stop <= 0.20
         assert sc.max_new_positions_per_day == 8       # half of day one
