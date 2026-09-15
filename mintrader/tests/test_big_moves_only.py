@@ -300,3 +300,23 @@ class TestThePageSaysWhyItIsNotTrading:
         snap = {"status": {"not_trading_because": []}, "health": {}, "thinking": [],
                 "results": {}, "positions": [], "events": []}
         assert "Nothing is holding entries back overall" in render_status(snap)
+
+
+class TestDailyLossStopMeasuresThisStrategysDay:
+    def test_old_rules_losses_this_morning_do_not_count(self, workdir):
+        from mintel.broker.sim import SimBroker
+        from mintel.engine.trader import Trader
+        sim = SimBroker(SYMS, start=NOW - dt.timedelta(days=2))
+        sim.connect()
+        cfg = Config()
+        cfg.ops.data_dir = str(workdir)
+        cfg.account_login, cfg.account_server = sim.login, sim.server
+        t = Trader(sim, cfg, clock=lambda: NOW, enable_model=False)
+        sim.closed.append({"ticket": 1, "symbol": "EURUSD", "volume": 0.1,
+                           "pnl": -40.0, "time": NOW - dt.timedelta(hours=3),
+                           "price": 1.1, "reason": "stop"})
+        cfg.tracking_start_utc = ""
+        assert t.realised_today() == pytest.approx(-40.0)
+        t._realised_cache = {"at": None, "value": 0.0}
+        cfg.tracking_start_utc = (NOW - dt.timedelta(minutes=30)).isoformat()
+        assert t.realised_today() == pytest.approx(0.0)
