@@ -189,6 +189,11 @@ class OpsConfig:
     max_clock_skew_seconds: float = 30.0
 
 
+# Bump this whenever the trading rules change in a way that makes earlier
+# results a different experiment. The status page resets to it automatically.
+STRATEGY_VERSION = "2026-09-15 big moves only"
+
+
 @dataclass
 class Config:
     version: int = CONFIG_VERSION
@@ -199,6 +204,10 @@ class Config:
     # the first time the bot is set up; the status page measures the bot's
     # own trades from here using the broker's records.
     tracking_start_utc: str = ""
+    # Which strategy the measurement belongs to. When the code's strategy
+    # changes, the bot restarts the measuring clock itself on start-up, so the
+    # status page only ever shows the CURRENT strategy's trades.
+    tracking_strategy: str = ""
     account_login: int = 0
     account_password: str = ""
     account_server: str = ""

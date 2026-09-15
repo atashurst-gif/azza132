@@ -156,5 +156,5 @@ class TestStatusPageShowsSinceStart:
                            "currency": "GBP", "today_pnl": -12.0},
                 "health": {}, "thinking": [], "positions": [], "events": [], "results": {}}
         html = render_status(snap)
-        assert "Since start (2026-09-14 00:00 UTC)" in html
+        assert "This strategy (since 2026-09-14 00:00 UTC)" in html
         assert "over 97 trades" in html

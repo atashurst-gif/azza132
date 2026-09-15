@@ -27,7 +27,7 @@ from typing import Optional, Sequence
 
 from .broker.base import Side
 from .broker.mt5_adapter import Mt5Broker, mt5_available
-from .clock import utcnow
+from .clock import to_utc, utcnow
 from .config import Config, LIVE_MARKER
 from .engine.trader import Trader
 from .ops.dashboard import DashboardState, build_results, start_dashboard
@@ -94,6 +94,28 @@ class PidFile:
 
 
 _LEDGER_CACHE: dict = {"at": None, "value": {}}
+
+
+def reset_measurement_for_new_strategy(cfg: Config, path, now: Optional[dt.datetime] = None) -> bool:
+    """Start the since-start clock afresh when the strategy has changed.
+
+    Returns True when the clock was reset. The trades of the previous
+    strategy stay in the broker's history and the journal; the status page
+    simply stops counting them.
+    """
+    from .config import STRATEGY_VERSION
+    if cfg.tracking_strategy == STRATEGY_VERSION:
+        return False
+    now = to_utc(now or utcnow()).replace(microsecond=0)
+    cfg.tracking_start_utc = now.isoformat()
+    cfg.tracking_strategy = STRATEGY_VERSION
+    _LEDGER_CACHE["at"] = None
+    try:
+        cfg.save(path)
+    except Exception as exc:
+        log.warning("could not save the new measuring start: %s", exc)
+    log.info("strategy is now %r - measuring from %s", STRATEGY_VERSION, cfg.tracking_start_utc)
+    return True
 
 
 def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
@@ -246,6 +268,7 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "since_start_trades": (ledger.get("since_start") or {}).get("trades"),
             "since_start_win_rate": (ledger.get("since_start") or {}).get("win_rate"),
             "tracking_start": ledger.get("tracking_start", trader.cfg.tracking_start_utc),
+            "strategy": trader.cfg.tracking_strategy,
             "pnl_source": ledger.get("source", "journal"),
             "last_scan": (trader.scanner.last_scan_utc.strftime("%H:%M:%S UTC")
                           if trader.scanner.last_scan_utc else "never"),
@@ -294,6 +317,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     cfg = Config.load(args.config)
     setup_logging(cfg, args.verbose)
+    reset_measurement_for_new_strategy(cfg, args.config)
     errors = cfg.validate()
     if errors:
         for e in errors:

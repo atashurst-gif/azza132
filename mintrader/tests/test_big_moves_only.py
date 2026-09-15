@@ -190,3 +190,29 @@ class TestWinnersAreHeld:
         d = fl.update(p, price=1.1005, atr=0.0020, momentum=_mom(),
                       structure=broke, now=NOW)
         assert d.close and d.state is FlowState.REVERSAL
+
+
+class TestMeasurementFollowsTheStrategy:
+    def test_first_start_on_a_new_strategy_resets_the_clock(self, workdir):
+        from mintel.config import STRATEGY_VERSION
+        from mintel.run import reset_measurement_for_new_strategy
+        path = workdir / "config.json"
+        cfg = Config()
+        cfg.ops.data_dir = str(workdir)
+        cfg.tracking_start_utc = "2026-09-14T23:39:00+00:00"
+        cfg.tracking_strategy = "2026-09-14 day one rules"
+        assert reset_measurement_for_new_strategy(cfg, path, NOW) is True
+        assert cfg.tracking_start_utc == NOW.isoformat()
+        assert cfg.tracking_strategy == STRATEGY_VERSION
+        saved = Config.load(path)
+        assert saved.tracking_start_utc == NOW.isoformat()
+        assert saved.tracking_strategy == STRATEGY_VERSION
+
+    def test_restarts_on_the_same_strategy_keep_the_clock(self, workdir):
+        from mintel.config import STRATEGY_VERSION
+        from mintel.run import reset_measurement_for_new_strategy
+        cfg = Config()
+        cfg.tracking_start_utc = "2026-09-15T09:20:00+00:00"
+        cfg.tracking_strategy = STRATEGY_VERSION
+        assert reset_measurement_for_new_strategy(cfg, workdir / "c.json", NOW + dt.timedelta(hours=5)) is False
+        assert cfg.tracking_start_utc == "2026-09-15T09:20:00+00:00"
