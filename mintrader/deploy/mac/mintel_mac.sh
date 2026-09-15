@@ -146,6 +146,10 @@ copy_program() {
   else
     good "Program files installed to $APP_DIR"
   fi
+  BUILD_STAMP="$(cd "$APP_DIR" && "${NATIVE_PY:-python3}" -c 'from mintel.version import running_stamp; print(running_stamp())' 2>/dev/null || true)"
+  if [[ -n "$BUILD_STAMP" ]]; then
+    good "Build stamp: $BUILD_STAMP  (the status page must show this same code)"
+  fi
 }
 
 # Fingerprint of the program's code, so a double-click can tell "same code,

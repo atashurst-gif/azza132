@@ -195,3 +195,20 @@ class TestHealthFlagsAnOldBridge:
         names = {c.name: c for c in report.checks}
         assert "BRIDGE_VERSION" in names and names["BRIDGE_VERSION"].critical
         assert not report.entries_allowed
+
+
+class TestThePageNamesItsBuild:
+    def test_running_stamp_is_stable_and_shown(self):
+        from mintel.version import running_stamp, RUNNING_STAMP
+        assert running_stamp() == RUNNING_STAMP and len(RUNNING_STAMP) == 10
+        from mintel.ops.dashboard import render_status
+        snap = {"status": {"build": RUNNING_STAMP, "started": "2026-09-16 00:30 UTC"},
+                "health": {}, "thinking": [], "results": {}, "positions": [], "events": []}
+        page = render_status(snap)
+        assert RUNNING_STAMP in page and "running since 2026-09-16 00:30 UTC" in page
+
+    def test_installer_prints_the_same_stamp(self):
+        from pathlib import Path
+        body = (Path(__file__).parent.parent / "deploy" / "mac" / "mintel_mac.sh").read_text()
+        assert "from mintel.version import running_stamp" in body
+        assert "Build stamp:" in body

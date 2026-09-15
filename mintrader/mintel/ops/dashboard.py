@@ -271,6 +271,11 @@ def render_status(snap: dict) -> str:
         think_html = ('<h2>What the bot is looking at right now</h2>'
                       '<div class="card small">No scan has completed yet.</div>')
 
+    build_html = ""
+    if st.get("build"):
+        build_html = (f'<div class="small">Build <b class="mono">{html.escape(str(st["build"]))}</b>'
+                      f' running since {html.escape(str(st.get("started", "")))}. '
+                      f'Compare this code with the one in the latest message from the installer.</div>')
     src = str(st.get("pnl_source") or "")
     if src == "broker":
         src_html = ('<div class="small">Profit figures come from the broker\'s own '
@@ -327,7 +332,7 @@ def render_status(snap: dict) -> str:
 <a href="/health">Health (JSON)</a></nav>
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div>
 <div class="row">{tiles}</div>
-{prob_html}{src_html}{pos_html}{why_html}{think_html}
+{prob_html}{build_html}{src_html}{pos_html}{why_html}{think_html}
 <p class="small">Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
 </div></body></html>"""
