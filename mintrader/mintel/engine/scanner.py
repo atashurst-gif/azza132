@@ -547,7 +547,8 @@ class Scanner:
     def state_for(self, ctx: SymbolContext, side: int) -> Optional[MarketState]:
         """Build the MarketState for one instrument and one direction."""
         regime = ctx.regime.regime if ctx.regime else rg.Regime.UNCLEAR
-        sig = best_signal(ctx, side, regime)
+        sig = best_signal(ctx, side, regime,
+                          disabled=getattr(self.cfg.scan, "disabled_tactics", ()) or ())
         if sig is None:
             return None
         ev = self.evidence_for(ctx, side)
@@ -626,6 +627,10 @@ class Scanner:
         tier = tier_for(breakdown.final, self.cfg.scan)
 
         blockers: list[str] = []
+        floor = (getattr(self.cfg.scan, "tactic_min_score", None) or {}).get(sig.name)
+        if floor is not None and breakdown.final < float(floor):
+            blockers.append(f"{sig.name.replace('_', ' ').lower()} needs a score of "
+                            f"{float(floor):.0f}+ (this is {breakdown.final:.0f})")
         from .opportunity import TIERS
         want = str(self.cfg.scan.entry_tier or "NORMAL").upper()
         if tier != "NO_TRADE" and want in TIERS and \

@@ -463,14 +463,18 @@ def candidates_for(regime: Regime) -> tuple[Tactic, ...]:
 
 
 def best_signal(ctx: SymbolContext, side: int,
-                regime: Regime) -> Optional[TacticSignal]:
+                regime: Regime,
+                disabled: Sequence[str] = ()) -> Optional[TacticSignal]:
     """Highest-quality applicable tactic for one direction.
 
     Counter-trend tactics are held to a higher bar because fading a move looks
-    identical to being wrong right up until it works.
+    identical to being wrong right up until it works. ``disabled`` names
+    tactics the operator has switched off.
     """
     best: Optional[TacticSignal] = None
     for tactic in candidates_for(regime):
+        if tactic.name in disabled:
+            continue
         try:
             sig = tactic.evaluate(ctx, side)
         except Exception:

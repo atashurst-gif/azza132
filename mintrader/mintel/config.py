@@ -107,6 +107,15 @@ class ScanConfig:
     # trade so far. Quiet spells are the rule doing its job.
     entry_tier: str = "NORMAL"
     min_reward_risk: float = 1.8
+    # Per-approach rules from the day-three review (69 trades):
+    # - NEWS_CONTINUATION trades into news spikes; 18 trades lost 16.52 and
+    #   the day's three biggest losses were stops jumped by slippage. Off.
+    # - MOMENTUM_CONTINUATION chases moves that have already run (29 trades,
+    #   -43.76, half of them winners but stopped on the pullback). It must
+    #   score STRONG before it may enter; BREAKOUT_RETEST, which waits for
+    #   the pullback, was the best approach and is unchanged.
+    disabled_tactics: tuple[str, ...] = ("NEWS_CONTINUATION",)
+    tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
     # --- lessons from the first live day ------------------------------------

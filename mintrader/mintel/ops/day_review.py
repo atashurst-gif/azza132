@@ -52,6 +52,23 @@ def group_positions(rows: list[dict]) -> list[dict]:
     return out
 
 
+def exit_kind(reason: str, net: float) -> str:
+    """Turn a broker comment like '[sl 1.2345]' into a readable exit type."""
+    low = reason.lower().strip()
+    if low.startswith("[tp") or "take profit" in low or low.startswith("tp"):
+        return "target reached"
+    if low.startswith("[sl") or "stop loss" in low or low.startswith("sl"):
+        return ("trailed stop hit while in profit" if net > 0
+                else "stop-loss hit (original or trailed)")
+    if "thesis" in low:
+        return "closed by the bot: thesis broke"
+    if "partial" in low:
+        return "part banked by the bot"
+    if not low:
+        return "broker stop or target"
+    return low[:44]
+
+
 def review(positions: list[dict], journal_rows: Optional[list[dict]] = None,
            currency: str = "GBP") -> str:
     if not positions:
@@ -108,7 +125,7 @@ def review(positions: list[dict], journal_rows: Optional[list[dict]] = None,
         for p in positions:
             r = jr.get(int(p["position"]))
             if r:
-                by_exit[str(r.get("exit_reason") or "broker stop or target")[:60]].append(p)
+                by_exit[exit_kind(str(r.get("exit_reason") or ""), p["net"])].append(p)
         if by_exit:
             lines.append("")
             lines.append("By exit reason (what closed the trade):")

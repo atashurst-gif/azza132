@@ -436,3 +436,42 @@ class TestDayThreeLessons:
                          "exit_reason": "thesis broke: the reasons for the trade have gone"}]
         text = review(positions, journal_rows, "GBP")
         assert "By exit reason" in text and "thesis broke" in text and "broker stop or target" in text
+
+
+class TestDayThreeEveningReview:
+    def test_news_continuation_is_off_by_default(self):
+        from mintel.data.regime import Regime
+        from mintel.engine.tactics import best_signal
+        from mintel.broker.sim import SimBroker
+        cfg = Config()
+        assert "NEWS_CONTINUATION" in cfg.scan.disabled_tactics
+        assert cfg.scan.tactic_min_score["MOMENTUM_CONTINUATION"] >= 70
+        # a disabled tactic never becomes the signal
+        broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()
+        sc = Scanner(broker, cfg)
+        for st in sc.scan(broker.now, []):
+            assert st.tactic != "NEWS_CONTINUATION"
+
+    def test_a_tactic_below_its_score_floor_is_blocked(self):
+        cfg = Config()
+        broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()
+        first = Scanner(broker, cfg).scan(broker.now, [])
+        assert first
+        tactic = first[0].tactic
+        cfg.scan.tactic_min_score = {tactic: 99.0}
+        states = Scanner(broker, cfg).scan(broker.now, [])
+        hit = [s for s in states if s.tactic == tactic]
+        assert hit
+        for st in hit:
+            assert any("needs a score of 99+" in b for b in st.blockers), st.blockers
+        cfg.scan.tactic_min_score = {}
+        for st in Scanner(broker, cfg).scan(broker.now, []):
+            assert not any("needs a score" in b for b in st.blockers)
+
+    def test_exit_kinds_are_readable(self):
+        from mintel.ops.day_review import exit_kind
+        assert exit_kind("[sl 1.15237]", -12.72) == "stop-loss hit (original or trailed)"
+        assert exit_kind("[sl 0.82110]", 8.57) == "trailed stop hit while in profit"
+        assert exit_kind("[tp 3733.98]", 7.47) == "target reached"
+        assert exit_kind("thesis broke: the reasons for the trade have gone", -1) == "closed by the bot: thesis broke"
+        assert exit_kind("", 2.0) == "broker stop or target"

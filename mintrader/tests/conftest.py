@@ -64,6 +64,8 @@ def lifecycle_profile(c: Config) -> Config:
     c.scan.entry_tier = "NORMAL"
     c.scan.min_reward_risk = 1.15
     c.scan.tier_normal = 58.0
+    c.scan.disabled_tactics = ()
+    c.scan.tactic_min_score = {}
     c.scan.max_cost_fraction_of_stop = 0.30
     c.scan.max_losses_per_symbol_per_day = 3
     c.scan.min_seconds_between_entries = 180.0
