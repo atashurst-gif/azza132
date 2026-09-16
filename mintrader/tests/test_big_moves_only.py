@@ -31,9 +31,10 @@ class TestDefaultsAreSelective:
         assert sc.min_reward_risk == 1.8
         assert sc.tier_normal >= 60.0
         assert sc.max_cost_fraction_of_stop <= 0.20
-        assert sc.max_new_positions_per_day == 8       # half of day one
-        assert sc.max_new_positions_per_hour == 2      # half of day one
-        assert sc.min_seconds_between_entries >= 600
+        assert sc.max_new_positions_per_day == 0       # no count limits
+        assert sc.session_caps_utc == ()
+        assert sc.max_new_positions_per_hour == 0
+        assert sc.min_seconds_between_entries == 60.0  # anti-burst only
         assert sc.max_losses_per_symbol_per_day == 2
 
     def test_winners_get_room(self):
@@ -90,6 +91,7 @@ class TestFourTradesADay:
         cfg = Config()
         for k, v in over.items():
             setattr(cfg.scan, k, v)
+        cfg.scan.session_caps_utc = ()
         return SimpleNamespace(cfg=cfg, last_entry_utc=None, _entry_times=[],
                                _entries_today=[], journal=journal)
 
@@ -295,6 +297,12 @@ class TestThePageSaysWhyItIsNotTrading:
         assert "done for the day" in page
         assert "NORMAL setups or better, at least 1.8x the risk" in page
         assert "2 an hour and 8 a day" in page
+        snap["status"]["strategy_rules"]["sessions"] = ["Asia 2", "London 3"]
+        assert "per session: Asia 2, London 3" in render_status(snap)
+        snap["status"]["strategy_rules"]["sessions"] = []
+        snap["status"]["strategy_rules"]["max_new_positions_per_hour"] = 0
+        snap["status"]["strategy_rules"]["max_new_positions_per_day"] = 0
+        assert "no limit on the number of trades" in render_status(snap)
 
     def test_no_overall_block_says_so(self):
         from mintel.ops.dashboard import render_status
@@ -321,3 +329,63 @@ class TestDailyLossStopMeasuresThisStrategysDay:
         t._realised_cache = {"at": None, "value": 0.0}
         cfg.tracking_start_utc = (NOW - dt.timedelta(minutes=30)).isoformat()
         assert t.realised_today() == pytest.approx(0.0)
+
+
+class TestAllowancePerSession:
+    """Session caps are optional (off by default) but must work when set."""
+    CAPS = (("Asia", "00:00-07:00", 2), ("London", "07:00-13:00", 3),
+            ("New York", "13:00-21:00", 3), ("late evening", "21:00-00:00", 1))
+
+    def _ns(self, **over):
+        cfg = Config()
+        cfg.scan.min_seconds_between_entries = 0.0
+        cfg.scan.max_new_positions_per_hour = 0
+        cfg.scan.session_caps_utc = self.CAPS
+        for k, v in over.items():
+            setattr(cfg.scan, k, v)
+        return SimpleNamespace(cfg=cfg, last_entry_utc=None, _entry_times=[],
+                               _entries_today=[], journal=None)
+
+    def test_defaults_have_no_count_limit_at_all(self):
+        ns = self._ns(session_caps_utc=(), max_new_positions_per_day=0)
+        t = NOW.replace(hour=3)
+        for i in range(20):
+            assert Trader._entry_gate(ns, t) == "", i
+            Trader._note_entry(ns, t)
+            t += dt.timedelta(minutes=2)
+
+    def test_asia_spent_does_not_block_london(self):
+        ns = self._ns()
+        t = NOW.replace(hour=1)
+        for _ in range(2):                          # Asia allows 2
+            assert Trader._entry_gate(ns, t) == ""
+            Trader._note_entry(ns, t)
+            t += dt.timedelta(minutes=30)
+        assert "Asia session" in Trader._entry_gate(ns, t)
+        london = NOW.replace(hour=8)
+        for _ in range(3):                          # London allows 3 more
+            assert Trader._entry_gate(ns, london) == ""
+            Trader._note_entry(ns, london)
+        assert "London session" in Trader._entry_gate(ns, london)
+        assert Trader._entry_gate(ns, NOW.replace(hour=14)) == ""     # New York
+
+    def test_eight_overnight_trades_leave_london_open(self, workdir):
+        from mintel.engine.journal import Journal
+        j = Journal(workdir / "s.sqlite")
+        try:
+            for i in range(8):
+                j._exec("INSERT INTO trades (ticket, symbol, opened_utc) VALUES (?, ?, ?)",
+                        (300 + i, "USDJPY", NOW.replace(hour=3).isoformat()))
+            ns = self._ns()
+            ns.journal = j
+            assert Trader._entry_gate(ns, NOW.replace(hour=9, minute=17)) == ""
+            assert "Asia session" in Trader._entry_gate(ns, NOW.replace(hour=5))
+        finally:
+            j.close()
+
+    def test_late_evening_window_crosses_midnight(self):
+        ns = self._ns()
+        t = NOW.replace(hour=21, minute=10)
+        assert Trader._entry_gate(ns, t) == ""
+        Trader._note_entry(ns, t)
+        assert "late evening session" in Trader._entry_gate(ns, t.replace(hour=23, minute=40))

@@ -93,6 +93,6 @@ class TestEntryPacing:
 
     def test_defaults(self):
         sc = Config().scan
-        assert sc.min_seconds_between_entries == 600.0
-        assert sc.max_new_positions_per_hour == 2
+        assert sc.min_seconds_between_entries == 60.0
+        assert sc.max_new_positions_per_hour == 0
         assert sc.no_entry_utc_windows == ("21:45-23:30",)

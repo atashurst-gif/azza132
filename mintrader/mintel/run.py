@@ -383,6 +383,8 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
                 "max_cost_fraction_of_stop": trader.cfg.scan.max_cost_fraction_of_stop,
                 "max_new_positions_per_hour": trader.cfg.scan.max_new_positions_per_hour,
                 "max_new_positions_per_day": trader.cfg.scan.max_new_positions_per_day,
+                "sessions": [f"{n} {c}" for n, _w, c in
+                             (getattr(trader.cfg.scan, "session_caps_utc", ()) or ())],
             },
             "cycles": trader.cycles,
             "uptime_minutes": round(

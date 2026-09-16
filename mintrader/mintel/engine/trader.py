@@ -323,6 +323,9 @@ class Trader:
         if sc.max_new_positions_per_hour > 0 and len(self._entry_times) >= sc.max_new_positions_per_hour:
             return (f"{len(self._entry_times)} new positions in the last hour "
                     f"(limit {sc.max_new_positions_per_hour})")
+        session = Trader._session_cap(self, now)
+        if session:
+            return session
         limit_d = int(getattr(sc, "max_new_positions_per_day", 0) or 0)
         if limit_d > 0:
             # Only THIS strategy's trades count: the day the rules change,
@@ -336,6 +339,43 @@ class Trader:
             if n_today >= limit_d:
                 return (f"{n_today} trades taken today (limit {limit_d}) - "
                         f"done for the day, no more entries until tomorrow")
+        return ""
+
+    def _session_cap(self, now: dt.datetime) -> str:
+        """Why the current session's allowance is spent ("" when it is not)."""
+        caps = getattr(self.cfg.scan, "session_caps_utc", ()) or ()
+        t = now.hour * 60 + now.minute
+        for name, window, limit in caps:
+            try:
+                a, b = window.split("-")
+                ah, am = (int(x) for x in a.split(":"))
+                bh, bm = (int(x) for x in b.split(":"))
+            except ValueError:
+                continue
+            lo, hi = ah * 60 + am, bh * 60 + bm
+            inside = lo <= t < hi if lo < hi else (t >= lo or t < hi)
+            if not inside or int(limit) <= 0:
+                continue
+            win_start = now.replace(hour=ah, minute=am, second=0, microsecond=0)
+            if win_start > now:
+                win_start -= dt.timedelta(days=1)
+            # only this strategy's trades count
+            start_txt = getattr(self.cfg, "tracking_start_utc", "") or ""
+            try:
+                if start_txt:
+                    win_start = max(win_start, to_utc(dt.datetime.fromisoformat(
+                        start_txt.replace("Z", "+00:00"))))
+            except ValueError:
+                pass
+            n = sum(1 for e in getattr(self, "_entries_today", ()) if e >= win_start)
+            try:
+                n = max(n, int(self.journal.opened_since(win_start)))
+            except Exception:
+                pass
+            if n >= int(limit):
+                return (f"{n} trades this {name} session (limit {limit}) - "
+                        f"waiting for the next session")
+            return ""
         return ""
 
     def _note_entry(self, now: dt.datetime) -> None:

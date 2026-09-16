@@ -316,8 +316,14 @@ def render_status(snap: dict) -> str:
         rules_txt = (f'<div class="small">Rules in force: {html.escape(str(rules.get("entry_tier", "")))} '
                      f'setups or better, at least {rules.get("min_reward_risk", "?")}x the risk after '
                      f'costs, costs under {int(float(rules.get("max_cost_fraction_of_stop", 0) or 0) * 100)}% '
-                     f'of the stop, {rules.get("max_new_positions_per_hour", "?")} an hour and '
-                     f'{rules.get("max_new_positions_per_day", "?")} a day.</div>')
+                     f'of the stop'
+                     + (f'; per session: {html.escape(", ".join(rules["sessions"]))}.'
+                        if rules.get("sessions") else
+                        (f', {rules.get("max_new_positions_per_hour")} an hour and '
+                         f'{rules.get("max_new_positions_per_day")} a day.'
+                         if (rules.get("max_new_positions_per_hour") or rules.get("max_new_positions_per_day"))
+                         else '; no limit on the number of trades.'))
+                     + '</div>')
     if why:
         why_html = ('<h2>Why no new trade right now</h2><div class="card small"><ul>'
                     + "".join(f'<li>{html.escape(w)}</li>' for w in why)

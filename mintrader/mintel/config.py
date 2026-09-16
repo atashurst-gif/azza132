@@ -127,10 +127,16 @@ class ScanConfig:
     # the Asian open and lost six of them inside half an hour. One entry at a
     # time, spaced out, capped per hour, and none during the daily rollover
     # when spreads are at their widest (times are UTC, "HH:MM-HH:MM").
-    min_seconds_between_entries: float = 600.0
-    max_new_positions_per_hour: int = 2
-    # A hard cap on new trades per day (UTC): half of what day one did.
-    max_new_positions_per_day: int = 8
+    # No count limits (operator's decision, day three): if six setups clear
+    # the bar it takes six, if twenty then twenty. The quality guards above,
+    # the risk breakers and the exposure limits are what say no. Only a
+    # one-minute gap between orders remains, so one scan cannot fire the
+    # same idea into eight markets in the same second. Caps stay available
+    # for anyone who wants them (0 / empty = off).
+    min_seconds_between_entries: float = 60.0
+    max_new_positions_per_hour: int = 0
+    max_new_positions_per_day: int = 0
+    session_caps_utc: tuple[tuple[str, str, int], ...] = ()
     no_entry_utc_windows: tuple[str, ...] = ("21:45-23:30",)
 
 
