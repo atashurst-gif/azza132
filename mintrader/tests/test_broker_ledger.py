@@ -110,8 +110,10 @@ class TestLedger:
         assert led["today"] == {"net": 0.0, "trades": 2, "wins": 1, "win_rate": 50.0}
         assert led["since_start"] == {"net": 5.0, "trades": 3, "wins": 2, "win_rate": 66.7}
         assert led["tracking_start"].startswith("2026-09-13T20:00")
-        # asked the broker once, for the bot's magic, from the earlier of the two starts
-        assert tr.broker.calls == [(dt.datetime(2026, 9, 13, 20, 0, tzinfo=UTC), 990311)]
+        # asked the broker once, for the bot's magic, far enough back for the 14-day view
+        assert len(tr.broker.calls) == 1
+        since, magic = tr.broker.calls[0]
+        assert magic == 990311 and since <= dt.datetime(2026, 9, 13, 20, 0, tzinfo=UTC)
 
     def test_a_start_in_the_middle_of_the_day_ignores_earlier_positions(self):
         # start at 09:30: position 11 (opened 08:30, closed 09:00) is out;

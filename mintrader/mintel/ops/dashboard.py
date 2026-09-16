@@ -24,6 +24,10 @@ from ..clock import to_utc, utcnow
 log = logging.getLogger("mintel.dashboard")
 
 
+def _pct(v) -> str:
+    return "-" if v is None else f"{float(v):.0f}%"
+
+
 def _fmt_money(v: float, ccy: str = "") -> str:
     sign = "+" if v > 0 else ("-" if v < 0 else "")
     sym = {"GBP": "£", "USD": "$", "EUR": "€"}.get(ccy, "")
@@ -221,8 +225,8 @@ def render_status(snap: dict) -> str:
         tile("Mode", f'<span class="pill {"bad" if st.get("mode")=="LIVE" else "ok"}">'
                      f'{html.escape(str(st.get("mode", "?")))}</span>'),
         tile("Open trades", st.get("open_positions", 0)),
-        tile("Today", _fmt_money(st.get("today_pnl", 0.0),
-                                 st.get("currency", "")),
+        tile("Today (broker's day)", _fmt_money(st.get("today_pnl", 0.0),
+                                                st.get("currency", "")),
              "ok" if (st.get("today_pnl") or 0) >= 0 else "bad"),
         tile("Win rate today",
              "-" if st.get("win_rate_today") is None
@@ -287,6 +291,24 @@ def render_status(snap: dict) -> str:
     else:
         src_html = ('<div class="small">Profit figures are from the bot\'s own records.</div>')
 
+    periods = st.get("periods") or []
+    if periods:
+        prow = "".join(
+            f'<tr><td>{html.escape(str(p["label"]))}</td>'
+            f'<td class="mono {"ok" if (p.get("net") or 0) >= 0 else "bad"}">'
+            f'{_fmt_money(p.get("net") or 0.0, st.get("currency", ""))}</td>'
+            f'<td class="mono">{p.get("trades", 0)}</td>'
+            f'<td class="mono">{_pct(p.get("win_rate"))}</td></tr>'
+            for p in periods)
+        periods_html = ('<h2>Results by period</h2><div class="card"><table>'
+                        '<tr><th>Period</th><th>Net (fees included)</th><th>Trades</th>'
+                        '<th>Win rate</th></tr>' + prow + '</table>'
+                        '<div class="small">This strategy\'s trades only, by the time they '
+                        'closed, on the broker\'s day - the same way MetaTrader\'s History '
+                        'filter counts them.</div></div>')
+    else:
+        periods_html = ""
+
     why = [str(r) for r in (st.get("not_trading_because") or []) if r]
     rules = st.get("strategy_rules") or {}
     rules_txt = ""
@@ -332,7 +354,7 @@ def render_status(snap: dict) -> str:
 <a href="/health">Health (JSON)</a></nav>
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div>
 <div class="row">{tiles}</div>
-{prob_html}{build_html}{src_html}{pos_html}{why_html}{think_html}
+{prob_html}{build_html}{src_html}{periods_html}{pos_html}{why_html}{think_html}
 <p class="small">Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
 </div></body></html>"""

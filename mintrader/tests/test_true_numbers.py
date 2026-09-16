@@ -212,3 +212,48 @@ class TestThePageNamesItsBuild:
         body = (Path(__file__).parent.parent / "deploy" / "mac" / "mintel_mac.sh").read_text()
         assert "from mintel.version import running_stamp" in body
         assert "Build stamp:" in body
+
+
+class TestTodayIsTheBrokersDay:
+    def test_day_start_follows_the_server_clock(self):
+        from mintel.clock import ServerClock
+        c = ServerClock(offset_seconds=3 * 3600)           # broker is UTC+3
+        at = dt.datetime(2026, 9, 16, 7, 46, tzinfo=dt.timezone.utc)
+        # 07:46 UTC is 10:46 server; the server day began 00:00 server = 21:00 UTC yesterday
+        assert c.day_start_utc(at) == dt.datetime(2026, 9, 15, 21, 0, tzinfo=dt.timezone.utc)
+        assert ServerClock(0).day_start_utc(at) == at.replace(hour=0, minute=0)
+
+    def test_ledger_today_includes_the_late_evening_win(self, workdir):
+        from mintel.run import broker_ledger, _LEDGER_CACHE
+        from mintel.clock import ServerClock
+        _LEDGER_CACHE["at"] = None
+        us30_open = dt.datetime(2026, 9, 15, 20, 46, tzinfo=dt.timezone.utc)
+        rows = [{"position": 1, "symbol": "US30", "volume": 0.2, "profit": 0.0,
+                 "commission": -0.4, "is_entry": True, "time": us30_open},
+                {"position": 1, "symbol": "US30", "volume": 0.2, "profit": 24.59,
+                 "commission": -0.4, "is_entry": False, "time": us30_open + dt.timedelta(minutes=74)}]
+        broker = SimpleNamespace(deals_since=lambda *a, **k: rows, clock=ServerClock(3 * 3600))
+        cfg = Config(); cfg.tracking_start_utc = "2026-09-15T12:59:00+00:00"
+        t = SimpleNamespace(broker=broker, cfg=cfg, journal=None)
+        led = broker_ledger(t, dt.datetime(2026, 9, 16, 7, 46, tzinfo=dt.timezone.utc))
+        # opened 23:46 server, closed 01:00 server: MetaTrader's Today has it
+        assert led["today"]["trades"] == 1 and led["today"]["net"] == pytest.approx(24.59)
+        labels = [p["label"] for p in led["periods"]]
+        assert labels == ["Today", "Yesterday", "This week", "Last 7 days", "Last 14 days", "Since start"]
+        assert led["periods"][1]["trades"] == 0            # yesterday (broker's day)
+        assert led["periods"][-1]["trades"] == 1
+        _LEDGER_CACHE["at"] = None
+        broker.clock = ServerClock(0)                         # midnight UTC: closed 22:00 = yesterday
+        led = broker_ledger(t, dt.datetime(2026, 9, 16, 7, 46, tzinfo=dt.timezone.utc))
+        assert led["today"]["trades"] == 0 and led["periods"][1]["trades"] == 1
+
+    def test_periods_are_rendered(self):
+        from mintel.ops.dashboard import render_status
+        snap = {"status": {"currency": "GBP", "periods": [
+                    {"label": "Today", "net": -7.6, "trades": 8, "win_rate": 37.5},
+                    {"label": "Since start", "net": 2.91, "trades": 15, "win_rate": 40.0}]},
+                "health": {}, "thinking": [], "results": {}, "positions": [], "events": []}
+        page = render_status(snap)
+        assert "Results by period" in page and "Yesterday" not in page
+        assert "-£7.60" in page or "-GBP7.60" in page or "7.60" in page
+        assert "38%" in page

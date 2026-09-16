@@ -55,6 +55,16 @@ class ServerClock:
     def utc_to_server(self, ts: dt.datetime) -> dt.datetime:
         return (to_utc(ts) + dt.timedelta(seconds=self.offset_seconds)).replace(tzinfo=None)
 
+    def day_start_utc(self, ts: dt.datetime) -> dt.datetime:
+        """Start of the BROKER's trading day containing ``ts``, in UTC.
+
+        MetaTrader's "Today" filter uses the broker's clock (UTC+3 at many
+        brokers), so a "today" figure that starts at midnight UTC never
+        matches it. This one does.
+        """
+        server = self.utc_to_server(ts).replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.server_to_utc(server)
+
     @staticmethod
     def measure(server_ts_naive: dt.datetime, utc_ts: dt.datetime) -> "ServerClock":
         """Derive the offset, rounded to the nearest minute.

@@ -147,6 +147,17 @@ def reset_measurement_for_new_strategy(cfg: Config, path, now: Optional[dt.datet
     return changed
 
 
+def broker_day_start(broker, now: dt.datetime) -> dt.datetime:
+    """Start of the broker's trading day (what MetaTrader calls "Today")."""
+    try:
+        clock = getattr(broker, "clock", None)
+        if clock is not None and hasattr(clock, "day_start_utc"):
+            return clock.day_start_utc(now)
+    except Exception:
+        pass
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def journal_ledger(trader: Trader, start: dt.datetime, today_from: dt.datetime) -> dict:
     """The same figures from the bot's own journal (positions opened after
     ``start``), for when the broker's history cannot be read."""
@@ -197,11 +208,11 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
                 start = start.replace(tzinfo=dt.timezone.utc)
         except ValueError:
             start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = broker_day_start(trader.broker, now)
         # "Today" never reaches back before the measuring start: on the day
         # the start is set, today begins then, not at midnight.
         today_from = max(day_start, start)
-        earliest = min(start, day_start)
+        earliest = min(start, day_start - dt.timedelta(days=14))
         error = ""
         try:
             rows = fn(earliest, cfg.magic, False) or []     # entries too
@@ -226,23 +237,43 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
                     pos = r.get("position") or 0
                     opened_at[pos] = min(opened_at.get(pos, r["time"]), r["time"])
 
-            def summarise(since):
+            def summarise(closed_from, closed_to=None):
+                """Positions of this strategy (opened at/after ``start``)
+                whose LAST closing deal fell in [closed_from, closed_to).
+                Closing time is what MetaTrader's History filter uses."""
                 by_pos: dict = {}
+                last_close: dict = {}
                 for r in rows:
                     if r.get("is_entry") or not r.get("time"):
                         continue
                     pos = r.get("position") or id(r)
                     when = opened_at.get(pos)
-                    if when is None or when < since:
+                    if when is None or when < start:
                         continue
                     by_pos[pos] = by_pos.get(pos, 0.0) + float(r["profit"])
-                wins = sum(1 for v in by_pos.values() if v > 0)
-                return {"net": round(sum(by_pos.values()), 2),
-                        "trades": len(by_pos), "wins": wins,
-                        "win_rate": round(wins / len(by_pos) * 100, 1) if by_pos else None}
-            out = {"today": summarise(today_from),
-                   "since_start": summarise(start),
+                    last_close[pos] = max(last_close.get(pos, r["time"]), r["time"])
+                keep = {p: v for p, v in by_pos.items()
+                        if last_close[p] >= closed_from
+                        and (closed_to is None or last_close[p] < closed_to)}
+                wins = sum(1 for v in keep.values() if v > 0)
+                return {"net": round(sum(keep.values()), 2),
+                        "trades": len(keep), "wins": wins,
+                        "win_rate": round(wins / len(keep) * 100, 1) if keep else None}
+
+            week_start = day_start - dt.timedelta(days=day_start.weekday())
+            periods = [
+                ("Today", summarise(day_start)),
+                ("Yesterday", summarise(day_start - dt.timedelta(days=1), day_start)),
+                ("This week", summarise(week_start)),
+                ("Last 7 days", summarise(day_start - dt.timedelta(days=6))),
+                ("Last 14 days", summarise(day_start - dt.timedelta(days=13))),
+                ("Since start", summarise(start)),
+            ]
+            out = {"today": periods[0][1],
+                   "since_start": periods[-1][1],
+                   "periods": [{"label": k, **v} for k, v in periods],
                    "tracking_start": start.isoformat(),
+                   "day_start": day_start.isoformat(),
                    "source": "broker"}
     _LEDGER_CACHE["at"] = now
     _LEDGER_CACHE["value"] = out
@@ -336,6 +367,7 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "build": RUNNING_STAMP,
             "started": trader.started_utc.strftime("%Y-%m-%d %H:%M UTC"),
             "pnl_source": ledger.get("source", "journal"),
+            "periods": ledger.get("periods") or [],
             "pnl_error": ledger.get("error", ""),
             "last_scan": (trader.scanner.last_scan_utc.strftime("%H:%M:%S UTC")
                           if trader.scanner.last_scan_utc else "never"),

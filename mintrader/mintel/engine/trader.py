@@ -272,13 +272,21 @@ class Trader:
         return value
 
     def _strategy_day_start(self, now: dt.datetime) -> dt.datetime:
-        """Midnight UTC, or the strategy's start if that was later today.
+        """Start of the broker's day, or the strategy's start if later.
 
-        The daily-loss stop and the daily entry cap measure THIS strategy's
-        day: the day the rules change, the earlier rules' losses must not
-        switch the new ones off before they have placed a trade.
+        The broker's day (what MetaTrader shows as "Today") rather than
+        midnight UTC, so the page, the daily-loss stop and the daily cap all
+        agree with the platform. The day the rules change, the earlier
+        rules' losses must not switch the new ones off before they have
+        placed a trade.
         """
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            clock = getattr(self.broker, "clock", None)
+            if clock is not None and hasattr(clock, "day_start_utc"):
+                day_start = clock.day_start_utc(now)
+        except Exception:
+            pass
         start_txt = getattr(self.cfg, "tracking_start_utc", "") or ""
         if start_txt:
             try:
