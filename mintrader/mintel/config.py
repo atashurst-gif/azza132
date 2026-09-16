@@ -117,7 +117,10 @@ class ScanConfig:
     # The stop is never closer than this many ATRs (decision timeframe) from
     # the entry, whatever the structure says: inside that band is noise, and
     # noise took out most of day one's trades within minutes.
-    stop_noise_floor_atr: float = 0.5
+    # Day three: 10 of 26 trades were over inside five minutes on a 0.5 ATR
+    # floor. One full ATR keeps the stop outside the wobble; position size
+    # shrinks to match, so the money at risk per trade is unchanged.
+    stop_noise_floor_atr: float = 1.0
     # After a losing trade, no re-entry in the same direction on that market
     # for this long; and after this many losses on one market in a day, no
     # more entries there until tomorrow. Re-entry stays possible - churn does not.
@@ -151,7 +154,12 @@ class FlowLockConfig:
     # banked only at +2.5R and the rest is trailed loosely, so a real move
     # can pay for several small losses.
     breakeven_at_r: float = 1.5
-    mfe_giveback_normal: float = 0.50  # fraction of MFE we allow back
+    # Day three: winners averaged +0.7R because a 50% giveback trail clipped
+    # them on the first pullback. Until +1R only the structural stop applies
+    # (proving_trail=False); after that a trade may give back 40% of its
+    # best gain, not half.
+    proving_trail: bool = False
+    mfe_giveback_normal: float = 0.40  # fraction of MFE we allow back
     mfe_giveback_strong: float = 0.65
     mfe_giveback_decay: float = 0.22
     stall_bars_to_decay: int = 20

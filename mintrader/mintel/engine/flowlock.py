@@ -299,6 +299,8 @@ class FlowLock:
         sign = t.side.sign
         if t.state is FlowState.INITIAL:
             return None                      # let the structural stop work
+        if t.state is FlowState.PROVING and not getattr(c, "proving_trail", True):
+            return None                      # nothing is trailed before +1R
 
         atr_mult = {
             FlowState.PROVING: c.normal_flow_atr,

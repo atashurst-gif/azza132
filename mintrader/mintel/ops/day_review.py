@@ -104,6 +104,17 @@ def review(positions: list[dict], journal_rows: Optional[list[dict]] = None,
             for name, ps in sorted(by_tactic.items(), key=lambda kv: sum(p["net"] for p in kv[1])):
                 w = sum(1 for p in ps if p["net"] > 0)
                 lines.append(f"  {name:<44} {len(ps):>3}  net {sum(p['net'] for p in ps):+8.2f}  wins {w}/{len(ps)}")
+        by_exit: dict = defaultdict(list)
+        for p in positions:
+            r = jr.get(int(p["position"]))
+            if r:
+                by_exit[str(r.get("exit_reason") or "broker stop or target")[:60]].append(p)
+        if by_exit:
+            lines.append("")
+            lines.append("By exit reason (what closed the trade):")
+            for name, ps in sorted(by_exit.items(), key=lambda kv: sum(p["net"] for p in kv[1])):
+                w = sum(1 for p in ps if p["net"] > 0)
+                lines.append(f"  {name:<44} {len(ps):>3}  net {sum(p['net'] for p in ps):+8.2f}  wins {w}/{len(ps)}")
     lines.append("")
     lines.append("What this says:")
     if comm and gross > 0 and net < 0:

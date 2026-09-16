@@ -389,3 +389,50 @@ class TestAllowancePerSession:
         assert Trader._entry_gate(ns, t) == ""
         Trader._note_entry(ns, t)
         assert "late evening session" in Trader._entry_gate(ns, t.replace(hour=23, minute=40))
+
+
+class TestDayThreeLessons:
+    def test_counter_trend_reversals_do_not_run_in_a_trend(self):
+        from mintel.data.regime import Regime
+        from mintel.engine.tactics import candidates_for
+        names = {t.name for t in candidates_for(Regime.TREND)}
+        assert "LIQUIDITY_SWEEP_REVERSAL" not in names
+        assert "FAILED_BREAKOUT_RECLAIM" not in names
+        assert "MOMENTUM_CONTINUATION" in names
+        assert "LIQUIDITY_SWEEP_REVERSAL" in {t.name for t in candidates_for(Regime.RANGE)}
+
+    def test_stop_floor_is_one_atr(self):
+        assert Config().scan.stop_noise_floor_atr == 1.0
+
+    def test_nothing_is_trailed_before_one_r(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()                                   # risk 0.0050
+        # climb to +0.8R (PROVING) and wobble: the stop must not move
+        prices = [1.1000 + 0.0002 * i for i in range(20)] + [1.1040, 1.1030, 1.1035]
+        stops = []
+        t = NOW
+        for px in prices:
+            d = fl.update(p, price=px, atr=0.0020, bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 100.0),
+                          momentum=_mom(), now=t)
+            if d.new_stop:
+                stops.append(d.new_stop)
+            t += dt.timedelta(minutes=15)
+        assert fl.trackers[1].mfe_r >= 0.75 and fl.trackers[1].mfe_r < 1.0
+        assert stops == [], stops
+
+    def test_after_one_r_the_giveback_is_forty_percent(self):
+        assert Config().flowlock.mfe_giveback_normal == 0.40
+        assert Config().flowlock.proving_trail is False
+
+    def test_day_review_breaks_down_exit_reasons(self, workdir):
+        from mintel.ops.day_review import review
+        positions = [{"position": 1, "symbol": "US30", "net": -3.5, "gross": -3.5, "commission": 0.0,
+                      "opened": NOW, "closed": NOW + dt.timedelta(minutes=3), "volume": 0.2, "minutes": 3},
+                     {"position": 2, "symbol": "XAUEUR", "net": 7.5, "gross": 7.6, "commission": -0.1,
+                      "opened": NOW, "closed": NOW + dt.timedelta(minutes=40), "volume": 0.01, "minutes": 40}]
+        journal_rows = [{"ticket": 1, "tactic": "MOMENTUM_CONTINUATION", "regime": "TREND",
+                         "exit_reason": "broker stop or target"},
+                        {"ticket": 2, "tactic": "BREAKOUT_RETEST", "regime": "TREND",
+                         "exit_reason": "thesis broke: the reasons for the trade have gone"}]
+        text = review(positions, journal_rows, "GBP")
+        assert "By exit reason" in text and "thesis broke" in text and "broker stop or target" in text

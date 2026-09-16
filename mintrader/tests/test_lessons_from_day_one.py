@@ -63,19 +63,19 @@ class TestStopsSitOutsideTheNoise:
             checked += 1
         assert checked >= 2, "at least two markets must have been checked"
 
-    def test_a_zero_floor_leaves_tight_structural_stops_alone(self):
-        cfg = Config()
-        cfg.scan.stop_noise_floor_atr = 0.0
-        broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5))
-        broker.connect()
-        sc = Scanner(broker, cfg)
-        states = sc.scan(broker.now, [])
-        tight = 0
-        for st in states:
-            ctx = sc.build_context(st.symbol, broker.now)
-            if ctx is not None and ctx.atr_ref > 0 and abs(st.entry - st.stop) < 2.0 * ctx.atr_ref:
-                tight += 1
-        assert tight > 0, "without the floor some stops must sit closer than 2 ATR, or the first test proves nothing"
+    def test_the_floor_actually_widens_stops(self):
+        """The floor must bite somewhere, or the first test proves nothing."""
+        def stops(floor):
+            cfg = Config()
+            cfg.scan.stop_noise_floor_atr = floor
+            broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5))
+            broker.connect()
+            sc = Scanner(broker, cfg)
+            return {(st.symbol, st.direction): abs(st.entry - st.stop)
+                    for st in sc.scan(broker.now, [])}
+        without, with_floor = stops(0.0), stops(3.0)
+        widened = [k for k in without if k in with_floor and with_floor[k] > without[k] * 1.01]
+        assert widened, (without, with_floor)
 
 
 class TestLossesCloseAMarketForTheDay:

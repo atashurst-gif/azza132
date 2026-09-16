@@ -442,11 +442,14 @@ TACTICS: tuple[Tactic, ...] = (
     Tactic("SQUEEZE_RELEASE", (Regime.SQUEEZE, Regime.LOW_VOL), squeeze_release),
     Tactic("RANGE_REJECTION", (Regime.RANGE, Regime.LOW_VOL), range_rejection,
            counter_trend=True),
+    # Day three: fading a trend went 0 for 4 and lost more than every other
+    # approach combined. Counter-trend reversals are for ranges and unclear
+    # markets, never for a market that is trending.
     Tactic("FAILED_BREAKOUT_RECLAIM",
-           (Regime.RANGE, Regime.HIGH_VOL, Regime.UNCLEAR, Regime.TREND),
+           (Regime.RANGE, Regime.HIGH_VOL, Regime.UNCLEAR),
            failed_breakout, counter_trend=True),
     Tactic("LIQUIDITY_SWEEP_REVERSAL",
-           (Regime.RANGE, Regime.TREND, Regime.HIGH_VOL, Regime.UNCLEAR),
+           (Regime.RANGE, Regime.HIGH_VOL, Regime.UNCLEAR),
            liquidity_sweep_reversal, counter_trend=True),
     Tactic("VWAP_REVERSION", (Regime.RANGE, Regime.LOW_VOL), vwap_reversion,
            counter_trend=True),
