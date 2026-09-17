@@ -235,6 +235,11 @@ class Config:
     # changes, the bot restarts the measuring clock itself on start-up, so the
     # status page only ever shows the CURRENT strategy's trades.
     tracking_strategy: str = ""
+    # Where the nightly record is published (a folder in a GitHub repository)
+    # so it can be read without anyone pasting screenshots. The token lives
+    # in secrets.json as "github_token", never here.
+    report_repo: str = "atashurst-gif/azza132"
+    report_branch: str = "reports"
     account_login: int = 0
     account_password: str = ""
     account_server: str = ""
@@ -333,8 +338,15 @@ class Config:
         tmp.replace(path)
         # Secrets go to a sibling file with tight permissions.
         sec = path.parent / "secrets.json"
-        payload = {"account_password": secrets["account_password"],
-                   "api_keys": self.news.api_keys}
+        payload: dict = {}
+        try:
+            existing = json.loads(sec.read_text()) if sec.exists() else {}
+            if isinstance(existing, dict):
+                payload.update(existing)        # keep tokens etc. we do not own
+        except Exception:
+            pass
+        payload.update({"account_password": secrets["account_password"],
+                        "api_keys": self.news.api_keys})
         sec.write_text(json.dumps(payload, indent=2))
         try:
             os.chmod(sec, 0o600)

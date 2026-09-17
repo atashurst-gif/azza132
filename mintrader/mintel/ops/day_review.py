@@ -152,6 +152,32 @@ def review(positions: list[dict], journal_rows: Optional[list[dict]] = None,
     return "\n".join(lines)
 
 
+def journal_rows_for(cfg: Config, day: dt.datetime) -> list[dict]:
+    try:
+        from ..engine.journal import Journal
+        from pathlib import Path
+        j = Journal(Path(cfg.ops.data_dir) / "journal.sqlite")
+        try:
+            return j.closed_trades(limit=2000, since=day)
+        finally:
+            j.close()
+    except Exception:
+        return []
+
+
+def build_day_review(cfg: Config, broker, day: dt.datetime) -> tuple[str, list[dict], list[dict]]:
+    """(review text, positions, journal rows) for the UTC day starting at ``day``."""
+    rows = broker.deals_since(day, cfg.magic, False) or []
+    rows = [r for r in rows if r.get("time") and r["time"] < day + dt.timedelta(days=1)]
+    try:
+        currency = broker.account().currency
+    except Exception:
+        currency = "GBP"
+    positions = group_positions(rows)
+    journal_rows = journal_rows_for(cfg, day)
+    return review(positions, journal_rows, currency), positions, journal_rows
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="plain-English review of a trading day")
     ap.add_argument("--config", default="data/config.json")
@@ -164,21 +190,8 @@ def main(argv=None) -> int:
     try:
         day = (dt.datetime.strptime(args.date, "%Y-%m-%d").replace(tzinfo=UTC)
                if args.date else to_utc(utcnow()).replace(hour=0, minute=0, second=0, microsecond=0))
-        rows = broker.deals_since(day, cfg.magic, False) or []
-        rows = [r for r in rows if r.get("time") and r["time"] < day + dt.timedelta(days=1)]
-        try:
-            currency = broker.account().currency
-        except Exception:
-            currency = "GBP"
-        journal_rows = []
-        try:
-            from ..engine.journal import Journal
-            from pathlib import Path
-            j = Journal(Path(cfg.ops.data_dir) / "journal.sqlite")
-            journal_rows = j.closed_trades(limit=2000, since=day)
-        except Exception:
-            pass
-        print(review(group_positions(rows), journal_rows, currency))
+        text, _positions, _rows = build_day_review(cfg, broker, day)
+        print(text)
         return 0
     finally:
         try:

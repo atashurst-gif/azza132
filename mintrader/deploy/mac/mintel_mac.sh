@@ -958,11 +958,45 @@ install_launch_agent() {
 </plist>
 PLIST
   launchctl unload "$PLIST_PATH" >/dev/null 2>&1
+  install_report_agent
   if launchctl load "$PLIST_PATH" >/dev/null 2>&1; then
     good "It now starts automatically when you log in, and restarts itself if it ever stops"
   else
     warn "Automatic start could not be registered. The bot still runs while this window's setup is in effect."
   fi
+}
+
+install_report_agent() {
+  # Publishes the day's record every evening at 22:10 local time, ten
+  # minutes after the broker's day closes (00:00 server = 22:00 UK summer).
+  local label
+  local plist
+  label="com.mintel.report"
+  plist="$HOME/Library/LaunchAgents/$label.plist"
+  mkdir -p "$HOME/Library/LaunchAgents"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$VENV_DIR/bin/python</string>
+    <string>-m</string><string>mintel.ops.report_upload</string>
+    <string>--config</string><string>$CONFIG</string>
+  </array>
+  <key>WorkingDirectory</key><string>$APP_DIR</string>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>10</integer></dict>
+  <key>StandardOutPath</key><string>$LOG_DIR/report.out.log</string>
+  <key>StandardErrorPath</key><string>$LOG_DIR/report.err.log</string>
+</dict>
+</plist>
+PLIST
+  launchctl unload "$plist" >/dev/null 2>&1
+  launchctl load "$plist" >/dev/null 2>&1 || true
 }
 
 # ---------------------------------------------------------------- caffeine ---
@@ -989,7 +1023,7 @@ install_desktop_icon() {
   local desktop="$HOME/Desktop"
   [[ -d "$desktop" ]] || { warn "No Desktop folder found."; return 0; }
   local name
-  for name in "Start Trading Bot" "Stop Trading Bot" "Self Test" "Day Review"; do
+  for name in "Start Trading Bot" "Stop Trading Bot" "Self Test" "Day Review" "Send Report"; do
     local src="$APP_DIR/deploy/mac/$name.command"
     [[ -f "$src" ]] || continue
     cp -f "$src" "$desktop/$name.command"
