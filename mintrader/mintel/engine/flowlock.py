@@ -71,6 +71,7 @@ class TradeTracker:
     worst_price: float = 0.0
     bars_since_extension: int = 0
     last_extension_utc: Optional[dt.datetime] = None
+    last_bar_time: Optional[dt.datetime] = None
     partial_done: bool = False
     partial_volume: float = 0.0
     thesis_strength: float = 60.0
@@ -155,7 +156,24 @@ class FlowLock:
         Bar extremes are used when available: a spike that reached 3R and came
         back was still a 3R excursion, and pretending otherwise would make the
         MFE-capture statistics flattering and useless.
+
+        Two rules learned on day four. A bar that OPENED before the trade did
+        contributes nothing: its high and low include prices from before the
+        entry, which once credited a 3-minute trade with a +4R "best" and
+        pushed the trail up under the live price. And the stall counter
+        advances once per NEW bar, not once per management cycle: counted
+        per cycle it declared a trade stale after twenty seconds and clipped
+        every winner at half its target.
         """
+        new_bar = bar is not None and bar.time != t.last_bar_time
+        if bar is not None:
+            t.last_bar_time = bar.time
+            opened = t.opened_utc
+            bar_t = bar.time if bar.time.tzinfo else bar.time.replace(tzinfo=dt.timezone.utc)
+            if opened is not None and opened.tzinfo is None:
+                opened = opened.replace(tzinfo=dt.timezone.utc)
+            if opened is not None and bar_t < opened:
+                bar = None                       # opened before the trade
         if t.side is Side.BUY:
             high = max(price, bar.high) if bar else price
             low = min(price, bar.low) if bar else price
@@ -178,7 +196,7 @@ class FlowLock:
         if extended:
             t.bars_since_extension = 0
             t.last_extension_utc = now
-        else:
+        elif new_bar:
             t.bars_since_extension += 1
         return extended
 

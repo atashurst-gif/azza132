@@ -475,3 +475,39 @@ class TestDayThreeEveningReview:
         assert exit_kind("[tp 3733.98]", 7.47) == "target reached"
         assert exit_kind("thesis broke: the reasons for the trade have gone", -1) == "closed by the bot: thesis broke"
         assert exit_kind("", 2.0) == "broker stop or target"
+
+
+class TestDayFourExitBugs:
+    """Winners were clipped at ~0.6R by a stall counter that ticked per second,
+    and a pre-entry bar's high was credited as the trade's best price."""
+
+    def test_stall_counts_new_bars_not_management_cycles(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()
+        t0 = NOW
+        bar = Bar(t0, 1.1010, 1.1012, 1.1008, 1.1010, 50.0)
+        fl.update(p, price=1.1010, atr=0.0020, bar=bar, momentum=_mom(), now=t0)
+        # forty management cycles inside the SAME bar: no stall progress
+        for i in range(40):
+            fl.update(p, price=1.1009, atr=0.0020, bar=bar, momentum=_mom(),
+                      now=t0 + dt.timedelta(seconds=i + 1))
+        assert fl.trackers[1].bars_since_extension == 0
+        assert fl.trackers[1].state is not FlowState.DECAY
+        # new bars without a new high do advance it, one per bar
+        for k in range(1, 4):
+            b = Bar(t0 + dt.timedelta(minutes=k), 1.1009, 1.1011, 1.1007, 1.1009, 50.0)
+            fl.update(p, price=1.1009, atr=0.0020, bar=b, momentum=_mom(),
+                      now=t0 + dt.timedelta(minutes=k))
+        assert fl.trackers[1].bars_since_extension == 3
+
+    def test_a_bar_that_opened_before_the_trade_does_not_set_the_best(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()                                    # opened at NOW, risk 0.0050
+        stale = Bar(NOW - dt.timedelta(minutes=5), 1.0990, 1.1300, 1.0980, 1.1005, 50.0)  # +6R wick, pre-entry
+        d = fl.update(p, price=1.1005, atr=0.0020, bar=stale, momentum=_mom(), now=NOW)
+        assert fl.trackers[1].mfe_r == pytest.approx(0.1, abs=0.01)
+        assert d.new_stop is None
+        fresh = Bar(NOW + dt.timedelta(minutes=1), 1.1005, 1.1040, 1.1004, 1.1030, 50.0)
+        fl.update(p, price=1.1030, atr=0.0020, bar=fresh, momentum=_mom(),
+                  now=NOW + dt.timedelta(minutes=1))
+        assert fl.trackers[1].mfe_r == pytest.approx(0.8, abs=0.01)
