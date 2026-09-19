@@ -2,7 +2,7 @@
 
 The rule set that produced the first clearly profitable day.
 
-| Pinned build | Tag | Day | Result |
+| Pinned build | Branch | Day | Result |
 |---|---|---|---|
 | 22b81b14f9 | `retest-2026-09-18` | 2026-09-18 | +44.42 GBP after fees, 46 trades, 48% winners, win/loss size 1.63, 15 of 22 winners reached target |
 
@@ -18,6 +18,6 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   stop never sits more than 65% of the best gain back.
 
 ## Reverting
-Install the tagged build:
-`git checkout retest-2026-09-18` (or download the tag's zip) and run the
-Start icon. The measuring clock is unaffected.
+Install the pinned build by downloading
+https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip
+and running the Start icon from it. The measuring clock is unaffected.
