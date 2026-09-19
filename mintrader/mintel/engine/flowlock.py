@@ -363,6 +363,14 @@ class FlowLock:
             options.sort(reverse=(t.side is Side.SELL))
             chosen = options[len(options) // 2]      # the middle reference
 
+        # A winner stays a winner: past +1R the stop never sits further back
+        # than profit_floor_giveback of the best gain, whatever the state.
+        floor_frac = getattr(c, "profit_floor_giveback", 0.0) or 0.0
+        if floor_frac and t.mfe_r >= 1.0 and t.mfe > 0:
+            best = t.entry + sign * t.mfe
+            floor = best - sign * floor_frac * t.mfe
+            chosen = max(chosen, floor) if t.side is Side.BUY else min(chosen, floor)
+
         # Break-even protection, but only once the trade has earned it: moving
         # to break-even too early converts winners into scratches.
         if (not t.breakeven_done and r_now >= c.breakeven_at_r

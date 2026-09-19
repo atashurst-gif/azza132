@@ -67,6 +67,7 @@ def lifecycle_profile(c: Config) -> Config:
     c.scan.disabled_tactics = ()
     c.scan.tactic_min_score = {}
     c.scan.max_cost_fraction_of_stop = 0.30
+    c.flowlock.profit_floor_giveback = 0.0
     c.scan.max_losses_per_symbol_per_day = 3
     c.scan.min_seconds_between_entries = 180.0
     c.scan.max_new_positions_per_hour = 4

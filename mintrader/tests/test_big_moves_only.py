@@ -30,7 +30,7 @@ class TestDefaultsAreSelective:
         assert sc.entry_tier == "NORMAL"
         assert sc.min_reward_risk == 1.8
         assert sc.tier_normal >= 60.0
-        assert sc.max_cost_fraction_of_stop <= 0.20
+        assert sc.max_cost_fraction_of_stop == 0.12
         assert sc.max_new_positions_per_day == 0       # no count limits
         assert sc.session_caps_utc == ()
         assert sc.max_new_positions_per_hour == 0
@@ -511,3 +511,34 @@ class TestDayFourExitBugs:
         fl.update(p, price=1.1030, atr=0.0020, bar=fresh, momentum=_mom(),
                   now=NOW + dt.timedelta(minutes=1))
         assert fl.trackers[1].mfe_r == pytest.approx(0.8, abs=0.01)
+
+
+class TestDayFiveFloor:
+    def test_a_strong_flow_winner_cannot_round_trip_to_zero(self):
+        cfg = Config().flowlock
+        assert cfg.profit_floor_giveback == 0.65
+        fl = FlowLock(cfg)
+        p = _pos()                                   # risk 0.0050
+        t = NOW
+        strong = SimpleNamespace(direction=1, efficiency=0.6, adx=35.0, acceleration_atr=0.1)
+        # run to +2.3R with strong momentum -> STRONG_FLOW
+        for i in range(1, 24):
+            px = 1.1000 + 0.0005 * i
+            fl.update(p, price=px, atr=0.0020, bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                      momentum=strong, now=t)
+            if fl.trackers[1].stop > p.sl:
+                p.sl = fl.trackers[1].stop
+            t += dt.timedelta(minutes=1)
+        tr = fl.trackers[1]
+        assert tr.mfe_r >= 2.2
+        # the stop must already lock at least 35% of the best gain
+        assert tr.stop >= 1.1000 + 0.35 * tr.mfe - 1e-9, (tr.stop, tr.mfe, tr.state)
+
+    def test_cost_gate_is_twelve_percent(self):
+        from mintel.engine.scanner import Scanner
+        cfg = Config()
+        broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()
+        sc = Scanner(broker, cfg)
+        sc.commission_per_lot = {"*": 60.0}          # make FX expensive
+        states = sc.scan(broker.now, [])
+        assert any("limit 12%" in b for st in states for b in st.blockers)
