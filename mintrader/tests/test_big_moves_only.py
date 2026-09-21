@@ -30,7 +30,7 @@ class TestDefaultsAreSelective:
         assert sc.entry_tier == "NORMAL"
         assert sc.min_reward_risk == 1.8
         assert sc.tier_normal >= 60.0
-        assert sc.max_cost_fraction_of_stop == 0.12
+        assert sc.max_cost_fraction_of_stop == 0.20
         assert sc.max_new_positions_per_day == 0       # no count limits
         assert sc.session_caps_utc == ()
         assert sc.max_new_positions_per_hour == 0
@@ -516,7 +516,7 @@ class TestDayFourExitBugs:
 class TestDayFiveFloor:
     def test_a_strong_flow_winner_cannot_round_trip_to_zero(self):
         cfg = Config().flowlock
-        assert cfg.profit_floor_giveback == 0.65
+        cfg.profit_floor_giveback = 0.65             # available, off by default
         fl = FlowLock(cfg)
         p = _pos()                                   # risk 0.0050
         t = NOW
@@ -541,4 +541,4 @@ class TestDayFiveFloor:
         sc = Scanner(broker, cfg)
         sc.commission_per_lot = {"*": 60.0}          # make FX expensive
         states = sc.scan(broker.now, [])
-        assert any("limit 12%" in b for st in states for b in st.blockers)
+        assert any("limit 20%" in b for st in states for b in st.blockers)

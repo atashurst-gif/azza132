@@ -122,12 +122,9 @@ class ScanConfig:
     # Round-trip costs (spread + slippage + commission) may not exceed this
     # fraction of the stop distance: a 3-pip stop with 0.9 pips of cost is a
     # coin toss that pays the broker whichever way it lands.
-    # Day five: three days of results split by cost. Gold crosses (fee ~6p)
-    # were the only group positive on every day that mattered; currency
-    # pairs carried nearly all the commission and swung from -50 to +28.
-    # Costs may now eat at most 12% of the stop, so a trade must be worth
-    # its fee before it is allowed in - the cheap markets sail through.
-    max_cost_fraction_of_stop: float = 0.12
+    # Day five tried 12% here and the win rate fell to 27% on the day;
+    # reverted to the 2026-09-18 value (branch retest-2026-09-18).
+    max_cost_fraction_of_stop: float = 0.20
     # The stop is never closer than this many ATRs (decision timeframe) from
     # the entry, whatever the structure says: inside that band is noise, and
     # noise took out most of day one's trades within minutes.
@@ -175,11 +172,9 @@ class FlowLockConfig:
     proving_trail: bool = False
     mfe_giveback_normal: float = 0.40  # fraction of MFE we allow back
     mfe_giveback_strong: float = 0.65
-    # Day five: two trades reached +1.5R and +2.3R and gave nearly all of it
-    # back because STRONG_FLOW takes the loosest of its references. Once a
-    # trade has reached +1R the stop may never sit worse than this fraction
-    # of its best gain back from the best point, in any state.
-    profit_floor_giveback: float = 0.65
+    # Day five tried 0.65 here alongside the 12% cost gate; both reverted
+    # together to the 2026-09-18 rule set. 0 = off.
+    profit_floor_giveback: float = 0.0
     mfe_giveback_decay: float = 0.22
     stall_bars_to_decay: int = 20
     reversal_thesis_floor: float = 15.0

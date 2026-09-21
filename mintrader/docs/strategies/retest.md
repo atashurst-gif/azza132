@@ -14,8 +14,9 @@ counter-trend reversals only outside trends; NEWS_CONTINUATION off;
 MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
 
 ## Changes since, each to be judged against this day
-- 2026-09-19: cost gate 20% -> 12% of the stop; profit floor: past +1R the
-  stop never sits more than 65% of the best gain back.
+- 2026-09-19: cost gate 20% -> 12% of the stop; profit floor past +1R.
+  REVERTED 2026-09-21: the first day on it ran at a 27% win rate. The main
+  line is back on the 2026-09-18 rules.
 
 ## Reverting
 Install the pinned build by downloading
