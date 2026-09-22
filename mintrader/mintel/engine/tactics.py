@@ -464,7 +464,8 @@ def candidates_for(regime: Regime) -> tuple[Tactic, ...]:
 
 def best_signal(ctx: SymbolContext, side: int,
                 regime: Regime,
-                disabled: Sequence[str] = ()) -> Optional[TacticSignal]:
+                disabled: Sequence[str] = (),
+                disabled_in: Sequence[tuple[str, str]] = ()) -> Optional[TacticSignal]:
     """Highest-quality applicable tactic for one direction.
 
     Counter-trend tactics are held to a higher bar because fading a move looks
@@ -474,6 +475,9 @@ def best_signal(ctx: SymbolContext, side: int,
     best: Optional[TacticSignal] = None
     for tactic in candidates_for(regime):
         if tactic.name in disabled:
+            continue
+        if any(n == tactic.name and r.upper() == regime.value.upper()
+               for n, r in disabled_in):
             continue
         try:
             sig = tactic.evaluate(ctx, side)

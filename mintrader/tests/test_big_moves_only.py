@@ -542,3 +542,18 @@ class TestDayFiveFloor:
         sc.commission_per_lot = {"*": 60.0}          # make FX expensive
         states = sc.scan(broker.now, [])
         assert any("limit 20%" in b for st in states for b in st.blockers)
+
+
+class TestMomentumContinuationOffInTrends:
+    def test_default_and_effect(self):
+        from mintel.data.regime import Regime
+        from mintel.engine.tactics import best_signal
+        cfg = Config()
+        assert ("MOMENTUM_CONTINUATION", "TREND") in cfg.scan.disabled_tactic_regimes
+        broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()
+        for st in Scanner(broker, cfg).scan(broker.now, []):
+            assert not (st.tactic == "MOMENTUM_CONTINUATION" and st.regime is Regime.TREND), st
+        # and the same approach is still available outside trends
+        cfg2 = Config(); cfg2.scan.disabled_tactic_regimes = (("MOMENTUM_CONTINUATION", "RANGE"),)
+        names = {(st.tactic, st.regime) for st in Scanner(broker, cfg2).scan(broker.now, [])}
+        assert all(not (t == "MOMENTUM_CONTINUATION" and r is Regime.RANGE) for t, r in names)

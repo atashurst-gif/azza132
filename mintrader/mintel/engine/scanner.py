@@ -548,7 +548,8 @@ class Scanner:
         """Build the MarketState for one instrument and one direction."""
         regime = ctx.regime.regime if ctx.regime else rg.Regime.UNCLEAR
         sig = best_signal(ctx, side, regime,
-                          disabled=getattr(self.cfg.scan, "disabled_tactics", ()) or ())
+                          disabled=getattr(self.cfg.scan, "disabled_tactics", ()) or (),
+                          disabled_in=getattr(self.cfg.scan, "disabled_tactic_regimes", ()) or ())
         if sig is None:
             return None
         ev = self.evidence_for(ctx, side)

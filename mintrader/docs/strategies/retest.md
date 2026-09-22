@@ -18,6 +18,10 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   REVERTED 2026-09-21: the first day on it ran at a 27% win rate. The main
   line is back on the 2026-09-18 rules.
 
+- 2026-09-22: MOMENTUM_CONTINUATION switched off in TREND regime only
+  (five days, 77 trades, ~-118 GBP, never a positive day; 22 Sep 1 win in
+  13). Unchanged in HIGH_VOL and NEWS where it is break-even to positive.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

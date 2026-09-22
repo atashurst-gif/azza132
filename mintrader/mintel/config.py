@@ -115,6 +115,14 @@ class ScanConfig:
     #   score STRONG before it may enter; BREAKOUT_RETEST, which waits for
     #   the pullback, was the best approach and is unchanged.
     disabled_tactics: tuple[str, ...] = ("NEWS_CONTINUATION",)
+    # An approach switched off in ONE market condition. MOMENTUM_CONTINUATION
+    # in a TREND regime lost on every one of five days (77 trades, ~-118 GBP,
+    # 22 Sep: 1 win in 13) even at STRONG scores: it chases a move that has
+    # already run and is stopped on the pullback. In HIGH_VOL and NEWS it
+    # is break-even to strongly positive, so it stays on there.
+    disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
+        ("MOMENTUM_CONTINUATION", "TREND"),
+    )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
