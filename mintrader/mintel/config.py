@@ -114,7 +114,9 @@ class ScanConfig:
     #   -43.76, half of them winners but stopped on the pullback). It must
     #   score STRONG before it may enter; BREAKOUT_RETEST, which waits for
     #   the pullback, was the best approach and is unchanged.
-    disabled_tactics: tuple[str, ...] = ("NEWS_CONTINUATION",)
+    # TREND_PULLBACK: three days traded, three negative (6 wins in 15,
+    # about -31 GBP, 17-23 Sep). Same standard as the others: off.
+    disabled_tactics: tuple[str, ...] = ("NEWS_CONTINUATION", "TREND_PULLBACK")
     # An approach switched off in ONE market condition. MOMENTUM_CONTINUATION
     # in a TREND regime lost on every one of five days (77 trades, ~-118 GBP,
     # 22 Sep: 1 win in 13) even at STRONG scores: it chases a move that has

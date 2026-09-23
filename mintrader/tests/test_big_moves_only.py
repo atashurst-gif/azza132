@@ -445,6 +445,7 @@ class TestDayThreeEveningReview:
         from mintel.broker.sim import SimBroker
         cfg = Config()
         assert "NEWS_CONTINUATION" in cfg.scan.disabled_tactics
+        assert "TREND_PULLBACK" in cfg.scan.disabled_tactics
         assert cfg.scan.tactic_min_score["MOMENTUM_CONTINUATION"] >= 70
         # a disabled tactic never becomes the signal
         broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()

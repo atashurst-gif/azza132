@@ -22,6 +22,10 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   (five days, 77 trades, ~-118 GBP, never a positive day; 22 Sep 1 win in
   13). Unchanged in HIGH_VOL and NEWS where it is break-even to positive.
 
+- 2026-09-23: first full day with MOMENTUM_CONTINUATION out of trends:
+  +16.66 GBP over 40 trades, BREAKOUT_RETEST in TREND +42.76. TREND_PULLBACK
+  switched off (three days traded, all negative: 6/15, about -31 GBP).
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip
