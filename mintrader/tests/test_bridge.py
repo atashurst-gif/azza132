@@ -25,6 +25,7 @@ from mintel.broker.bridge_client import BridgeBroker, from_url
 from mintel.broker.bridge_server import BridgeService, serve
 from mintel.broker.sim import SimBroker
 from mintel.config import Config
+from tests.conftest import lifecycle_profile
 from mintel.engine.trader import Trader
 
 UTC = dt.timezone.utc
@@ -276,8 +277,9 @@ class TestFullEngineOverTheBridge:
     """The real proof: the whole trader, unmodified, driven through a socket."""
 
     def test_the_trader_runs_end_to_end_over_the_bridge(self, bridge, tmp_path):
+        # the lifecycle machinery on the permissive profile (see conftest)
         client, _server, _service, backend = bridge
-        cfg = Config()
+        cfg = lifecycle_profile(Config())
         cfg.ops.data_dir = str(tmp_path / "data")
         cfg.ops.log_dir = str(tmp_path / "logs")
         cfg.news.store_path = "calendar.sqlite"
@@ -309,7 +311,7 @@ class TestFullEngineOverTheBridge:
 
     def test_safe_mode_when_the_bridge_dies_mid_run(self, bridge, tmp_path):
         client, server, _service, backend = bridge
-        cfg = Config()
+        cfg = lifecycle_profile(Config())
         cfg.ops.data_dir = str(tmp_path / "data2")
         cfg.ops.log_dir = str(tmp_path / "logs2")
         cfg.news.store_path = "calendar.sqlite"
@@ -426,7 +428,7 @@ class TestCredentialHandling:
         """Anything in argv is readable by every process via `ps`."""
         from mintel.config import Config
         from mintel.ops.watchdog import build_default
-        cfg = Config()
+        cfg = lifecycle_profile(Config())
         cfg.ops.data_dir = str(tmp_path)
         cfg.broker_mode = "bridge"
         cfg.wine_python = "C:\\Python311\\python.exe"
