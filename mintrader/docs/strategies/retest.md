@@ -32,6 +32,16 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   code, not in the rules: see docs/ops/always-watching.md. Results for this
   day cover only the morning.
 
+- 2026-09-24 (evening, standing rule): BREAKOUT_RETEST switched off in
+  HIGH_VOL only. Negative on three of the five days it traded there
+  (17 Sep -4.46, 22 Sep -11.32, 23 Sep -3.82; 21 Sep +1.45, 24 Sep +5.30),
+  6 trades, net -12.85 GBP. Unchanged in TREND and SQUEEZE.
+  Note for the record: the same "three negative days" test also catches
+  BREAKOUT_RETEST in TREND (negative on 4 of 6 days, but net +4.45 with
+  +42.76 on 23 Sep) and in SQUEEZE (negative on 4 of 6, net +3.34).
+  Neither was switched off: both are net positive and the TREND line is
+  the strategy itself. That is a decision for the owner, not the rule.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

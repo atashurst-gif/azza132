@@ -122,8 +122,13 @@ class ScanConfig:
     # 22 Sep: 1 win in 13) even at STRONG scores: it chases a move that has
     # already run and is stopped on the pullback. In HIGH_VOL and NEWS it
     # is break-even to strongly positive, so it stays on there.
+    # BREAKOUT_RETEST in HIGH_VOL: negative on three of the five days it
+    # traded (17, 22, 23 Sep), 6 trades, about -13 GBP - a retest needs a
+    # level that holds, and in high volatility it does not. In TREND it is
+    # the main line and stays on.
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),
+        ("BREAKOUT_RETEST", "HIGH_VOL"),
     )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     cooldown_seconds_after_exit: float = 180.0
