@@ -68,7 +68,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "21:09:58 UTC",
+    "last_scan": "21:15:08 UTC",
     "last_trade": "US500 2026-09-24T09:31",
     "not_trading_because": [],
     "strategy_rules": {
@@ -79,11 +79,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 1,
-    "uptime_minutes": 0.1
+    "cycles": 60,
+    "uptime_minutes": 5.2
   },
   "health": {
-    "as_of": "2026-09-24T21:09:58.293012+00:00",
+    "as_of": "2026-09-24T21:15:08.326566+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -91,9 +91,9 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "59875 MB of disk space free",
+        "message": "59821 MB of disk space free",
         "detail": {
-          "free_mb": 59875.0
+          "free_mb": 59821.3
         }
       },
       {
@@ -101,7 +101,7 @@
         "severity": "OK",
         "message": "memory 84% used",
         "detail": {
-          "percent": 84.1
+          "percent": 84.3
         }
       },
       {
@@ -143,9 +143,9 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (4s old)",
+        "message": "live prices arriving (1s old)",
         "detail": {
-          "freshest_age_seconds": 3.5,
+          "freshest_age_seconds": 0.5,
           "weekend": false
         }
       },
@@ -169,8 +169,16 @@
         "message": "1 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 0.8
+            "watchdog": 8.9
           }
+        }
+      },
+      {
+        "name": "SCAN_FRESHNESS",
+        "severity": "OK",
+        "message": "markets scanned 5s ago",
+        "detail": {
+          "age_seconds": 5.2
         }
       },
       {
@@ -184,114 +192,143 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "AUDNZD",
+      "symbol": "GBPCHF",
       "direction": "SHORT",
-      "score": 44.76,
+      "score": 56.96,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_RETEST",
       "regime": "TREND / LOW VOL",
-      "reason": "AUDNZD: TREND / LOW VOL market. Best idea is sell using breakout retest. Execution supports it (84/100; spread 17.5 pips (1.1x normal), commission 1.3 pips). Participation argues against it (21/100; 0.0x median tick volume). Structure supports it (76/100; range structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 3 pips, giving about -0.6 to 1 after 23.6 pips of cost. Blocked because: reward:risk only -0.59 after costs; costs would be 90% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "GBPCHF: TREND / LOW VOL market. Best idea is sell using breakout retest. Execution supports it (84/100; spread 11.9 pips (1.0x normal), commission 0.6 pips). Structure supports it (76/100; range structure on M5). Participation argues against it (25/100; 0.0x median tick volume). Multi Tf supports it (71/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 13 pips, giving about -0.4 to 1 after 15.5 pips of cost. Blocked because: reward:risk only -0.43 after costs; costs would be 82% of the stop distance (limit 20%) - too small a trade to pay for itself; 2 losing trades here today - leaving this market alone until tomorrow.",
       "blockers": [
-        "reward:risk only -0.59 after costs",
-        "costs would be 90% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only -0.43 after costs",
+        "costs would be 82% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "2 losing trades here today - leaving this market alone until tomorrow"
       ],
-      "reward_risk": -0.586
+      "reward_risk": -0.434
     },
     {
       "rank": 2,
-      "symbol": "EURJPY",
-      "direction": "LONG",
-      "score": 38.65,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_RETEST",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "EURJPY: SQUEEZE / LOW VOL market. Best idea is buy using breakout retest. Execution supports it (85/100; spread 14.9 pips (1.0x normal), commission 1.2 pips). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Participation argues against it (21/100; 0.0x median tick volume). Cross Market supports it (75/100; 0 related markets with a usable relationship; EUR 76 vs JPY 2). Room to the first obstacle is 8 pips, giving about -0.3 to 1 after 19.8 pips of cost. Blocked because: reward:risk only -0.29 after costs; costs would be 59% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 7.4 ATR from the level that invalidates this idea - the move has been missed.",
-      "blockers": [
-        "reward:risk only -0.29 after costs",
-        "costs would be 59% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "entry is 7.4 ATR from the level that invalidates this idea - the move has been missed"
-      ],
-      "reward_risk": -0.293
-    },
-    {
-      "rank": 3,
-      "symbol": "USDJPY",
-      "direction": "LONG",
-      "score": 33.74,
-      "tier": "NO_TRADE",
-      "tactic": "FAILED_BREAKOUT_RECLAIM",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "USDJPY: RANGE / NORMAL VOL market. Best idea is buy using failed breakout reclaim. Structure supports it (92/100; unclear structure on M5). Execution supports it (87/100; spread 7.3 pips (0.9x normal), commission 1.2 pips). Momentum supports it (80/100; efficiency 0.02, ADX 12). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about -0.5 to 1 after 10.3 pips of cost. Blocked because: reward:risk only -0.51 after costs; costs would be 53% of the stop distance (limit 20%) - too small a trade to pay for itself; 2 losing trades here today - leaving this market alone until tomorrow; entry is 3.8 ATR from the level that invalidates this idea - the move has been missed.",
-      "blockers": [
-        "reward:risk only -0.51 after costs",
-        "costs would be 53% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "2 losing trades here today - leaving this market alone until tomorrow",
-        "entry is 3.8 ATR from the level that invalidates this idea - the move has been missed"
-      ],
-      "reward_risk": -0.508
-    },
-    {
-      "rank": 4,
-      "symbol": "USDJPY",
+      "symbol": "AUDNZD",
       "direction": "SHORT",
-      "score": 30.4,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "USDJPY: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (87/100; spread 7.3 pips (0.9x normal), commission 1.2 pips). Momentum argues against it (20/100; efficiency 0.02, ADX 12). Participation argues against it (24/100; 0.0x median tick volume). Cross Market argues against it (25/100; 0 related markets with a usable relationship; USD 79 vs JPY 2). Room to the first obstacle is 2 pips, giving about -0.4 to 1 after 10.3 pips of cost. Blocked because: reward:risk only -0.42 after costs; costs would be 86% of the stop distance (limit 20%) - too small a trade to pay for itself; 2 losing trades here today - leaving this market alone until tomorrow.",
-      "blockers": [
-        "reward:risk only -0.42 after costs",
-        "costs would be 86% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "2 losing trades here today - leaving this market alone until tomorrow"
-      ],
-      "reward_risk": -0.419
-    },
-    {
-      "rank": 5,
-      "symbol": "EURCHF",
-      "direction": "SHORT",
-      "score": 25.6,
+      "score": 55.46,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_RETEST",
       "regime": "TREND / LOW VOL",
-      "reason": "EURCHF: TREND / LOW VOL market. Best idea is sell using breakout retest. Structure supports it (98/100; down structure on M5). Execution supports it (84/100; spread 22.4 pips (1.0x normal), commission 0.6 pips). Participation argues against it (22/100; 0.0x median tick volume). Cross Market argues against it (25/100; 0 related markets with a usable relationship; EUR 76 vs CHF 11). Room to the first obstacle is 1 pips, giving about -0.5 to 1 after 29.1 pips of cost. Blocked because: reward:risk only -0.45 after costs; costs would be 87% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "AUDNZD: TREND / LOW VOL market. Best idea is sell using breakout retest. Participation argues against it (21/100; 0.0x median tick volume). Structure supports it (76/100; range structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Momentum supports it (72/100; efficiency 0.60, ADX 59). Room to the first obstacle is 9 pips, giving about -0.8 to 1 after 48.9 pips of cost. Blocked because: reward:risk only -0.84 after costs; costs would be 106% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.45 after costs",
-        "costs would be 87% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only -0.84 after costs",
+        "costs would be 106% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.453
+      "reward_risk": -0.837
+    },
+    {
+      "rank": 3,
+      "symbol": "CADJPY",
+      "direction": "SHORT",
+      "score": 47.68,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / HIGH VOL",
+      "reason": "CADJPY: RANGE / HIGH VOL market. Best idea is sell using vwap reversion. Execution supports it (83/100; spread 7.0 pips (0.7x normal), commission 1.2 pips). Volatility supports it (80/100; volatility at the 99th percentile). Momentum supports it (78/100; efficiency 0.18, ADX 12). Participation argues against it (23/100; 0.0x median tick volume). Room to the first obstacle is 5 pips, giving about -0.5 to 1 after 9.9 pips of cost. Blocked because: reward:risk only -0.48 after costs; costs would be 94% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -0.48 after costs",
+        "costs would be 94% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.479
+    },
+    {
+      "rank": 4,
+      "symbol": "CADJPY",
+      "direction": "LONG",
+      "score": 33.73,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / HIGH VOL",
+      "reason": "CADJPY: RANGE / HIGH VOL market. Best idea is buy using liquidity sweep reversal. Execution supports it (83/100; spread 7.0 pips (0.7x normal), commission 1.2 pips). Volatility supports it (80/100; volatility at the 99th percentile). Momentum argues against it (22/100; efficiency 0.18, ADX 12). Participation argues against it (23/100; 0.0x median tick volume). Room to the first obstacle is 1 pips, giving about -0.5 to 1 after 9.9 pips of cost. Blocked because: reward:risk only -0.46 after costs; costs would be 55% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 4.8 ATR from the level that invalidates this idea - the move has been missed.",
+      "blockers": [
+        "reward:risk only -0.46 after costs",
+        "costs would be 55% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "entry is 4.8 ATR from the level that invalidates this idea - the move has been missed"
+      ],
+      "reward_risk": -0.457
+    },
+    {
+      "rank": 5,
+      "symbol": "AUDCHF",
+      "direction": "SHORT",
+      "score": 33.63,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "TREND / LOW VOL",
+      "reason": "AUDCHF: TREND / LOW VOL market. Best idea is sell using breakout acceptance. Structure supports it (100/100; down structure on M5). Regime supports it (85/100; TREND / LOW VOL). Multi Tf supports it (82/100; 6 timeframes weighed, higher ones first). Participation argues against it (21/100; 0.0x median tick volume). Room to the first obstacle is 1 pips, giving about -0.4 to 1 after 9.3 pips of cost. Blocked because: reward:risk only -0.44 after costs; costs would be 83% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -0.44 after costs",
+        "costs would be 83% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.444
     },
     {
       "rank": 6,
+      "symbol": "AUDCAD",
+      "direction": "SHORT",
+      "score": 24.43,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "AUDCAD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Structure supports it (98/100; down structure on M5). Regime supports it (85/100; SQUEEZE / LOW VOL). Multi Tf supports it (84/100; 6 timeframes weighed, higher ones first). Participation argues against it (21/100; 0.0x median tick volume). Room to the first obstacle is 0 pips, giving about -0.2 to 1 after 10.3 pips of cost. Blocked because: reward:risk only -0.25 after costs; costs would be 86% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -0.25 after costs",
+        "costs would be 86% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.247
+    },
+    {
+      "rank": 7,
+      "symbol": "AUDUSD",
+      "direction": "SHORT",
+      "score": 23.33,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "AUDUSD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Multi Tf supports it (93/100; 6 timeframes weighed, higher ones first). Regime supports it (85/100; SQUEEZE / LOW VOL). Momentum argues against it (16/100; efficiency 0.02, ADX 19). Participation argues against it (21/100; 0.0x median tick volume). Room to the first obstacle is 1 pips, giving about 0.1 to 1 after 5.5 pips of cost. Blocked because: reward:risk only 0.05 after costs; costs would be 56% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 3.6 ATR from the level that invalidates this idea - the move has been missed.",
+      "blockers": [
+        "reward:risk only 0.05 after costs",
+        "costs would be 56% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "entry is 3.6 ATR from the level that invalidates this idea - the move has been missed"
+      ],
+      "reward_risk": 0.052
+    },
+    {
+      "rank": 8,
+      "symbol": "AUDJPY",
+      "direction": "LONG",
+      "score": 21.81,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "AUDJPY: SQUEEZE / LOW VOL market. Best idea is buy using breakout retest. Participation argues against it (21/100; 0.0x median tick volume). Execution supports it (79/100; spread 10.1 pips (0.9x normal), commission 1.2 pips). Volatility argues against it (30/100; volatility at the 0th percentile). Cross Market argues against it (33/100; 0 related markets with a usable relationship; AUD 12 vs JPY 54). Room to the first obstacle is 0 pips, giving about -0.3 to 1 after 13.8 pips of cost. Blocked because: reward:risk only -0.27 after costs; costs would be 58% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 7.0 ATR from the level that invalidates this idea - the move has been missed.",
+      "blockers": [
+        "reward:risk only -0.27 after costs",
+        "costs would be 58% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "entry is 7.0 ATR from the level that invalidates this idea - the move has been missed"
+      ],
+      "reward_risk": -0.265
+    },
+    {
+      "rank": 9,
       "symbol": "HK50",
       "direction": "SHORT",
       "score": 19.65,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_RETEST",
       "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "HK50: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout retest. Execution argues against it (0/100; spread 900.0 pips (1.0x normal), commission 393.3 pips). Momentum argues against it (27/100; efficiency 0.26, ADX 15). Structure supports it (70/100; range structure on M5). Multi Tf supports it (69/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1450 pips, giving about 0.8 to 1 after 1518.3 pips of cost. Blocked because: price data is 8217s old (limit 20s); reward:risk only 0.78 after costs; costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "HK50: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout retest. Execution argues against it (0/100; spread 900.0 pips (1.0x normal), commission 393.3 pips). Momentum argues against it (27/100; efficiency 0.26, ADX 15). Structure supports it (70/100; range structure on M5). Multi Tf supports it (69/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1450 pips, giving about 0.8 to 1 after 1518.3 pips of cost. Blocked because: price data is 8527s old (limit 20s); reward:risk only 0.78 after costs; costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "price data is 8217s old (limit 20s)",
+        "price data is 8527s old (limit 20s)",
         "reward:risk only 0.78 after costs",
         "costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
       "reward_risk": 0.778
-    },
-    {
-      "rank": 7,
-      "symbol": "AUDUSD",
-      "direction": "SHORT",
-      "score": 19.57,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "AUDUSD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Multi Tf supports it (93/100; 6 timeframes weighed, higher ones first). Regime supports it (85/100; SQUEEZE / LOW VOL). Momentum argues against it (18/100; efficiency 0.01, ADX 20). Execution supports it (77/100; spread 3.2 pips (1.0x normal), commission 0.7 pips). Room to the first obstacle is 1 pips, giving about 0.1 to 1 after 4.7 pips of cost. Blocked because: reward:risk only 0.14 after costs; costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 3.6 ATR from the level that invalidates this idea - the move has been missed.",
-      "blockers": [
-        "reward:risk only 0.14 after costs",
-        "costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "entry is 3.6 ATR from the level that invalidates this idea - the move has been missed"
-      ],
-      "reward_risk": 0.137
     }
   ],
   "results": {
@@ -1171,5 +1208,5 @@
       "detail_json": "{\"opportunity\": 70.15, \"tier\": \"STRONG\", \"tactic\": \"MOMENTUM_CONTINUATION\", \"risk_pct\": 0.7146, \"explain\": \"EURCHF: NEWS / HIGH VOL market. Best idea is buy using momentum continuation. News supports it (95/100; CHF SNB Policy Rate: no forecast to compare against; price rose 6.5 ATR since the release, holding 125% of the initial move; wave: FIRST_WAVE). Structure supports it (86/100; range structure on M5). Regime supports it (80/100; NEWS / HIGH VOL). Volatility supports it (79/100; volatility at the 98th percentile). Room to the first obstacle is 999 pips, giving about 2.0 to 1 after 1.1 pips of cost.\", \"sizing_reasons\": [\"tier STRONG, calibrated confidence 0.59, aggression NORMAL\", \"only 11 comparable trades - too few for Kelly, staying on the calibrated curve\"], \"entry_timing\": \"S10 timing agrees\", \"protective_stop_confirmed\": true}"
     }
   ],
-  "updated": "2026-09-24T21:10:03.679148+00:00"
+  "updated": "2026-09-24T21:15:10.519955+00:00"
 }
