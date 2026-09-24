@@ -29,7 +29,10 @@ def render(snap: dict) -> str:
     lines = []
     running = st.get("bot") == "RUNNING" and not health.get("safe_mode")
     lines.append("=" * 58)
-    lines.append("  BOT: " + ("RUNNING" if running else "PROBLEM"))
+    if st.get("bot") == "WAITING FOR METATRADER":
+        lines.append("  BOT: WAITING FOR METATRADER - " + str(st.get("waiting", "")))
+    else:
+        lines.append("  BOT: " + ("RUNNING" if running else "PROBLEM"))
     lines.append("=" * 58)
     def flag(v):
         return "yes" if v else "NO"

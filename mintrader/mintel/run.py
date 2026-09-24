@@ -21,13 +21,14 @@ import logging.handlers
 import os
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from .broker.base import Side
 from .broker.mt5_adapter import Mt5Broker, mt5_available
-from .clock import to_utc, utcnow
+from .clock import UTC, to_utc, utcnow
 from .version import RUNNING_STAMP
 from .config import Config, LIVE_MARKER
 from .engine.trader import Trader
@@ -280,6 +281,58 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
     return out
 
 
+def wait_for_broker(broker, cfg: Config, state: DashboardState,
+                    stop: threading.Event, *, max_wait_seconds: float = 0.0,
+                    retry_seconds: float = 15.0,
+                    sleep: Optional[Callable[[float], None]] = None) -> bool:
+    """Connect to the broker, and keep trying until it answers.
+
+    Losing MetaTrader for a while is normal (it restarts, the bridge
+    restarts, the Mac wakes up); a trader that exits instead of waiting
+    burns the watchdog's restart budget and ends the day with nobody
+    trading.  While waiting it heartbeats so the watchdog knows it is alive,
+    and the page says plainly what it is waiting for.
+
+    ``max_wait_seconds`` of 0 means wait for as long as it takes.
+    """
+    from .ops.health import Heartbeat
+    waiter = sleep or stop.wait
+    hb = Heartbeat(Path(cfg.ops.data_dir) / "heartbeats", "strategy")
+    started = time.time()
+    attempt = 0
+    while not stop.is_set():
+        attempt += 1
+        if broker.connect():
+            if attempt > 1:
+                log.warning("MetaTrader is back after %.0fs - trading resumes",
+                            time.time() - started)
+            return True
+        if cfg.broker_mode == "bridge":
+            why = (f"waiting for the MetaTrader bridge on "
+                   f"{cfg.bridge_host}:{cfg.bridge_port} - is MetaTrader 5 "
+                   f"running and logged in?")
+        else:
+            why = "waiting for MetaTrader 5 - is the terminal running and logged in?"
+        detail = getattr(broker, "last_error", "") or ""
+        if attempt == 1 or attempt % 20 == 0:
+            log.error("%s (%s) - attempt %d, trying again every %.0fs",
+                      why, detail, attempt, retry_seconds)
+        hb.beat({"waiting": why, "attempt": attempt})
+        state.update(status={"bot": "WAITING FOR METATRADER",
+                             "mode": cfg.effective_mode,
+                             "waiting": why, "detail": detail,
+                             "waiting_since": dt.datetime.fromtimestamp(
+                                 started, tz=UTC).isoformat(),
+                             "attempts": attempt,
+                             "build": RUNNING_STAMP})
+        if max_wait_seconds and time.time() - started >= max_wait_seconds:
+            log.error("gave up waiting for MetaTrader after %.0fs",
+                      max_wait_seconds)
+            return False
+        waiter(retry_seconds)
+    return False
+
+
 def push_dashboard(state: DashboardState, trader: Trader) -> None:
     """Copy the trader's current view into the dashboard snapshot."""
     try:
@@ -423,6 +476,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--cycles", type=int, default=0,
                     help="stop after N cycles (0 = run forever)")
     ap.add_argument("--no-dashboard", action="store_true")
+    ap.add_argument("--wait-seconds", type=float, default=0.0,
+                    help="give up if MetaTrader has not answered after this "
+                         "long (0 = wait for as long as it takes)")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--check-only", action="store_true",
                     help="start up, run one cycle, print health, exit")
@@ -452,20 +508,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     trader = None
     try:
         broker = build_broker(cfg)
-        if not broker.connect():
-            if cfg.broker_mode == "bridge":
-                log.error("could not reach the MetaTrader bridge on %s:%d - "
-                          "is MetaTrader 5 running inside Wine?",
-                          cfg.bridge_host, cfg.bridge_port)
-            else:
-                log.error("could not connect to MetaTrader 5 - is the terminal "
-                          "running and logged in?")
-            return 4
-        trader = Trader(broker, cfg)
         state = DashboardState()
         if not args.no_dashboard:
             httpd = start_dashboard(state, cfg.ops.dashboard_host,
                                     cfg.ops.dashboard_port)
+        stop_waiting = threading.Event()
+        signal.signal(signal.SIGINT, lambda *_a: stop_waiting.set())
+        signal.signal(signal.SIGTERM, lambda *_a: stop_waiting.set())
+        if not wait_for_broker(broker, cfg, state, stop_waiting,
+                               max_wait_seconds=args.wait_seconds):
+            if stop_waiting.is_set():
+                log.warning("stopped while waiting for MetaTrader")
+                return 0
+            return 4
+        trader = Trader(broker, cfg)
         info = trader.bootstrap()
         log.info("bootstrap: %s", json.dumps(info, default=str)[:2000])
 

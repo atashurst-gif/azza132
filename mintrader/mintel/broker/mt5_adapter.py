@@ -69,6 +69,7 @@ class Mt5Broker:
         self._spec_cache: dict[str, tuple[float, SymbolSpec]] = {}
         self._spec_ttl = 300.0
         self._connected = False
+        self.last_error = ""
 
     # ------------------------------------------------------------ lifecycle --
     @property
@@ -95,15 +96,17 @@ class Mt5Broker:
                 kwargs.update(login=self.login, password=self.password,
                               server=self.server)
             if not mt5.initialize(**kwargs):
-                log.error("mt5.initialize failed: %s", mt5.last_error())
+                self.last_error = f"mt5.initialize failed: {mt5.last_error()}"
+                log.error("%s", self.last_error)
                 self._connected = False
                 return False
             if self.login:
                 ti = mt5.terminal_info()
                 ai = mt5.account_info()
                 if ai is None or int(ai.login) != self.login:
-                    log.error("connected to the wrong account: wanted %s got %s",
-                              self.login, getattr(ai, "login", None))
+                    self.last_error = (f"connected to the wrong account: wanted "
+                                       f"{self.login} got {getattr(ai, 'login', None)}")
+                    log.error("%s", self.last_error)
                     mt5.shutdown()
                     self._connected = False
                     return False

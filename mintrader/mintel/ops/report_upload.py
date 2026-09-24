@@ -11,6 +11,7 @@ Writes, for the UTC day, into the repository's ``reports`` branch:
                                     score, tier, how it exited, money, R
     reports/<date>/status.json      the status page's data (periods, rules)
     reports/<date>/rules.json       the strategy rules that were in force
+    reports/<date>/uptime.log       the day's ten-minute pulses (UP/DOWN + why)
     reports/latest/...              a copy of the newest day
 
 Run nightly by launchd after the broker's day closes, and on demand by the
@@ -90,10 +91,14 @@ def status_json(cfg: Config, fetch: Optional[Callable[[str], str]] = None) -> st
 def build_bundle(cfg: Config, broker, day: dt.datetime,
                  fetch: Optional[Callable[[str], str]] = None) -> dict[str, str]:
     from .day_review import build_day_review
+    from .pulse import uptime_lines, uptime_summary
     text, positions, journal_rows = build_day_review(cfg, broker, day)
     key = day.strftime("%Y-%m-%d")
+    pulses = uptime_lines(cfg, day)
+    text += "\n\nBOT UPTIME\n" + uptime_summary(pulses)
     files = {
         f"reports/{key}/day_review.txt": text + "\n",
+        f"reports/{key}/uptime.log": "\n".join(pulses) + "\n",
         f"reports/{key}/trades.csv": trades_csv(journal_rows, positions),
         f"reports/{key}/status.json": status_json(cfg, fetch),
         f"reports/{key}/rules.json": rules_json(cfg),

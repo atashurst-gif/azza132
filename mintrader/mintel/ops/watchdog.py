@@ -284,18 +284,34 @@ def process_running(image_name: str) -> Optional[bool]:
     return None
 
 
-def bridge_current(host: str, port: int) -> bool:
+def kill_process(image_name: str) -> None:
+    """Terminate every process whose command line names ``image_name``."""
+    try:
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/F", "/IM", image_name],
+                           capture_output=True, timeout=20)
+        elif shutil.which("pkill"):
+            subprocess.run(["pkill", "-f", image_name],
+                           capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+
+def bridge_current(host: str, port: int, token_file: str = "") -> bool:
     """Is a bridge answering on the port AND running the installed code?
 
     A bridge that survived an upgrade answers the port but not the trader's
     newer questions; reporting it as "not answering" makes the watchdog stop
     it and start the installed code in its place.
+
+    The probe carries the shared token: without it the bridge (rightly)
+    refuses to answer, and every check leaves a "bad token" line in its log.
     """
     if not port_open(host, port):
         return False
     try:
         from ..broker.bridge_client import BridgeBroker
-        client = BridgeBroker(host=host, port=port)
+        client = BridgeBroker(host=host, port=port, token_file=token_file)
         try:
             why = client.outdated()
         finally:
@@ -309,6 +325,24 @@ def bridge_current(host: str, port: int) -> bool:
     except Exception:
         return True          # answering; cannot judge its version
     return True
+
+
+def bridge_status(host: str, port: int, token_file: str = "") -> Optional[dict]:
+    """What the bridge says about itself (its ping), or None if it is silent."""
+    if not port_open(host, port):
+        return None
+    try:
+        from ..broker.bridge_client import BridgeBroker
+        client = BridgeBroker(host=host, port=port, token_file=token_file)
+        try:
+            return client.ping()
+        finally:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
+    except Exception:
+        return None
 
 
 def port_open(host: str, port: int, timeout: float = 2.0) -> bool:
@@ -341,6 +375,12 @@ class Watchdog:
         self.actions: list[str] = []
         self._stop = False
         self._mt5_restarts: list[dt.datetime] = []
+        # The bridge's own view of MetaTrader, refreshed each check by
+        # ``bridge_status_fn``; a terminal that is running but has stopped
+        # answering the bridge for this long is restarted.
+        self.bridge_status_fn: Optional[Callable[[], Optional[dict]]] = None
+        self.mt5_unreachable_seconds: float = 600.0
+        self._mt5_unreachable_since: Optional[dt.datetime] = None
 
     # ---------------------------------------------------------------- checks --
     def check_once(self) -> list[str]:
@@ -402,7 +442,8 @@ class Watchdog:
             return []
         running = process_running(self.mt5_image)
         if running is not False:
-            return []
+            return self._check_mt5_answers(now)
+        self._mt5_unreachable_since = None
         cutoff = now - dt.timedelta(hours=1)
         self._mt5_restarts = [t for t in self._mt5_restarts if t >= cutoff]
         if len(self._mt5_restarts) >= self.cfg.ops.max_restarts_per_hour:
@@ -424,6 +465,47 @@ class Watchdog:
         except Exception as exc:
             return [f"MetaTrader 5 is not running and could not be started: "
                     f"{exc}"]
+
+    def _check_mt5_answers(self, now: dt.datetime) -> list[str]:
+        """A running terminal that the bridge cannot talk to is as good as
+        dead: MetaTrader's pipe stops answering ("IPC initialize failed") and
+        only a restart of the terminal brings it back.  Nothing else can be
+        traded until it does, so the watchdog restarts it after
+        ``mt5_unreachable_seconds`` of silence."""
+        if self.bridge_status_fn is None:
+            return []
+        try:
+            info = self.bridge_status_fn()
+        except Exception:
+            info = None
+        if not info or "mt5_connected" not in info:
+            # No bridge, or an old bridge that does not say: not our call.
+            self._mt5_unreachable_since = None
+            return []
+        if info.get("mt5_connected"):
+            self._mt5_unreachable_since = None
+            return []
+        if int(info.get("connect_failures") or 0) < 1:
+            return []
+        if self._mt5_unreachable_since is None:
+            self._mt5_unreachable_since = now
+            return []
+        silent = (now - self._mt5_unreachable_since).total_seconds()
+        if silent < self.mt5_unreachable_seconds:
+            return []
+        cutoff = now - dt.timedelta(hours=1)
+        self._mt5_restarts = [t for t in self._mt5_restarts if t >= cutoff]
+        if len(self._mt5_restarts) >= self.cfg.ops.max_restarts_per_hour:
+            return [f"MetaTrader 5 is running but has not answered the bridge "
+                    f"for {silent:.0f}s ({info.get('mt5_last_error', '')}) and "
+                    f"has already been restarted "
+                    f"{len(self._mt5_restarts)} times this hour - NEEDS A HUMAN"]
+        self._mt5_unreachable_since = None
+        self._mt5_restarts.append(now)
+        kill_process(self.mt5_image)
+        return [f"MetaTrader 5 is running but has not answered the bridge for "
+                f"{silent:.0f}s ({info.get('mt5_last_error', '')}) - "
+                f"closing it so it can be started fresh"]
 
     def _log_actions(self, actions: Sequence[str]) -> None:
         for a in actions:
@@ -550,7 +632,8 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                 use_pty=True,
                 kill_pattern="bridge_server.py",
                 grace_seconds=90.0,
-                probe=lambda: bridge_current(cfg.bridge_host, cfg.bridge_port),
+                probe=lambda: bridge_current(cfg.bridge_host, cfg.bridge_port,
+                                             cfg.bridge_token_file),
                 max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
         if cfg.mt5_terminal_path:
             mt5_cmd = wine_command(cfg, cfg.mt5_terminal_path)
@@ -559,6 +642,9 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
 
     wd = Watchdog(cfg, processes, mt5_command=mt5_cmd)
     wd.env = wine_env(cfg) if cfg.broker_mode == "bridge" else None
+    if cfg.broker_mode == "bridge":
+        wd.bridge_status_fn = lambda: bridge_status(
+            cfg.bridge_host, cfg.bridge_port, cfg.bridge_token_file)
     return wd
 
 

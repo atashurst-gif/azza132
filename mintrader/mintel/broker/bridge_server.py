@@ -59,12 +59,22 @@ class BridgeService:
         self.lock = threading.RLock()
         self.calls = 0
         self.errors = 0
+        # MetaTrader's reachability as this bridge last saw it: the watchdog
+        # reads it from ping and restarts a terminal that has gone deaf.
+        self.connect_failures = 0
+        self.last_connect_error = ""
+        self.mt5_connected = False
 
     # ------------------------------------------------------------ dispatch --
     def handle(self, method: str, args: dict) -> Any:
         fn = getattr(self, f"do_{method}", None)
         if fn is None or method.startswith("_"):
             raise ValueError(f"unknown method {method!r}")
+        if method == "ping":
+            # Never queued behind a broker call: MetaTrader can take a minute
+            # to answer a connect, and the watchdog's probe must not read
+            # that minute as a dead bridge.
+            return fn()
         with self.lock:
             self.calls += 1
             return fn(**args)
@@ -74,10 +84,41 @@ class BridgeService:
         return {"protocol": PROTOCOL_VERSION, "pid": os.getpid(),
                 "code_stamp": CODE_STAMP,
                 "backend": type(self.broker).__name__,
-                "calls": self.calls, "errors": self.errors}
+                "calls": self.calls, "errors": self.errors,
+                "mt5_connected": self.mt5_connected,
+                "connect_failures": self.connect_failures,
+                "mt5_last_error": self.last_connect_error}
 
     def do_connect(self) -> bool:
-        return bool(self.broker.connect())
+        return self.connect_broker()
+
+    def connect_broker(self) -> bool:
+        """Connect the broker, remembering how it went for ping.
+
+        Not under the service lock: the broker serialises its own calls, and
+        holding ours for the minute MetaTrader may take would block ping.
+        """
+        try:
+            ok = bool(self.broker.connect())
+            err = ""
+        except Exception as exc:
+            ok, err = False, f"{type(exc).__name__}: {exc}"
+        self.mt5_connected = ok
+        if ok:
+            self.connect_failures = 0
+            self.last_connect_error = ""
+        else:
+            self.connect_failures += 1
+            self.last_connect_error = err or str(getattr(
+                self.broker, "last_error", "") or "MetaTrader did not answer")
+        return ok
+
+    def refresh_connected(self) -> bool:
+        try:
+            self.mt5_connected = bool(self.broker.is_connected())
+        except Exception:
+            self.mt5_connected = False
+        return self.mt5_connected
 
     def do_shutdown_broker(self) -> bool:
         self.broker.shutdown()
@@ -273,13 +314,35 @@ def build_broker(backend: str, args: argparse.Namespace):
             "The MetaTrader5 package is not importable in this Python.\n"
             "This process is meant to run inside the Wine prefix, using the\n"
             "Windows Python that has MetaTrader5 installed.")
-    broker = Mt5Broker(login=args.login, password=password,
-                       server=args.server, terminal_path=args.terminal,
-                       magic=args.magic)
-    if not broker.connect():
-        log.error("could not connect to MetaTrader 5 at startup; the bridge "
-                  "will keep serving and the trader will retry")
-    return broker
+    # Not connected here: the socket is bound first and the terminal is
+    # dialled in the background (see ``keep_connected``), so a MetaTrader
+    # that takes a minute to answer, or is not up yet, never leaves the port
+    # dead and the watchdog guessing.
+    return Mt5Broker(login=args.login, password=password,
+                     server=args.server, terminal_path=args.terminal,
+                     magic=args.magic)
+
+
+def keep_connected(service: BridgeService, interval: float = 30.0,
+                   stop: Optional[threading.Event] = None) -> threading.Thread:
+    """Background thread: dial MetaTrader until it answers, and again
+    whenever the connection drops.  Every attempt is recorded for ping."""
+    stop = stop or threading.Event()
+
+    def loop() -> None:
+        while not stop.is_set():
+            if not service.refresh_connected():
+                if service.connect_broker():
+                    log.info("connected to MetaTrader 5")
+                else:
+                    log.error("MetaTrader 5 is not answering (%s) - trying "
+                              "again in %.0fs", service.last_connect_error,
+                              interval)
+            stop.wait(interval)
+
+    t = threading.Thread(target=loop, name="mt5-connect", daemon=True)
+    t.start()
+    return t
 
 
 def serve(host: str, port: int, service: BridgeService,
@@ -334,11 +397,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         Path(args.port_file).write_text(str(bound))
     log.info("bridge listening on %s:%d (backend=%s)",
              args.host, bound, args.backend)
+    stop_dialling = threading.Event()
+    if args.backend == "mt5":
+        keep_connected(service, stop=stop_dialling)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        stop_dialling.set()
         server.shutdown()
         try:
             broker.shutdown()

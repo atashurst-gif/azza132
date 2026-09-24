@@ -997,6 +997,41 @@ install_report_agent() {
 PLIST
   launchctl unload "$plist" >/dev/null 2>&1
   launchctl load "$plist" >/dev/null 2>&1 || true
+  install_pulse_agent
+}
+
+install_pulse_agent() {
+  # Every ten minutes, whether or not the bot is alive: one line in
+  # data/uptime.log saying UP or DOWN (and why), published to the reports
+  # branch.  This is how an outage becomes a number in the day's review
+  # instead of a surprise the next morning.
+  local label
+  local plist
+  label="com.mintel.pulse"
+  plist="$HOME/Library/LaunchAgents/$label.plist"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$VENV_DIR/bin/python</string>
+    <string>-m</string><string>mintel.ops.pulse</string>
+    <string>--config</string><string>$CONFIG</string>
+  </array>
+  <key>WorkingDirectory</key><string>$APP_DIR</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>600</integer>
+  <key>StandardOutPath</key><string>$LOG_DIR/pulse.out.log</string>
+  <key>StandardErrorPath</key><string>$LOG_DIR/pulse.err.log</string>
+</dict>
+</plist>
+PLIST
+  launchctl unload "$plist" >/dev/null 2>&1
+  launchctl load "$plist" >/dev/null 2>&1 || true
 }
 
 # ---------------------------------------------------------------- caffeine ---

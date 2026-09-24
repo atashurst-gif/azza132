@@ -26,6 +26,12 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   +16.66 GBP over 40 trades, BREAKOUT_RETEST in TREND +42.76. TREND_PULLBACK
   switched off (three days traded, all negative: 6/15, about -31 GBP).
 
+- 2026-09-24: NO RULE CHANGE. The bot was down from about 10:32 UK to the
+  evening (MetaTrader stopped answering its pipe; the trader exited when it
+  could not reach the bridge; the watchdog ran out of restarts). Fixed in
+  code, not in the rules: see docs/ops/always-watching.md. Results for this
+  day cover only the morning.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

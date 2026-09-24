@@ -205,8 +205,14 @@ def render_status(snap: dict) -> str:
     problems = [c for c in checks if c["severity"] != "OK"]
     running = st.get("bot") == "RUNNING" and not health.get("safe_mode")
     banner_cls = "ok" if running and not problems else "bad"
-    banner_txt = ("BOT: RUNNING - everything is healthy" if running and not problems
-                  else f"BOT: PROBLEM - {health.get('summary', 'see below')}")
+    if st.get("bot") == "WAITING FOR METATRADER":
+        banner_txt = ("BOT: WAITING FOR METATRADER - "
+                      + str(st.get("waiting") or "not connected yet")
+                      + (f" ({st['detail']})" if st.get("detail") else "")
+                      + f" - attempt {st.get('attempts', 0)}")
+    else:
+        banner_txt = ("BOT: RUNNING - everything is healthy" if running and not problems
+                      else f"BOT: PROBLEM - {health.get('summary', 'see below')}")
 
     def tile(k, v, cls=""):
         return (f'<div class="tile"><div class="k">{html.escape(k)}</div>'
