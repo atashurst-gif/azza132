@@ -560,3 +560,62 @@ class TestMomentumContinuationOffInTrends:
         cfg2 = Config(); cfg2.scan.disabled_tactic_regimes = (("MOMENTUM_CONTINUATION", "RANGE"),)
         names = {(st.tactic, st.regime) for st in Scanner(broker, cfg2).scan(broker.now, [])}
         assert all(not (t == "MOMENTUM_CONTINUATION" and r is Regime.RANGE) for t, r in names)
+
+
+class TestHardProfitFloor:
+    """25 Sep: a trade that has been +1R ahead may not close below +0.5R."""
+
+    def _run(self, fl, p, prices, mom=None, t0=NOW):
+        last = None
+        for i, px in enumerate(prices):
+            t = t0 + dt.timedelta(minutes=i + 1)
+            last = fl.update(p, price=px, atr=0.0020,
+                             bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                             momentum=mom or _mom(), now=t)
+        return last
+
+    def test_defaults(self):
+        fl = Config().flowlock
+        assert fl.lock_at_r == 1.0 and fl.lock_floor_r == 0.5
+
+    def test_no_floor_before_one_r(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()                                            # risk 0.0050 from 1.1000
+        self._run(fl, p, [1.1000 + 0.0002 * i for i in range(1, 21)])   # to +0.8R
+        assert fl.trackers[1].mfe_r == pytest.approx(0.8, abs=0.03)
+        assert fl.trackers[1].stop <= p.sl + 1e-9, "nothing is locked before +1R"
+
+    def test_floor_at_half_r_once_one_r_reached_then_pullback_keeps_it(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()
+        self._run(fl, p, [1.1000 + 0.0002 * i for i in range(1, 28)])   # to +1.08R
+        assert fl.trackers[1].mfe_r >= 1.0
+        assert fl.trackers[1].stop >= 1.1000 + 0.5 * 0.0050 - 1e-9
+        # a pullback to +0.6R must not loosen it
+        self._run(fl, p, [1.1050, 1.1040, 1.1032], t0=NOW + dt.timedelta(minutes=40))
+        assert fl.trackers[1].stop >= 1.1000 + 0.5 * 0.0050 - 1e-9
+
+    def test_floor_holds_in_strong_flow_where_the_trail_is_loosest(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()
+        strong = SimpleNamespace(direction=1, efficiency=0.6, adx=35.0, acceleration_atr=0.1)
+        self._run(fl, p, [1.1000 + 0.0003 * i for i in range(1, 22)], mom=strong)  # to +1.26R
+        t = fl.trackers[1]
+        assert t.mfe_r >= 1.2
+        assert t.stop >= 1.1000 + 0.5 * 0.0050 - 1e-9
+
+    def test_floor_never_sits_through_price(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()
+        self._run(fl, p, [1.1000 + 0.0002 * i for i in range(1, 28)])
+        # price now back at +0.3R: the floor (at +0.5R) would be through price;
+        # the stop already set stays, nothing new is proposed through price
+        d = fl.update(p, price=1.1015, atr=0.0020, momentum=_mom(),
+                      now=NOW + dt.timedelta(minutes=60))
+        assert d.new_stop is None or (d.new_stop < 1.1015)
+
+    def test_sell_side_mirrors(self):
+        fl = FlowLock(Config().flowlock)
+        p = Position(1, "EURUSD", Side.SELL, 1.0, 1.1000, 1.1050, 0.0, NOW)
+        self._run(fl, p, [1.1000 - 0.0002 * i for i in range(1, 28)])
+        assert fl.trackers[1].stop <= 1.1000 - 0.5 * 0.0050 + 1e-9

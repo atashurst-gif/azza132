@@ -315,10 +315,11 @@ class FlowLock:
         """
         c = self.cfg
         sign = t.side.sign
+        lock = self._lock_floor(t, price)
         if t.state is FlowState.INITIAL:
-            return None                      # let the structural stop work
+            return lock                      # let the structural stop work
         if t.state is FlowState.PROVING and not getattr(c, "proving_trail", True):
-            return None                      # nothing is trailed before +1R
+            return lock                      # nothing is trailed before +1R
 
         atr_mult = {
             FlowState.PROVING: c.normal_flow_atr,
@@ -371,6 +372,11 @@ class FlowLock:
             floor = best - sign * floor_frac * t.mfe
             chosen = max(chosen, floor) if t.side is Side.BUY else min(chosen, floor)
 
+        # The hard floor: a trade that has been lock_at_r ahead keeps at
+        # least lock_floor_r, whatever the state or the trail says.
+        if lock is not None:
+            chosen = max(chosen, lock) if t.side is Side.BUY else min(chosen, lock)
+
         # Break-even protection, but only once the trade has earned it: moving
         # to break-even too early converts winners into scratches.
         if (not t.breakeven_done and r_now >= c.breakeven_at_r
@@ -383,6 +389,20 @@ class FlowLock:
         if (price - chosen) * sign <= 0:
             return None
         return chosen
+
+    def _lock_floor(self, t: TradeTracker, price: float) -> Optional[float]:
+        """Once the trade has been ``lock_at_r`` ahead, the least it may
+        close with is ``lock_floor_r``; None while it has not earned that or
+        the floor would sit through the current price."""
+        c = self.cfg
+        at = getattr(c, "lock_at_r", 0.0) or 0.0
+        keep = getattr(c, "lock_floor_r", 0.0) or 0.0
+        if at <= 0 or t.mfe_r < at or t.initial_risk <= 0:
+            return None
+        floor = t.entry + t.side.sign * keep * t.initial_risk
+        if (price - floor) * t.side.sign <= 0:
+            return None
+        return floor
 
     def _monotonic(self, t: TradeTracker, candidate: float) -> Optional[float]:
         """The invariant: a stop may tighten, never loosen."""

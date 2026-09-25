@@ -42,6 +42,14 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   Neither was switched off: both are net positive and the TREND line is
   the strategy itself. That is a decision for the owner, not the rule.
 
+- 2026-09-25: hard profit floor. Once a trade has been +1R ahead its stop
+  never sits below +0.5R (lock_at_r 1.0, lock_floor_r 0.5). Evidence, 174
+  trades 18-24 Sep: trailed-out winners peaked +1.45R and kept +0.50R; 18
+  losers had been +1R ahead (-37 GBP). Same trades with the floor: +12 ->
+  about +95 GBP (optimistic: peaks can be one tick). Early exits were
+  tested and rejected: cutting at -0.5R would have turned +12 into -25,
+  because 31 of 74 winners first went 0.5R against. Nothing else changed.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

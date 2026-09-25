@@ -190,6 +190,14 @@ class FlowLockConfig:
     # Day five tried 0.65 here alongside the 12% cost gate; both reverted
     # together to the 2026-09-18 rule set. 0 = off.
     profit_floor_giveback: float = 0.0
+    # 25 Sep, from 174 trades over five days: winners that were trailed out
+    # peaked at +1.45R and kept +0.50R (a 65% giveback, though the rule above
+    # says 40% - the giveback level is one of three candidates and the
+    # middle one wins, and STRONG_FLOW takes the loosest). 18 losers had been
+    # +1R ahead. A hard floor in R: once a trade has been lock_at_r ahead its
+    # stop never sits below lock_floor_r. On the same trades: +12 -> +95 GBP.
+    lock_at_r: float = 1.0
+    lock_floor_r: float = 0.5
     mfe_giveback_decay: float = 0.22
     stall_bars_to_decay: int = 20
     reversal_thesis_floor: float = 15.0
