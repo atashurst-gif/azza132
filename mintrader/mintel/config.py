@@ -129,6 +129,10 @@ class ScanConfig:
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),
         ("BREAKOUT_RETEST", "HIGH_VOL"),
+        # 25 Sep: negative on five of the seven days it traded, 14 trades,
+        # net about +1 GBP - a coin toss that pays fees. A retest wants a
+        # trend behind it; a squeeze has none yet.
+        ("BREAKOUT_RETEST", "SQUEEZE"),
     )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     cooldown_seconds_after_exit: float = 180.0

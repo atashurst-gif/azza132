@@ -50,6 +50,16 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   tested and rejected: cutting at -0.5R would have turned +12 into -25,
   because 31 of 74 winners first went 0.5R against. Nothing else changed.
 
+- 2026-09-25 (evening, standing rule): BREAKOUT_RETEST switched off in
+  SQUEEZE. Negative on five of the seven days it traded (17, 18, 21, 24,
+  25 Sep), 14 trades, net about +1 GBP. Retest in TREND is now net
+  -21 GBP over 18-25 Sep (82 trades, 28 wins) and negative on four of six
+  days; NOT switched off tonight because 11 of its 17 losers on the 25th
+  had been +0.5R ahead and 7 had been +1R ahead - exactly what the profit
+  floor installed on the 25th at 22:26 UK addresses. Judged again after
+  Monday. MOMENTUM_CONTINUATION in HIGH_VOL is negative on three of five
+  days but net +4.56 GBP with two of the losses under 1 GBP: left on.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

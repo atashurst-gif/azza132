@@ -553,6 +553,7 @@ class TestMomentumContinuationOffInTrends:
         assert ("MOMENTUM_CONTINUATION", "TREND") in cfg.scan.disabled_tactic_regimes
         # 24 Sep standing rule: negative on three of five days, net -13 GBP.
         assert ("BREAKOUT_RETEST", "HIGH_VOL") in cfg.scan.disabled_tactic_regimes
+        assert ("BREAKOUT_RETEST", "SQUEEZE") in cfg.scan.disabled_tactic_regimes
         broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()
         for st in Scanner(broker, cfg).scan(broker.now, []):
             assert not (st.tactic == "MOMENTUM_CONTINUATION" and st.regime is Regime.TREND), st
