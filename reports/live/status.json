@@ -68,11 +68,9 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "20:23:59 UTC",
+    "last_scan": "20:34:06 UTC",
     "last_trade": "UK100 2026-09-25T13:52",
-    "not_trading_because": [
-      "PROBLEM: this machine's clock is 177s out of step with the broker - session and news timing cannot be trusted"
-    ],
+    "not_trading_because": [],
     "strategy_rules": {
       "entry_tier": "NORMAL",
       "min_reward_risk": 1.8,
@@ -81,21 +79,21 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 1994,
-    "uptime_minutes": 180.4
+    "cycles": 2107,
+    "uptime_minutes": 190.6
   },
   "health": {
-    "as_of": "2026-09-26T20:23:59.679881+00:00",
+    "as_of": "2026-09-26T20:34:06.049905+00:00",
     "safe_mode": false,
-    "entries_allowed": false,
-    "summary": "1 problem(s) found; new trades are paused",
+    "entries_allowed": true,
+    "summary": "everything is healthy",
     "checks": [
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "62844 MB of disk space free",
+        "message": "62813 MB of disk space free",
         "detail": {
-          "free_mb": 62844.1
+          "free_mb": 62813.1
         }
       },
       {
@@ -103,15 +101,15 @@
         "severity": "OK",
         "message": "memory 81% used",
         "detail": {
-          "percent": 80.6
+          "percent": 80.9
         }
       },
       {
         "name": "CLOCK",
-        "severity": "FAIL",
-        "message": "this machine's clock is 177s out of step with the broker - session and news timing cannot be trusted",
+        "severity": "OK",
+        "message": "clock not comparable right now - the market is closed or quiet (last price 7 min old)",
         "detail": {
-          "skew_seconds": 177.3
+          "tick_age_seconds": 429.052714
         }
       },
       {
@@ -145,9 +143,9 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (1621s old)",
+        "message": "live prices arriving (427s old)",
         "detail": {
-          "freshest_age_seconds": 1620.8,
+          "freshest_age_seconds": 427.2,
           "weekend": true
         }
       },
@@ -171,7 +169,7 @@
         "message": "1 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 9.2
+            "watchdog": 11.7
           }
         }
       },
@@ -210,35 +208,20 @@
     },
     {
       "rank": 2,
-      "symbol": "EURCHF",
-      "direction": "SHORT",
-      "score": 46.46,
-      "tier": "NO_TRADE",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "HIGH_VOL / HIGH VOL",
-      "reason": "EURCHF: HIGH_VOL / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Volatility supports it (76/100; volatility at the 90th percentile). Session supports it (71/100; session: NEWYORK). Regime supports it (70/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 1 pips, giving about 0.2 to 1 after 3.1 pips of cost. Blocked because: reward:risk only 0.22 after costs; costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.22 after costs",
-        "costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.22
-    },
-    {
-      "rank": 3,
       "symbol": "DE40",
       "direction": "SHORT",
-      "score": 46.19,
+      "score": 45.25,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "DE40: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Momentum argues against it (16/100; efficiency 0.01, ADX 9). Historical argues against it (26/100; 47 comparable trades (tactic): expectancy -5809.89R, 60% win rate). Session supports it (71/100; session: NEWYORK). Room to the first obstacle is 2267 pips, giving about 1.0 to 1 after 145.2 pips of cost. Blocked because: reward:risk only 0.99 after costs.",
+      "reason": "DE40: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Momentum argues against it (16/100; efficiency 0.01, ADX 9). Historical argues against it (26/100; 47 comparable trades (tactic): expectancy -5809.89R, 60% win rate). Session supports it (71/100; session: NEWYORK). Room to the first obstacle is 1930 pips, giving about 0.8 to 1 after 145.2 pips of cost. Blocked because: reward:risk only 0.81 after costs.",
       "blockers": [
-        "reward:risk only 0.99 after costs"
+        "reward:risk only 0.81 after costs"
       ],
-      "reward_risk": 0.992
+      "reward_risk": 0.811
     },
     {
-      "rank": 4,
+      "rank": 3,
       "symbol": "AUDJPY",
       "direction": "LONG",
       "score": 44.01,
@@ -253,22 +236,7 @@
       "reward_risk": -0.163
     },
     {
-      "rank": 5,
-      "symbol": "AUDCHF",
-      "direction": "SHORT",
-      "score": 43.73,
-      "tier": "NO_TRADE",
-      "tactic": "SQUEEZE_RELEASE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "AUDCHF: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Session supports it (71/100; session: NEWYORK). Volatility supports it (67/100; volatility at the 68th percentile). Momentum argues against it (34/100; efficiency 0.23, ADX 18). Participation argues against it (37/100; 0.4x median tick volume). Room to the first obstacle is 1 pips, giving about -0.1 to 1 after 3.5 pips of cost. Blocked because: reward:risk only -0.10 after costs; costs would be 81% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only -0.10 after costs",
-        "costs would be 81% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": -0.099
-    },
-    {
-      "rank": 6,
+      "rank": 4,
       "symbol": "CHFJPY",
       "direction": "LONG",
       "score": 43.4,
@@ -284,7 +252,7 @@
       "reward_risk": -0.309
     },
     {
-      "rank": 7,
+      "rank": 5,
       "symbol": "USDCHF",
       "direction": "LONG",
       "score": 42.61,
@@ -299,7 +267,7 @@
       "reward_risk": -0.288
     },
     {
-      "rank": 8,
+      "rank": 6,
       "symbol": "US500",
       "direction": "SHORT",
       "score": 38.81,
@@ -313,7 +281,22 @@
       "reward_risk": 0.769
     },
     {
-      "rank": 9,
+      "rank": 7,
+      "symbol": "EURCHF",
+      "direction": "SHORT",
+      "score": 32.43,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "EURCHF: HIGH_VOL / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Volatility supports it (76/100; volatility at the 90th percentile). Session supports it (71/100; session: NEWYORK). Regime supports it (70/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 0 pips, giving about 0.2 to 1 after 3.1 pips of cost. Blocked because: reward:risk only 0.22 after costs; costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.22 after costs",
+        "costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.22
+    },
+    {
+      "rank": 8,
       "symbol": "NZDUSD",
       "direction": "SHORT",
       "score": 28.64,
@@ -328,7 +311,7 @@
       "reward_risk": 0.85
     },
     {
-      "rank": 10,
+      "rank": 9,
       "symbol": "AUDJPY",
       "direction": "SHORT",
       "score": 26.02,
@@ -343,7 +326,7 @@
       "reward_risk": -0.588
     },
     {
-      "rank": 11,
+      "rank": 10,
       "symbol": "NZDJPY",
       "direction": "SHORT",
       "score": 25.26,
@@ -358,7 +341,7 @@
       "reward_risk": -0.445
     },
     {
-      "rank": 12,
+      "rank": 11,
       "symbol": "GBPJPY",
       "direction": "SHORT",
       "score": 24.7,
@@ -371,6 +354,21 @@
         "costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
       "reward_risk": -0.44
+    },
+    {
+      "rank": 12,
+      "symbol": "GBPAUD",
+      "direction": "SHORT",
+      "score": 23.79,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "GBPAUD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Structure supports it (76/100; range structure on M5). Session supports it (71/100; session: NEWYORK). Momentum argues against it (30/100; efficiency 0.12, ADX 13). Regime supports it (65/100; RANGE / NORMAL VOL). Room to the first obstacle is 1 pips, giving about -0.6 to 1 after 6.9 pips of cost. Blocked because: reward:risk only -0.59 after costs; costs would be 66% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -0.59 after costs",
+        "costs would be 66% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.591
     }
   ],
   "results": {
@@ -591,5 +589,5 @@
       "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
     }
   ],
-  "updated": "2026-09-26T20:24:01.820031+00:00"
+  "updated": "2026-09-26T20:34:08.239901+00:00"
 }
