@@ -630,7 +630,10 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                 cwd=project,
                 log_file=str(Path(cfg.ops.log_dir) / "bridge.out.log"),
                 use_pty=True,
-                kill_pattern="bridge_server.py",
+                # "--port" keeps this from matching the installer's own
+                # `bridge_server.py --help` check, which an upgrade runs
+                # while the watchdog is replacing the old bridge.
+                kill_pattern="bridge_server.py --port",
                 grace_seconds=90.0,
                 probe=lambda: bridge_current(cfg.bridge_host, cfg.bridge_port,
                                              cfg.bridge_token_file),

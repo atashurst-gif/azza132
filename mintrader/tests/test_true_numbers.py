@@ -89,6 +89,15 @@ class TestWatchdogReplacesAStaleBridge:
         assert 'pkill -f "bridge_server.py"' in body
         wine_cmdline = r"wine64 C:\Python311\python.exe Z:\Users\me\MarketBot\app\mintel\broker\bridge_server.py --port 8790"
         assert re.search("bridge_server.py", wine_cmdline)
+        # the watchdog's pattern matches the bridge but not the installer's check
+        from mintel.config import Config
+        from mintel.ops import watchdog as wd
+        cfg = Config(); cfg.broker_mode = "bridge"; cfg.wine_python = "C:/py/python.exe"
+        w = wd.build_default(cfg, "/tmp/x/config.json")
+        pat = [mp for mp in w.processes if mp.name == "bridge"][0].kill_pattern
+        assert re.search(pat, wine_cmdline)
+        assert not re.search(pat, r"python.exe Z:\...\bridge_server.py --help")
+        assert "(again)" in body
         assert not re.search("mintel/broker/bridge_server.py", wine_cmdline)
 
 

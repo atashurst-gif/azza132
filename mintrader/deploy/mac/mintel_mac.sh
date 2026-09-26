@@ -674,8 +674,12 @@ ensure_wine_python() {
 
   # The bridge is what the bot talks to. Prove Windows Python can load it
   # (and therefore the bot's own code) before anything depends on that.
+  # Tried twice: on an upgrade the running watchdog may be replacing the old
+  # bridge at this very moment, and its kill can catch this check (exit 143).
   if run_logged "Checking the bridge loads inside Wine" \
-       wine_py "$(to_z_path "$APP_DIR/mintel/broker/bridge_server.py")" --help; then
+       wine_py "$(to_z_path "$APP_DIR/mintel/broker/bridge_server.py")" --help \
+     || { sleep 3; run_logged "Checking the bridge loads inside Wine (again)" \
+       wine_py "$(to_z_path "$APP_DIR/mintel/broker/bridge_server.py")" --help; }; then
     good "Bridge loads inside Wine"
   else
     bad "The bridge does not load inside Wine. The output above says why; full log: $SETUP_LOG"
