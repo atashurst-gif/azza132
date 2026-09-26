@@ -412,6 +412,30 @@ class HealthSupervisor:
         """
         if self.broker is None:
             return Check("CLOCK", Severity.OK, "clock not checked")
+        live = getattr(self.broker, "clock_skew", None)
+        if live is not None:
+            try:
+                out = live()
+            except Exception as exc:
+                return Check("CLOCK", Severity.WARN,
+                             f"clock comparison failed: {exc}")
+            if isinstance(out, dict):
+                skew = out.get("skew_seconds")
+                age = out.get("tick_age_seconds")
+                if skew is None:
+                    return Check("CLOCK", Severity.OK,
+                                 "clock not comparable right now - the "
+                                 "market is closed or quiet (last price "
+                                 + (f"{age/60:.0f} min old)" if age is not None
+                                    else "not available)"),
+                                 {"tick_age_seconds": age})
+                bad = skew > self.cfg.ops.max_clock_skew_seconds
+                return Check("CLOCK", Severity.FAIL if bad else Severity.OK,
+                             f"this machine's clock is {skew:.0f}s out of step "
+                             f"with the broker - session and news timing "
+                             f"cannot be trusted" if bad
+                             else f"clock agrees with the broker (within {skew:.0f}s)",
+                             {"skew_seconds": round(skew, 1)}, blocks_entries=bad)
         try:
             srv = self.broker.server_time()
             clock = getattr(self.broker, "clock", None)

@@ -76,6 +76,55 @@ class ServerClock:
         minutes = round(delta.total_seconds() / 60.0)
         return ServerClock(offset_seconds=int(minutes * 60))
 
+    @staticmethod
+    def measure_quantised(server_ts_naive: dt.datetime, utc_ts: dt.datetime,
+                          quantum_minutes: int = 30) -> tuple["ServerClock", float]:
+        """Derive the offset assuming brokers sit on whole half-hours.
+
+        Returns the clock and the residual in seconds: how far the tick was
+        from that half-hour grid. A live tick leaves a residual of a few
+        seconds. A large residual means the tick is old (the market is
+        closed or quiet), and the measurement should not be trusted.
+        """
+        delta = (server_ts_naive.replace(tzinfo=UTC) - to_utc(utc_ts)).total_seconds()
+        q = quantum_minutes * 60
+        offset = int(round(delta / q) * q)
+        return ServerClock(offset_seconds=offset), delta - offset
+
+
+# ------------------------------------------------------------ market hours ---
+_NY = ZoneInfo("America/New_York")
+
+
+def fx_market_open(ts: dt.datetime, quiet_minutes: int = 5) -> bool:
+    """Is the spot FX market open at ``ts``?
+
+    Closed from Friday 17:00 New York to Sunday 17:00 New York, and treated
+    as quiet for a few minutes either side of the daily 17:00 New York
+    rollover, when prices routinely pause. Used to tell "the machine's
+    clock is wrong" from "there simply are no ticks right now".
+    """
+    ny = to_utc(ts).astimezone(_NY)
+    minutes = ny.hour * 60 + ny.minute
+    close = 17 * 60
+    if ny.weekday() == 5:                                   # Saturday
+        return False
+    if ny.weekday() == 6 and minutes < close + quiet_minutes:   # Sunday
+        return False
+    if ny.weekday() == 4 and minutes >= close - quiet_minutes:  # Friday
+        return False
+    return abs(minutes - close) >= quiet_minutes
+
+
+def last_fx_close_utc(ts: dt.datetime) -> dt.datetime:
+    """The most recent Friday 17:00 New York at or before ``ts``, in UTC."""
+    ny = to_utc(ts).astimezone(_NY)
+    days_back = (ny.weekday() - 4) % 7
+    friday = (ny - dt.timedelta(days=days_back)).replace(hour=17, minute=0, second=0, microsecond=0)
+    if friday > ny:
+        friday -= dt.timedelta(days=7)
+    return to_utc(friday)
+
 
 # ---------------------------------------------------------------- sessions ---
 

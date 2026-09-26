@@ -135,6 +135,12 @@ class BridgeService:
         clock = getattr(self.broker, "clock", None)
         return int(getattr(clock, "offset_seconds", 0) or 0)
 
+    def do_clock_skew(self) -> dict:
+        fn = getattr(self.broker, "clock_skew", None)
+        if fn is None:
+            return {"skew_seconds": None, "tick_age_seconds": None}
+        return fn()
+
     def do_server_time(self) -> str:
         ts = self.broker.server_time()
         return ts.replace(tzinfo=None).isoformat()

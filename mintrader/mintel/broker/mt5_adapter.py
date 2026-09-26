@@ -70,6 +70,7 @@ class Mt5Broker:
         self._spec_ttl = 300.0
         self._connected = False
         self.last_error = ""
+        self._clock_measured = False
 
     # ------------------------------------------------------------ lifecycle --
     @property
@@ -151,24 +152,100 @@ class Mt5Broker:
         return False
 
     # ---------------------------------------------------------------- clock --
-    def _sync_clock(self) -> None:
-        """Measure the trade-server offset from a live tick.
+    # A tick older than this cannot tell us anything about the clock: the
+    # market is closed or quiet, not the machine wrong.
+    FRESH_TICK_SECONDS = 120.0
 
-        A liquid FX symbol is preferred; we fall back to whatever is selected.
-        """
-        try:
-            mt5 = self.mt5
-            for sym in ("EURUSD", "GBPUSD", "USDJPY"):
+    def _latest_tick_server_time(self) -> Optional[dt.datetime]:
+        mt5 = self.mt5
+        for sym in ("EURUSD", "GBPUSD", "USDJPY"):
+            try:
                 if mt5.symbol_select(sym, True):
                     t = mt5.symbol_info_tick(sym)
                     if t and t.time:
-                        srv = dt.datetime.utcfromtimestamp(int(t.time))
-                        self._clock = ServerClock.measure(srv, utcnow())
-                        log.info("server clock offset = %+d min",
-                                 self._clock.offset_seconds // 60)
-                        return
+                        return dt.datetime.utcfromtimestamp(int(t.time))
+            except Exception:
+                continue
+        return None
+
+    def _sync_clock(self) -> None:
+        """Measure the trade-server offset from a live tick.
+
+        Brokers sit on whole half-hours, so the offset is snapped to that
+        grid and the remainder tells us how old the tick is. A stale tick
+        (weekend, quiet market) is not allowed to move an offset we already
+        trust: measuring from Friday's last tick on a Saturday morning is
+        how a machine "gets 180s out of step with the broker" overnight.
+        """
+        try:
+            srv = self._latest_tick_server_time()
+            if srv is None:
+                return
+            now = utcnow()
+            clock, residual = ServerClock.measure_quantised(srv, now)
+            fresh = abs(residual) <= self.FRESH_TICK_SECONDS
+            if fresh:
+                self._clock = clock
+                self._clock_measured = True
+                log.info("server clock offset = %+d min (live tick, %+.0fs)",
+                         clock.offset_seconds // 60, residual)
+            elif not self._clock_measured:
+                # No live tick and nothing trusted yet (a weekend start).
+                # The last tick of the week sits at the Friday close, which
+                # is a known instant in UTC, so the offset can be read from
+                # it; a live tick on Monday confirms or corrects it.
+                from ..clock import last_fx_close_utc
+                guess, gap = ServerClock.measure_quantised(srv, last_fx_close_utc(now))
+                if abs(gap) <= 15 * 60:
+                    self._clock = guess
+                    log.info("server clock offset = %+d min (from the Friday "
+                             "close; will be confirmed on the next live tick)",
+                             guess.offset_seconds // 60)
+                else:
+                    self._clock = clock
+                    log.info("server clock offset = %+d min (old tick, %+.0fs; "
+                             "unconfirmed)", clock.offset_seconds // 60, residual)
+            else:
+                log.info("clock sync skipped: last tick is %.0fs old, "
+                         "keeping offset %+d min", abs(residual),
+                         self._clock.offset_seconds // 60)
         except Exception as exc:
             log.warning("clock sync failed: %s", exc)
+
+    def clock_skew(self) -> dict:
+        """How far this machine's clock is from the broker's, judged on a
+        LIVE tick only.
+
+        Returns ``{"skew_seconds": float|None, "tick_age_seconds": float}``.
+        ``skew_seconds`` is None when the latest tick is too old to judge
+        (market closed or quiet). A fresh tick also re-measures the offset,
+        so a wrong offset heals itself as soon as prices move.
+        """
+        with self._lock:
+            srv = self._latest_tick_server_time()
+            if srv is None:
+                return {"skew_seconds": None, "tick_age_seconds": None}
+            now = utcnow()
+            clock, residual = ServerClock.measure_quantised(srv, now)
+            if abs(residual) <= self.FRESH_TICK_SECONDS:
+                if clock.offset_seconds != self._clock.offset_seconds:
+                    log.info("server clock offset corrected %+d -> %+d min",
+                             self._clock.offset_seconds // 60,
+                             clock.offset_seconds // 60)
+                self._clock = clock
+                self._clock_measured = True
+                return {"skew_seconds": abs(residual),
+                        "tick_age_seconds": abs(residual)}
+            if residual > 0:
+                # A tick from the future: only a slow machine clock does that.
+                return {"skew_seconds": residual, "tick_age_seconds": 0.0}
+            age = (now - self._clock.server_to_utc(srv)).total_seconds()
+            from ..clock import fx_market_open
+            if fx_market_open(now) and 0 < age <= 600:
+                # Prices tick every second when the market is open: a tick
+                # a few minutes old means this machine's clock runs fast.
+                return {"skew_seconds": age, "tick_age_seconds": age}
+            return {"skew_seconds": None, "tick_age_seconds": age}
 
     @property
     def clock(self) -> ServerClock:

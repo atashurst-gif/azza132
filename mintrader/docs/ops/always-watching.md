@@ -45,3 +45,15 @@ Read `reports/live/pulse.json` on the reports branch: the `reason` says
 what it could see. The one-shot recovery is Stop, quit MetaTrader, Start:
 
     bash ~/MarketBot/app/deploy/mac/"Start Trading Bot.command" stop; pkill -f terminal64.exe; sleep 5; bash ~/MarketBot/app/deploy/mac/"Start Trading Bot.command"
+
+## Weekend clock alarm (26 Sep)
+"This machine's clock is 180s out of step with the broker" appeared on a
+Saturday with new trades paused. The offset between the broker's clock and
+UTC was measured from the last price tick, and on a weekend that tick is
+Friday's. Now: the offset snaps to the half-hour grid brokers use; a stale
+tick is never allowed to move a trusted offset; on a weekend start the
+offset is read from the Friday close and confirmed on Monday's first live
+tick; and the clock check judges only on a live tick. With the market
+closed or quiet it reports "not comparable right now" and blocks nothing.
+A tick from the future, or a tick minutes old while the market is open,
+is still a real clock fault and still pauses entries.

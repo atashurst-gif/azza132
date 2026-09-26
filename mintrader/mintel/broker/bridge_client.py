@@ -229,6 +229,20 @@ class BridgeBroker:
     def clock(self) -> ServerClock:
         return self._clock
 
+    def clock_skew(self) -> Optional[dict]:
+        """The bridge's live-tick clock comparison; None from an old bridge."""
+        try:
+            out = self._rpc("clock_skew")
+        except NotConnected:
+            raise
+        except Exception:
+            return None
+        if isinstance(out, dict):
+            # The bridge may have corrected its offset on a live tick.
+            self._sync_clock()
+            return out
+        return None
+
     def server_time(self) -> dt.datetime:
         try:
             return dt.datetime.fromisoformat(self._rpc("server_time"))
