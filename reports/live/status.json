@@ -1,34 +1,78 @@
 {
   "status": {
-    "bot": "SAFE MODE",
-    "mt5_connected": false,
-    "broker_connected": false,
+    "bot": "RUNNING",
+    "mt5_connected": true,
+    "broker_connected": true,
     "data_live": false,
     "news_live": true,
     "watchdog_ok": true,
     "mode": "DEMO",
     "aggression": "NORMAL",
     "open_positions": 0,
-    "equity": 0.0,
-    "balance": 0.0,
-    "currency": "",
+    "equity": 837.5,
+    "balance": 837.5,
+    "currency": "GBP",
     "today_pnl": 0,
     "win_rate_today": null,
     "today_trades": 0,
-    "since_start_pnl": -16.33,
+    "since_start_pnl": 1.0,
     "since_start_trades": 109,
-    "since_start_win_rate": 38.5,
+    "since_start_win_rate": 40.4,
     "tracking_start": "2026-09-22T11:27:22+00:00",
     "strategy": "2026-09-15 balanced - half the pace, wiser choices",
     "build": "9429b17059",
     "started": "2026-09-26 08:31 UTC",
-    "pnl_source": "journal",
-    "periods": [],
-    "pnl_error": "the MetaTrader bridge is not answering on 127.0.0.1:8790 ([Errno 61] Connection refused)",
-    "last_scan": "17:01:27 UTC",
+    "pnl_source": "broker",
+    "periods": [
+      {
+        "label": "Today",
+        "net": 0,
+        "trades": 0,
+        "wins": 0,
+        "win_rate": null
+      },
+      {
+        "label": "Yesterday",
+        "net": -5.77,
+        "trades": 3,
+        "wins": 1,
+        "win_rate": 33.3
+      },
+      {
+        "label": "This week",
+        "net": 1.0,
+        "trades": 109,
+        "wins": 44,
+        "win_rate": 40.4
+      },
+      {
+        "label": "Last 7 days",
+        "net": 1.0,
+        "trades": 109,
+        "wins": 44,
+        "win_rate": 40.4
+      },
+      {
+        "label": "Last 14 days",
+        "net": 1.0,
+        "trades": 109,
+        "wins": 44,
+        "win_rate": 40.4
+      },
+      {
+        "label": "Since start",
+        "net": 1.0,
+        "trades": 109,
+        "wins": 44,
+        "win_rate": 40.4
+      }
+    ],
+    "pnl_error": "",
+    "last_scan": "17:22:40 UTC",
     "last_trade": "UK100 2026-09-25T13:52",
     "not_trading_because": [
-      "MetaTrader 5 is not connected to the broker"
+      "PROBLEM: this machine's clock is 58380s out of step with the broker - session and news timing cannot be trusted",
+      "WARNING: price data is stale - the freshest price is 73542s old (weekend, markets closed)"
     ],
     "strategy_rules": {
       "entry_tier": "NORMAL",
@@ -38,21 +82,21 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 5937,
-    "uptime_minutes": 522.6
+    "cycles": 6032,
+    "uptime_minutes": 531.1
   },
   "health": {
-    "as_of": "2026-09-26T17:14:13.737839+00:00",
-    "safe_mode": true,
+    "as_of": "2026-09-26T17:22:40.835756+00:00",
+    "safe_mode": false,
     "entries_allowed": false,
-    "summary": "SAFE MODE - MetaTrader 5 is not connected to the broker",
+    "summary": "1 problem(s) found; new trades are paused",
     "checks": [
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "62651 MB of disk space free",
+        "message": "62659 MB of disk space free",
         "detail": {
-          "free_mb": 62650.6
+          "free_mb": 62659.4
         }
       },
       {
@@ -60,29 +104,60 @@
         "severity": "OK",
         "message": "memory 84% used",
         "detail": {
-          "percent": 84.3
+          "percent": 83.5
         }
       },
       {
         "name": "CLOCK",
         "severity": "FAIL",
-        "message": "this machine's clock is 47580s out of step with the broker - session and news timing cannot be trusted",
+        "message": "this machine's clock is 58380s out of step with the broker - session and news timing cannot be trusted",
         "detail": {
-          "skew_seconds": 47580.0
+          "skew_seconds": 58380.0
         }
       },
       {
         "name": "BROKER_CONNECTION",
-        "severity": "FAIL",
-        "message": "MetaTrader 5 is not connected to the broker",
+        "severity": "OK",
+        "message": "MetaTrader 5 is connected",
         "detail": {}
+      },
+      {
+        "name": "ACCOUNT",
+        "severity": "OK",
+        "message": "DEMO account 53020675 on ICMarketsSC-Demo",
+        "detail": {
+          "login": 53020675,
+          "server": "ICMarketsSC-Demo",
+          "is_demo": true
+        }
+      },
+      {
+        "name": "TRADE_PERMISSION",
+        "severity": "OK",
+        "message": "trading is enabled",
+        "detail": {}
+      },
+      {
+        "name": "MARGIN",
+        "severity": "OK",
+        "message": "no margin in use",
+        "detail": {}
+      },
+      {
+        "name": "MARKET_DATA",
+        "severity": "WARN",
+        "message": "price data is stale - the freshest price is 73542s old (weekend, markets closed)",
+        "detail": {
+          "freshest_age_seconds": 73542.0,
+          "weekend": true
+        }
       },
       {
         "name": "NEWS",
         "severity": "OK",
-        "message": "calendar live (9 events known)",
+        "message": "calendar live (8 events known)",
         "detail": {
-          "events_known": 9
+          "events_known": 8
         }
       },
       {
@@ -97,16 +172,16 @@
         "message": "1 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 7.9
+            "watchdog": 1.6
           }
         }
       },
       {
         "name": "SCAN_FRESHNESS",
-        "severity": "FAIL",
-        "message": "the last market scan was 766s ago",
+        "severity": "OK",
+        "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 765.9
+          "age_seconds": 5.2
         }
       },
       {
@@ -120,14 +195,31 @@
   "thinking": [
     {
       "rank": 1,
+      "symbol": "EURCHF",
+      "direction": "SHORT",
+      "score": 39.87,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "EURCHF: HIGH_VOL / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Execution argues against it (0/100; spread 2.0 pips (1.0x normal), commission 0.6 pips). Structure supports it (80/100; range structure on M5). Volatility supports it (76/100; volatility at the 90th percentile). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 999 pips, giving about 0.2 to 1 after 3.1 pips of cost. Blocked because: price data is 73544s old (limit 14400s); reward:risk only 0.22 after costs; costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73544s old (limit 14400s)",
+        "reward:risk only 0.22 after costs",
+        "costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.22
+    },
+    {
+      "rank": 2,
       "symbol": "CADCHF",
       "direction": "LONG",
-      "score": 62.23,
-      "tier": "NORMAL",
+      "score": 39.26,
+      "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "CADCHF: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Momentum argues against it (22/100; efficiency 0.10, ADX 15). Session supports it (75/100; session: NEWYORK,US_CASH). Historical argues against it (26/100; 47 comparable trades (tactic): expectancy -5809.89R, 60% win rate). Room to the first obstacle is 2 pips, giving about -0.2 to 1 after 3.5 pips of cost. Blocked because: reward:risk only -0.22 after costs; costs would be 57% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 3.7 ATR from the level that invalidates this idea - the move has been missed.",
+      "reason": "CADCHF: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution argues against it (0/100; spread 2.3 pips (1.0x normal), commission 0.6 pips). Momentum argues against it (22/100; efficiency 0.10, ADX 15). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 2 pips, giving about -0.2 to 1 after 3.5 pips of cost. Blocked because: price data is 73544s old (limit 14400s); reward:risk only -0.22 after costs; costs would be 57% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 3.7 ATR from the level that invalidates this idea - the move has been missed.",
       "blockers": [
+        "price data is 73544s old (limit 14400s)",
         "reward:risk only -0.22 after costs",
         "costs would be 57% of the stop distance (limit 20%) - too small a trade to pay for itself",
         "entry is 3.7 ATR from the level that invalidates this idea - the move has been missed"
@@ -135,104 +227,160 @@
       "reward_risk": -0.22
     },
     {
-      "rank": 2,
-      "symbol": "EURCHF",
-      "direction": "SHORT",
-      "score": 46.5,
-      "tier": "NO_TRADE",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "HIGH_VOL / HIGH VOL",
-      "reason": "EURCHF: HIGH_VOL / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Volatility supports it (76/100; volatility at the 90th percentile). Session supports it (75/100; session: NEWYORK,US_CASH). Regime supports it (70/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 1 pips, giving about 0.2 to 1 after 3.1 pips of cost. Blocked because: reward:risk only 0.22 after costs; costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.22 after costs",
-        "costs would be 60% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.22
-    },
-    {
       "rank": 3,
-      "symbol": "USDCHF",
+      "symbol": "CHFJPY",
       "direction": "LONG",
-      "score": 43.79,
+      "score": 36.84,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "USDCHF: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (86/100; range structure on M5). Momentum argues against it (18/100; efficiency 0.12, ADX 9). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 2 pips, giving about -0.3 to 1 after 3.5 pips of cost. Blocked because: reward:risk only -0.29 after costs; costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "CHFJPY: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution argues against it (0/100; spread 8.2 pips (1.0x normal), commission 1.1 pips). Momentum argues against it (23/100; efficiency 0.14, ADX 12). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 10 pips, giving about -0.1 to 1 after 11.4 pips of cost. Blocked because: price data is 73542s old (limit 14400s); reward:risk only -0.15 after costs; costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 4.0 ATR from the level that invalidates this idea - the move has been missed.",
       "blockers": [
-        "reward:risk only -0.29 after costs",
-        "costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "price data is 73542s old (limit 14400s)",
+        "reward:risk only -0.15 after costs",
+        "costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "entry is 4.0 ATR from the level that invalidates this idea - the move has been missed"
       ],
-      "reward_risk": -0.288
+      "reward_risk": -0.146
     },
     {
       "rank": 4,
-      "symbol": "US500",
-      "direction": "SHORT",
-      "score": 39.9,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / LOW VOL",
-      "reason": "US500: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Momentum supports it (82/100; efficiency 0.09, ADX 8). Structure supports it (76/100; range structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Participation argues against it (27/100; 0.1x median tick volume). Room to the first obstacle is 270 pips, giving about 0.8 to 1 after 113.9 pips of cost. Blocked because: reward:risk only 0.77 after costs.",
-      "blockers": [
-        "reward:risk only 0.77 after costs"
-      ],
-      "reward_risk": 0.769
-    },
-    {
-      "rank": 5,
-      "symbol": "NZDUSD",
-      "direction": "SHORT",
-      "score": 29.44,
-      "tier": "NO_TRADE",
-      "tactic": "SQUEEZE_RELEASE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "NZDUSD: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Structure supports it (98/100; down structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Volatility supports it (73/100; volatility at the 83th percentile). Momentum argues against it (31/100; efficiency 0.22, ADX 14). Room to the first obstacle is 0 pips, giving about 0.8 to 1 after 2.2 pips of cost. Blocked because: reward:risk only 0.85 after costs; costs would be 70% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.85 after costs",
-        "costs would be 70% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.85
-    },
-    {
-      "rank": 6,
       "symbol": "DE40",
       "direction": "SHORT",
-      "score": 26.09,
+      "score": 29.84,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "DE40: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution argues against it (0/100; spread 80.0 pips (1.0x normal), commission 45.1 pips). Momentum argues against it (16/100; efficiency 0.01, ADX 9). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 1400 pips, giving about 0.5 to 1 after 145.2 pips of cost. Blocked because: price data is 17129s old (limit 14400s); reward:risk only 0.53 after costs.",
+      "reason": "DE40: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution argues against it (0/100; spread 80.0 pips (1.0x normal), commission 45.1 pips). Momentum argues against it (16/100; efficiency 0.01, ADX 9). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 2267 pips, giving about 1.0 to 1 after 145.2 pips of cost. Blocked because: price data is 76962s old (limit 14400s); reward:risk only 0.99 after costs.",
       "blockers": [
-        "price data is 17129s old (limit 14400s)",
-        "reward:risk only 0.53 after costs"
+        "price data is 76962s old (limit 14400s)",
+        "reward:risk only 0.99 after costs"
       ],
-      "reward_risk": 0.525
+      "reward_risk": 0.992
     },
     {
-      "rank": 7,
+      "rank": 5,
       "symbol": "AUDCHF",
       "direction": "SHORT",
-      "score": 24.9,
+      "score": 28.78,
       "tier": "NO_TRADE",
       "tactic": "SQUEEZE_RELEASE",
       "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "AUDCHF: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Session supports it (75/100; session: NEWYORK,US_CASH). Volatility supports it (67/100; volatility at the 68th percentile). Momentum argues against it (34/100; efficiency 0.23, ADX 18). Participation argues against it (37/100; 0.4x median tick volume). Room to the first obstacle is 0 pips, giving about -0.1 to 1 after 3.5 pips of cost. Blocked because: reward:risk only -0.10 after costs; costs would be 81% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "AUDCHF: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution argues against it (0/100; spread 2.3 pips (1.0x normal), commission 0.6 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Volatility supports it (67/100; volatility at the 68th percentile). Momentum argues against it (34/100; efficiency 0.23, ADX 18). Room to the first obstacle is 1 pips, giving about -0.1 to 1 after 3.5 pips of cost. Blocked because: price data is 73549s old (limit 14400s); reward:risk only -0.10 after costs; costs would be 81% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
+        "price data is 73549s old (limit 14400s)",
         "reward:risk only -0.10 after costs",
         "costs would be 81% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
       "reward_risk": -0.099
     },
     {
+      "rank": 6,
+      "symbol": "USDCHF",
+      "direction": "LONG",
+      "score": 27.66,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "USDCHF: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Execution argues against it (0/100; spread 2.3 pips (1.0x normal), commission 0.6 pips). Structure supports it (86/100; range structure on M5). Momentum argues against it (18/100; efficiency 0.12, ADX 9). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 2 pips, giving about -0.3 to 1 after 3.5 pips of cost. Blocked because: price data is 73554s old (limit 14400s); reward:risk only -0.29 after costs; costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73554s old (limit 14400s)",
+        "reward:risk only -0.29 after costs",
+        "costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.288
+    },
+    {
+      "rank": 7,
+      "symbol": "AUDJPY",
+      "direction": "LONG",
+      "score": 27.63,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "AUDJPY: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Execution argues against it (0/100; spread 2.7 pips (1.0x normal), commission 1.1 pips). Regime supports it (85/100; RANGE / NORMAL VOL). Momentum argues against it (18/100; efficiency 0.04, ADX 7). Structure supports it (80/100; range structure on M5). Room to the first obstacle is 4 pips, giving about -0.2 to 1 after 4.5 pips of cost. Blocked because: price data is 73542s old (limit 14400s); reward:risk only -0.16 after costs; costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73542s old (limit 14400s)",
+        "reward:risk only -0.16 after costs",
+        "costs would be 47% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.163
+    },
+    {
       "rank": 8,
-      "symbol": "EURJPY",
+      "symbol": "NZDUSD",
       "direction": "SHORT",
-      "score": 21.65,
+      "score": 19.04,
+      "tier": "NO_TRADE",
+      "tactic": "SQUEEZE_RELEASE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "NZDUSD: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution argues against it (0/100; spread 1.2 pips (1.0x normal), commission 0.7 pips). Structure supports it (98/100; down structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Volatility supports it (73/100; volatility at the 83th percentile). Room to the first obstacle is 0 pips, giving about 0.8 to 1 after 2.2 pips of cost. Blocked because: price data is 73543s old (limit 14400s); reward:risk only 0.85 after costs; costs would be 70% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73543s old (limit 14400s)",
+        "reward:risk only 0.85 after costs",
+        "costs would be 70% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.85
+    },
+    {
+      "rank": 9,
+      "symbol": "AUDJPY",
+      "direction": "SHORT",
+      "score": 16.29,
       "tier": "NO_TRADE",
       "tactic": "FAILED_BREAKOUT_RECLAIM",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "EURJPY: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Momentum argues against it (19/100; efficiency 0.02, ADX 10). Session supports it (75/100; session: NEWYORK,US_CASH). Structure argues against it (26/100; up structure on M5). Multi Tf supports it (73/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 2 pips, giving about -0.3 to 1 after 4.2 pips of cost. Blocked because: reward:risk only -0.25 after costs; costs would be 39% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "AUDJPY: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Execution argues against it (0/100; spread 2.7 pips (1.0x normal), commission 1.1 pips). Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Regime supports it (85/100; RANGE / NORMAL VOL). Momentum supports it (82/100; efficiency 0.04, ADX 7). Room to the first obstacle is 0 pips, giving about -0.6 to 1 after 4.5 pips of cost. Blocked because: price data is 73542s old (limit 14400s); reward:risk only -0.59 after costs; costs would be 59% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
+        "price data is 73542s old (limit 14400s)",
+        "reward:risk only -0.59 after costs",
+        "costs would be 59% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.588
+    },
+    {
+      "rank": 10,
+      "symbol": "GBPJPY",
+      "direction": "SHORT",
+      "score": 15.35,
+      "tier": "NO_TRADE",
+      "tactic": "FAILED_BREAKOUT_RECLAIM",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "GBPJPY: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Execution argues against it (0/100; spread 5.5 pips (1.0x normal), commission 1.2 pips). Momentum supports it (86/100; efficiency 0.00, ADX 10). Regime supports it (85/100; RANGE / NORMAL VOL). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 2 pips, giving about -0.4 to 1 after 8.0 pips of cost. Blocked because: price data is 73542s old (limit 14400s); reward:risk only -0.44 after costs; costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73542s old (limit 14400s)",
+        "reward:risk only -0.44 after costs",
+        "costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.44
+    },
+    {
+      "rank": 11,
+      "symbol": "CHFJPY",
+      "direction": "SHORT",
+      "score": 14.03,
+      "tier": "NO_TRADE",
+      "tactic": "FAILED_BREAKOUT_RECLAIM",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "CHFJPY: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Execution argues against it (0/100; spread 8.2 pips (1.0x normal), commission 1.1 pips). Momentum supports it (77/100; efficiency 0.14, ADX 12). Session supports it (75/100; session: NEWYORK,US_CASH). Structure argues against it (26/100; up structure on M5). Room to the first obstacle is 1 pips, giving about -0.7 to 1 after 11.4 pips of cost. Blocked because: price data is 73542s old (limit 14400s); reward:risk only -0.70 after costs; costs would be 70% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73542s old (limit 14400s)",
+        "reward:risk only -0.70 after costs",
+        "costs would be 70% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.699
+    },
+    {
+      "rank": 12,
+      "symbol": "EURJPY",
+      "direction": "SHORT",
+      "score": 12.12,
+      "tier": "NO_TRADE",
+      "tactic": "FAILED_BREAKOUT_RECLAIM",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "EURJPY: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Execution argues against it (0/100; spread 2.4 pips (1.0x normal), commission 1.1 pips). Momentum argues against it (19/100; efficiency 0.02, ADX 10). Session supports it (75/100; session: NEWYORK,US_CASH). Structure argues against it (26/100; up structure on M5). Room to the first obstacle is 2 pips, giving about -0.3 to 1 after 4.2 pips of cost. Blocked because: price data is 73542s old (limit 14400s); reward:risk only -0.25 after costs; costs would be 39% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 73542s old (limit 14400s)",
         "reward:risk only -0.25 after costs",
         "costs would be 39% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
@@ -241,7 +389,7 @@
   ],
   "results": {
     "date": "2026-09-26",
-    "currency": "",
+    "currency": "GBP",
     "trades": 0,
     "wins": 0,
     "losses": 0,
@@ -256,6 +404,102 @@
   },
   "positions": [],
   "events": [
+    {
+      "id": 1417,
+      "ts_utc": "2026-09-26T17:15:16.741867+00:00",
+      "kind": "SAFE_MODE_END",
+      "severity": "WARNING",
+      "message": "conditions recovered",
+      "detail_json": null
+    },
+    {
+      "id": 1416,
+      "ts_utc": "2026-09-26T17:15:11.385064+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1415,
+      "ts_utc": "2026-09-26T17:15:06.213190+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1414,
+      "ts_utc": "2026-09-26T17:15:00.977869+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1413,
+      "ts_utc": "2026-09-26T17:14:55.821638+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1412,
+      "ts_utc": "2026-09-26T17:14:50.631865+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1411,
+      "ts_utc": "2026-09-26T17:14:45.409905+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1410,
+      "ts_utc": "2026-09-26T17:14:40.070269+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1409,
+      "ts_utc": "2026-09-26T17:14:34.845765+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1408,
+      "ts_utc": "2026-09-26T17:14:29.539733+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1407,
+      "ts_utc": "2026-09-26T17:14:24.150952+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1406,
+      "ts_utc": "2026-09-26T17:14:18.897779+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
     {
       "id": 1405,
       "ts_utc": "2026-09-26T17:14:13.739242+00:00",
@@ -359,103 +603,7 @@
       "severity": "ERROR",
       "message": "MT5 connection: giving up for now - already tried 12 times this hour",
       "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1392,
-      "ts_utc": "2026-09-26T17:13:05.771093+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1391,
-      "ts_utc": "2026-09-26T17:13:00.565373+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1390,
-      "ts_utc": "2026-09-26T17:12:55.352845+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1389,
-      "ts_utc": "2026-09-26T17:12:50.050129+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1388,
-      "ts_utc": "2026-09-26T17:12:44.780121+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1387,
-      "ts_utc": "2026-09-26T17:12:39.550681+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1386,
-      "ts_utc": "2026-09-26T17:12:34.312498+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1385,
-      "ts_utc": "2026-09-26T17:12:29.068166+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1384,
-      "ts_utc": "2026-09-26T17:12:23.888769+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1383,
-      "ts_utc": "2026-09-26T17:12:18.646748+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1382,
-      "ts_utc": "2026-09-26T17:12:13.444661+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 1381,
-      "ts_utc": "2026-09-26T17:12:08.182409+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: giving up for now - already tried 12 times this hour",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
     }
   ],
-  "updated": "2026-09-26T17:14:13.742825+00:00"
+  "updated": "2026-09-26T17:22:42.757049+00:00"
 }
