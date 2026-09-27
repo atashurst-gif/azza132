@@ -53,9 +53,13 @@ class TestQuantisedMeasurement:
 
 class TestAdapterDoesNotTrustAStaleTick:
     def test_saturday_restart_keeps_a_known_offset(self, monkeypatch):
-        b = _broker(NOW - dt.timedelta(seconds=3), monkeypatch)
+        import mintel.broker.mt5_adapter as m
+        friday = dt.datetime(2026, 9, 25, 15, 0, tzinfo=UTC)
+        b = _broker(friday - dt.timedelta(seconds=3), monkeypatch)
+        monkeypatch.setattr(m, "utcnow", lambda: friday)
         b._sync_clock()                                   # Friday: live tick
         assert b.clock.offset_seconds == 3 * 3600 and b._clock_measured
+        monkeypatch.setattr(m, "utcnow", lambda: NOW)
         b._mt5 = FakeMt5(NOW - dt.timedelta(hours=11, minutes=33))  # Saturday: Friday's tick
         b._sync_clock()
         assert b.clock.offset_seconds == 3 * 3600, "a stale tick must not move the offset"
@@ -88,7 +92,10 @@ class TestAdapterDoesNotTrustAStaleTick:
         assert last_fx_close_utc(NOW) == dt.datetime(2026, 9, 25, 21, 0, tzinfo=UTC)
 
     def test_live_tick_reports_skew_and_heals_a_wrong_offset(self, monkeypatch):
-        b = _broker(NOW - dt.timedelta(seconds=5), monkeypatch)
+        import mintel.broker.mt5_adapter as m
+        thursday = dt.datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+        b = _broker(thursday - dt.timedelta(seconds=5), monkeypatch)
+        monkeypatch.setattr(m, "utcnow", lambda: thursday)
         b._clock = ServerClock(2 * 3600)                  # wrong by an hour
         out = b.clock_skew()
         assert out["skew_seconds"] == pytest.approx(5)
@@ -131,3 +138,26 @@ class TestHealthCheckOnAWeekend:
         assert svc.handle("clock_skew", {})["skew_seconds"] == 2.0
         svc2 = BridgeService(SimpleNamespace())
         assert svc2.handle("clock_skew", {})["skew_seconds"] is None
+
+
+class TestAStaleTickOnTheGridIsNotLive:
+    def test_sunday_evening_friday_tick_minus_42_hours(self, monkeypatch):
+        # 27 Sep 18:58 UTC: Friday's last tick landed 115s from a half-hour
+        # multiple and was adopted as a "live" tick with a -2520 min offset.
+        sunday = dt.datetime(2026, 9, 27, 18, 58, 52, tzinfo=UTC)
+        tick_utc = sunday - dt.timedelta(hours=42, seconds=-115)     # ~Friday 00:58 UTC + 3h server
+        b = _broker(tick_utc, monkeypatch)
+        import mintel.broker.mt5_adapter as m
+        monkeypatch.setattr(m, "utcnow", lambda: sunday)
+        b._sync_clock()
+        assert abs(b.clock.offset_seconds) <= 14 * 3600
+        assert b._clock_measured is False
+        assert b.clock_skew()["skew_seconds"] is None
+
+    def test_live_tick_on_a_weekday_still_measures(self, monkeypatch):
+        thursday = dt.datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+        b = _broker(thursday - dt.timedelta(seconds=2), monkeypatch)
+        import mintel.broker.mt5_adapter as m
+        monkeypatch.setattr(m, "utcnow", lambda: thursday)
+        b._sync_clock()
+        assert b.clock.offset_seconds == 3 * 3600 and b._clock_measured

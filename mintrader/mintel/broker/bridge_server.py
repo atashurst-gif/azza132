@@ -293,6 +293,10 @@ class _Handler(socketserver.StreamRequestHandler):
 class BridgeServer(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    # While a dial into a deaf MetaTrader has the process frozen (up to the
+    # pipe timeout), connections queue here instead of being refused; the
+    # default of 5 filled within a minute and made the bridge look dead.
+    request_queue_size = 128
 
 
 def build_broker(backend: str, args: argparse.Namespace):

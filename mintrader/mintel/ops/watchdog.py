@@ -471,41 +471,63 @@ class Watchdog:
         dead: MetaTrader's pipe stops answering ("IPC initialize failed") and
         only a restart of the terminal brings it back.  Nothing else can be
         traded until it does, so the watchdog restarts it after
-        ``mt5_unreachable_seconds`` of silence."""
+        ``mt5_unreachable_seconds`` of silence.
+
+        Two kinds of evidence count. The bridge saying so (mt5_connected
+        false with failed dials), and the bridge being MUTE: its port
+        accepts but ping goes unanswered, which is what a bridge looks like
+        while a dial into a deaf terminal has it frozen (the MetaTrader
+        package holds the interpreter for the whole pipe timeout).
+        """
         if self.bridge_status_fn is None:
             return []
         try:
             info = self.bridge_status_fn()
         except Exception:
             info = None
-        if not info or "mt5_connected" not in info:
-            # No bridge, or an old bridge that does not say: not our call.
+        mute = False
+        if info is None:
+            if not port_open(self.cfg.bridge_host, self.cfg.bridge_port):
+                self._mt5_unreachable_since = None      # no bridge at all: its own problem
+                return []
+            mute = True
+        elif "mt5_connected" not in info:
+            self._mt5_unreachable_since = None          # an old bridge that cannot say
+            return []
+        elif info.get("mt5_connected"):
             self._mt5_unreachable_since = None
             return []
-        if info.get("mt5_connected"):
-            self._mt5_unreachable_since = None
-            return []
-        if int(info.get("connect_failures") or 0) < 1:
-            return []
+        elif int(info.get("connect_failures") or 0) < 1:
+            return []                                   # first dial still in progress
         if self._mt5_unreachable_since is None:
             self._mt5_unreachable_since = now
             return []
         silent = (now - self._mt5_unreachable_since).total_seconds()
         if silent < self.mt5_unreachable_seconds:
             return []
+        why = ("the bridge has been mute (port open, no answer)" if mute
+               else str((info or {}).get("mt5_last_error", "")))
         cutoff = now - dt.timedelta(hours=1)
         self._mt5_restarts = [t for t in self._mt5_restarts if t >= cutoff]
         if len(self._mt5_restarts) >= self.cfg.ops.max_restarts_per_hour:
             return [f"MetaTrader 5 is running but has not answered the bridge "
-                    f"for {silent:.0f}s ({info.get('mt5_last_error', '')}) and "
-                    f"has already been restarted "
+                    f"for {silent:.0f}s ({why}) and has already been restarted "
                     f"{len(self._mt5_restarts)} times this hour - NEEDS A HUMAN"]
         self._mt5_unreachable_since = None
         self._mt5_restarts.append(now)
         kill_process(self.mt5_image)
-        return [f"MetaTrader 5 is running but has not answered the bridge for "
-                f"{silent:.0f}s ({info.get('mt5_last_error', '')}) - "
-                f"closing it so it can be started fresh"]
+        actions = [f"MetaTrader 5 is running but has not answered the bridge for "
+                   f"{silent:.0f}s ({why}) - closing it so it can be started fresh"]
+        if mute:
+            # A bridge stuck inside the pipe wait comes back with the terminal.
+            for mp in self.processes:
+                if mp.name == "bridge":
+                    try:
+                        mp.stop()
+                        actions.append("bridge: stopped with it, so it dials the fresh terminal")
+                    except Exception:
+                        pass
+        return actions
 
     def _log_actions(self, actions: Sequence[str]) -> None:
         for a in actions:

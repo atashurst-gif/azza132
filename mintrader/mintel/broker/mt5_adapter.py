@@ -155,6 +155,17 @@ class Mt5Broker:
     # A tick older than this cannot tell us anything about the clock: the
     # market is closed or quiet, not the machine wrong.
     FRESH_TICK_SECONDS = 120.0
+    MAX_OFFSET_SECONDS = 14 * 3600        # no broker sits beyond UTC-12..+14
+
+    def _tick_is_live(self, clock: ServerClock, residual: float,
+                      now: dt.datetime) -> bool:
+        """A stale tick can land on the half-hour grid by chance (Sunday
+        27 Sep: Friday's last tick read as a live tick with a -42h offset).
+        Live means: near the grid, a sane offset, and a market that is open."""
+        from ..clock import fx_market_open
+        return (abs(residual) <= self.FRESH_TICK_SECONDS
+                and abs(clock.offset_seconds) <= self.MAX_OFFSET_SECONDS
+                and fx_market_open(now))
 
     def _latest_tick_server_time(self) -> Optional[dt.datetime]:
         mt5 = self.mt5
@@ -183,7 +194,7 @@ class Mt5Broker:
                 return
             now = utcnow()
             clock, residual = ServerClock.measure_quantised(srv, now)
-            fresh = abs(residual) <= self.FRESH_TICK_SECONDS
+            fresh = self._tick_is_live(clock, residual, now)
             if fresh:
                 self._clock = clock
                 self._clock_measured = True
@@ -227,7 +238,7 @@ class Mt5Broker:
                 return {"skew_seconds": None, "tick_age_seconds": None}
             now = utcnow()
             clock, residual = ServerClock.measure_quantised(srv, now)
-            if abs(residual) <= self.FRESH_TICK_SECONDS:
+            if self._tick_is_live(clock, residual, now):
                 if clock.offset_seconds != self._clock.offset_seconds:
                     log.info("server clock offset corrected %+d -> %+d min",
                              self._clock.offset_seconds // 60,
@@ -236,7 +247,7 @@ class Mt5Broker:
                 self._clock_measured = True
                 return {"skew_seconds": abs(residual),
                         "tick_age_seconds": abs(residual)}
-            if residual > 0:
+            if residual > 0 and abs(clock.offset_seconds) <= self.MAX_OFFSET_SECONDS:
                 # A tick from the future: only a slow machine clock does that.
                 return {"skew_seconds": residual, "tick_age_seconds": 0.0}
             age = (now - self._clock.server_to_utc(srv)).total_seconds()

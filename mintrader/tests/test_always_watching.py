@@ -394,3 +394,41 @@ class TestWaitingDoesNotLookHung:
         t = keep_connected(svc, interval=30.0, stop=stop)
         t.join(2.0)
         assert waits[:5] == [30.0, 60.0, 120.0, 240.0, 300.0]
+
+
+class TestAMuteBridgeMeansADeafTerminal:
+    def test_port_open_but_no_answer_for_ten_minutes_restarts_terminal_and_bridge(self, workdir, monkeypatch):
+        from mintel.ops import watchdog as wd
+        cfg = _cfg(workdir)
+        stopped: list[str] = []
+        bridge = wd.ManagedProcess(name="bridge", command=["x"], pid_file=str(workdir / "b.pid"))
+        monkeypatch.setattr(bridge, "stop", lambda: stopped.append("bridge"))
+        w = wd.Watchdog(cfg, [bridge], mt5_command=["wine", "terminal64.exe"])
+        monkeypatch.setattr(wd, "process_running", lambda name: True)
+        monkeypatch.setattr(wd, "port_open", lambda h, p, timeout=2.0: True)
+        killed: list[str] = []
+        monkeypatch.setattr(wd, "kill_process", killed.append)
+        w.bridge_status_fn = lambda: None                    # port open, ping unanswered
+        t0 = NOW
+        assert w._check_mt5(t0) == []
+        assert w._check_mt5(t0 + dt.timedelta(seconds=300)) == []
+        acts = w._check_mt5(t0 + dt.timedelta(seconds=601))
+        assert killed == ["terminal64.exe"] and stopped == ["bridge"]
+        assert any("mute" in a for a in acts)
+
+    def test_no_bridge_at_all_is_not_the_terminals_fault(self, workdir, monkeypatch):
+        from mintel.ops import watchdog as wd
+        cfg = _cfg(workdir)
+        w = wd.Watchdog(cfg, [], mt5_command=["wine", "terminal64.exe"])
+        monkeypatch.setattr(wd, "process_running", lambda name: True)
+        monkeypatch.setattr(wd, "port_open", lambda h, p, timeout=2.0: False)
+        killed: list[str] = []
+        monkeypatch.setattr(wd, "kill_process", killed.append)
+        w.bridge_status_fn = lambda: None
+        for k in range(5):
+            w._check_mt5(NOW + dt.timedelta(seconds=600 * k))
+        assert killed == []
+
+    def test_backlog_is_deep(self):
+        from mintel.broker.bridge_server import BridgeServer
+        assert BridgeServer.request_queue_size >= 64

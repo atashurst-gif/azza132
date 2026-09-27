@@ -57,3 +57,16 @@ tick; and the clock check judges only on a live tick. With the market
 closed or quiet it reports "not comparable right now" and blocks nothing.
 A tick from the future, or a tick minutes old while the market is open,
 is still a real clock fault and still pauses entries.
+
+## Sunday 27 Sep: the bridge restart loop
+MetaTrader's pipe went deaf again (IPC initialize failed from 13:29 UK).
+Each dial into it froze the bridge for the whole pipe timeout, the
+bridge's five-deep connection queue filled, its port then refused, and the
+watchdog restarted it every 90 seconds - straight into another frozen
+dial. The deaf-terminal restart never fired because it needed a ping
+answer the frozen bridge could not give. Now: the connection queue is
+128 deep; a bridge whose port accepts but whose ping goes unanswered for
+ten minutes counts as a deaf terminal, and both the terminal and the
+bridge are restarted; the bridge backs off 30 s to 5 min between dials;
+and a stale tick can no longer pose as live (offset must be within 14 h
+and the FX market open).
