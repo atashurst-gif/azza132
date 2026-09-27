@@ -336,14 +336,25 @@ def keep_connected(service: BridgeService, interval: float = 30.0,
     stop = stop or threading.Event()
 
     def loop() -> None:
+        wait = interval
         while not stop.is_set():
             if not service.refresh_connected():
                 if service.connect_broker():
                     log.info("connected to MetaTrader 5")
+                    wait = interval
                 else:
+                    # Each failed dial can block for a minute; dialling
+                    # flat out would leave the bridge mostly frozen. Back
+                    # off to five minutes while MetaTrader stays silent
+                    # (a trader's own connect request still dials at once).
                     log.error("MetaTrader 5 is not answering (%s) - trying "
                               "again in %.0fs", service.last_connect_error,
-                              interval)
+                              wait)
+                    stop.wait(wait)
+                    wait = min(wait * 2, 300.0)
+                    continue
+            else:
+                wait = interval
             stop.wait(interval)
 
     t = threading.Thread(target=loop, name="mt5-connect", daemon=True)

@@ -300,9 +300,20 @@ def wait_for_broker(broker, cfg: Config, state: DashboardState,
     hb = Heartbeat(Path(cfg.ops.data_dir) / "heartbeats", "strategy")
     started = time.time()
     attempt = 0
+    # A bridge that is busy dialling MetaTrader can take the full socket
+    # timeout to answer; two such calls in one attempt outlast the watchdog's
+    # patience and the waiting trader is "restarted" as hung. So: a short
+    # timeout while waiting (restored once connected), and a heartbeat on
+    # both sides of every attempt.
+    normal_timeout = getattr(broker, "timeout", None)
+    if normal_timeout is not None:
+        broker.timeout = min(float(normal_timeout), 10.0)
     while not stop.is_set():
         attempt += 1
+        hb.beat({"waiting": "trying to reach MetaTrader", "attempt": attempt})
         if broker.connect():
+            if normal_timeout is not None:
+                broker.timeout = normal_timeout
             if attempt > 1:
                 log.warning("MetaTrader is back after %.0fs - trading resumes",
                             time.time() - started)

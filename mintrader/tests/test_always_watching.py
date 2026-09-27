@@ -65,7 +65,7 @@ class TestTraderWaitsForMetaTrader:
         assert "IPC initialize failed" in state.status["detail"]
         # And it heartbeat while waiting, so the watchdog leaves it alone.
         hb = json.loads((workdir / "heartbeats" / "strategy.heartbeat.json").read_text())
-        assert hb["detail"]["waiting"] and hb["detail"]["attempt"] == 3
+        assert hb["detail"]["waiting"] and hb["detail"]["attempt"] == 4   # beat before the winning try
 
     def test_stop_while_waiting_returns_false_without_connecting(self, workdir):
         from mintel.run import wait_for_broker
@@ -356,3 +356,41 @@ class TestInstallerWiring:
         assert "com.mintel.pulse" in body and "mintel.ops.pulse" in body
         assert "<key>StartInterval</key><integer>600</integer>" in body
         assert "install_pulse_agent\n" in body.split("install_report_agent() {")[1]
+
+
+class TestWaitingDoesNotLookHung:
+    def test_heartbeat_before_each_attempt_and_short_timeout_while_waiting(self, workdir):
+        from mintel.run import wait_for_broker
+        cfg = _cfg(workdir)
+        beats: list[int] = []
+
+        class Slow(FlakyBroker):
+            timeout = 30.0
+            def connect(self):
+                beats.append(json.loads((workdir / "heartbeats" / "strategy.heartbeat.json")
+                                        .read_text())["counter"])
+                assert self.timeout == 10.0, "waiting must use a short timeout"
+                return super().connect()
+        broker = Slow(fail=2)
+        ok = wait_for_broker(broker, cfg, DashboardState(), threading.Event(), sleep=lambda s: None)
+        assert ok
+        assert beats == [1, 3, 5], "a heartbeat lands before every attempt"
+        assert broker.timeout == 30.0, "the normal timeout comes back once connected"
+
+    def test_bridge_backs_off_while_metatrader_stays_silent(self):
+        from mintel.broker.bridge_server import BridgeService, keep_connected
+        broker = FlakyBroker(fail=10 ** 6)
+        svc = BridgeService(broker)
+        stop = threading.Event()
+        waits: list[float] = []
+        real_wait = stop.wait
+
+        def spy(t=None):
+            waits.append(t)
+            if len(waits) >= 5:
+                stop.set()
+            return real_wait(0.001)
+        stop.wait = spy
+        t = keep_connected(svc, interval=30.0, stop=stop)
+        t.join(2.0)
+        assert waits[:5] == [30.0, 60.0, 120.0, 240.0, 300.0]
