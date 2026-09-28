@@ -432,3 +432,21 @@ class TestAMuteBridgeMeansADeafTerminal:
     def test_backlog_is_deep(self):
         from mintel.broker.bridge_server import BridgeServer
         assert BridgeServer.request_queue_size >= 64
+
+
+class TestMetaTraderStartsWithTradingEnabled:
+    def test_watchdog_launches_the_terminal_with_a_start_config(self, workdir):
+        from mintel.ops import watchdog as wd
+        cfg = _cfg(workdir)
+        cfg.wine_python = "C:/py/python.exe"
+        cfg.mt5_terminal_path = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+        w = wd.build_default(cfg, str(workdir / "config.json"))
+        cmd = w.mt5_command
+        assert cmd[1] == cfg.mt5_terminal_path
+        assert cmd[2].startswith("/config:Z:") and cmd[2].endswith("mt5-start.ini")
+        ini = (workdir / "mt5-start.ini").read_text()
+        assert "[Experts]" in ini and "Enabled=1" in ini and "AllowLiveTrading=1" in ini
+
+    def test_installer_does_the_same(self):
+        body = (Path(__file__).parent.parent / "deploy" / "mac" / "mintel_mac.sh").read_text()
+        assert "/config:" in body and "mt5-start.ini" in body and "AllowLiveTrading=1" in body

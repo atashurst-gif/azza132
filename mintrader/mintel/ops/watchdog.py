@@ -580,6 +580,41 @@ def wine_command(cfg: Config, target: str,
     return [wine, target, *extra]
 
 
+MT5_START_CONFIG = """[Experts]
+AllowLiveTrading=1
+AllowDllImport=0
+Enabled=1
+"""
+
+
+def mt5_start_config(cfg: Config) -> str:
+    """Write MetaTrader's start-up settings file and return its Windows path.
+
+    A restarted terminal comes up with the Algo Trading switch OFF and the
+    bot then sits all day refusing to trade ("trading disabled in
+    MetaTrader 5", 28 Sep). Passing this file with /config: on the command
+    line starts the terminal with algorithmic trading enabled.
+    """
+    path = Path(cfg.ops.data_dir) / "mt5-start.ini"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists() or path.read_text() != MT5_START_CONFIG:
+            path.write_text(MT5_START_CONFIG)
+    except OSError as exc:
+        log.warning("could not write %s: %s", path, exc)
+    return windows_path(str(path.resolve()))
+
+
+def mt5_command(cfg: Config) -> list[str]:
+    """The terminal's launch command, with trading enabled from the start."""
+    if not cfg.mt5_terminal_path:
+        return []
+    extra = [f"/config:{mt5_start_config(cfg)}"]
+    if cfg.broker_mode == "bridge":
+        return wine_command(cfg, cfg.mt5_terminal_path, extra)
+    return [cfg.mt5_terminal_path, *extra]
+
+
 def windows_path(path: str) -> str:
     """A path Windows Python inside Wine can open.
 
@@ -661,9 +696,9 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
                                              cfg.bridge_token_file),
                 max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
         if cfg.mt5_terminal_path:
-            mt5_cmd = wine_command(cfg, cfg.mt5_terminal_path)
+            mt5_cmd = mt5_command(cfg)
     elif cfg.mt5_terminal_path:
-        mt5_cmd = [cfg.mt5_terminal_path]
+        mt5_cmd = mt5_command(cfg)
 
     wd = Watchdog(cfg, processes, mt5_command=mt5_cmd)
     wd.env = wine_env(cfg) if cfg.broker_mode == "bridge" else None

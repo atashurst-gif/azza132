@@ -1101,8 +1101,11 @@ start_mt5() {
   [[ -n "$MT5_TERMINAL" ]] || { bad "MetaTrader 5 is not installed."; return 1; }
   local wine
   wine="$(wine_bin)"
-  mkdir -p "$LOG_DIR"
-  nohup "$wine" "$MT5_TERMINAL" >>"$LOG_DIR/mt5.out.log" 2>&1 &
+  mkdir -p "$LOG_DIR" "$DATA_DIR"
+  # Start with algorithmic trading switched ON: a terminal started plainly
+  # comes up with the Algo Trading button off and the bot cannot trade.
+  printf '[Experts]\nAllowLiveTrading=1\nAllowDllImport=0\nEnabled=1\n' > "$DATA_DIR/mt5-start.ini"
+  nohup "$wine" "$MT5_TERMINAL" "/config:$(to_z_path "$DATA_DIR/mt5-start.ini")" >>"$LOG_DIR/mt5.out.log" 2>&1 &
   local waited=0
   while (( waited < 60 )); do
     pgrep -f "terminal64.exe" >/dev/null 2>&1 && break
