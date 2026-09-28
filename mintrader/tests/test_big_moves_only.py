@@ -620,3 +620,34 @@ class TestHardProfitFloor:
         p = Position(1, "EURUSD", Side.SELL, 1.0, 1.1000, 1.1050, 0.0, NOW)
         self._run(fl, p, [1.1000 - 0.0002 * i for i in range(1, 28)])
         assert fl.trackers[1].stop <= 1.1000 - 0.5 * 0.0050 + 1e-9
+
+
+class TestSwitchOffMatchesTheReportedName:
+    """28 Sep: BREAKOUT_RETEST is a signal name of the BREAKOUT_ACCEPTANCE
+    tactic; switching it off by name did nothing for four days."""
+
+    def _fake(self, monkeypatch, signal_name):
+        from mintel.engine import tactics as T
+        from mintel.data.regime import Regime
+        sig = T.TacticSignal(name=signal_name, direction=1, quality=80.0,
+                             invalidation=1.0, entry_hint=1.1)
+        tac = T.Tactic("BREAKOUT_ACCEPTANCE", (Regime.TREND,), lambda ctx, side: sig)
+        monkeypatch.setattr(T, "candidates_for", lambda regime: (tac,))
+        return T, Regime
+
+    def test_signal_name_is_blocked_in_the_named_regime(self, monkeypatch):
+        T, Regime = self._fake(monkeypatch, "BREAKOUT_RETEST")
+        assert T.best_signal(None, 1, Regime.TREND) is not None
+        assert T.best_signal(None, 1, Regime.TREND,
+                             disabled_in=(("BREAKOUT_RETEST", "TREND"),)) is None
+        assert T.best_signal(None, 1, Regime.TREND,
+                             disabled_in=(("BREAKOUT_RETEST", "SQUEEZE"),)) is not None
+        assert T.best_signal(None, 1, Regime.TREND, disabled=("BREAKOUT_RETEST",)) is None
+
+    def test_the_other_signal_of_the_same_tactic_still_runs(self, monkeypatch):
+        T, Regime = self._fake(monkeypatch, "BREAKOUT_ACCEPTANCE")
+        assert T.best_signal(None, 1, Regime.TREND,
+                             disabled_in=(("BREAKOUT_RETEST", "TREND"),)) is not None
+
+    def test_defaults_switch_retest_off_in_trend(self):
+        assert ("BREAKOUT_RETEST", "TREND") in Config().scan.disabled_tactic_regimes

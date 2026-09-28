@@ -60,6 +60,23 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   Monday. MOMENTUM_CONTINUATION in HIGH_VOL is negative on three of five
   days but net +4.56 GBP with two of the losses under 1 GBP: left on.
 
+- 2026-09-28 (evening): TWO FINDINGS. (1) The switch-offs of 24 and 25 Sep
+  never took effect: "BREAKOUT_RETEST" is the name a signal reports under,
+  the tactic is BREAKOUT_ACCEPTANCE, and the switch-off only checked the
+  tactic's name. Retest kept trading in HIGH_VOL and SQUEEZE (one SQUEEZE
+  trade on 28 Sep, +4.22). Fixed: the check now covers the reported name.
+  (2) Standing rule applied to BREAKOUT_RETEST in TREND: negative on five
+  of seven days (21, 22, 24, 25, 28 Sep), 86 trades, 28 wins, net -36.41
+  GBP; on the first day with the profit floor 0 wins in 4, -15.37. OFF.
+  The Retest strategy as a whole is therefore off from 29 Sep; what runs
+  is Session expansion in TREND (+19.47 over seven days), Sweep in
+  HIGH_VOL (+20.91), Momentum in NEWS (+51 over its two days) and in
+  HIGH_VOL (+4.56), Breakout acceptance (un-retested) in TREND, and the
+  squeeze tactics.
+  Profit floor, first day: 4 trades reached +1R and none of them lost
+  (Friday: 10 of 10 did); trailed winners kept 0.77R of a 1.52R peak
+  (was 0.50R of 1.45R).
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

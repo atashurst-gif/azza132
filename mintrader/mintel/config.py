@@ -133,6 +133,11 @@ class ScanConfig:
         # net about +1 GBP - a coin toss that pays fees. A retest wants a
         # trend behind it; a squeeze has none yet.
         ("BREAKOUT_RETEST", "SQUEEZE"),
+        # 28 Sep: BREAKOUT_RETEST in TREND, negative on five of the seven
+        # days it traded (86 trades, 28 wins, net about -36 GBP), including
+        # the first day on the profit floor (0 wins in 4). The un-retested
+        # BREAKOUT_ACCEPTANCE signal in TREND stays on.
+        ("BREAKOUT_RETEST", "TREND"),
     )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     cooldown_seconds_after_exit: float = 180.0

@@ -485,6 +485,16 @@ def best_signal(ctx: SymbolContext, side: int,
             continue
         if sig is None or not sig.valid:
             continue
+        # The switch-off lists name APPROACHES as the journal and the day
+        # review know them, and a tactic may report under more than one
+        # name (BREAKOUT_ACCEPTANCE emits BREAKOUT_RETEST when the level was
+        # retested). Until 28 Sep only the tactic's own name was checked and
+        # "BREAKOUT_RETEST off in HIGH_VOL / SQUEEZE" did nothing.
+        if sig.name in disabled:
+            continue
+        if any(n == sig.name and r.upper() == regime.value.upper()
+               for n, r in disabled_in):
+            continue
         if tactic.counter_trend and sig.quality < 45.0:
             continue
         if sig.quality < 25.0:
