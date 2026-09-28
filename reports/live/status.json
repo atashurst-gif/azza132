@@ -1,17 +1,17 @@
 {
   "status": {
-    "bot": "RUNNING",
-    "mt5_connected": true,
-    "broker_connected": true,
-    "data_live": true,
+    "bot": "SAFE MODE",
+    "mt5_connected": false,
+    "broker_connected": false,
+    "data_live": false,
     "news_live": true,
     "watchdog_ok": true,
     "mode": "DEMO",
     "aggression": "NORMAL",
     "open_positions": 0,
-    "equity": 820.65,
-    "balance": 820.65,
-    "currency": "GBP",
+    "equity": 0.0,
+    "balance": 0.0,
+    "currency": "",
     "today_pnl": -15.6,
     "win_rate_today": 25.0,
     "today_trades": 8,
@@ -68,9 +68,11 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "14:35:14 UTC",
-    "last_trade": "AUDJPY 2026-09-28T13:31",
-    "not_trading_because": [],
+    "last_scan": "14:45:13 UTC",
+    "last_trade": "US500 2026-09-28T14:45",
+    "not_trading_because": [
+      "MetaTrader 5 is not connected to the broker"
+    ],
     "strategy_rules": {
       "entry_tier": "NORMAL",
       "min_reward_risk": 1.8,
@@ -79,75 +81,44 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 3922,
-    "uptime_minutes": 352.3
+    "cycles": 4033,
+    "uptime_minutes": 362.3
   },
   "health": {
-    "as_of": "2026-09-28T14:35:14.436727+00:00",
-    "safe_mode": false,
-    "entries_allowed": true,
-    "summary": "everything is healthy",
+    "as_of": "2026-09-28T14:45:18.846519+00:00",
+    "safe_mode": true,
+    "entries_allowed": false,
+    "summary": "SAFE MODE - MetaTrader 5 is not connected to the broker",
     "checks": [
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "60853 MB of disk space free",
+        "message": "60768 MB of disk space free",
         "detail": {
-          "free_mb": 60853.4
+          "free_mb": 60767.6
         }
       },
       {
         "name": "MEMORY",
         "severity": "OK",
-        "message": "memory 84% used",
+        "message": "memory 85% used",
         "detail": {
-          "percent": 84.3
+          "percent": 85.0
         }
       },
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock agrees with the broker (within 2s)",
+        "message": "clock agrees with the broker (within 11s)",
         "detail": {
-          "skew_seconds": 2.4
+          "skew_seconds": 10.9
         }
       },
       {
         "name": "BROKER_CONNECTION",
-        "severity": "OK",
-        "message": "MetaTrader 5 is connected",
+        "severity": "FAIL",
+        "message": "MetaTrader 5 is not connected to the broker",
         "detail": {}
-      },
-      {
-        "name": "ACCOUNT",
-        "severity": "OK",
-        "message": "DEMO account 53020675 on ICMarketsSC-Demo",
-        "detail": {
-          "login": 53020675,
-          "server": "ICMarketsSC-Demo",
-          "is_demo": true
-        }
-      },
-      {
-        "name": "TRADE_PERMISSION",
-        "severity": "OK",
-        "message": "trading is enabled",
-        "detail": {}
-      },
-      {
-        "name": "MARGIN",
-        "severity": "OK",
-        "message": "no margin in use",
-        "detail": {}
-      },
-      {
-        "name": "MARKET_DATA",
-        "severity": "OK",
-        "message": "live prices arriving (1s old)",
-        "detail": {
-          "freshest_age_seconds": 0.6,
-          "weekend": false
-        }
       },
       {
         "name": "NEWS",
@@ -169,7 +140,7 @@
         "message": "1 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 9.0
+            "watchdog": 8.2
           }
         }
       },
@@ -178,13 +149,13 @@
         "severity": "OK",
         "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 5.2
+          "age_seconds": 5.4
         }
       },
       {
         "name": "POSITION_PROTECTION",
         "severity": "OK",
-        "message": "all 0 open position(s) protected at the broker",
+        "message": "all 1 open position(s) protected at the broker",
         "detail": {}
       }
     ]
@@ -192,59 +163,149 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "DE40",
+      "symbol": "AUDCAD",
       "direction": "LONG",
-      "score": 52.4,
+      "score": 36.97,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "DE40: SQUEEZE / NORMAL VOL market. Best idea is buy using breakout acceptance. Execution supports it (83/100; spread 50.0 pips (1.0x normal), commission 45.6 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Structure supports it (76/100; range structure on M5). Participation argues against it (26/100; 0.0x median tick volume). Room to the first obstacle is 4750 pips, giving about 1.2 to 1 after 108.1 pips of cost. Blocked because: reward:risk only 1.17 after costs.",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "AUDCAD: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Structure argues against it (16/100; down structure on M5). Execution supports it (79/100; spread 0.3 pips (1.0x normal), commission 1.0 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Participation argues against it (27/100; 0.1x median tick volume). Room to the first obstacle is 5 pips, giving about 0.7 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.70 after costs.",
       "blockers": [
-        "reward:risk only 1.17 after costs"
+        "reward:risk only 0.70 after costs"
       ],
-      "reward_risk": 1.173
+      "reward_risk": 0.699
     },
     {
       "rank": 2,
-      "symbol": "USDCAD",
-      "direction": "SHORT",
-      "score": 36.15,
+      "symbol": "EURCHF",
+      "direction": "LONG",
+      "score": 34.46,
       "tier": "NO_TRADE",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "RANGE / LOW VOL",
-      "reason": "USDCAD: RANGE / LOW VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (84/100; spread 0.2 pips (1.0x normal), commission 1.0 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Historical argues against it (26/100; 48 comparable trades (tactic): expectancy -5688.87R, 58% win rate). Room to the first obstacle is 0 pips, giving about -0.3 to 1 after 1.3 pips of cost. Blocked because: reward:risk only -0.26 after costs; costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "EURCHF: SQUEEZE / LOW VOL market. Best idea is buy using breakout retest. Multi Tf supports it (82/100; 6 timeframes weighed, higher ones first). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Momentum supports it (77/100; efficiency 0.17, ADX 22). Participation argues against it (27/100; 0.0x median tick volume). Room to the first obstacle is 2 pips, giving about 1.2 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.19 after costs; costs would be 30% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.26 after costs",
-        "costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 1.19 after costs",
+        "costs would be 30% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.257
+      "reward_risk": 1.185
     },
     {
       "rank": 3,
-      "symbol": "US500",
+      "symbol": "USDJPY",
       "direction": "SHORT",
-      "score": 30.8,
+      "score": 34.02,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / LOW VOL",
+      "reason": "USDJPY: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Execution argues against it (0/100; spread 0.0 pips (0.0x normal), commission 1.1 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Participation argues against it (26/100; 0.0x median tick volume). Cross Market argues against it (30/100; 0 related markets with a usable relationship; USD 69 vs JPY 19). Room to the first obstacle is 16 pips, giving about 1.1 to 1 after 1.1 pips of cost. Blocked because: no spread quoted; reward:risk only 1.15 after costs.",
+      "blockers": [
+        "no spread quoted",
+        "reward:risk only 1.15 after costs"
+      ],
+      "reward_risk": 1.148
+    },
+    {
+      "rank": 4,
+      "symbol": "UK100",
+      "direction": "SHORT",
+      "score": 32.79,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "UK100: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Execution supports it (78/100; spread 90.0 pips (1.0x normal), commission 39.1 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Momentum argues against it (23/100; efficiency 0.03, ADX 8). Room to the first obstacle is 83 pips, giving about 0.0 to 1 after 151.6 pips of cost. Blocked because: reward:risk only 0.03 after costs.",
+      "blockers": [
+        "reward:risk only 0.03 after costs"
+      ],
+      "reward_risk": 0.034
+    },
+    {
+      "rank": 5,
+      "symbol": "USDCHF",
+      "direction": "SHORT",
+      "score": 31.68,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / LOW VOL",
+      "reason": "USDCHF: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Momentum supports it (100/100; efficiency 0.00, ADX 12). Execution supports it (78/100; spread 0.1 pips (1.0x normal), commission 0.6 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Multi Tf argues against it (27/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 1.1 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 1.12 after costs.",
+      "blockers": [
+        "reward:risk only 1.12 after costs"
+      ],
+      "reward_risk": 1.119
+    },
+    {
+      "rank": 6,
+      "symbol": "EURJPY",
+      "direction": "LONG",
+      "score": 30.82,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / LOW VOL",
+      "reason": "EURJPY: RANGE / LOW VOL market. Best idea is buy using liquidity sweep reversal. Execution argues against it (0/100; spread 0.7 pips (7.0x normal), commission 1.1 pips). Structure supports it (80/100; range structure on M5). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Historical argues against it (26/100; 48 comparable trades (tactic): expectancy -5688.87R, 58% win rate). Room to the first obstacle is 9 pips, giving about 0.2 to 1 after 4.1 pips of cost. Blocked because: spread is 7.0x its normal size; reward:risk only 0.20 after costs; costs would be 20% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "spread is 7.0x its normal size",
+        "reward:risk only 0.20 after costs",
+        "costs would be 20% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.196
+    },
+    {
+      "rank": 7,
+      "symbol": "HK50",
+      "direction": "LONG",
+      "score": 24.92,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "TREND / LOW VOL",
-      "reason": "US500: TREND / LOW VOL market. Best idea is sell using breakout acceptance. Execution supports it (94/100; spread 30.0 pips (0.6x normal), commission 51.9 pips). Structure supports it (80/100; range structure on M5). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Participation argues against it (27/100; 0.1x median tick volume). Room to the first obstacle is 42 pips, giving about 1.0 to 1 after 89.4 pips of cost. Blocked because: reward:risk only 0.97 after costs.",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "HK50: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Participation argues against it (28/100; 0.1x median tick volume). Execution supports it (70/100; spread 900.0 pips (1.3x normal), commission 407.3 pips). Room to the first obstacle is 260 pips, giving about 0.5 to 1 after 1660.9 pips of cost. Blocked because: reward:risk only 0.48 after costs; costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.97 after costs"
+        "reward:risk only 0.48 after costs",
+        "costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.966
+      "reward_risk": 0.483
+    },
+    {
+      "rank": 8,
+      "symbol": "EURAUD",
+      "direction": "SHORT",
+      "score": 22.57,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "EURAUD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Regime supports it (85/100; SQUEEZE / LOW VOL). Execution supports it (79/100; spread 0.3 pips (1.0x normal), commission 1.0 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Cross Market supports it (75/100; 0 related markets with a usable relationship; EUR 10 vs AUD 78). Room to the first obstacle is 0 pips, giving about 1.9 to 1 after 1.4 pips of cost. Blocked because: costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.923
+    },
+    {
+      "rank": 9,
+      "symbol": "EURJPY",
+      "direction": "SHORT",
+      "score": 18.36,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / LOW VOL",
+      "reason": "EURJPY: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Execution argues against it (0/100; spread 0.7 pips (7.0x normal), commission 1.1 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Participation argues against it (28/100; 0.1x median tick volume). Room to the first obstacle is 4 pips, giving about 0.5 to 1 after 4.1 pips of cost. Blocked because: spread is 7.0x its normal size; reward:risk only 0.48 after costs; costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "spread is 7.0x its normal size",
+        "reward:risk only 0.48 after costs",
+        "costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.477
     }
   ],
   "results": {
     "date": "2026-09-28",
-    "currency": "GBP",
-    "trades": 8,
+    "currency": "",
+    "trades": 9,
     "wins": 2,
-    "losses": 6,
-    "win_rate": 25.0,
-    "pips": -10396.3,
+    "losses": 7,
+    "win_rate": 22.2,
+    "pips": -11172.3,
     "money_won": 7.44,
-    "money_lost": -23.04,
-    "net": -15.6,
+    "money_lost": -27.14,
+    "net": -19.7,
     "best_trade": {
       "symbol": "AUDJPY",
       "direction": "sold",
@@ -286,6 +347,26 @@
       "mfe_captured_pct": 0
     },
     "trade_stories": [
+      {
+        "symbol": "US500",
+        "direction": "sold",
+        "opened": "2026-09-28T14:44:06+00:00",
+        "closed": "2026-09-28T14:45:18.829989+00:00",
+        "result_money": -4.1,
+        "result_pips": -776.0,
+        "result_r": -1.0,
+        "why_it_entered": "The market was behaving like a high vol market, so the bot used a liquidity sweep reversal approach and sold it. The strongest evidence was execution 94/100, structure 80/100, volatility 80/100. It scored 85.4/100 (EXCEPTIONAL), which was the best available at the time. It offered about 2.0 to 1 after costs.",
+        "what_happened": "It went 1.00R against the position at worst and 0.62R in favour at best. It finished 1.00R down. FlowLock was in its proving state at the end.",
+        "why_it_exited": "broker stop or target",
+        "what_it_learned": "Lost 1.00R. It only ever reached 0.62R in favour, so it never paid for the risk it was taking - the setup looked better than the follow-through. The stop was hit, which is the stop doing its job.",
+        "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+        "regime": "HIGH_VOL",
+        "score": 85.4,
+        "tier": "EXCEPTIONAL",
+        "mfe_r": 0.62,
+        "mae_r": 1.0,
+        "mfe_captured_pct": 0
+      },
       {
         "symbol": "AUDJPY",
         "direction": "sold",
@@ -451,6 +532,46 @@
   "positions": [],
   "events": [
     {
+      "id": 1495,
+      "ts_utc": "2026-09-28T14:45:19.080950+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1494,
+      "ts_utc": "2026-09-28T14:45:18.863653+00:00",
+      "kind": "SAFE_MODE",
+      "severity": "CRITICAL",
+      "message": "MetaTrader 5 is not connected to the broker",
+      "detail_json": null
+    },
+    {
+      "id": 1493,
+      "ts_utc": "2026-09-28T14:44:06.534898+00:00",
+      "kind": "ENTRY",
+      "severity": "INFO",
+      "message": "US500 SELL 0.7 lots",
+      "detail_json": "{\"opportunity\": 85.4, \"tier\": \"EXCEPTIONAL\", \"tactic\": \"LIQUIDITY_SWEEP_REVERSAL\", \"risk_pct\": 0.486, \"explain\": \"US500: HIGH_VOL / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Execution supports it (94/100; spread 30.0 pips (0.6x normal), commission 51.9 pips). Structure supports it (80/100; range structure on M5). Volatility supports it (80/100; volatility at the 99th percentile). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Room to the first obstacle is 999 pips, giving about 2.0 to 1 after 89.4 pips of cost.\", \"sizing_reasons\": [\"tier EXCEPTIONAL, calibrated confidence 0.00, aggression NORMAL\", \"only 29 comparable trades - too few for Kelly, staying on the calibrated curve\"], \"entry_timing\": \"S10 timing agrees\", \"protective_stop_confirmed\": true}"
+    },
+    {
+      "id": 1492,
+      "ts_utc": "2026-09-28T14:43:40.522760+00:00",
+      "kind": "SAFE_MODE_END",
+      "severity": "WARNING",
+      "message": "conditions recovered",
+      "detail_json": null
+    },
+    {
+      "id": 1491,
+      "ts_utc": "2026-09-28T14:43:30.109959+00:00",
+      "kind": "SAFE_MODE",
+      "severity": "CRITICAL",
+      "message": "price data is stale - the freshest price is 20s old",
+      "detail_json": null
+    },
+    {
       "id": 1490,
       "ts_utc": "2026-09-28T14:30:04.243535+00:00",
       "kind": "SAFE_MODE_END",
@@ -609,47 +730,7 @@
       "severity": "WARNING",
       "message": "conditions recovered",
       "detail_json": null
-    },
-    {
-      "id": 1470,
-      "ts_utc": "2026-09-28T14:23:45.368204+00:00",
-      "kind": "SAFE_MODE",
-      "severity": "CRITICAL",
-      "message": "price data is stale - the freshest price is 22s old",
-      "detail_json": null
-    },
-    {
-      "id": 1469,
-      "ts_utc": "2026-09-28T14:23:13.601296+00:00",
-      "kind": "SAFE_MODE_END",
-      "severity": "WARNING",
-      "message": "conditions recovered",
-      "detail_json": null
-    },
-    {
-      "id": 1468,
-      "ts_utc": "2026-09-28T14:23:08.339974+00:00",
-      "kind": "SAFE_MODE",
-      "severity": "CRITICAL",
-      "message": "price data is stale - the freshest price is 23s old",
-      "detail_json": null
-    },
-    {
-      "id": 1467,
-      "ts_utc": "2026-09-28T14:22:35.957517+00:00",
-      "kind": "SAFE_MODE_END",
-      "severity": "WARNING",
-      "message": "conditions recovered",
-      "detail_json": null
-    },
-    {
-      "id": 1466,
-      "ts_utc": "2026-09-28T14:22:30.702802+00:00",
-      "kind": "SAFE_MODE",
-      "severity": "CRITICAL",
-      "message": "price data is stale - the freshest price is 27s old",
-      "detail_json": null
     }
   ],
-  "updated": "2026-09-28T14:35:16.516647+00:00"
+  "updated": "2026-09-28T14:45:19.110761+00:00"
 }
