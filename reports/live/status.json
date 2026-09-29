@@ -68,10 +68,10 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "21:58:56 UTC",
+    "last_scan": "22:09:00 UTC",
     "last_trade": "EURNZD 2026-09-29T18:32",
     "not_trading_because": [
-      "PROBLEM: this machine's clock is 35s out of step with the broker - session and news timing cannot be trusted"
+      "no new entries during the rollover window (21:45-23:30 UTC)"
     ],
     "strategy_rules": {
       "entry_tier": "NORMAL",
@@ -81,21 +81,21 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 299,
-    "uptime_minutes": 26.3
+    "cycles": 414,
+    "uptime_minutes": 36.4
   },
   "health": {
-    "as_of": "2026-09-29T21:58:56.722922+00:00",
+    "as_of": "2026-09-29T22:09:00.654320+00:00",
     "safe_mode": false,
-    "entries_allowed": false,
-    "summary": "1 problem(s) found; new trades are paused",
+    "entries_allowed": true,
+    "summary": "everything is healthy",
     "checks": [
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "62764 MB of disk space free",
+        "message": "62730 MB of disk space free",
         "detail": {
-          "free_mb": 62763.6
+          "free_mb": 62729.6
         }
       },
       {
@@ -103,15 +103,15 @@
         "severity": "OK",
         "message": "memory 84% used",
         "detail": {
-          "percent": 84.0
+          "percent": 84.4
         }
       },
       {
         "name": "CLOCK",
-        "severity": "FAIL",
-        "message": "this machine's clock is 35s out of step with the broker - session and news timing cannot be trusted",
+        "severity": "OK",
+        "message": "clock agrees with the broker (within 1s)",
         "detail": {
-          "skew_seconds": 34.7
+          "skew_seconds": 0.7
         }
       },
       {
@@ -154,9 +154,9 @@
       {
         "name": "NEWS",
         "severity": "OK",
-        "message": "calendar live (69 events known)",
+        "message": "calendar live (68 events known)",
         "detail": {
-          "events_known": 69
+          "events_known": 68
         }
       },
       {
@@ -171,7 +171,7 @@
         "message": "1 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 6.1
+            "watchdog": 5.4
           }
         }
       },
@@ -180,7 +180,7 @@
         "severity": "OK",
         "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 5.2
+          "age_seconds": 5.4
         }
       },
       {
@@ -194,129 +194,62 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "NZDJPY",
+      "symbol": "DE40",
       "direction": "LONG",
-      "score": 60.63,
-      "tier": "NORMAL",
-      "tactic": "FAILED_BREAKOUT_RECLAIM",
-      "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "NZDJPY: UNCLEAR / NORMAL VOL market. Best idea is buy using failed breakout reclaim. Execution supports it (95/100; spread 7.0 pips (0.5x normal), commission 1.1 pips). Structure supports it (92/100; unclear structure on M5). Momentum argues against it (29/100; efficiency 0.05, ADX 20). Multi Tf argues against it (33/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 2 pips, giving about -0.2 to 1 after 9.9 pips of cost. Blocked because: reward:risk only -0.18 after costs; costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 5.9 ATR from the level that invalidates this idea - the move has been missed.",
+      "score": 47.83,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "DE40: HIGH_VOL / HIGH VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution supports it (85/100; spread 400.0 pips (1.0x normal), commission 46.4 pips). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (79/100; volatility at the 96th percentile). Room to the first obstacle is 1402 pips, giving about 1.5 to 1 after 546.5 pips of cost. Blocked because: reward:risk only 1.47 after costs; costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.18 after costs",
-        "costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "entry is 5.9 ATR from the level that invalidates this idea - the move has been missed"
+        "reward:risk only 1.47 after costs",
+        "costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.179
+      "reward_risk": 1.465
     },
     {
       "rank": 2,
-      "symbol": "NZDCAD",
-      "direction": "LONG",
-      "score": 60.33,
-      "tier": "NORMAL",
-      "tactic": "FAILED_BREAKOUT_RECLAIM",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "NZDCAD: RANGE / NORMAL VOL market. Best idea is buy using failed breakout reclaim. Execution supports it (94/100; spread 5.7 pips (0.5x normal), commission 1.0 pips). Structure supports it (92/100; unclear structure on M5). Regime supports it (85/100; RANGE / NORMAL VOL). Cross Market supports it (73/100; 0 related markets with a usable relationship; NZD 78 vs CAD 21). Room to the first obstacle is 6 pips, giving about -0.2 to 1 after 8.2 pips of cost. Blocked because: reward:risk only -0.24 after costs; costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 5.0 ATR from the level that invalidates this idea - the move has been missed.",
+      "symbol": "GBPCAD",
+      "direction": "SHORT",
+      "score": 47.58,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / LOW VOL",
+      "reason": "GBPCAD: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Execution supports it (99/100; spread 0.3 pips (0.0x normal), commission 1.0 pips). Structure supports it (82/100; unclear structure on M5). Multi Tf supports it (71/100; 6 timeframes weighed, higher ones first). Momentum supports it (71/100; efficiency 0.13, ADX 17). Room to the first obstacle is 5 pips, giving about 1.0 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.99 after costs; costs would be 30% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.24 after costs",
-        "costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "entry is 5.0 ATR from the level that invalidates this idea - the move has been missed"
+        "reward:risk only 0.99 after costs",
+        "costs would be 30% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.239
+      "reward_risk": 0.99
     },
     {
       "rank": 3,
-      "symbol": "NZDCAD",
+      "symbol": "GBPAUD",
       "direction": "SHORT",
-      "score": 38.89,
+      "score": 33.27,
       "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
+      "tactic": "RANGE_REJECTION",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "NZDCAD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (94/100; spread 5.7 pips (0.5x normal), commission 1.0 pips). Regime supports it (85/100; RANGE / NORMAL VOL). Multi Tf supports it (80/100; 6 timeframes weighed, higher ones first). Cross Market argues against it (27/100; 0 related markets with a usable relationship; NZD 78 vs CAD 21). Room to the first obstacle is 3 pips, giving about -0.5 to 1 after 8.2 pips of cost. Blocked because: reward:risk only -0.46 after costs; costs would be 96% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "GBPAUD: RANGE / NORMAL VOL market. Best idea is sell using range rejection. Execution supports it (99/100; spread 0.3 pips (0.0x normal), commission 1.0 pips). Structure supports it (80/100; range structure on M5). Regime supports it (74/100; RANGE / NORMAL VOL). Momentum supports it (68/100; efficiency 0.05, ADX 31). Room to the first obstacle is 6 pips, giving about 0.9 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.95 after costs.",
       "blockers": [
-        "reward:risk only -0.46 after costs",
-        "costs would be 96% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.95 after costs"
       ],
-      "reward_risk": -0.458
+      "reward_risk": 0.948
     },
     {
       "rank": 4,
-      "symbol": "CHFJPY",
-      "direction": "LONG",
-      "score": 35.54,
-      "tier": "NO_TRADE",
-      "tactic": "FAILED_BREAKOUT_RECLAIM",
-      "regime": "HIGH_VOL / HIGH VOL",
-      "reason": "CHFJPY: HIGH_VOL / HIGH VOL market. Best idea is buy using failed breakout reclaim. Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (79/100; volatility at the 97th percentile). Execution supports it (77/100; spread 37.7 pips (1.2x normal), commission 1.1 pips). Structure argues against it (26/100; down structure on M5). Room to the first obstacle is 2 pips, giving about -0.4 to 1 after 51.4 pips of cost. Blocked because: reward:risk only -0.40 after costs; costs would be 56% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 14.8 ATR from the level that invalidates this idea - the move has been missed.",
-      "blockers": [
-        "reward:risk only -0.40 after costs",
-        "costs would be 56% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "entry is 14.8 ATR from the level that invalidates this idea - the move has been missed"
-      ],
-      "reward_risk": -0.398
-    },
-    {
-      "rank": 5,
-      "symbol": "CHFJPY",
+      "symbol": "NZDCHF",
       "direction": "SHORT",
-      "score": 34.4,
-      "tier": "NO_TRADE",
-      "tactic": "MOMENTUM_CONTINUATION",
-      "regime": "HIGH_VOL / HIGH VOL",
-      "reason": "CHFJPY: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Structure supports it (100/100; down structure on M5). Multi Tf supports it (87/100; 6 timeframes weighed, higher ones first). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (79/100; volatility at the 97th percentile). Room to the first obstacle is 3 pips, giving about -0.6 to 1 after 51.4 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 34); reward:risk only -0.65 after costs; costs would be 91% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "momentum continuation needs a score of 70+ (this is 34)",
-        "reward:risk only -0.65 after costs",
-        "costs would be 91% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": -0.645
-    },
-    {
-      "rank": 6,
-      "symbol": "AUDCAD",
-      "direction": "SHORT",
-      "score": 31.55,
+      "score": 23.95,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_ACCEPTANCE",
       "regime": "SQUEEZE / LOW VOL",
-      "reason": "AUDCAD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Execution supports it (84/100; spread 12.8 pips (1.0x normal), commission 1.0 pips). Structure supports it (76/100; range structure on M5). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Cross Market argues against it (28/100; 0 related markets with a usable relationship; AUD 76 vs CAD 21). Room to the first obstacle is 3 pips, giving about -0.3 to 1 after 17.1 pips of cost. Blocked because: reward:risk only -0.32 after costs; costs would be 65% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "NZDCHF: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Execution supports it (99/100; spread 0.3 pips (0.0x normal), commission 0.6 pips). Volatility argues against it (33/100; volatility at the 7th percentile). Momentum supports it (64/100; efficiency 0.13, ADX 31). Regime supports it (62/100; SQUEEZE / LOW VOL). Room to the first obstacle is 0 pips, giving about 1.5 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 1.54 after costs; costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.32 after costs",
-        "costs would be 65% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 1.54 after costs",
+        "costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.316
-    },
-    {
-      "rank": 7,
-      "symbol": "GBPAUD",
-      "direction": "SHORT",
-      "score": 29.21,
-      "tier": "NO_TRADE",
-      "tactic": "MOMENTUM_CONTINUATION",
-      "regime": "HIGH_VOL / HIGH VOL",
-      "reason": "GBPAUD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Structure supports it (98/100; down structure on M5). Execution supports it (91/100; spread 25.0 pips (0.7x normal), commission 1.0 pips). Volatility supports it (78/100; volatility at the 95th percentile). Regime supports it (76/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 3 pips, giving about -0.3 to 1 after 32.3 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 29); reward:risk only -0.35 after costs; costs would be 76% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "momentum continuation needs a score of 70+ (this is 29)",
-        "reward:risk only -0.35 after costs",
-        "costs would be 76% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": -0.346
-    },
-    {
-      "rank": 8,
-      "symbol": "NZDUSD",
-      "direction": "SHORT",
-      "score": 28.51,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "NZDUSD: SQUEEZE / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution supports it (98/100; spread 2.2 pips (0.3x normal), commission 0.7 pips). Regime supports it (85/100; SQUEEZE / NORMAL VOL). Structure argues against it (16/100; up structure on M5). Multi Tf supports it (81/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 0.2 to 1 after 3.5 pips of cost. Blocked because: reward:risk only 0.21 after costs; costs would be 36% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 3.9 ATR from the level that invalidates this idea - the move has been missed.",
-      "blockers": [
-        "reward:risk only 0.21 after costs",
-        "costs would be 36% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "entry is 3.9 ATR from the level that invalidates this idea - the move has been missed"
-      ],
-      "reward_risk": 0.209
+      "reward_risk": 1.542
     }
   ],
   "results": {
@@ -836,5 +769,5 @@
       "detail_json": null
     }
   ],
-  "updated": "2026-09-29T21:58:58.637618+00:00"
+  "updated": "2026-09-29T22:09:03.502012+00:00"
 }
