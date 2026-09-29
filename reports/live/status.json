@@ -1,11 +1,643 @@
 {
   "status": {
-    "bot": "STARTING"
+    "bot": "RUNNING",
+    "mt5_connected": true,
+    "broker_connected": true,
+    "data_live": true,
+    "news_live": true,
+    "watchdog_ok": true,
+    "mode": "DEMO",
+    "aggression": "NORMAL",
+    "open_positions": 0,
+    "equity": 824.1,
+    "balance": 824.1,
+    "currency": "GBP",
+    "today_pnl": 1.19,
+    "win_rate_today": 100.0,
+    "today_trades": 1,
+    "since_start_pnl": -10.04,
+    "since_start_trades": 125,
+    "since_start_win_rate": 40.0,
+    "tracking_start": "2026-09-22T11:27:22+00:00",
+    "strategy": "2026-09-15 balanced - half the pace, wiser choices",
+    "build": "097b7d52f8",
+    "started": "2026-09-29 08:00 UTC",
+    "pnl_source": "broker",
+    "periods": [
+      {
+        "label": "Today",
+        "net": 1.19,
+        "trades": 1,
+        "wins": 1,
+        "win_rate": 100.0
+      },
+      {
+        "label": "Yesterday",
+        "net": -12.23,
+        "trades": 15,
+        "wins": 5,
+        "win_rate": 33.3
+      },
+      {
+        "label": "This week",
+        "net": 1.19,
+        "trades": 1,
+        "wins": 1,
+        "win_rate": 100.0
+      },
+      {
+        "label": "Last 7 days",
+        "net": -3.51,
+        "trades": 119,
+        "wins": 48,
+        "win_rate": 40.3
+      },
+      {
+        "label": "Last 14 days",
+        "net": -10.04,
+        "trades": 125,
+        "wins": 50,
+        "win_rate": 40.0
+      },
+      {
+        "label": "Since start",
+        "net": -10.04,
+        "trades": 125,
+        "wins": 50,
+        "win_rate": 40.0
+      }
+    ],
+    "pnl_error": "",
+    "last_scan": "08:09:29 UTC",
+    "last_trade": "US30 2026-09-29T01:05",
+    "not_trading_because": [],
+    "strategy_rules": {
+      "entry_tier": "NORMAL",
+      "min_reward_risk": 1.8,
+      "max_cost_fraction_of_stop": 0.2,
+      "max_new_positions_per_hour": 0,
+      "max_new_positions_per_day": 0,
+      "sessions": []
+    },
+    "cycles": 98,
+    "uptime_minutes": 8.8
   },
-  "health": {},
-  "thinking": [],
-  "results": {},
+  "health": {
+    "as_of": "2026-09-29T08:09:29.814604+00:00",
+    "safe_mode": false,
+    "entries_allowed": true,
+    "summary": "everything is healthy",
+    "checks": [
+      {
+        "name": "DISK",
+        "severity": "OK",
+        "message": "60868 MB of disk space free",
+        "detail": {
+          "free_mb": 60867.9
+        }
+      },
+      {
+        "name": "MEMORY",
+        "severity": "OK",
+        "message": "memory 85% used",
+        "detail": {
+          "percent": 85.0
+        }
+      },
+      {
+        "name": "CLOCK",
+        "severity": "OK",
+        "message": "clock agrees with the broker (within 2s)",
+        "detail": {
+          "skew_seconds": 1.8
+        }
+      },
+      {
+        "name": "BROKER_CONNECTION",
+        "severity": "OK",
+        "message": "MetaTrader 5 is connected",
+        "detail": {}
+      },
+      {
+        "name": "ACCOUNT",
+        "severity": "OK",
+        "message": "DEMO account 53020675 on ICMarketsSC-Demo",
+        "detail": {
+          "login": 53020675,
+          "server": "ICMarketsSC-Demo",
+          "is_demo": true
+        }
+      },
+      {
+        "name": "TRADE_PERMISSION",
+        "severity": "OK",
+        "message": "trading is enabled",
+        "detail": {}
+      },
+      {
+        "name": "MARGIN",
+        "severity": "OK",
+        "message": "no margin in use",
+        "detail": {}
+      },
+      {
+        "name": "MARKET_DATA",
+        "severity": "OK",
+        "message": "live prices arriving (1s old)",
+        "detail": {
+          "freshest_age_seconds": 1.0,
+          "weekend": false
+        }
+      },
+      {
+        "name": "NEWS",
+        "severity": "OK",
+        "message": "calendar live (48 events known)",
+        "detail": {
+          "events_known": 48
+        }
+      },
+      {
+        "name": "DATABASE",
+        "severity": "OK",
+        "message": "trade database is fine",
+        "detail": {}
+      },
+      {
+        "name": "HEARTBEATS",
+        "severity": "OK",
+        "message": "1 supervising component(s) reporting",
+        "detail": {
+          "components": {
+            "watchdog": 13.0
+          }
+        }
+      },
+      {
+        "name": "SCAN_FRESHNESS",
+        "severity": "OK",
+        "message": "markets scanned 6s ago",
+        "detail": {
+          "age_seconds": 5.5
+        }
+      },
+      {
+        "name": "POSITION_PROTECTION",
+        "severity": "OK",
+        "message": "all 0 open position(s) protected at the broker",
+        "detail": {}
+      }
+    ]
+  },
+  "thinking": [
+    {
+      "rank": 1,
+      "symbol": "EURGBP",
+      "direction": "SHORT",
+      "score": 75.12,
+      "tier": "STRONG",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "EURGBP: TREND / NORMAL VOL market. Best idea is sell using session expansion. Execution supports it (100/100; spread 0.1 pips (0.3x normal), commission 0.6 pips). Session supports it (73/100; session: LONDON). Structure supports it (70/100; unclear structure on M5). Regime supports it (67/100; TREND / NORMAL VOL). Room to the first obstacle is 2 pips, giving about 0.8 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 0.84 after costs.",
+      "blockers": [
+        "reward:risk only 0.84 after costs"
+      ],
+      "reward_risk": 0.843
+    },
+    {
+      "rank": 2,
+      "symbol": "XAUEUR",
+      "direction": "SHORT",
+      "score": 58.76,
+      "tier": "NO_TRADE",
+      "tactic": "FAILED_BREAKOUT_RECLAIM",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "XAUEUR: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Execution supports it (96/100; spread 6.0 pips (0.5x normal), commission 7.0 pips). Momentum supports it (79/100; efficiency 0.08, ADX 16). Session supports it (73/100; session: LONDON). Regime supports it (65/100; RANGE / NORMAL VOL). Room to the first obstacle is 239 pips, giving about 0.6 to 1 after 14.5 pips of cost. Blocked because: reward:risk only 0.57 after costs.",
+      "blockers": [
+        "reward:risk only 0.57 after costs"
+      ],
+      "reward_risk": 0.573
+    },
+    {
+      "rank": 3,
+      "symbol": "CADJPY",
+      "direction": "SHORT",
+      "score": 55.43,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "UNCLEAR / HIGH VOL",
+      "reason": "CADJPY: UNCLEAR / HIGH VOL market. Best idea is sell using session expansion. Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 1.1 pips). Structure supports it (76/100; range structure on M5). Volatility supports it (76/100; volatility at the 90th percentile). Room to the first obstacle is 6 pips, giving about 0.7 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.71 after costs.",
+      "blockers": [
+        "reward:risk only 0.71 after costs"
+      ],
+      "reward_risk": 0.71
+    },
+    {
+      "rank": 4,
+      "symbol": "AUS200",
+      "direction": "LONG",
+      "score": 49.19,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "AUS200: TREND / NORMAL VOL market. Best idea is buy using session expansion. Structure supports it (98/100; up structure on M5). Execution supports it (84/100; spread 120.0 pips (1.0x normal), commission 74.6 pips). Regime supports it (74/100; TREND / NORMAL VOL). Multi Tf supports it (73/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 600 pips, giving about 1.8 to 1 after 224.6 pips of cost. Blocked because: reward:risk only 1.79 after costs; costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.79 after costs",
+        "costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.793
+    },
+    {
+      "rank": 5,
+      "symbol": "NZDCAD",
+      "direction": "LONG",
+      "score": 45.55,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "NZDCAD: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Execution supports it (85/100; spread 0.3 pips (1.0x normal), commission 1.0 pips). Cross Market argues against it (25/100; 0 related markets with a usable relationship; NZD 13 vs CAD 77). Session supports it (73/100; session: LONDON). Momentum supports it (70/100; efficiency 0.05, ADX 13). Room to the first obstacle is 2 pips, giving about 1.0 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.96 after costs; costs would be 34% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.96 after costs",
+        "costs would be 34% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.96
+    },
+    {
+      "rank": 6,
+      "symbol": "XAUAUD",
+      "direction": "LONG",
+      "score": 43.12,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "XAUAUD: SQUEEZE / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (98/100; spread 12.0 pips (0.4x normal), commission 11.4 pips). Structure supports it (82/100; unclear structure on M5). Session supports it (73/100; session: LONDON). Multi Tf supports it (71/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 129 pips, giving about 2.0 to 1 after 26.4 pips of cost.",
+      "blockers": [],
+      "reward_risk": 2.003
+    },
+    {
+      "rank": 7,
+      "symbol": "USDCHF",
+      "direction": "LONG",
+      "score": 41.59,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / HIGH VOL",
+      "reason": "USDCHF: UNCLEAR / HIGH VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Multi Tf supports it (99/100; 6 timeframes weighed, higher ones first). Execution supports it (85/100; spread 0.1 pips (1.0x normal), commission 0.6 pips). Historical argues against it (26/100; 51 comparable trades (tactic): expectancy -5354.23R, 57% win rate). Room to the first obstacle is 1 pips, giving about 0.8 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 0.76 after costs.",
+      "blockers": [
+        "reward:risk only 0.76 after costs"
+      ],
+      "reward_risk": 0.764
+    },
+    {
+      "rank": 8,
+      "symbol": "NZDCHF",
+      "direction": "SHORT",
+      "score": 40.05,
+      "tier": "NO_TRADE",
+      "tactic": "FAILED_BREAKOUT_RECLAIM",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "NZDCHF: RANGE / NORMAL VOL market. Best idea is sell using failed breakout reclaim. Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 0.6 pips). Regime supports it (85/100; RANGE / NORMAL VOL). Momentum supports it (80/100; efficiency 0.14, ADX 7). Session supports it (73/100; session: LONDON). Room to the first obstacle is 1 pips, giving about 0.0 to 1 after 0.9 pips of cost. Blocked because: reward:risk only 0.01 after costs.",
+      "blockers": [
+        "reward:risk only 0.01 after costs"
+      ],
+      "reward_risk": 0.01
+    },
+    {
+      "rank": 9,
+      "symbol": "CHFJPY",
+      "direction": "SHORT",
+      "score": 39.84,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / HIGH VOL",
+      "reason": "CHFJPY: TREND / HIGH VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Execution supports it (91/100; spread 0.3 pips (0.8x normal), commission 1.1 pips). Multi Tf supports it (81/100; 6 timeframes weighed, higher ones first). Volatility supports it (78/100; volatility at the 95th percentile). Room to the first obstacle is 2 pips, giving about 1.0 to 1 after 1.5 pips of cost. Blocked because: reward:risk only 0.98 after costs.",
+      "blockers": [
+        "reward:risk only 0.98 after costs"
+      ],
+      "reward_risk": 0.979
+    },
+    {
+      "rank": 10,
+      "symbol": "EURUSD",
+      "direction": "SHORT",
+      "score": 39.54,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / HIGH VOL",
+      "reason": "EURUSD: TREND / HIGH VOL market. Best idea is sell using session expansion. Execution argues against it (0/100; spread 0.0 pips (0.0x normal), commission 0.7 pips). Multi Tf supports it (84/100; 6 timeframes weighed, higher ones first). Volatility supports it (77/100; volatility at the 92th percentile). Cross Market supports it (73/100; 0 related markets with a usable relationship; EUR 35 vs USD 93). Room to the first obstacle is 4 pips, giving about 0.8 to 1 after 0.7 pips of cost. Blocked because: no spread quoted; reward:risk only 0.80 after costs.",
+      "blockers": [
+        "no spread quoted",
+        "reward:risk only 0.80 after costs"
+      ],
+      "reward_risk": 0.801
+    },
+    {
+      "rank": 11,
+      "symbol": "EURCHF",
+      "direction": "LONG",
+      "score": 39.46,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / HIGH VOL",
+      "reason": "EURCHF: UNCLEAR / HIGH VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Historical argues against it (26/100; 51 comparable trades (tactic): expectancy -5354.23R, 57% win rate). Session supports it (73/100; session: LONDON). Momentum supports it (70/100; efficiency 0.10, ADX 21). Room to the first obstacle is 1 pips, giving about 0.8 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.76 after costs; costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.76 after costs",
+        "costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.764
+    },
+    {
+      "rank": 12,
+      "symbol": "EURCAD",
+      "direction": "SHORT",
+      "score": 38.39,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "EURCAD: TREND / NORMAL VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Cross Market supports it (92/100; 7 related markets with a usable relationship; EUR 35 vs CAD 77). Regime supports it (85/100; TREND / NORMAL VOL). Execution supports it (74/100; spread 0.3 pips (1.5x normal), commission 1.0 pips). Room to the first obstacle is 1 pips, giving about 1.2 to 1 after 1.5 pips of cost. Blocked because: reward:risk only 1.18 after costs; costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.18 after costs",
+        "costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.175
+    }
+  ],
+  "results": {
+    "date": "2026-09-29",
+    "currency": "GBP",
+    "trades": 1,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": 0.0,
+    "pips": 0,
+    "money_won": 0,
+    "money_lost": 0,
+    "net": 0,
+    "best_trade": {
+      "symbol": "US30",
+      "direction": "sold",
+      "opened": "2026-09-29T00:16:51+00:00",
+      "closed": "2026-09-29T01:05:32.593381+00:00",
+      "result_money": 0,
+      "result_pips": 0,
+      "result_r": 0.5,
+      "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and sold it. The strongest evidence was structure 98/100, regime 85/100, execution 68/100. It scored 62.93/100 (NORMAL), which was the best available at the time. It offered about 2.1 to 1 after costs.",
+      "what_happened": "It went 0.27R against the position at worst and 1.09R in favour at best. It finished 0.50R up. FlowLock was in its strong flow state at the end.",
+      "why_it_exited": "broker stop or target",
+      "what_it_learned": "Won 0.50R. Kept 46% of the best price it saw.",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "TREND",
+      "score": 62.93,
+      "tier": "NORMAL",
+      "mfe_r": 1.09,
+      "mae_r": 0.27,
+      "mfe_captured_pct": 45.8
+    },
+    "worst_trade": {
+      "symbol": "US30",
+      "direction": "sold",
+      "opened": "2026-09-29T00:16:51+00:00",
+      "closed": "2026-09-29T01:05:32.593381+00:00",
+      "result_money": 0,
+      "result_pips": 0,
+      "result_r": 0.5,
+      "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and sold it. The strongest evidence was structure 98/100, regime 85/100, execution 68/100. It scored 62.93/100 (NORMAL), which was the best available at the time. It offered about 2.1 to 1 after costs.",
+      "what_happened": "It went 0.27R against the position at worst and 1.09R in favour at best. It finished 0.50R up. FlowLock was in its strong flow state at the end.",
+      "why_it_exited": "broker stop or target",
+      "what_it_learned": "Won 0.50R. Kept 46% of the best price it saw.",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "TREND",
+      "score": 62.93,
+      "tier": "NORMAL",
+      "mfe_r": 1.09,
+      "mae_r": 0.27,
+      "mfe_captured_pct": 45.8
+    },
+    "trade_stories": [
+      {
+        "symbol": "US30",
+        "direction": "sold",
+        "opened": "2026-09-29T00:16:51+00:00",
+        "closed": "2026-09-29T01:05:32.593381+00:00",
+        "result_money": 0,
+        "result_pips": 0,
+        "result_r": 0.5,
+        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and sold it. The strongest evidence was structure 98/100, regime 85/100, execution 68/100. It scored 62.93/100 (NORMAL), which was the best available at the time. It offered about 2.1 to 1 after costs.",
+        "what_happened": "It went 0.27R against the position at worst and 1.09R in favour at best. It finished 0.50R up. FlowLock was in its strong flow state at the end.",
+        "why_it_exited": "broker stop or target",
+        "what_it_learned": "Won 0.50R. Kept 46% of the best price it saw.",
+        "tactic": "BREAKOUT_RETEST",
+        "regime": "TREND",
+        "score": 62.93,
+        "tier": "NORMAL",
+        "mfe_r": 1.09,
+        "mae_r": 0.27,
+        "mfe_captured_pct": 45.8
+      }
+    ]
+  },
   "positions": [],
-  "events": [],
-  "updated": null
+  "events": [
+    {
+      "id": 1569,
+      "ts_utc": "2026-09-29T08:00:42.837819+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'AUDUSD', 'GBPUSD', 'NZDUSD', 'USDCHF', 'USDJPY', 'USDCAD', 'XAUGBP', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'XAUJPY', 'XAUAUD', 'DE40', 'US500', 'UK100', 'AUS200', 'US30', 'JP225', 'HK50', 'EURJPY', 'AUDCHF', 'CADCHF', 'CADJPY', 'EURCAD', 'GBPCAD', 'GBPCHF', 'NZDCHF', 'AUDJPY', 'NZDJPY', 'AUDCAD', 'EURAUD', 'EURCHF', 'EURGBP', 'NZDCAD', 'CHFJPY', 'GBPAUD', 'AUDNZD', 'GBPJPY', 'EURNZD']\", \"rejected\": \"{'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'group UNKNOWN not enabled', 'CHFSGD': 'group UNKNOWN not enabled', 'EURDKK': 'group UNKNOWN not enabled', 'EURHKD': 'group UNKNOWN not enabled', 'EURNOK': 'group UNKNOWN not enabled', 'EURPLN': 'group UNKNOWN not enabled', 'EURSEK': 'group UNKNOWN not enabled', 'EURSGD': 'group UNKNOWN not enabled', 'EURTRY': 'group UNKNOWN not enabled', 'EURZAR':\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 146, 'win_rate': 0.445, 'expectancy_r': -1901.918}, {'band': '64-70', 'trades': 90, 'win_rate': 0.344, 'expectancy_r': -0.29}, {'band': '70-76', 'trades': 108, 'win_rate': 0.509, 'expectancy_r': 0.108}, {'band': '76-82', 'trades\", \"calibration_warning\": \"band 76-82 (E=-182552.99R) underperforms 70-76 (E=0.11R)\", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
+    },
+    {
+      "id": 1568,
+      "ts_utc": "2026-09-29T08:00:42.502056+00:00",
+      "kind": "CALIBRATION",
+      "severity": "WARNING",
+      "message": "band 76-82 (E=-182552.99R) underperforms 70-76 (E=0.11R)",
+      "detail_json": null
+    },
+    {
+      "id": 1567,
+      "ts_utc": "2026-09-29T03:51:31.586137+00:00",
+      "kind": "SHUTDOWN",
+      "severity": "WARNING",
+      "message": "trader stopped",
+      "detail_json": null
+    },
+    {
+      "id": 1566,
+      "ts_utc": "2026-09-29T02:50:46.283915+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1565,
+      "ts_utc": "2026-09-29T02:50:40.987142+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1564,
+      "ts_utc": "2026-09-29T02:50:34.290881+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1563,
+      "ts_utc": "2026-09-29T02:50:29.059600+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1562,
+      "ts_utc": "2026-09-29T02:50:29.036489+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 5 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 273.3}"
+    },
+    {
+      "id": 1561,
+      "ts_utc": "2026-09-29T02:45:55.754827+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1560,
+      "ts_utc": "2026-09-29T02:45:55.748511+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 15 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 915.8}"
+    },
+    {
+      "id": 1559,
+      "ts_utc": "2026-09-29T02:30:39.984304+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1558,
+      "ts_utc": "2026-09-29T02:30:39.912665+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 18 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 1077.3}"
+    },
+    {
+      "id": 1557,
+      "ts_utc": "2026-09-29T02:12:42.835650+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1556,
+      "ts_utc": "2026-09-29T02:12:42.822367+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 1013.1}"
+    },
+    {
+      "id": 1555,
+      "ts_utc": "2026-09-29T01:55:49.830332+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1554,
+      "ts_utc": "2026-09-29T01:55:49.718370+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 992.7}"
+    },
+    {
+      "id": 1553,
+      "ts_utc": "2026-09-29T01:39:17.087515+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1552,
+      "ts_utc": "2026-09-29T01:39:16.853638+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 1014.3}"
+    },
+    {
+      "id": 1551,
+      "ts_utc": "2026-09-29T01:22:23.770347+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1550,
+      "ts_utc": "2026-09-29T01:22:22.822024+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 1009.9}"
+    },
+    {
+      "id": 1549,
+      "ts_utc": "2026-09-29T01:05:32.706482+00:00",
+      "kind": "SELF_HEAL",
+      "severity": "ERROR",
+      "message": "MT5 connection: recovery attempt failed",
+      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+    },
+    {
+      "id": 1548,
+      "ts_utc": "2026-09-29T01:05:32.612226+00:00",
+      "kind": "SAFE_MODE",
+      "severity": "CRITICAL",
+      "message": "MetaTrader 5 is not connected to the broker",
+      "detail_json": null
+    },
+    {
+      "id": 1547,
+      "ts_utc": "2026-09-29T01:05:32.593670+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 15 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 923.2}"
+    },
+    {
+      "id": 1546,
+      "ts_utc": "2026-09-29T00:16:51.957854+00:00",
+      "kind": "ENTRY",
+      "severity": "INFO",
+      "message": "US30 SELL 0.1 lots",
+      "detail_json": "{\"opportunity\": 62.93, \"tier\": \"NORMAL\", \"tactic\": \"BREAKOUT_RETEST\", \"risk_pct\": 0.2902, \"explain\": \"US30: TREND / NORMAL VOL market. Best idea is sell using breakout retest. Structure supports it (98/100; down structure on M5). Regime supports it (85/100; TREND / NORMAL VOL). Execution supports it (68/100; spread 120.0 pips (1.7x normal), commission 52.3 pips). Session supports it (62/100; session: ASIA). Room to the first obstacle is 3955 pips, giving about 2.1 to 1 after 245.1 pips of cost.\", \"sizing_reasons\": [\"tier NORMAL, calibrated confidence 0.00, aggression NORMAL\", \"Kelly is negative on this sample - holding at base risk\"], \"entry_timing\": \"S10 timing agrees\", \"protective_stop_confirmed\": true}"
+    },
+    {
+      "id": 1545,
+      "ts_utc": "2026-09-28T23:51:11.737768+00:00",
+      "kind": "SAFE_MODE_END",
+      "severity": "WARNING",
+      "message": "conditions recovered",
+      "detail_json": null
+    }
+  ],
+  "updated": "2026-09-29T08:09:32.020679+00:00"
 }
