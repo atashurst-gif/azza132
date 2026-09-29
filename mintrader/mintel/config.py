@@ -207,6 +207,17 @@ class FlowLockConfig:
     # stop never sits below lock_floor_r. On the same trades: +12 -> +95 GBP.
     lock_at_r: float = 1.0
     lock_floor_r: float = 0.5
+    # 29 Sep: the runner. A trade in STRONG_FLOW (momentum still with it
+    # past +1R) has its broker target pushed out to runner_target_multiple x
+    # the original distance; when price reaches the ORIGINAL target the
+    # bot banks (1 - runner_keep_fraction) of the position and lets the
+    # rest run under the trail, with at least runner_floor_r locked. The
+    # broker closes everything at the target otherwise, so the record has
+    # never shown what price did afterwards; this measures it.
+    runner_enabled: bool = True
+    runner_keep_fraction: float = 0.3
+    runner_target_multiple: float = 2.0
+    runner_floor_r: float = 1.0
     mfe_giveback_decay: float = 0.22
     stall_bars_to_decay: int = 20
     reversal_thesis_floor: float = 15.0

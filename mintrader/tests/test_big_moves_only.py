@@ -651,3 +651,106 @@ class TestSwitchOffMatchesTheReportedName:
 
     def test_defaults_switch_retest_off_in_trend(self):
         assert ("BREAKOUT_RETEST", "TREND") in Config().scan.disabled_tactic_regimes
+
+
+class TestTheRunner:
+    """29 Sep: hold the winners we are confident in. In STRONG_FLOW the broker
+    target is pushed out; at the original target most is banked and the rest
+    runs on with at least +1R locked."""
+
+    STRONG = SimpleNamespace(direction=1, efficiency=0.6, adx=35.0, acceleration_atr=0.1)
+    WEAK = SimpleNamespace(direction=1, efficiency=0.2, adx=15.0, acceleration_atr=0.0)
+
+    def _pos(self):
+        return Position(1, "EURUSD", Side.BUY, 1.0, 1.1000, 1.0950, 1.1100, NOW)   # risk 0.005, target 2R
+
+    def _drive(self, fl, p, prices, mom, t0=NOW):
+        out = []
+        for i, px in enumerate(prices):
+            t = t0 + dt.timedelta(minutes=i + 1)
+            out.append(fl.update(p, price=px, atr=0.0020,
+                                 bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                                 momentum=mom, now=t))
+        return out
+
+    def test_defaults(self):
+        c = Config().flowlock
+        assert c.runner_enabled and c.runner_keep_fraction == 0.3
+        assert c.runner_target_multiple == 2.0 and c.runner_floor_r == 1.0
+
+    def test_arms_in_strong_flow_then_banks_seventy_percent_at_the_target(self):
+        fl = FlowLock(Config().flowlock)
+        p = self._pos()
+        out = self._drive(fl, p, [1.1000 + 0.0003 * i for i in range(1, 22)], self.STRONG)  # to +1.26R
+        armed = [d for d in out if d.runner_event == "ARMED"]
+        assert len(armed) == 1 and armed[0].new_target == pytest.approx(1.1200)
+        assert fl.trackers[1].runner_armed
+        out2 = self._drive(fl, p, [1.1080, 1.1095, 1.1101, 1.1110], self.STRONG,
+                           t0=NOW + dt.timedelta(minutes=30))
+        run = [d for d in out2 if d.runner_event == "RUN"]
+        assert len(run) == 1 and run[0].partial_volume == pytest.approx(0.7)
+        assert run[0].new_target is None
+        t = fl.trackers[1]
+        assert t.runner_done and t.partial_done
+        # the remainder keeps at least +1R
+        assert t.stop >= 1.1000 + 1.0 * 0.0050 - 1e-9
+        # and nothing fires twice
+        assert not any(d.partial_volume or d.runner_event for d in
+                       self._drive(fl, p, [1.1120, 1.1130], self.STRONG, t0=NOW + dt.timedelta(minutes=40)))
+
+    def test_not_armed_without_strong_flow(self):
+        fl = FlowLock(Config().flowlock)
+        p = self._pos()
+        out = self._drive(fl, p, [1.1000 + 0.0003 * i for i in range(1, 22)], self.WEAK)
+        assert not any(d.runner_event for d in out)
+        assert fl.trackers[1].runner_armed is False
+
+    def test_disarmed_when_flow_decays_before_the_target(self):
+        fl = FlowLock(Config().flowlock)
+        p = self._pos()
+        self._drive(fl, p, [1.1000 + 0.0003 * i for i in range(1, 22)], self.STRONG)
+        assert fl.trackers[1].runner_armed
+        against = SimpleNamespace(direction=-1, efficiency=0.5, adx=30.0, acceleration_atr=0.0)
+        out = self._drive(fl, p, [1.1060, 1.1055], against, t0=NOW + dt.timedelta(minutes=30))
+        dis = [d for d in out if d.runner_event == "DISARMED"]
+        assert dis and dis[0].new_target == pytest.approx(1.1100)
+        assert fl.trackers[1].runner_armed is False
+
+    def test_off_switch_and_no_target(self):
+        cfg = Config().flowlock; cfg.runner_enabled = False
+        fl = FlowLock(cfg)
+        out = self._drive(fl, self._pos(), [1.1000 + 0.0003 * i for i in range(1, 22)], self.STRONG)
+        assert not any(d.runner_event for d in out)
+        fl2 = FlowLock(Config().flowlock)
+        p = Position(2, "EURUSD", Side.BUY, 1.0, 1.1000, 1.0950, 0.0, NOW)     # no broker target
+        out = self._drive(fl2, p, [1.1000 + 0.0003 * i for i in range(1, 22)], self.STRONG)
+        assert not any(d.runner_event for d in out)
+
+    def test_runner_state_survives_a_restart(self, tmp_path):
+        from mintel.engine.journal import Journal
+        fl = FlowLock(Config().flowlock)
+        p = self._pos()
+        self._drive(fl, p, [1.1000 + 0.0003 * i for i in range(1, 22)], self.STRONG)
+        j = Journal(tmp_path / "j.sqlite")
+        j.save_tracker(fl.trackers[1])
+        back = j.load_trackers()[0]
+        assert back.target == pytest.approx(1.1100) and back.runner_armed and not back.runner_done
+        j.close()
+
+    def test_executor_moves_the_target_and_leaves_the_stop(self):
+        from mintel.engine.execution import Executor
+        sim = SimBroker(["EURUSD"], start=NOW - dt.timedelta(days=3)); sim.connect()
+        cfg = Config()
+        ex = Executor(sim, cfg)
+        spec = sim.spec("EURUSD")
+        tick = sim.tick("EURUSD")
+        from mintel.broker.base import OrderRequest
+        res = sim.send(OrderRequest("EURUSD", Side.BUY, 0.1, sl=tick.ask - 0.0050,
+                                    tp=tick.ask + 0.0100, comment="t", magic=cfg.magic))
+        assert res.ok, res
+        pos = [x for x in sim.positions() if x.ticket == res.ticket][0]
+        out = ex.set_target(pos, tick.ask + 0.0200, spec)
+        assert out is not None and out.ok
+        pos2 = [x for x in sim.positions() if x.ticket == res.ticket][0]
+        assert pos2.tp == pytest.approx(tick.ask + 0.0200, abs=spec.point)
+        assert pos2.sl == pytest.approx(pos.sl)

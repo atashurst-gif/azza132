@@ -775,6 +775,11 @@ class Trader:
                 notes.append(f"{position.symbol}: position too small to bank "
                              f"part of it, leaving it whole")
                 part = 0.0
+                if decision.runner_event == "RUN" and tracker.target:
+                    # Nothing can be banked, so the whole position must not
+                    # be left with the far target: put the original back.
+                    self.executor.set_target(position, tracker.target, spec)
+                    position.tp = tracker.target
             res = (self.executor.close_position(position, "PARTIAL", part)
                    if part > 0 else None)
             if res is None:
@@ -788,6 +793,28 @@ class Trader:
                     "INFO", {"ticket": position.ticket, "r": decision.r_now})
             else:
                 tracker.partial_done = False     # allow a retry next cycle
+                if decision.runner_event == "RUN":
+                    tracker.runner_done = False
+
+        if decision.new_target:
+            res = self.executor.set_target(position, decision.new_target, spec)
+            if res is not None and res.ok:
+                position.tp = decision.new_target
+                notes.append(f"{position.symbol}: target "
+                             f"{'pushed out to' if decision.runner_event == 'ARMED' else 'put back at'} "
+                             f"{decision.new_target:.{spec.digits}f} (runner "
+                             f"{decision.runner_event.lower()})")
+            elif decision.runner_event == "ARMED":
+                tracker.runner_armed = False        # try again next cycle
+        if decision.runner_event:
+            try:
+                self.journal.log_event(
+                    f"RUNNER_{decision.runner_event}",
+                    f"{position.symbol} at {decision.r_now:.2f}R", "INFO",
+                    {"ticket": position.ticket, "r": decision.r_now,
+                     "mfe_r": decision.mfe_r})
+            except Exception:
+                pass
 
         if decision.new_stop:
             res = self.executor.move_stop(position, decision.new_stop, spec)

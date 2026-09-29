@@ -432,6 +432,22 @@ class Executor:
                 self.risk.forget(position.ticket)
         return res
 
+    def set_target(self, position: Position, new_target: float,
+                   spec: SymbolSpec) -> Optional[OrderResult]:
+        """Move the broker take-profit (the runner pushes it out, or puts it
+        back). The stop is left exactly as it is."""
+        if new_target <= 0:
+            return None
+        new_target = spec.normalise_price(new_target)
+        if position.tp and abs(new_target - position.tp) < spec.point:
+            return None
+        try:
+            return self.broker.modify_stops(position.ticket,
+                                            position.sl or 0.0, new_target)
+        except Exception as exc:
+            self.last_error = str(exc)
+            return None
+
     def move_stop(self, position: Position, new_stop: float,
                   spec: SymbolSpec) -> Optional[OrderResult]:
         """Tighten a stop.  Refuses to widen it, ever.

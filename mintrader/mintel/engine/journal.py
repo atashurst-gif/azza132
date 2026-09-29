@@ -463,6 +463,9 @@ def _tracker_from(d: dict) -> TradeTracker:
         partial_volume=float(d.get("partial_volume") or 0.0),
         thesis_strength=float(d.get("thesis_strength") or 60.0),
         updates=int(d.get("updates") or 0),
-        breakeven_done=bool(d.get("breakeven_done")))
+        breakeven_done=bool(d.get("breakeven_done")),
+        target=float(d.get("target") or 0.0),
+        runner_armed=bool(d.get("runner_armed")),
+        runner_done=bool(d.get("runner_done")))
     t.state_history = tuple(d.get("state_history") or ())
     return t

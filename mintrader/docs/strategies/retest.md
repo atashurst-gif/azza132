@@ -77,6 +77,19 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   (Friday: 10 of 10 did); trailed winners kept 0.77R of a 1.52R peak
   (was 0.50R of 1.45R).
 
+- 2026-09-29 (morning): the RUNNER. A trade in STRONG_FLOW (momentum still
+  with it past +1R) has its broker target pushed out to twice the original
+  distance; when price reaches the original target the bot banks 70% and
+  lets 30% run under the trail with at least +1R locked. If the flow decays
+  before the target, the original target is put back. Every arm, disarm and
+  run is journaled (RUNNER_ARMED / RUNNER_DISARMED / RUNNER_RUN) so the
+  review can say what the runners earned. Evidence for it: none yet - the
+  broker's target closed everything, so the record never showed what price
+  did afterwards. This measures it. Time-of-day: NO change. For the
+  approaches still on, mornings 07-12 UK were +42 GBP over seven days and
+  evenings -12; the morning losses everyone remembers came from Retest and
+  Momentum in trends, both now off.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

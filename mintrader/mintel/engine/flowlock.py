@@ -78,6 +78,9 @@ class TradeTracker:
     updates: int = 0
     breakeven_done: bool = False
     state_history: tuple[str, ...] = ()
+    target: float = 0.0              # the original broker target
+    runner_armed: bool = False       # target pushed out, waiting for price
+    runner_done: bool = False        # part banked at the original target
 
     def r_of(self, price: float) -> float:
         if self.initial_risk <= 0:
@@ -94,6 +97,8 @@ class TradeTracker:
             "stop": self.stop, "mfe": self.mfe, "mae": self.mae,
             "mfe_r": round(self.mfe_r, 4), "mae_r": round(self.mae_r, 4),
             "partial_done": self.partial_done,
+            "target": self.target, "runner_armed": self.runner_armed,
+            "runner_done": self.runner_done,
             "thesis_strength": round(self.thesis_strength, 2),
             "updates": self.updates,
             "state_history": list(self.state_history),
@@ -111,6 +116,8 @@ class FlowDecision:
     r_now: float = 0.0
     mfe_r: float = 0.0
     stop_moved: bool = False
+    new_target: Optional[float] = None    # broker take-profit to set
+    runner_event: str = ""                # "ARMED", "DISARMED", "RUN"
 
 
 class FlowLock:
@@ -137,7 +144,8 @@ class FlowLock:
             entry=position.entry_price, initial_stop=stop, initial_risk=risk,
             opened_utc=to_utc(now or position.open_time or utcnow()),
             stop=position.sl or stop, best_price=position.entry_price,
-            worst_price=position.entry_price)
+            worst_price=position.entry_price,
+            target=float(getattr(position, "tp", 0.0) or 0.0))
         self.trackers[position.ticket] = t
         return t
 
@@ -246,7 +254,10 @@ class FlowLock:
                 moved = True
 
         partial = 0.0
-        if (self.cfg.partial_enabled and not t.partial_done
+        new_target, runner_event, run_partial = self._runner(t, position, price)
+        if run_partial > 0:
+            partial = run_partial
+        elif (self.cfg.partial_enabled and not t.partial_done
                 and r_now >= self.cfg.partial_at_r
                 and t.state in (FlowState.NORMAL_FLOW, FlowState.STRONG_FLOW,
                                 FlowState.PROVING)):
@@ -259,7 +270,44 @@ class FlowLock:
             state=new_state, new_stop=t.stop if moved else None, close=False,
             partial_volume=partial,
             reason=self._explain(t, r_now, momentum), r_now=r_now,
-            mfe_r=t.mfe_r, stop_moved=moved)
+            mfe_r=t.mfe_r, stop_moved=moved,
+            new_target=new_target, runner_event=runner_event)
+
+    # ------------------------------------------------------------- runner --
+    def _runner(self, t: TradeTracker, position: Position,
+                price: float) -> tuple[Optional[float], str, float]:
+        """The runner: (new broker target or None, event, volume to bank).
+
+        Armed when the trade is in STRONG_FLOW: the broker target is pushed
+        out so the broker does not close everything at the original one.
+        Disarmed (target restored) if the flow decays before price gets
+        there. When price reaches the original target, most of the position
+        is banked and the rest runs on under the trail.
+        """
+        c = self.cfg
+        if not getattr(c, "runner_enabled", False) or t.target <= 0 \
+                or t.runner_done or t.initial_risk <= 0:
+            return None, "", 0.0
+        sign = t.side.sign
+        dist = abs(t.target - t.entry)
+        far = t.entry + sign * dist * float(getattr(c, "runner_target_multiple", 2.0))
+        if not t.runner_armed:
+            if t.state is FlowState.STRONG_FLOW:
+                t.runner_armed = True
+                return far, "ARMED", 0.0
+            return None, "", 0.0
+        # armed
+        if (price - t.target) * sign >= 0:
+            keep = float(getattr(c, "runner_keep_fraction", 0.3))
+            bank = round(position.volume * (1.0 - keep), 8)
+            t.runner_done = True
+            t.partial_done = True
+            t.partial_volume = bank
+            return None, "RUN", bank
+        if t.state in (FlowState.DECAY, FlowState.REVERSAL):
+            t.runner_armed = False
+            return t.target, "DISARMED", 0.0
+        return None, "", 0.0
 
     # -------------------------------------------------------- state machine --
     def _classify(self, t: TradeTracker, r_now: float,
@@ -376,6 +424,10 @@ class FlowLock:
         # least lock_floor_r, whatever the state or the trail says.
         if lock is not None:
             chosen = max(chosen, lock) if t.side is Side.BUY else min(chosen, lock)
+        if t.runner_done and getattr(c, "runner_floor_r", 0.0):
+            rf = t.entry + sign * float(c.runner_floor_r) * t.initial_risk
+            if (price - rf) * sign > 0:
+                chosen = max(chosen, rf) if t.side is Side.BUY else min(chosen, rf)
 
         # Break-even protection, but only once the trade has earned it: moving
         # to break-even too early converts winners into scratches.
