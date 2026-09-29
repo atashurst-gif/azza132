@@ -68,7 +68,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "23:51:11 UTC",
+    "last_scan": "00:01:20 UTC",
     "last_trade": "US500 2026-09-28T19:15",
     "not_trading_because": [],
     "strategy_rules": {
@@ -79,11 +79,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 3898,
-    "uptime_minutes": 353.1
+    "cycles": 4013,
+    "uptime_minutes": 363.2
   },
   "health": {
-    "as_of": "2026-09-28T23:51:11.533392+00:00",
+    "as_of": "2026-09-29T00:01:20.219164+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -91,25 +91,25 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "62687 MB of disk space free",
+        "message": "61957 MB of disk space free",
         "detail": {
-          "free_mb": 62687.4
+          "free_mb": 61956.6
         }
       },
       {
         "name": "MEMORY",
         "severity": "OK",
-        "message": "memory 82% used",
+        "message": "memory 80% used",
         "detail": {
-          "percent": 81.8
+          "percent": 80.2
         }
       },
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock agrees with the broker (within 2s)",
+        "message": "clock agrees with the broker (within 1s)",
         "detail": {
-          "skew_seconds": 1.5
+          "skew_seconds": 1.2
         }
       },
       {
@@ -143,9 +143,9 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (2s old)",
+        "message": "live prices arriving (0s old)",
         "detail": {
-          "freshest_age_seconds": 1.7,
+          "freshest_age_seconds": 0.4,
           "weekend": false
         }
       },
@@ -169,8 +169,16 @@
         "message": "1 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 2.0
+            "watchdog": 6.9
           }
+        }
+      },
+      {
+        "name": "SCAN_FRESHNESS",
+        "severity": "OK",
+        "message": "markets scanned 5s ago",
+        "detail": {
+          "age_seconds": 5.4
         }
       },
       {
@@ -184,388 +192,194 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "EURAUD",
+      "symbol": "USDCAD",
       "direction": "LONG",
-      "score": 56.5,
+      "score": 56.29,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_RETEST",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "EURAUD: SQUEEZE / LOW VOL market. Best idea is buy using breakout retest. Structure supports it (98/100; up structure on M5). Execution supports it (85/100; spread 0.5 pips (1.0x normal), commission 1.0 pips). Regime supports it (85/100; SQUEEZE / LOW VOL). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 15 pips, giving about 1.3 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 1.31 after costs; costs would be 34% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "USDCAD: TREND / NORMAL VOL market. Best idea is buy using breakout retest. Structure supports it (100/100; up structure on M5). Multi Tf supports it (81/100; 6 timeframes weighed, higher ones first). Regime supports it (74/100; TREND / NORMAL VOL). Session supports it (62/100; session: ASIA). Room to the first obstacle is 999 pips, giving about 1.0 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 0.96 after costs; costs would be 52% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 1.31 after costs",
-        "costs would be 34% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.96 after costs",
+        "costs would be 52% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 1.314
+      "reward_risk": 0.956
     },
     {
       "rank": 2,
-      "symbol": "AUDCHF",
+      "symbol": "NZDJPY",
       "direction": "SHORT",
-      "score": 47.5,
+      "score": 40.51,
       "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "AUDCHF: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Structure supports it (98/100; down structure on M5). Regime supports it (85/100; SQUEEZE / LOW VOL). Execution supports it (74/100; spread 0.3 pips (1.5x normal), commission 0.6 pips). Volatility argues against it (31/100; volatility at the 3th percentile). Room to the first obstacle is 4 pips, giving about 0.9 to 1 after 1.1 pips of cost. Blocked because: reward:risk only 0.88 after costs; costs would be 39% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "NZDJPY: TREND / NORMAL VOL market. Best idea is sell using breakout retest. Execution supports it (100/100; spread 0.2 pips (0.3x normal), commission 1.1 pips). Multi Tf supports it (87/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; unclear structure on M5). Volatility supports it (70/100; volatility at the 75th percentile). Room to the first obstacle is 1 pips, giving about 1.9 to 1 after 1.4 pips of cost. Blocked because: costs would be 41% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.88 after costs",
+        "costs would be 41% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.928
+    },
+    {
+      "rank": 3,
+      "symbol": "EURNZD",
+      "direction": "LONG",
+      "score": 39.38,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "EURNZD: TREND / NORMAL VOL market. Best idea is buy using breakout retest. Execution supports it (100/100; spread 0.3 pips (0.2x normal), commission 1.3 pips). Structure supports it (98/100; up structure on M5). Regime supports it (85/100; TREND / NORMAL VOL). Multi Tf supports it (84/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 1.2 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 1.23 after costs.",
+      "blockers": [
+        "reward:risk only 1.23 after costs"
+      ],
+      "reward_risk": 1.23
+    },
+    {
+      "rank": 4,
+      "symbol": "NZDCAD",
+      "direction": "SHORT",
+      "score": 35.41,
+      "tier": "NO_TRADE",
+      "tactic": "SQUEEZE_RELEASE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "NZDCAD: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution supports it (100/100; spread 0.2 pips (0.2x normal), commission 1.0 pips). Structure supports it (70/100; range structure on M5). Volatility supports it (66/100; volatility at the 64th percentile). Regime supports it (62/100; SQUEEZE / NORMAL VOL). Room to the first obstacle is 1 pips, giving about 1.2 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.25 after costs; costs would be 36% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.25 after costs",
+        "costs would be 36% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.247
+    },
+    {
+      "rank": 5,
+      "symbol": "JP225",
+      "direction": "LONG",
+      "score": 33.96,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "JP225: HIGH_VOL / HIGH VOL market. Best idea is buy using breakout retest. Execution supports it (96/100; spread 200.0 pips (0.5x normal), commission 8218.1 pips). Volatility supports it (80/100; volatility at the 100th percentile). Structure supports it (76/100; range structure on M5). Regime supports it (70/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 1800 pips, giving about 1.4 to 1 after 8468.1 pips of cost. Blocked because: reward:risk only 1.45 after costs; costs would be 95% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.45 after costs",
+        "costs would be 95% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.446
+    },
+    {
+      "rank": 6,
+      "symbol": "AUS200",
+      "direction": "SHORT",
+      "score": 33.35,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "AUS200: HIGH_VOL / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (84/100; spread 120.0 pips (1.0x normal), commission 74.4 pips). Regime supports it (76/100; HIGH_VOL / HIGH VOL). Volatility supports it (76/100; volatility at the 90th percentile). Room to the first obstacle is 40 pips, giving about 0.8 to 1 after 224.4 pips of cost. Blocked because: reward:risk only 0.84 after costs.",
+      "blockers": [
+        "reward:risk only 0.84 after costs"
+      ],
+      "reward_risk": 0.836
+    },
+    {
+      "rank": 7,
+      "symbol": "AUDNZD",
+      "direction": "LONG",
+      "score": 31.79,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "TREND / HIGH VOL",
+      "reason": "AUDNZD: TREND / HIGH VOL market. Best idea is buy using breakout retest. Execution supports it (100/100; spread 0.3 pips (0.2x normal), commission 1.3 pips). Structure supports it (98/100; up structure on M5). Volatility supports it (76/100; volatility at the 90th percentile). Regime supports it (74/100; TREND / HIGH VOL). Room to the first obstacle is 0 pips, giving about 2.0 to 1 after 1.7 pips of cost. Blocked because: costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "costs would be 48% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 2.006
+    },
+    {
+      "rank": 8,
+      "symbol": "USDCHF",
+      "direction": "LONG",
+      "score": 31.66,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "USDCHF: SQUEEZE / NORMAL VOL market. Best idea is buy using breakout retest. Execution supports it (84/100; spread 0.1 pips (1.0x normal), commission 0.6 pips). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Structure supports it (70/100; range structure on M5). Momentum argues against it (37/100; efficiency 0.39, ADX 10). Room to the first obstacle is 0 pips, giving about 1.9 to 1 after 0.7 pips of cost. Blocked because: costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.887
+    },
+    {
+      "rank": 9,
+      "symbol": "US500",
+      "direction": "LONG",
+      "score": 30.96,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "US500: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Momentum supports it (72/100; efficiency 0.14, ADX 14). Execution supports it (70/100; spread 50.0 pips (1.7x normal), commission 52.3 pips). Regime supports it (65/100; RANGE / NORMAL VOL). Session supports it (62/100; session: ASIA). Room to the first obstacle is 100 pips, giving about 1.0 to 1 after 131.4 pips of cost. Blocked because: reward:risk only 0.99 after costs; costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.99 after costs",
+        "costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.987
+    },
+    {
+      "rank": 10,
+      "symbol": "AUDCHF",
+      "direction": "LONG",
+      "score": 30.88,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "AUDCHF: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 0.6 pips). Momentum supports it (71/100; efficiency 0.16, ADX 11). Multi Tf supports it (68/100; 6 timeframes weighed, higher ones first). Regime supports it (65/100; RANGE / NORMAL VOL). Room to the first obstacle is 0 pips, giving about 0.5 to 1 after 0.9 pips of cost. Blocked because: reward:risk only 0.55 after costs; costs would be 39% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.55 after costs",
         "costs would be 39% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.884
+      "reward_risk": 0.545
+    },
+    {
+      "rank": 11,
+      "symbol": "GBPJPY",
+      "direction": "SHORT",
+      "score": 30.54,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "GBPJPY: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout retest. Multi Tf supports it (77/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; range structure on M5). Execution supports it (72/100; spread 0.8 pips (1.6x normal), commission 1.2 pips). Session supports it (62/100; session: ASIA). Room to the first obstacle is 1 pips, giving about 1.1 to 1 after 2.4 pips of cost. Blocked because: reward:risk only 1.14 after costs; costs would be 43% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.14 after costs",
+        "costs would be 43% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.138
+    },
+    {
+      "rank": 12,
+      "symbol": "GBPUSD",
+      "direction": "SHORT",
+      "score": 30.25,
+      "tier": "NO_TRADE",
+      "tactic": "SQUEEZE_RELEASE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "GBPUSD: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution supports it (84/100; spread 0.2 pips (1.0x normal), commission 0.7 pips). Regime supports it (78/100; SQUEEZE / NORMAL VOL). Structure supports it (76/100; range structure on M5). Multi Tf supports it (67/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 0 pips, giving about 1.4 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 1.38 after costs; costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.38 after costs",
+        "costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.376
     }
   ],
   "results": {
-    "date": "2026-09-28",
+    "date": "2026-09-29",
     "currency": "GBP",
-    "trades": 15,
-    "wins": 4,
-    "losses": 10,
-    "win_rate": 26.7,
-    "pips": -9115.4,
-    "money_won": 20.12,
-    "money_lost": -40.15,
-    "net": -20.03,
-    "best_trade": {
-      "symbol": "US500",
-      "direction": "sold",
-      "opened": "2026-09-28T14:44:06+00:00",
-      "closed": "2026-09-28T14:55:04.581375+00:00",
-      "result_money": 8.46,
-      "result_pips": 1600.0,
-      "result_r": 2.06,
-      "why_it_entered": "The market was behaving like a high vol market, so the bot used a liquidity sweep reversal approach and sold it. The strongest evidence was execution 94/100, structure 80/100, volatility 80/100. It scored 85.4/100 (EXCEPTIONAL), which was the best available at the time. It offered about 2.0 to 1 after costs.",
-      "what_happened": "It went 0.00R against the position at worst and 2.06R in favour at best. It finished 2.06R up. FlowLock was in its strong flow state at the end.",
-      "why_it_exited": "[tp 7667.07]",
-      "what_it_learned": "Won 2.06R. Kept 100% of the best price it saw. Exited because [tp 7667.07].",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "HIGH_VOL",
-      "score": 85.4,
-      "tier": "EXCEPTIONAL",
-      "mfe_r": 2.06,
-      "mae_r": 0,
-      "mfe_captured_pct": 100.0
-    },
-    "worst_trade": {
-      "symbol": "AUDJPY",
-      "direction": "sold",
-      "opened": "2026-09-28T08:43:04+00:00",
-      "closed": "2026-09-28T09:29:04.674914+00:00",
-      "result_money": -4.42,
-      "result_pips": -12.6,
-      "result_r": -1.02,
-      "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout acceptance approach and sold it. The strongest evidence was structure 100/100, execution 85/100, regime 85/100. It scored 68.34/100 (NORMAL), which was the best available at the time. It offered about 1.9 to 1 after costs.",
-      "what_happened": "It went 1.02R against the position at worst and 0.67R in favour at best. It finished 1.02R down. FlowLock was in its reversal state at the end.",
-      "why_it_exited": "[sl 110.205]",
-      "what_it_learned": "Lost 1.02R. It only ever reached 0.67R in favour, so it never paid for the risk it was taking - the setup looked better than the follow-through. The stop was hit, which is the stop doing its job. Exited because [sl 110.205].",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "TREND",
-      "score": 68.34,
-      "tier": "NORMAL",
-      "mfe_r": 0.67,
-      "mae_r": 1.02,
-      "mfe_captured_pct": 0
-    },
-    "trade_stories": [
-      {
-        "symbol": "US500",
-        "direction": "sold",
-        "opened": "2026-09-28T19:00:47+00:00",
-        "closed": "2026-09-28T19:15:26.590112+00:00",
-        "result_money": 4.22,
-        "result_pips": 800.0,
-        "result_r": 1.03,
-        "why_it_entered": "The market was behaving like a squeeze market, so the bot used a breakout retest approach and sold it. The strongest evidence was structure 98/100, execution 85/100, session 75/100. It scored 67.59/100 (NORMAL), which was the best available at the time. It offered about 1.8 to 1 after costs.",
-        "what_happened": "It went 0.26R against the position at worst and 1.03R in favour at best. It finished 1.03R up. FlowLock was in its normal flow state at the end.",
-        "why_it_exited": "[tp 7686.89]",
-        "what_it_learned": "Won 1.03R. Kept 100% of the best price it saw. Exited because [tp 7686.89].",
-        "tactic": "BREAKOUT_RETEST",
-        "regime": "SQUEEZE",
-        "score": 67.59,
-        "tier": "NORMAL",
-        "mfe_r": 1.03,
-        "mae_r": 0.26,
-        "mfe_captured_pct": 100.0
-      },
-      {
-        "symbol": "USDJPY",
-        "direction": "sold",
-        "opened": "2026-09-28T17:04:07+00:00",
-        "closed": "2026-09-28T17:26:31.262113+00:00",
-        "result_money": 0,
-        "result_pips": 0,
-        "result_r": -1.0,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout acceptance approach and sold it. The strongest evidence was structure 98/100, execution 85/100, session 75/100. It scored 60.09/100 (NORMAL), which was the best available at the time. It offered about 1.9 to 1 after costs.",
-        "what_happened": "It went 1.00R against the position at worst and 0.15R in favour at best. It finished 1.00R down. FlowLock was in its reversal state at the end.",
-        "why_it_exited": "broker stop or target",
-        "what_it_learned": "Lost 1.00R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job.",
-        "tactic": "BREAKOUT_ACCEPTANCE",
-        "regime": "TREND",
-        "score": 60.09,
-        "tier": "NORMAL",
-        "mfe_r": 0.15,
-        "mae_r": 1.0,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "NZDUSD",
-        "direction": "bought",
-        "opened": "2026-09-28T16:41:31+00:00",
-        "closed": "2026-09-28T16:51:51.068153+00:00",
-        "result_money": -4.4,
-        "result_pips": -4.5,
-        "result_r": -1.0,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a session expansion approach and bought it. The strongest evidence was structure 98/100, regime 85/100, execution 83/100. It scored 63.4/100 (NORMAL), which was the best available at the time. It offered about 2.0 to 1 after costs.",
-        "what_happened": "It went 1.00R against the position at worst and 0.07R in favour at best. It finished 1.00R down. FlowLock was in its initial state at the end.",
-        "why_it_exited": "[sl 0.56712]",
-        "what_it_learned": "Lost 1.00R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job. Exited because [sl 0.56712].",
-        "tactic": "SESSION_EXPANSION",
-        "regime": "TREND",
-        "score": 63.4,
-        "tier": "NORMAL",
-        "mfe_r": 0.07,
-        "mae_r": 1.0,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "EURNZD",
-        "direction": "sold",
-        "opened": "2026-09-28T16:35:25+00:00",
-        "closed": "2026-09-28T16:39:47.928147+00:00",
-        "result_money": -4.22,
-        "result_pips": -9.2,
-        "result_r": -1.05,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a session expansion approach and sold it. The strongest evidence was structure 98/100, execution 85/100, session 75/100. It scored 64.87/100 (NORMAL), which was the best available at the time. It offered about 2.4 to 1 after costs.",
-        "what_happened": "It went 1.05R against the position at worst and 0.02R in favour at best. It finished 1.05R down. FlowLock was in its initial state at the end.",
-        "why_it_exited": "[sl 2.00420]",
-        "what_it_learned": "Lost 1.05R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job. Exited because [sl 2.00420].",
-        "tactic": "SESSION_EXPANSION",
-        "regime": "TREND",
-        "score": 64.87,
-        "tier": "NORMAL",
-        "mfe_r": 0.02,
-        "mae_r": 1.05,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "US500",
-        "direction": "bought",
-        "opened": "2026-09-28T16:26:49+00:00",
-        "closed": "2026-09-28T16:30:37.755930+00:00",
-        "result_money": -4.14,
-        "result_pips": -1100.0,
-        "result_r": -1.02,
-        "why_it_entered": "The market was behaving like a high vol market, so the bot used a liquidity sweep reversal approach and bought it. The strongest evidence was execution 94/100, structure 80/100, volatility 80/100. It scored 78.16/100 (STRONG), which was the best available at the time. It offered about 2.0 to 1 after costs.",
-        "what_happened": "It went 1.02R against the position at worst and 0.11R in favour at best. It finished 1.02R down. FlowLock was in its initial state at the end.",
-        "why_it_exited": "[sl 7712.37]",
-        "what_it_learned": "Lost 1.02R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job. Exited because [sl 7712.37].",
-        "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-        "regime": "HIGH_VOL",
-        "score": 78.16,
-        "tier": "STRONG",
-        "mfe_r": 0.11,
-        "mae_r": 1.02,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "EURUSD",
-        "direction": "bought",
-        "opened": "2026-09-28T16:28:00+00:00",
-        "closed": "2026-09-28T16:30:23.702057+00:00",
-        "result_money": -4.35,
-        "result_pips": -5.4,
-        "result_r": -1.0,
-        "why_it_entered": "The market was behaving like a high vol market, so the bot used a liquidity sweep reversal approach and bought it. The strongest evidence was structure 100/100, execution 84/100, volatility 80/100. It scored 61.87/100 (NORMAL), which was the best available at the time. It offered about 1.9 to 1 after costs.",
-        "what_happened": "It went 1.00R against the position at worst and 0.06R in favour at best. It finished 1.00R down. FlowLock was in its initial state at the end.",
-        "why_it_exited": "[sl 1.13820]",
-        "what_it_learned": "Lost 1.00R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job. Exited because [sl 1.13820].",
-        "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-        "regime": "HIGH_VOL",
-        "score": 61.87,
-        "tier": "NORMAL",
-        "mfe_r": 0.06,
-        "mae_r": 1.0,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "US500",
-        "direction": "sold",
-        "opened": "2026-09-28T14:44:06+00:00",
-        "closed": "2026-09-28T14:55:04.581375+00:00",
-        "result_money": 8.46,
-        "result_pips": 1600.0,
-        "result_r": 2.06,
-        "why_it_entered": "The market was behaving like a high vol market, so the bot used a liquidity sweep reversal approach and sold it. The strongest evidence was execution 94/100, structure 80/100, volatility 80/100. It scored 85.4/100 (EXCEPTIONAL), which was the best available at the time. It offered about 2.0 to 1 after costs.",
-        "what_happened": "It went 0.00R against the position at worst and 2.06R in favour at best. It finished 2.06R up. FlowLock was in its strong flow state at the end.",
-        "why_it_exited": "[tp 7667.07]",
-        "what_it_learned": "Won 2.06R. Kept 100% of the best price it saw. Exited because [tp 7667.07].",
-        "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-        "regime": "HIGH_VOL",
-        "score": 85.4,
-        "tier": "EXCEPTIONAL",
-        "mfe_r": 2.06,
-        "mae_r": 0,
-        "mfe_captured_pct": 100.0
-      },
-      {
-        "symbol": "AUDJPY",
-        "direction": "sold",
-        "opened": "2026-09-28T12:46:49+00:00",
-        "closed": "2026-09-28T13:31:44.049989+00:00",
-        "result_money": 5.46,
-        "result_pips": 6.9,
-        "result_r": 0.97,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a session expansion approach and sold it. The strongest evidence was execution 100/100, multi tf 82/100, structure 82/100. It scored 73.19/100 (STRONG), which was the best available at the time. It offered about 1.8 to 1 after costs.",
-        "what_happened": "It went 0.27R against the position at worst and 1.25R in favour at best. It finished 0.97R up. FlowLock was in its decay state at the end.",
-        "why_it_exited": "[sl 110.334]",
-        "what_it_learned": "Won 0.97R. Kept 78% of the best price it saw. Exited because [sl 110.334].",
-        "tactic": "SESSION_EXPANSION",
-        "regime": "TREND",
-        "score": 73.19,
-        "tier": "STRONG",
-        "mfe_r": 1.25,
-        "mae_r": 0.27,
-        "mfe_captured_pct": 77.5
-      },
-      {
-        "symbol": "DE40",
-        "direction": "bought",
-        "opened": "2026-09-28T12:57:39+00:00",
-        "closed": "2026-09-28T13:02:17.881275+00:00",
-        "result_money": -3.13,
-        "result_pips": -3650.0,
-        "result_r": -1.02,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and bought it. The strongest evidence was structure 98/100, execution 85/100, session 78/100. It scored 79.2/100 (STRONG), which was the best available at the time. It offered about 1.9 to 1 after costs.",
-        "what_happened": "It went 1.02R against the position at worst and 0.08R in favour at best. It finished 1.02R down. FlowLock was in its initial state at the end.",
-        "why_it_exited": "[sl 25484.16]",
-        "what_it_learned": "Lost 1.02R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job. Exited because [sl 25484.16].",
-        "tactic": "BREAKOUT_RETEST",
-        "regime": "TREND",
-        "score": 79.2,
-        "tier": "STRONG",
-        "mfe_r": 0.08,
-        "mae_r": 1.02,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "XAUJPY",
-        "direction": "sold",
-        "opened": "2026-09-28T12:07:24+00:00",
-        "closed": "2026-09-28T12:20:10.066580+00:00",
-        "result_money": -3.53,
-        "result_pips": -728.0,
-        "result_r": -1.1,
-        "why_it_entered": "The market was behaving like a high vol market, so the bot used a liquidity sweep reversal approach and sold it. The strongest evidence was multi tf 90/100, structure 86/100, volatility 78/100. It scored 60.08/100 (NORMAL), which was the best available at the time. It offered about 2.3 to 1 after costs.",
-        "what_happened": "It went 1.10R against the position at worst and 0.90R in favour at best. It finished 1.10R down. FlowLock was in its reversal state at the end.",
-        "why_it_exited": "[sl 654279]",
-        "what_it_learned": "Lost 1.10R. It only ever reached 0.90R in favour, so it never paid for the risk it was taking - the setup looked better than the follow-through. The stop was hit, which is the stop doing its job. Exited because [sl 654279].",
-        "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-        "regime": "HIGH_VOL",
-        "score": 60.08,
-        "tier": "NORMAL",
-        "mfe_r": 0.9,
-        "mae_r": 1.1,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "GBPNZD",
-        "direction": "bought",
-        "opened": "2026-09-28T09:38:10+00:00",
-        "closed": "2026-09-28T10:29:13.837078+00:00",
-        "result_money": 1.98,
-        "result_pips": 5.8,
-        "result_r": 0.56,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout acceptance approach and bought it. The strongest evidence was structure 98/100, execution 92/100, multi tf 84/100. It scored 68.39/100 (NORMAL), which was the best available at the time. It offered about 1.8 to 1 after costs.",
-        "what_happened": "It went 0.87R against the position at worst and 1.78R in favour at best. It finished 0.56R up. FlowLock was in its decay state at the end.",
-        "why_it_exited": "[sl 2.34290]",
-        "what_it_learned": "Won 0.56R. It was worth 1.8R at best and only 32% was kept - the exit gave too much back. Exited because [sl 2.34290].",
-        "tactic": "BREAKOUT_ACCEPTANCE",
-        "regime": "TREND",
-        "score": 68.39,
-        "tier": "NORMAL",
-        "mfe_r": 1.78,
-        "mae_r": 0.87,
-        "mfe_captured_pct": 31.7
-      },
-      {
-        "symbol": "AUDJPY",
-        "direction": "sold",
-        "opened": "2026-09-28T08:43:04+00:00",
-        "closed": "2026-09-28T09:29:04.674914+00:00",
-        "result_money": -4.42,
-        "result_pips": -12.6,
-        "result_r": -1.02,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout acceptance approach and sold it. The strongest evidence was structure 100/100, execution 85/100, regime 85/100. It scored 68.34/100 (NORMAL), which was the best available at the time. It offered about 1.9 to 1 after costs.",
-        "what_happened": "It went 1.02R against the position at worst and 0.67R in favour at best. It finished 1.02R down. FlowLock was in its reversal state at the end.",
-        "why_it_exited": "[sl 110.205]",
-        "what_it_learned": "Lost 1.02R. It only ever reached 0.67R in favour, so it never paid for the risk it was taking - the setup looked better than the follow-through. The stop was hit, which is the stop doing its job. Exited because [sl 110.205].",
-        "tactic": "BREAKOUT_ACCEPTANCE",
-        "regime": "TREND",
-        "score": 68.34,
-        "tier": "NORMAL",
-        "mfe_r": 0.67,
-        "mae_r": 1.02,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "NZDJPY",
-        "direction": "sold",
-        "opened": "2026-09-28T08:57:24+00:00",
-        "closed": "2026-09-28T09:29:01.478685+00:00",
-        "result_money": -4.31,
-        "result_pips": -8.4,
-        "result_r": -1.04,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and sold it. The strongest evidence was multi tf 82/100, cross market 75/100, session 73/100. It scored 60.97/100 (NORMAL), which was the best available at the time. It offered about 2.1 to 1 after costs.",
-        "what_happened": "It went 1.04R against the position at worst and 0.75R in favour at best. It finished 1.04R down. FlowLock was in its reversal state at the end.",
-        "why_it_exited": "[sl 88.921]",
-        "what_it_learned": "Lost 1.04R. It only ever reached 0.75R in favour, so it never paid for the risk it was taking - the setup looked better than the follow-through. The stop was hit, which is the stop doing its job. Exited because [sl 88.921].",
-        "tactic": "BREAKOUT_RETEST",
-        "regime": "TREND",
-        "score": 60.97,
-        "tier": "NORMAL",
-        "mfe_r": 0.75,
-        "mae_r": 1.04,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "US30",
-        "direction": "sold",
-        "opened": "2026-09-28T09:13:43+00:00",
-        "closed": "2026-09-28T09:20:06.440689+00:00",
-        "result_money": -3.48,
-        "result_pips": -4620.0,
-        "result_r": -1.02,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and sold it. The strongest evidence was structure 100/100, execution 84/100, session 73/100. It scored 72.45/100 (STRONG), which was the best available at the time. It offered about 1.8 to 1 after costs.",
-        "what_happened": "It went 1.02R against the position at worst and 0.00R in favour at best. It finished 1.02R down. FlowLock was in its initial state at the end.",
-        "why_it_exited": "[sl 51614.06]",
-        "what_it_learned": "Lost 1.02R. It never worked at all, so the entry itself was the problem, not the exit. The stop was hit, which is the stop doing its job. Exited because [sl 51614.06].",
-        "tactic": "BREAKOUT_RETEST",
-        "regime": "TREND",
-        "score": 72.45,
-        "tier": "STRONG",
-        "mfe_r": 0,
-        "mae_r": 1.02,
-        "mfe_captured_pct": 0
-      },
-      {
-        "symbol": "UK100",
-        "direction": "bought",
-        "opened": "2026-09-28T08:40:49+00:00",
-        "closed": "2026-09-28T09:03:57.779802+00:00",
-        "result_money": -4.17,
-        "result_pips": -1390.0,
-        "result_r": -1.01,
-        "why_it_entered": "The market was behaving like a trend market, so the bot used a breakout retest approach and bought it. The strongest evidence was structure 98/100, execution 87/100, multi tf 75/100. It scored 69.83/100 (NORMAL), which was the best available at the time. It offered about 1.9 to 1 after costs.",
-        "what_happened": "It went 1.01R against the position at worst and 0.52R in favour at best. It finished 1.01R down. FlowLock was in its reversal state at the end.",
-        "why_it_exited": "[sl 10731.27]",
-        "what_it_learned": "Lost 1.01R. It only ever reached 0.52R in favour, so it never paid for the risk it was taking - the setup looked better than the follow-through. The stop was hit, which is the stop doing its job. Exited because [sl 10731.27].",
-        "tactic": "BREAKOUT_RETEST",
-        "regime": "TREND",
-        "score": 69.83,
-        "tier": "NORMAL",
-        "mfe_r": 0.52,
-        "mae_r": 1.01,
-        "mfe_captured_pct": 0
-      }
-    ]
+    "trades": 0,
+    "wins": 0,
+    "losses": 0,
+    "win_rate": null,
+    "pips": 0,
+    "money_won": 0,
+    "money_lost": 0,
+    "net": 0,
+    "best_trade": null,
+    "worst_trade": null,
+    "trade_stories": []
   },
   "positions": [],
   "events": [
@@ -770,5 +584,5 @@
       "detail_json": null
     }
   ],
-  "updated": "2026-09-28T23:51:17.606849+00:00"
+  "updated": "2026-09-29T00:01:22.504538+00:00"
 }
