@@ -77,6 +77,34 @@ class CycleResult:
         return f"watching {self.scanned} markets; nothing worth trading"
 
 
+def apply_twin(state: MarketState, scan_cfg, counts: dict[str, int]) -> tuple[MarketState, bool]:
+    """Every second signal of a twin tactic becomes its far-target twin.
+
+    Same entry, same stop, same size; the target is twin_target_multiple x
+    as far and the trade is journaled under the "_2X" name so the record
+    keeps the two apart. Returns (state, is_twin).
+    """
+    if not getattr(scan_cfg, "twin_enabled", False):
+        return state, False
+    if state.tactic not in (getattr(scan_cfg, "twin_tactics", ()) or ()):
+        return state, False
+    if not state.target or not state.stop:
+        return state, False
+    n = counts.get(state.tactic, 0) + 1
+    counts[state.tactic] = n
+    if n % 2 == 1:
+        return state, False
+    import dataclasses
+    mult = float(getattr(scan_cfg, "twin_target_multiple", 2.0) or 2.0)
+    far = state.entry + (state.target - state.entry) * mult
+    rr = (state.reward_risk or 0.0) * mult if state.reward_risk else None
+    twin = dataclasses.replace(
+        state, tactic=state.tactic + str(getattr(scan_cfg, "twin_suffix", "_2X")),
+        target=far, reward_risk=rr,
+        notes=tuple(state.notes) + ("twin: target twice as far, ladder of locked profit",))
+    return twin, True
+
+
 class Trader:
     """Owns the components and the cycle.  Safe to run in one thread."""
 
@@ -154,6 +182,7 @@ class Trader:
         self.hb_strategy = Heartbeat(hb_dir, "strategy", clock)
         self.hb_exec = Heartbeat(hb_dir, "execution", clock)
         self.hb_news = Heartbeat(hb_dir, "news", clock)
+        self._twin_counts: dict[str, int] = {}
 
         self.last_news_refresh: Optional[dt.datetime] = None
         self.last_commission_refresh: Optional[dt.datetime] = None
@@ -1053,6 +1082,7 @@ class Trader:
                 log.warning("DRY RUN: would have opened %s", intended)
                 continue
 
+            state, twin = apply_twin(state, self.cfg.scan, self._twin_counts)
             report = self.executor.submit(state, spec, sizing.volume)
             if not report.ok:
                 blocked.append(f"{state.symbol}: {report.message}")
@@ -1063,7 +1093,8 @@ class Trader:
             position = report.position
             self.risk.register_open_risk(position.ticket, state.symbol,
                                          state.side, sizing.risk_money)
-            tracker = self.flowlock.adopt(position, state.stop, now)
+            tracker = self.flowlock.adopt(position, state.stop, now,
+                                          profile="2X" if twin else "")
             strength = self.thesis.register(position.ticket, state)
             tracker.thesis_strength = strength
             try:

@@ -116,7 +116,10 @@ class ScanConfig:
     #   the pullback, was the best approach and is unchanged.
     # TREND_PULLBACK: three days traded, three negative (6 wins in 15,
     # about -31 GBP, 17-23 Sep). Same standard as the others: off.
-    disabled_tactics: tuple[str, ...] = ("NEWS_CONTINUATION", "TREND_PULLBACK")
+    # FAILED_BREAKOUT_RECLAIM: two days traded, two trades, no wins, both
+    # dead on arrival, about -12 GBP (23, 29 Sep). Off on 29 Sep.
+    disabled_tactics: tuple[str, ...] = ("NEWS_CONTINUATION", "TREND_PULLBACK",
+                                         "FAILED_BREAKOUT_RECLAIM")
     # An approach switched off in ONE market condition. MOMENTUM_CONTINUATION
     # in a TREND regime lost on every one of five days (77 trades, ~-118 GBP,
     # 22 Sep: 1 win in 13) even at STRONG scores: it chases a move that has
@@ -140,6 +143,15 @@ class ScanConfig:
         ("BREAKOUT_RETEST", "TREND"),
     )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
+    # --- the twin (29 Sep) ---------------------------------------------------
+    # Every second signal of a twin tactic is taken as its "_2X" twin: the
+    # same entry and stop, a target twice as far, and a ladder of locked
+    # profit instead of the runner (see FlowLockConfig.ladder_locks). Same
+    # signals, alternate exits, so the two are judged on equal opportunity.
+    twin_enabled: bool = True
+    twin_tactics: tuple[str, ...] = ("SESSION_EXPANSION",)
+    twin_target_multiple: float = 2.0
+    twin_suffix: str = "_2X"
     cooldown_seconds_after_exit: float = 180.0
     cooldown_seconds_after_reject: float = 60.0
     # --- lessons from the first live day ------------------------------------
@@ -218,6 +230,10 @@ class FlowLockConfig:
     runner_keep_fraction: float = 0.3
     runner_target_multiple: float = 2.0
     runner_floor_r: float = 1.0
+    # The twin's ladder: once a trade has been this far ahead (R), its stop
+    # never sits below the locked level (R). +1R -> +0.5R comes from the
+    # profit floor above; these extend it for the far-target twin.
+    ladder_locks: tuple[tuple[float, float], ...] = ((2.0, 1.2), (3.0, 2.0), (4.0, 3.0))
     mfe_giveback_decay: float = 0.22
     stall_bars_to_decay: int = 20
     reversal_thesis_floor: float = 15.0

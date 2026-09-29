@@ -466,6 +466,7 @@ def _tracker_from(d: dict) -> TradeTracker:
         breakeven_done=bool(d.get("breakeven_done")),
         target=float(d.get("target") or 0.0),
         runner_armed=bool(d.get("runner_armed")),
-        runner_done=bool(d.get("runner_done")))
+        runner_done=bool(d.get("runner_done")),
+        profile=str(d.get("profile") or ""))
     t.state_history = tuple(d.get("state_history") or ())
     return t

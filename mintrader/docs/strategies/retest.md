@@ -90,6 +90,17 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   evenings -12; the morning losses everyone remembers came from Retest and
   Momentum in trends, both now off.
 
+- 2026-09-29 (evening): FAILED_BREAKOUT_RECLAIM switched off (two days,
+  two trades, no wins, both dead on arrival, about -12 GBP; the owner's
+  call, ahead of the three-day rule). THE TWIN added: every second
+  SESSION_EXPANSION signal is taken as SESSION_EXPANSION_2X - same entry,
+  stop and size, target twice as far, and a ladder of locked profit
+  (+1R keeps +0.5R, +2R keeps +1.2R, +3R keeps +2R, +4R keeps +3R)
+  instead of the runner. Same signals, alternate exits, judged on equal
+  opportunity; the day review lists the two side by side. Session
+  expansion in TREND is the best approach on record (+19 GBP over seven
+  days, 4 of 5 on the 29th), which is why it carries the experiment.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

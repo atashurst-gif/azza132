@@ -754,3 +754,74 @@ class TestTheRunner:
         pos2 = [x for x in sim.positions() if x.ticket == res.ticket][0]
         assert pos2.tp == pytest.approx(tick.ask + 0.0200, abs=spec.point)
         assert pos2.sl == pytest.approx(pos.sl)
+
+
+class TestTheTwin:
+    """29 Sep: every second Session Expansion signal is taken with a target
+    twice as far and a ladder of locked profit, journaled as _2X."""
+
+    def _state(self, tactic="SESSION_EXPANSION", target=1.1100):
+        from mintel.engine.evidence import MarketState
+        from mintel.data.regime import Regime
+        return MarketState(symbol="EURUSD", as_of=NOW, regime=Regime.TREND, regime_label="TREND",
+                           direction=1, tactic=tactic, evidence={}, raw_score=60.0, opportunity=65.0,
+                           tier="NORMAL", entry=1.1000, stop=1.0950, target=target, reward_risk=2.0,
+                           headroom_pips=30.0, cost_pips=1.0)
+
+    def test_defaults_and_failed_breakout_off(self):
+        c = Config()
+        assert "FAILED_BREAKOUT_RECLAIM" in c.scan.disabled_tactics
+        assert c.scan.twin_enabled and c.scan.twin_tactics == ("SESSION_EXPANSION",)
+        assert c.flowlock.ladder_locks[0] == (2.0, 1.2)
+
+    def test_every_second_signal_is_the_twin(self):
+        from mintel.engine.trader import apply_twin
+        cfg = Config().scan
+        counts = {}
+        s1, t1 = apply_twin(self._state(), cfg, counts)
+        s2, t2 = apply_twin(self._state(), cfg, counts)
+        s3, t3 = apply_twin(self._state(), cfg, counts)
+        assert (t1, t2, t3) == (False, True, False)
+        assert s1.tactic == "SESSION_EXPANSION" and s1.target == pytest.approx(1.1100)
+        assert s2.tactic == "SESSION_EXPANSION_2X" and s2.target == pytest.approx(1.1200)
+        assert s2.stop == s1.stop and s2.entry == s1.entry and s2.reward_risk == pytest.approx(4.0)
+
+    def test_other_tactics_and_the_off_switch_are_untouched(self):
+        from mintel.engine.trader import apply_twin
+        cfg = Config().scan
+        s, t = apply_twin(self._state(tactic="LIQUIDITY_SWEEP_REVERSAL"), cfg, {})
+        assert not t and s.tactic == "LIQUIDITY_SWEEP_REVERSAL"
+        cfg.twin_enabled = False
+        counts = {}
+        for _ in range(4):
+            s, t = apply_twin(self._state(), cfg, counts)
+            assert not t
+
+    def test_ladder_locks_profit_as_the_twin_runs(self):
+        fl = FlowLock(Config().flowlock)
+        p = Position(1, "EURUSD", Side.BUY, 1.0, 1.1000, 1.0950, 1.1200, NOW)   # far target 4R
+        fl.adopt(p, p.sl, NOW, profile="2X")
+        strong = SimpleNamespace(direction=1, efficiency=0.6, adx=35.0, acceleration_atr=0.1)
+        out = []
+        for i, px in enumerate([1.1000 + 0.0003 * i for i in range(1, 38)]):   # to +2.2R
+            t = NOW + dt.timedelta(minutes=i + 1)
+            out.append(fl.update(p, price=px, atr=0.0020,
+                                 bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                                 momentum=strong, now=t))
+        tr = fl.trackers[1]
+        assert tr.mfe_r >= 2.0
+        assert tr.stop >= 1.1000 + 1.2 * 0.0050 - 1e-9, "past +2R the twin keeps +1.2R"
+        assert not any(d.runner_event for d in out), "the twin does not use the runner"
+        for i, px in enumerate([1.1000 + 0.0003 * i for i in range(38, 55)]):  # to +3.2R
+            t = NOW + dt.timedelta(minutes=60 + i)
+            fl.update(p, price=px, atr=0.0020, bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                      momentum=strong, now=t)
+        assert fl.trackers[1].stop >= 1.1000 + 2.0 * 0.0050 - 1e-9, "past +3R it keeps +2R"
+
+    def test_profile_survives_a_restart(self, tmp_path):
+        from mintel.engine.journal import Journal
+        fl = FlowLock(Config().flowlock)
+        p = Position(1, "EURUSD", Side.BUY, 1.0, 1.1000, 1.0950, 1.1200, NOW)
+        fl.adopt(p, p.sl, NOW, profile="2X")
+        j = Journal(tmp_path / "j.sqlite"); j.save_tracker(fl.trackers[1])
+        assert j.load_trackers()[0].profile == "2X"; j.close()

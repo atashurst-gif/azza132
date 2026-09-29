@@ -79,6 +79,7 @@ class TradeTracker:
     breakeven_done: bool = False
     state_history: tuple[str, ...] = ()
     target: float = 0.0              # the original broker target
+    profile: str = ""                # "" normal, "2X" the far-target twin
     runner_armed: bool = False       # target pushed out, waiting for price
     runner_done: bool = False        # part banked at the original target
 
@@ -98,7 +99,7 @@ class TradeTracker:
             "mfe_r": round(self.mfe_r, 4), "mae_r": round(self.mae_r, 4),
             "partial_done": self.partial_done,
             "target": self.target, "runner_armed": self.runner_armed,
-            "runner_done": self.runner_done,
+            "runner_done": self.runner_done, "profile": self.profile,
             "thesis_strength": round(self.thesis_strength, 2),
             "updates": self.updates,
             "state_history": list(self.state_history),
@@ -127,7 +128,8 @@ class FlowLock:
 
     # ------------------------------------------------------------- lifecycle --
     def adopt(self, position: Position, initial_stop: float,
-              now: Optional[dt.datetime] = None) -> TradeTracker:
+              now: Optional[dt.datetime] = None, *,
+              profile: str = "") -> TradeTracker:
         """Start (or resume) tracking a position.
 
         Called for new fills and for positions adopted during recovery, so a
@@ -145,7 +147,8 @@ class FlowLock:
             opened_utc=to_utc(now or position.open_time or utcnow()),
             stop=position.sl or stop, best_price=position.entry_price,
             worst_price=position.entry_price,
-            target=float(getattr(position, "tp", 0.0) or 0.0))
+            target=float(getattr(position, "tp", 0.0) or 0.0),
+            profile=profile)
         self.trackers[position.ticket] = t
         return t
 
@@ -286,8 +289,8 @@ class FlowLock:
         """
         c = self.cfg
         if not getattr(c, "runner_enabled", False) or t.target <= 0 \
-                or t.runner_done or t.initial_risk <= 0:
-            return None, "", 0.0
+                or t.runner_done or t.initial_risk <= 0 or t.profile == "2X":
+            return None, "", 0.0          # the twin has its far target already
         sign = t.side.sign
         dist = abs(t.target - t.entry)
         far = t.entry + sign * dist * float(getattr(c, "runner_target_multiple", 2.0))
@@ -424,6 +427,13 @@ class FlowLock:
         # least lock_floor_r, whatever the state or the trail says.
         if lock is not None:
             chosen = max(chosen, lock) if t.side is Side.BUY else min(chosen, lock)
+        if t.profile == "2X":
+            # The twin's ladder: locked profit steps up as the trade goes on.
+            for at_r, keep_r in (getattr(c, "ladder_locks", ()) or ()):
+                if t.mfe_r >= at_r:
+                    lv = t.entry + sign * float(keep_r) * t.initial_risk
+                    if (price - lv) * sign > 0:
+                        chosen = max(chosen, lv) if t.side is Side.BUY else min(chosen, lv)
         if t.runner_done and getattr(c, "runner_floor_r", 0.0):
             rf = t.entry + sign * float(c.runner_floor_r) * t.initial_risk
             if (price - rf) * sign > 0:
