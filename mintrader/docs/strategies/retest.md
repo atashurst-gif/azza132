@@ -101,6 +101,16 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   expansion in TREND is the best approach on record (+19 GBP over seven
   days, 4 of 5 on the 29th), which is why it carries the experiment.
 
+- 2026-09-30 (evening): standing rule - BREAKOUT_ACCEPTANCE in TREND off
+  (negative 3 of 6 days, net about -7 GBP) and LIQUIDITY_SWEEP_REVERSAL in
+  HIGH_VOL off (negative 5 of 9 days, the last five in a row, 23-30 Sep).
+  The ladder now applies to every trade (ladder_for_all): +2R keeps +1.2R,
+  +3R keeps +2R, +4R keeps +3R. Evidence: three winners on the 30th peaked
+  at 1.9-2.2R and closed on the +0.5R floor; over 18-28 Sep five trades
+  reached +2R and closed below +1.2R, worth about +14 GBP with this step.
+  The twin's first day: 4 of 6, +8.18 GBP, against 2 of 7, -11.86 GBP on
+  the normal exit for the same signals.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

@@ -825,3 +825,34 @@ class TestTheTwin:
         fl.adopt(p, p.sl, NOW, profile="2X")
         j = Journal(tmp_path / "j.sqlite"); j.save_tracker(fl.trackers[1])
         assert j.load_trackers()[0].profile == "2X"; j.close()
+
+
+class TestLadderForEveryTrade:
+    def test_defaults(self):
+        c = Config()
+        assert c.flowlock.ladder_for_all is True
+        assert ("BREAKOUT_ACCEPTANCE", "TREND") in c.scan.disabled_tactic_regimes
+        assert ("LIQUIDITY_SWEEP_REVERSAL", "HIGH_VOL") in c.scan.disabled_tactic_regimes
+
+    def test_a_normal_trade_keeps_one_point_two_r_after_two_r(self):
+        fl = FlowLock(Config().flowlock)
+        p = _pos()                                              # risk 0.005, no target
+        strong = SimpleNamespace(direction=1, efficiency=0.6, adx=35.0, acceleration_atr=0.1)
+        for i, px in enumerate([1.1000 + 0.0003 * i for i in range(1, 38)]):   # to +2.2R
+            t = NOW + dt.timedelta(minutes=i + 1)
+            fl.update(p, price=px, atr=0.0020, bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                      momentum=strong, now=t)
+        tr = fl.trackers[1]
+        assert tr.mfe_r >= 2.0 and tr.profile == ""
+        assert tr.stop >= 1.1000 + 1.2 * 0.0050 - 1e-9
+
+    def test_ladder_can_be_switched_off_for_normal_trades(self):
+        cfg = Config().flowlock; cfg.ladder_for_all = False
+        fl = FlowLock(cfg)
+        p = _pos()
+        strong = SimpleNamespace(direction=1, efficiency=0.6, adx=35.0, acceleration_atr=0.1)
+        for i, px in enumerate([1.1000 + 0.0003 * i for i in range(1, 38)]):
+            t = NOW + dt.timedelta(minutes=i + 1)
+            fl.update(p, price=px, atr=0.0020, bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
+                      momentum=strong, now=t)
+        assert fl.trackers[1].stop < 1.1000 + 1.2 * 0.0050

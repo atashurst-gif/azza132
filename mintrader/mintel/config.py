@@ -141,6 +141,11 @@ class ScanConfig:
         # the first day on the profit floor (0 wins in 4). The un-retested
         # BREAKOUT_ACCEPTANCE signal in TREND stays on.
         ("BREAKOUT_RETEST", "TREND"),
+        # 30 Sep standing rule: BREAKOUT_ACCEPTANCE in TREND negative on three
+        # of six days (net about -7 GBP); LIQUIDITY_SWEEP_REVERSAL in HIGH_VOL
+        # negative on five of nine days, the last five in a row.
+        ("BREAKOUT_ACCEPTANCE", "TREND"),
+        ("LIQUIDITY_SWEEP_REVERSAL", "HIGH_VOL"),
     )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     # --- the twin (29 Sep) ---------------------------------------------------
@@ -234,6 +239,7 @@ class FlowLockConfig:
     # never sits below the locked level (R). +1R -> +0.5R comes from the
     # profit floor above; these extend it for the far-target twin.
     ladder_locks: tuple[tuple[float, float], ...] = ((2.0, 1.2), (3.0, 2.0), (4.0, 3.0))
+    ladder_for_all: bool = True       # 30 Sep: the ladder applies to every trade
     mfe_giveback_decay: float = 0.22
     stall_bars_to_decay: int = 20
     reversal_thesis_floor: float = 15.0

@@ -427,8 +427,11 @@ class FlowLock:
         # least lock_floor_r, whatever the state or the trail says.
         if lock is not None:
             chosen = max(chosen, lock) if t.side is Side.BUY else min(chosen, lock)
-        if t.profile == "2X":
-            # The twin's ladder: locked profit steps up as the trade goes on.
+        if t.profile == "2X" or getattr(c, "ladder_for_all", False):
+            # The ladder: locked profit steps up as the trade goes on. Built
+            # for the twin; extended to every trade on 30 Sep after three
+            # winners peaked past +2R and closed on the +0.5R floor (five
+            # such trades over the week, about +14 GBP with this step).
             for at_r, keep_r in (getattr(c, "ladder_locks", ()) or ()):
                 if t.mfe_r >= at_r:
                     lv = t.entry + sign * float(keep_r) * t.initial_risk
