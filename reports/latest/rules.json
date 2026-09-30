@@ -1,11 +1,26 @@
 {
   "aggression": "NORMAL",
-  "build": "097b7d52f8",
+  "build": "6e553ab214",
   "code_strategy": "2026-09-15 balanced - half the pace, wiser choices",
   "flowlock": {
     "breakeven_at_r": 1.5,
     "decay_atr": 0.7,
     "initial_atr_multiple": 1.6,
+    "ladder_for_all": true,
+    "ladder_locks": [
+      [
+        2.0,
+        1.2
+      ],
+      [
+        3.0,
+        2.0
+      ],
+      [
+        4.0,
+        3.0
+      ]
+    ],
     "lock_at_r": 1.0,
     "lock_floor_r": 0.5,
     "mfe_giveback_decay": 0.22,
@@ -20,6 +35,10 @@
     "proving_r": 0.5,
     "proving_trail": false,
     "reversal_thesis_floor": 15.0,
+    "runner_enabled": true,
+    "runner_floor_r": 1.0,
+    "runner_keep_fraction": 0.3,
+    "runner_target_multiple": 2.0,
     "stall_bars_to_decay": 20,
     "strong_flow_atr": 2.6,
     "structure_break_max_r": 0.3
@@ -59,11 +78,24 @@
       [
         "BREAKOUT_RETEST",
         "SQUEEZE"
+      ],
+      [
+        "BREAKOUT_RETEST",
+        "TREND"
+      ],
+      [
+        "BREAKOUT_ACCEPTANCE",
+        "TREND"
+      ],
+      [
+        "LIQUIDITY_SWEEP_REVERSAL",
+        "HIGH_VOL"
       ]
     ],
     "disabled_tactics": [
       "NEWS_CONTINUATION",
-      "TREND_PULLBACK"
+      "TREND_PULLBACK",
+      "FAILED_BREAKOUT_RECLAIM"
     ],
     "entry_tier": "NORMAL",
     "manage_interval_seconds": 1.0,
@@ -88,7 +120,13 @@
     "tier_exceptional": 82.0,
     "tier_normal": 60.0,
     "tier_strong": 70.0,
-    "top_n_reported": 12
+    "top_n_reported": 12,
+    "twin_enabled": true,
+    "twin_suffix": "_2X",
+    "twin_tactics": [
+      "SESSION_EXPANSION"
+    ],
+    "twin_target_multiple": 2.0
   },
   "strategy": "2026-09-15 balanced - half the pace, wiser choices",
   "tracking_start_utc": "2026-09-22T11:27:22+00:00"
