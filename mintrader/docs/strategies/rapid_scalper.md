@@ -151,6 +151,26 @@ old full dump back to the mode. New defaults in the code reach the Mac on
 the next install. To pin a setting deliberately, add it to the file together
 with `"keep_overrides": true` and it will be left alone.
 
+## Lessons of the first live day (changes for 2 October)
+
+Thirteen live trades on 1 October: 3 winners, net -27.23, of which 17.24
+was commission. The broker's records showed four things, each now a rule:
+
+1. **Commission must be small next to what the stop risks.** The cost
+   gate is now measured against the money at the raw stop distance, not
+   the padded planned loss, at 25%. A half-lot GBPUSD trade with a one-pip
+   stop paid 2.50 of commission to risk 4.00 at the stop; that trade is
+   refused and logged. Minimum stop is 20 points and four spreads.
+2. **A market that just lost rests for ten minutes.** Gold took seven of
+   the thirteen trades, several within a minute of a loss there.
+3. **Three losses in a row pause everything for 30 minutes.** Six in a
+   row end the day. Previously four ended the day, which is too blunt for
+   a style whose win rate can sit under 40%.
+4. **Two minutes between any loss and the next trade** (was 45 seconds).
+
+Fewer trades, each one able to pay its own commission, no pressing after
+losses, and the stop as the exit unless the trade is certainly going there.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

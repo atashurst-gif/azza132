@@ -802,3 +802,52 @@ class TestSettingsFileHoldsOnlyTheMode:
         assert len(json.loads(p.read_text())) > 1
         rs_run.main(["--config", str(tmp_path / "config.json")])    # OFF: exits at once
         assert json.loads(p.read_text()) == {"mode": "OFF"}
+
+
+# ======================================= lessons of 1 October: costs, resting, no pressing --
+class TestLessonsOfDayOne:
+    def _ready(self, tmp_path, **kw):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, min_confidence=0.0, max_stop_points=400.0, **kw)
+        from mintel.scalper.score import Opportunity
+        from mintel.scalper.features import compute as fc
+        opp = Opportunity("EURUSD", 1, 90.0)
+        buf = e.buffers["EURUSD"]
+        for t in synthetic_ticks():
+            buf.add(t)
+        e._bars_for("EURUSD", 100.0)
+        opp.features = fc("EURUSD", buf, e.bars["EURUSD"], 0.00001, b.now)
+        opp.expected_move_points = 300.0
+        return b, e, opp, {"EURUSD": buf.last}
+
+    def test_commission_is_judged_against_the_money_at_the_stop_not_the_padded_plan(self, tmp_path):
+        # A big slippage allowance pads the planned loss; commission must still be
+        # small next to what the STOP risks, or there is no trade.
+        b, e, opp, ticks = self._ready(tmp_path, commission_per_lot_round_turn=30.0, slippage_allowance_points=200.0)
+        why = e._try_open(opp, b.now, ticks)
+        assert not e.trades and "at risk to the stop" in why
+
+    def test_a_market_that_just_lost_rests_for_ten_minutes(self, tmp_path):
+        b, e, opp, ticks = self._ready(tmp_path)
+        e.last_loss_by_symbol["EURUSD"] = b.now - dt.timedelta(minutes=2)
+        why = e._try_open(opp, b.now, ticks)
+        assert not e.trades and "rests for another 8 min" in why
+        e.last_loss_by_symbol["EURUSD"] = b.now - dt.timedelta(minutes=11)
+        e._try_open(opp, b.now, ticks)
+        assert len(e.trades) == 1
+
+    def test_three_losses_in_a_row_pause_everything_for_half_an_hour_six_end_the_day(self):
+        br = Breakers(scfg())
+        now = T0
+        for i in range(3):
+            br.record_result(-1.0, now + dt.timedelta(minutes=i))
+        why = br.check(now + dt.timedelta(minutes=3), tick_age_seconds=0.5, connected=True, latency_ms=50)
+        assert any("paused for another 29 min" in w for w in why)
+        why = br.check(now + dt.timedelta(minutes=40), tick_age_seconds=0.5, connected=True, latency_ms=50)
+        assert not any("losses in a row" in w for w in why)
+        for i in range(3, 6):
+            br.record_result(-1.0, now + dt.timedelta(minutes=40 + i))
+        why = br.check(now + dt.timedelta(minutes=50), tick_age_seconds=0.5, connected=True, latency_ms=50)
+        assert any("paused for the day" in w for w in why)
+        br.record_result(5.0, now + dt.timedelta(minutes=51))        # a win ends the streak
+        assert br.consecutive_losses == 0

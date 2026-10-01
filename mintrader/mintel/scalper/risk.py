@@ -118,6 +118,7 @@ class Breakers:
     slippage: deque = field(default_factory=deque)
     reconciliation_ok: bool = True
     tripped: dict = field(default_factory=dict)      # name -> reason (manual reset needed)
+    streak_paused_until: Optional[dt.datetime] = None
 
     def _roll(self, now: dt.datetime) -> None:
         if self.day != now.date():
@@ -133,6 +134,12 @@ class Breakers:
         self._roll(now)
         self.day_pnl += net
         self.consecutive_losses = self.consecutive_losses + 1 if net < 0 else 0
+        c = self.cfg
+        if (net < 0 and c.loss_streak_pause_after and self.consecutive_losses >= c.loss_streak_pause_after
+                and self.consecutive_losses < c.max_consecutive_losses):
+            # a run of losses is the market telling us it is not our day yet:
+            # step back, do not press. No revenge trades.
+            self.streak_paused_until = now + dt.timedelta(seconds=c.loss_streak_pause_seconds)
 
     def record_api_error(self, now: dt.datetime) -> None:
         self._roll(now); self.api_errors.append(now)
@@ -167,6 +174,9 @@ class Breakers:
             why.append(f"latency {latency_ms:.0f}ms too high")
         if self.consecutive_losses >= c.max_consecutive_losses:
             why.append(f"{self.consecutive_losses} losses in a row - paused for the day")
+        elif self.streak_paused_until and now < self.streak_paused_until:
+            left = (self.streak_paused_until - now).total_seconds() / 60
+            why.append(f"{self.consecutive_losses} losses in a row - paused for another {left:.0f} min")
         if self.day_pnl <= -c.max_daily_loss_gbp:
             why.append(f"daily loss limit reached ({self.day_pnl:+.2f})")
         if len(self.slippage) >= min(3, c.slippage_window_trades) and self.avg_slippage() > c.max_avg_slippage_points:

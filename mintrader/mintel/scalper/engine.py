@@ -57,6 +57,7 @@ class ScalperEngine:
         self.best: Optional[Opportunity] = None
         self.last_entry_at: Optional[dt.datetime] = None
         self.last_loss_at: Optional[dt.datetime] = None
+        self.last_loss_by_symbol: dict[str, dt.datetime] = {}
         self.last_scan_at: float = 0.0
         self.last_tick_at: Optional[dt.datetime] = None
         self.latency_ms: float = 0.0
@@ -298,6 +299,7 @@ class ScalperEngine:
         self.breakers.record_result(net, now)
         if net < 0:
             self.last_loss_at = now
+            self.last_loss_by_symbol[trade.symbol] = now
         self.trades.pop(trade.ticket, None)
         msg = (f"{trade.symbol} {trade.side.value} closed {reason}: {net:+.2f} after {trade.duration(now):.1f}s "
                f"(peak {trade.peak_r:.2f}R, {detail})")
@@ -375,9 +377,12 @@ class ScalperEngine:
         # cost awareness: a trade whose costs eat the planned loss, or whose
         # expected move barely covers its costs, is a loser before it starts
         cost = rp.commission + rp.spread_cost + rp.slippage_allowance
-        if rp.planned_loss > 0 and cost > self.scfg.max_cost_fraction_of_risk * rp.planned_loss:
-            why = (f"costs {cost:.2f} would be {cost / rp.planned_loss:.0%} of the planned {rp.planned_loss:.2f} loss "
-                   f"(limit {self.scfg.max_cost_fraction_of_risk:.0%})")
+        # measured against the money at the raw stop distance, not the padded
+        # planned loss: on a one-pip stop the commission IS the trade
+        at_stop = spec.money_per_lot(rp.stop_distance_points * spec.point) * rp.volume
+        if at_stop > 0 and cost > self.scfg.max_cost_fraction_of_risk * at_stop:
+            why = (f"costs {cost:.2f} would be {cost / at_stop:.0%} of the {at_stop:.2f} at risk to the stop "
+                   f"(limit {self.scfg.max_cost_fraction_of_risk:.0%}); stop too tight to carry the commission")
             opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
             return f"{sym}: {why}"
         cost_points = (cost / rp.volume / spec.money_per_lot(spec.point)) if (rp.volume and spec.money_per_lot(spec.point)) else 0.0
@@ -411,6 +416,13 @@ class ScalperEngine:
         for t in self.trades.values():
             if t.symbol == sym:
                 return f"{sym}: already in a trade here"
+        # no going straight back into a market that just took money off us
+        lost_at = self.last_loss_by_symbol.get(sym)
+        if lost_at and (now - lost_at).total_seconds() < self.scfg.symbol_pause_after_loss_seconds:
+            left = (self.scfg.symbol_pause_after_loss_seconds - (now - lost_at).total_seconds()) / 60
+            why = f"lost here {((now - lost_at).total_seconds()) / 60:.0f} min ago - {sym} rests for another {left:.0f} min"
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            return f"{sym}: {why}"
         fill = self.executor.open(sym, side, rp.volume, rp.stop, tick, spec, now)
         if not fill.ok:
             self.breakers.record_reject(now)
