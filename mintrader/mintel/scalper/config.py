@@ -145,6 +145,37 @@ class ScalperConfig:
             cfg.mode = "OFF"            # an unknown mode fails closed
         return cfg
 
+    @staticmethod
+    def save_minimal(path: str | Path, mode: str) -> None:
+        """Write a file holding ONLY the mode.
+
+        A full dump of every setting would freeze today's defaults on the
+        Mac, so later builds could never change them. Settings only go in
+        this file when a person puts them there, with "keep_overrides": true.
+        """
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"mode": mode}, indent=2) + "\n")
+
+    @staticmethod
+    def normalise_file(path: str | Path) -> bool:
+        """Collapse a bot-written full dump back to just the mode.
+
+        Returns True when the file was rewritten. A file carrying
+        "keep_overrides": true is left exactly as it is."""
+        p = Path(path)
+        try:
+            raw = json.loads(p.read_text())
+        except Exception:
+            return False
+        if not isinstance(raw, dict) or raw.get("keep_overrides"):
+            return False
+        extra = [k for k in raw if k != "mode"]
+        if not extra:
+            return False
+        ScalperConfig.save_minimal(p, str(raw.get("mode", "PAPER")).upper())
+        return True
+
     def save(self, path: str | Path) -> None:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)

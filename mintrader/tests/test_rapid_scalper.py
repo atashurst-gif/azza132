@@ -765,3 +765,40 @@ class TestPaperAndLiveNeverMix:
         st = e.status(b.now, 0.5)
         assert st["stats"]["trades"] == 1 and st["stats"]["net_today"] == -4.0
         assert [t["ticket"] for t in st["trades_today"]] == [3] and st["trades_today"][0]["mode"] == "LIVE"
+
+
+# ================================= the settings file never freezes yesterday's defaults --
+class TestSettingsFileHoldsOnlyTheMode:
+    def test_a_fresh_file_is_just_the_mode_and_new_defaults_reach_it(self, tmp_path):
+        p = tmp_path / "scalper.json"
+        ScalperConfig.save_minimal(p, "PAPER")
+        assert json.loads(p.read_text()) == {"mode": "PAPER"}
+        c = ScalperConfig.load(p)
+        assert c.mode == "PAPER" and c.thesis_fail_adverse_r == ScalperConfig().thesis_fail_adverse_r
+
+    def test_an_old_full_dump_is_collapsed_but_the_mode_is_kept(self, tmp_path):
+        p = tmp_path / "scalper.json"
+        old = ScalperConfig(mode="LIVE"); old.thesis_fail_adverse_r = 0.55; old.prove_it_seconds = 5.0
+        old.save(p)
+        assert ScalperConfig.load(p).prove_it_seconds == 5.0          # the frozen value, before
+        assert ScalperConfig.normalise_file(p)
+        assert json.loads(p.read_text()) == {"mode": "LIVE"}
+        c = ScalperConfig.load(p)
+        assert c.mode == "LIVE" and c.prove_it_seconds == ScalperConfig().prove_it_seconds
+        assert not ScalperConfig.normalise_file(p)                     # idempotent
+
+    def test_deliberate_overrides_are_respected(self, tmp_path):
+        p = tmp_path / "scalper.json"
+        p.write_text(json.dumps({"mode": "PAPER", "keep_overrides": True, "max_open_positions": 2}))
+        assert not ScalperConfig.normalise_file(p)
+        assert ScalperConfig.load(p).max_open_positions == 2
+
+    def test_the_process_entry_collapses_the_file_on_start(self, tmp_path):
+        from mintel.scalper import run as rs_run
+        cfg = Config(); cfg.ops.data_dir = str(tmp_path); cfg.ops.log_dir = str(tmp_path)
+        cfg.save(tmp_path / "config.json")
+        p = tmp_path / "scalper.json"
+        ScalperConfig(mode="OFF").save(p)
+        assert len(json.loads(p.read_text())) > 1
+        rs_run.main(["--config", str(tmp_path / "config.json")])    # OFF: exits at once
+        assert json.loads(p.read_text()) == {"mode": "OFF"}

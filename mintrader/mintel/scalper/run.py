@@ -37,9 +37,13 @@ def main(argv=None) -> int:
     cfg = Config.load(args.config)
     data = Path(cfg.ops.data_dir)
     spath = Path(args.scalper) if args.scalper else ScalperConfig.default_path(data)
-    scfg = ScalperConfig.load(spath)
     if not spath.exists():
-        scfg.save(spath)                 # the default file, PAPER, so it can be edited
+        ScalperConfig.save_minimal(spath, "PAPER")   # the mode only, so it can be edited
+    elif ScalperConfig.normalise_file(spath):
+        # an older build dumped every default into this file, which pinned
+        # the first day's settings for good; keep the mode, drop the rest
+        print(f"scalper.json held old settings; kept only the mode ({spath})")
+    scfg = ScalperConfig.load(spath)
 
     Path(cfg.ops.log_dir).mkdir(parents=True, exist_ok=True)
     handler = logging.handlers.RotatingFileHandler(Path(cfg.ops.log_dir) / "scalper.log",

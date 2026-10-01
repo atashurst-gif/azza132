@@ -138,6 +138,19 @@ planned maximum. With no live features at all the bot never guesses.
   £2.75 a trade against an average loss of £4.10, which is a trade that
   loses before it starts.
 
+## The settings file holds only the mode (fix of 1 October, evening)
+
+The first build wrote every default into `data/scalper.json`. That froze the
+first day's numbers on the Mac (5-second proving window, 0.55 R, 8-point
+stops), so the afternoon's rule changes never actually took effect live: the
+file's old values overrode the new defaults. Found in the nightly review
+from the exit reasons in the broker's records.
+
+Now the bot writes `{"mode": "PAPER"}` only, and on start it collapses an
+old full dump back to the mode. New defaults in the code reach the Mac on
+the next install. To pin a setting deliberately, add it to the file together
+with `"keep_overrides": true` and it will be left alone.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily
