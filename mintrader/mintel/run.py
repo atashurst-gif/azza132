@@ -459,6 +459,16 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
         results=results,
         positions=pos_rows,
         events=trader.journal.recent_events(limit=25))
+    # Strategy attribution for the page: read-only, adds the Rapid Scalper's
+    # own figures (from its status file) to this strategy's. Never fatal.
+    try:
+        from .ops.attribution import build_strategies
+        state.update(strategies=build_strategies(
+            trader.journal, positions, broker_day_start(trader.broker, trader.clock()),
+            account.currency if account else "GBP", trader.cfg.ops.data_dir,
+            ledger.get("today") if ledger.get("source") == "broker" else None))
+    except Exception as exc:
+        log.debug("attribution skipped: %s", exc)
 
 
 def build_broker(cfg: Config):

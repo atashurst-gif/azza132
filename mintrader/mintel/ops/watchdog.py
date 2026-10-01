@@ -662,6 +662,24 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
         log_file=str(Path(cfg.ops.log_dir) / "trader.out.log"),
         max_restarts_per_hour=cfg.ops.max_restarts_per_hour)]
 
+    # The Rapid Scalper: a separate process with its own heartbeat, started
+    # only when its own file (data/scalper.json) says PAPER or LIVE.
+    try:
+        from ..scalper.config import ScalperConfig
+        scfg = ScalperConfig.load(ScalperConfig.default_path(data))
+        if scfg.enabled:
+            processes.append(ManagedProcess(
+                name="scalper",
+                command=[python, "-m", "mintel.scalper.run", "--config", config_path],
+                heartbeat="scalper",
+                pid_file=str(data / "scalper.pid"),
+                cwd=project,
+                log_file=str(Path(cfg.ops.log_dir) / "scalper.out.log"),
+                grace_seconds=120.0,
+                max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
+    except Exception as exc:
+        log.warning("Rapid Scalper not scheduled: %s", exc)
+
     mt5_cmd: list[str] = []
     if cfg.broker_mode == "bridge":
         # The bridge runs the Windows Python that lives inside the Wine prefix.

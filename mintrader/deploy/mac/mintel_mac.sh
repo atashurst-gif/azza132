@@ -1138,6 +1138,8 @@ start_everything() {
     pkill -f "bridge_server.py" 2>/dev/null || true
     pkill -f "mintel.run --config" 2>/dev/null || true
     pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
+  pkill -f "mintel.scalper.run --config" 2>/dev/null || true
+    pkill -f "mintel.scalper.run --config" 2>/dev/null || true
     sleep 2
     launchctl load "$PLIST_PATH" >/dev/null 2>&1
   fi
@@ -1283,6 +1285,7 @@ stop_everything() {
   pkill -f "bridge_server.py" 2>/dev/null || true
   pkill -f "mintel.run --config" 2>/dev/null || true
   pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
+  pkill -f "mintel.scalper.run --config" 2>/dev/null || true
   if [[ -f "$DATA_DIR/caffeinate.pid" ]]; then
     kill "$(cat "$DATA_DIR/caffeinate.pid")" 2>/dev/null
     rm -f "$DATA_DIR/caffeinate.pid"

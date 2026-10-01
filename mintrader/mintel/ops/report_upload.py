@@ -88,6 +88,31 @@ def status_json(cfg: Config, fetch: Optional[Callable[[str], str]] = None) -> st
         return json.dumps({"unavailable": str(exc)})
 
 
+def scalper_json(cfg: Config, day: dt.datetime) -> Optional[str]:
+    """The Rapid Scalper's day: its status file plus its closed trades.
+
+    None when the scalper has never run (no journal file)."""
+    data = Path(cfg.ops.data_dir)
+    status_path = data / "scalper-status.json"
+    journal_path = data / "scalper.sqlite"
+    if not journal_path.exists() and not status_path.exists():
+        return None
+    out: dict = {"status": None, "trades": []}
+    try:
+        out["status"] = json.loads(status_path.read_text())
+    except Exception as exc:
+        out["status"] = {"unavailable": str(exc)}
+    try:
+        from ..scalper.journal import ScalperJournal
+        j = ScalperJournal(journal_path)
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        out["trades"] = [dict(r) for r in j.closed_since(start)]
+        j.close()
+    except Exception as exc:
+        out["trades_unavailable"] = str(exc)
+    return json.dumps(out, indent=2, default=str)
+
+
 def build_bundle(cfg: Config, broker, day: dt.datetime,
                  fetch: Optional[Callable[[str], str]] = None) -> dict[str, str]:
     from .day_review import build_day_review
@@ -103,6 +128,9 @@ def build_bundle(cfg: Config, broker, day: dt.datetime,
         f"reports/{key}/status.json": status_json(cfg, fetch),
         f"reports/{key}/rules.json": rules_json(cfg),
     }
+    scalper = scalper_json(cfg, day)
+    if scalper is not None:
+        files[f"reports/{key}/scalper.json"] = scalper
     files.update({p.replace(f"reports/{key}/", "reports/latest/"): v
                   for p, v in list(files.items())})
     files["reports/latest/DATE"] = key + "\n"

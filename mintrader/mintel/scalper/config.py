@@ -1,0 +1,152 @@
+"""Rapid Scalper configuration - its own file, never config.json.
+
+    data/scalper.json
+
+Mode is OFF / PAPER / LIVE and defaults to PAPER. Going LIVE is a deliberate
+edit of that file; a restart never changes it.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Optional
+
+MODES = ("OFF", "PAPER", "LIVE")
+
+
+@dataclass
+class ScoreWeights:
+    """Maximum points per component; all weights are configurable and logged."""
+    momentum: float = 22.0
+    trend_alignment: float = 14.0
+    entry_quality: float = 16.0
+    spread: float = 12.0
+    liquidity: float = 10.0
+    volume: float = 12.0
+    volatility: float = 8.0
+    structure: float = 6.0
+    order_flow: float = 0.0        # no genuine DOM/L2 over this feed: disabled
+
+
+@dataclass
+class ScalperConfig:
+    mode: str = "PAPER"
+    strategy_id: str = "rapid_scalper"
+    magic: int = 990_411                   # NEVER the existing bot's magic
+    symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD",
+                                "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP",
+                                "XAUUSD", "US500", "US30", "DE40", "UK100")
+    # --- risk ------------------------------------------------------------
+    planned_max_trade_risk_gbp: float = 10.0      # a CEILING, not a target
+    slippage_allowance_points: float = 3.0        # per side, in points
+    commission_per_lot_round_turn: float = 6.0    # account currency, configurable
+    invalidation_buffer_spreads: float = 1.0      # invalidation sits this many spreads past the micro swing
+    min_stop_points: float = 8.0
+    max_stop_points: float = 120.0
+    max_open_positions: int = 1
+    # --- entry gates -----------------------------------------------------
+    min_confidence: float = 70.0
+    max_spread_points: float = 25.0
+    max_spread_fraction_of_expected_move: float = 0.35
+    spread_expansion_limit: float = 1.8          # now / rolling average
+    min_ticks_per_minute: float = 20.0           # liquidity floor
+    chop_block: bool = True
+    late_entry_penalty_max: float = 25.0
+    min_seconds_between_entries: float = 20.0
+    cooldown_after_loss_seconds: float = 45.0
+    # --- management ------------------------------------------------------
+    prove_it_seconds: float = 5.0                # the thesis must show within this
+    prove_it_min_progress_r: float = 0.15        # else: THESIS_FAILED
+    thesis_fail_adverse_r: float = 0.55          # adverse beyond this inside prove-it = exit
+    risk_reduction_at_r: float = 0.6
+    capital_safe_at_r: float = 1.0
+    profit_protect_at_r: float = 1.6
+    runner_at_r: float = 2.5
+    giveback_early: float = 0.35                 # fraction of the high-water mark allowed back
+    giveback_established: float = 0.45
+    giveback_runner: float = 0.60
+    runner_min_probability: float = 60.0
+    enable_partial_profit: bool = False
+    partial_at_r: float = 2.0
+    partial_fraction: float = 0.5
+    momentum_decay_velocity_ratio: float = -0.4  # velocity now vs at peak
+    # --- execution -------------------------------------------------------
+    order_type: str = "MARKET"                   # MARKET or LIMIT
+    limit_offset_points: float = 1.0
+    filling: str = "IOC"
+    paper_slippage_points: float = 1.0
+    paper_latency_ms: float = 150.0
+    # --- circuit breakers --------------------------------------------------
+    max_consecutive_losses: int = 4
+    max_daily_loss_gbp: float = 40.0
+    max_account_daily_loss_gbp: float = 80.0
+    max_total_open_risk_gbp: float = 60.0
+    min_margin_level_pct: float = 300.0
+    max_avg_slippage_points: float = 4.0
+    slippage_window_trades: int = 10
+    stale_tick_seconds: float = 5.0
+    max_latency_ms: float = 1500.0
+    max_api_errors_per_hour: int = 10
+    max_rejects_per_hour: int = 5
+    # --- news ------------------------------------------------------------
+    news_filter_enabled: bool = True
+    news_blackout_before_seconds: float = 300.0
+    news_blackout_after_seconds: float = 180.0
+    news_min_importance: int = 3
+    # --- loop ------------------------------------------------------------
+    manage_interval_seconds: float = 0.25
+    scan_interval_seconds: float = 1.0
+    status_file: str = "scalper-status.json"
+    journal_file: str = "scalper.sqlite"
+    weights: ScoreWeights = field(default_factory=ScoreWeights)
+
+    # ----------------------------------------------------------------- io --
+    @property
+    def enabled(self) -> bool:
+        return self.mode in ("PAPER", "LIVE")
+
+    @property
+    def is_live(self) -> bool:
+        return self.mode == "LIVE"
+
+    @classmethod
+    def load(cls, path: str | Path) -> "ScalperConfig":
+        p = Path(path)
+        cfg = cls()
+        if not p.exists():
+            return cfg
+        try:
+            raw = json.loads(p.read_text())
+        except Exception:
+            return cfg
+        if not isinstance(raw, dict):
+            return cfg
+        for k, v in raw.items():
+            if k == "weights" and isinstance(v, dict):
+                for wk, wv in v.items():
+                    if hasattr(cfg.weights, wk):
+                        setattr(cfg.weights, wk, float(wv))
+            elif k == "symbols" and isinstance(v, (list, tuple)):
+                cfg.symbols = tuple(str(s) for s in v)
+            elif hasattr(cfg, k) and k != "weights":
+                cur = getattr(cfg, k)
+                try:
+                    setattr(cfg, k, type(cur)(v) if not isinstance(cur, bool) else bool(v))
+                except Exception:
+                    pass
+        cfg.mode = str(cfg.mode).upper()
+        if cfg.mode not in MODES:
+            cfg.mode = "OFF"            # an unknown mode fails closed
+        return cfg
+
+    def save(self, path: str | Path) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        d = asdict(self)
+        d["symbols"] = list(self.symbols)
+        p.write_text(json.dumps(d, indent=2))
+
+    @staticmethod
+    def default_path(data_dir: str | Path) -> Path:
+        return Path(data_dir) / "scalper.json"
