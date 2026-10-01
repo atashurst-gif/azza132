@@ -484,7 +484,9 @@ class ScalperEngine:
 
     def stats_today(self) -> dict:
         day = self.day_start()
-        closed = self.journal.closed_since(day)
+        # only this mode's rows: paper trades from earlier in the day never
+        # mix with live money, and vice versa
+        closed = [r for r in self.journal.closed_since(day) if r.get("mode") == self.scfg.mode]
         opens = []
         for t in self.trades.values():
             last = self.buffers[t.symbol].last if t.symbol in self.buffers else None
@@ -555,7 +557,8 @@ class ScalperEngine:
                          "exit_reason": r.get("exit_reason"), "duration_seconds": r.get("duration_seconds"),
                          "confidence": r.get("confidence"), "peak_r": r.get("peak_r"),
                          "mode": r.get("mode"), "strategy": STRATEGY_ID}
-                        for r in self.journal.closed_since(self.day_start())[-60:]]
+                        for r in self.journal.closed_since(self.day_start())[-60:]
+                        if r.get("mode") == self.scfg.mode]
         return {
             "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL, "tagline": TAGLINE,
             "status": state, "mode": mode, "build": RUNNING_STAMP,

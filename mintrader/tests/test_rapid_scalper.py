@@ -747,3 +747,21 @@ class TestTrueNumbers:
         why = e._try_open(opp, b.now, {"EURUSD": buf.last})
         assert not e.trades and not b.sent and ("costs" in why or "round-trip cost" in why)
         assert e.journal.rejected_since(T0 - dt.timedelta(days=1)) == 1
+
+
+class TestPaperAndLiveNeverMix:
+    def test_the_live_tab_ignores_this_mornings_paper_trades(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="LIVE")
+        spec = b.spec("EURUSD")
+        for ticket, mode, net in ((1, "PAPER", 9.0), (2, "PAPER", 9.0), (3, "LIVE", -4.0)):
+            t = ScalpTrade(ticket, "EURUSD", Side.BUY, 0.1, 1.1, 1.1, T0, 1.099, 1.099, 0.001, 10.0, spec.point, spec=spec)
+            e.journal.open_trade(t, mode, 1.0, 2.0, {}, 0.0, 100.0)
+            e.journal.close_trade(t, closed_at=T0 + dt.timedelta(seconds=9), exit_requested=1.1, exit_filled=1.1,
+                                  exit_reason="THESIS_FAILED", exit_detail="", spread_at_exit=1.0, gross=net, commission=0.0,
+                                  spread_cost=0.0, slippage_cost=0.0, net=net, exit_slip=0.0, exit_latency=100.0)
+        b.deals_since = lambda since, magic=0, closing_only=True: [
+            {"position": 3, "symbol": "EURUSD", "volume": 0.1, "profit": -4.0, "commission": 0.0, "is_entry": False, "time": T0}]
+        st = e.status(b.now, 0.5)
+        assert st["stats"]["trades"] == 1 and st["stats"]["net_today"] == -4.0
+        assert [t["ticket"] for t in st["trades_today"]] == [3] and st["trades_today"][0]["mode"] == "LIVE"
