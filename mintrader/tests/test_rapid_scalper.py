@@ -195,16 +195,24 @@ class TestProveItAndRunner:
     def test_failed_thesis_exits_well_before_the_full_stop(self):
         m = Manager(scfg(prove_it_seconds=3.0))
         t = self._trade()
-        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=2), 1.09940, 1.09952), None, T0 + dt.timedelta(seconds=2))
-        assert d.close and d.exit_reason == "THESIS_FAILED"
-        assert t.r_of(1.0994) > -1.0                      # cut at ~0.6R, not the full 1R
+        against = SimpleNamespace(velocity_5s=-0.5, persistence=0.2, trend_bias=0, volume_accel=1.0, acceleration=0.0,
+                                  realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-6, micro_low=1.0995, micro_high=1.1003)
+        # 0.85R against on the mid and the tape still running at the stop: certainly going there
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=2), 1.09909, 1.09921), against, T0 + dt.timedelta(seconds=2))
+        assert d.close and d.exit_reason == "THESIS_FAILED" and "certainly" in d.reason
+        assert t.r_of(1.09909) > -1.0                      # cut before the full 1R, not at it
 
     def test_no_progress_after_the_proving_window_is_a_failed_thesis(self):
         m = Manager(scfg(prove_it_seconds=3.0))
         t = self._trade()
         f = SimpleNamespace(velocity_5s=-0.2, persistence=0.2, trend_bias=0, volume_accel=1.0, acceleration=0.0,
                             realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-2, micro_low=1.0995, micro_high=1.1003)
+        # flat after the window but not under water: LEFT ALONE, the stop is the exit
         d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=4), 1.10001, 1.10013), f, T0 + dt.timedelta(seconds=4))
+        assert not d.close
+        # 0.55R under on the mid, no progress ever, still moving against: that is a failed thesis
+        f.consecutive_ticks = -5
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=5), 1.09939, 1.09951), f, T0 + dt.timedelta(seconds=5))
         assert d.close and d.exit_reason == "THESIS_FAILED"
 
     def test_states_advance_and_the_stop_follows(self):
@@ -364,6 +372,7 @@ class TestIsolation:
         e._bars_for("EURUSD", 100.0)
         from mintel.scalper.features import compute as fc
         opp.features = fc("EURUSD", buf, e.bars["EURUSD"], 0.00001, b.now)
+        opp.expected_move_points = 300.0
         ticks = {"EURUSD": buf.last}
         first = e._try_open(opp, b.now, ticks)
         assert len(e.trades) == 1, first
@@ -608,3 +617,133 @@ class TestPeriodFilter:
         assert "Net P&amp;L (Today)" in today and "+3.00" in today
         assert "Net P&amp;L (This week)" in week
         assert "Exits under 10 s" in custom and "THESIS_FAILED" in custom
+
+
+# ================================================== the spread is a cost, not a signal --
+class TestSpreadIsNotASignal:
+    def test_a_stop_inside_four_spreads_is_refused(self):
+        spec = sim_broker().spec("EURUSD")
+        # 20-point stop with a 6-point spread: inside 4 spreads -> no trade
+        rp = plan(spec, Side.BUY, 1.1000, 1.0998, 0.00006, scfg(min_stop_points=10.0))
+        assert not rp.ok and "spreads" in rp.reason
+        # same stop with a 1-point spread is fine
+        assert plan(spec, Side.BUY, 1.1000, 1.0998, 0.00001, scfg(min_stop_points=10.0)).ok
+
+    def test_a_fresh_buy_sitting_at_minus_spread_is_not_thesis_failed(self):
+        spec = sim_broker().spec("EURUSD")
+        m = Manager(scfg(prove_it_seconds=15.0, thesis_fail_adverse_r=0.55))
+        entry, stop = 1.10020, 1.09990          # 30-point stop, 2-point spread
+        t = ScalpTrade(1, "EURUSD", Side.BUY, 0.1, entry, entry, T0, stop, stop, entry - stop, 10.0, spec.point, spec=spec)
+        # ask stays at entry; bid is 2 points under: the spread, nothing else
+        for s in range(1, 12):
+            tick = Tick("EURUSD", T0 + dt.timedelta(seconds=s), 1.10000, 1.10020, 1.10010, 1.0)
+            d = m.update(t, tick, None, T0 + dt.timedelta(seconds=s))
+            assert not d.close, (s, d.exit_reason, d.reason)
+        # a real move against (mid 27 points under entry = -0.9R) with the tape still running down does fail it
+        against = SimpleNamespace(velocity_5s=-0.5, persistence=0.2, trend_bias=0, volume_accel=1.0, acceleration=0.0,
+                                  realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-6, micro_low=1.0995, micro_high=1.1003)
+        tick = Tick("EURUSD", T0 + dt.timedelta(seconds=12), 1.09983, 1.10003, 1.09993, 1.0)
+        d = m.update(t, tick, against, T0 + dt.timedelta(seconds=12))
+        assert d.close and d.exit_reason == "THESIS_FAILED" and "mid" in d.reason
+
+    def test_the_page_names_the_mode_of_each_scalper_trade(self):
+        from mintel.ops.dashboard import render_status
+        rs = strategy_stats([{"net_pnl": -4.0, "duration_seconds": 8}], [], label="Rapid Scalper", strategy_id=STRATEGY_ID, scalper=True)
+        rs["trades_today"] = [{"ticket": 2, "symbol": "GBPUSD", "net": -4.0, "closed": "2026-10-01T09:05:00",
+                               "exit_reason": "THESIS_FAILED", "mode": "PAPER", "strategy": STRATEGY_ID}]
+        snap = {"status": {"bot": "RUNNING"}, "health": {}, "thinking": [], "results": {}, "positions": [], "events": [],
+                "strategies": {"overall": combine([rs]), STRATEGY_ID: rs, "scalper": {},
+                               "labels": {"overall": "Overall", STRATEGY_ID: "Rapid Scalper"}}}
+        assert "PAPER</span>" in render_status(snap, STRATEGY_ID)
+
+
+# ================================================ the ten pounds is the exit, not a hint --
+class TestTheStopIsTheExit:
+    def _trade(self):
+        spec = sim_broker().spec("EURUSD")
+        return ScalpTrade(1, "EURUSD", Side.BUY, 0.1, 1.1000, 1.1000, T0, 1.0990, 1.0990, 0.0010, 10.0, spec.point, spec=spec)
+
+    def test_a_trade_that_is_merely_negative_is_left_to_its_stop(self):
+        m = Manager(scfg(prove_it_seconds=3.0))
+        t = self._trade()
+        calm = SimpleNamespace(velocity_5s=0.1, persistence=0.3, trend_bias=1, volume_accel=1.0, acceleration=0.0,
+                               realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=1, micro_low=1.0995, micro_high=1.1003)
+        # 0.85R against on the mid but the tape has turned back up: NOT certainly going there
+        for s in range(1, 10):
+            d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=s), 1.09909, 1.09921), calm, T0 + dt.timedelta(seconds=s))
+            assert not d.close, (s, d.reason)
+        # and with no features at all we never guess: the stop does the job
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=10), 1.09909, 1.09921), None, T0 + dt.timedelta(seconds=10))
+        assert not d.close
+
+    def test_moving_towards_the_stop_counts_by_ticks_as_well_as_velocity(self):
+        m = Manager(scfg(prove_it_seconds=3.0))
+        t = self._trade()
+        f = SimpleNamespace(velocity_5s=0.0, persistence=0.3, trend_bias=0, volume_accel=1.0, acceleration=0.0,
+                            realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-4, micro_low=1.0995, micro_high=1.1003)
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=2), 1.09909, 1.09921), f, T0 + dt.timedelta(seconds=2))
+        assert d.close and d.exit_reason == "THESIS_FAILED"
+
+
+# ========================================= true numbers: the broker's money, the real costs --
+class TestTrueNumbers:
+    def test_live_figures_are_the_brokers_deal_history_not_our_arithmetic(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="LIVE")
+        # our own record says one trade lost 4.00; the broker says it lost 5.10 after commission and swap
+        spec = b.spec("EURUSD")
+        t = ScalpTrade(31, "EURUSD", Side.BUY, 0.1, 1.1, 1.1, T0, 1.099, 1.099, 0.001, 10.0, spec.point, spec=spec)
+        e.journal.open_trade(t, "LIVE", 1.0, 2.0, {}, 0.0, 100.0)
+        e.journal.close_trade(t, closed_at=T0 + dt.timedelta(seconds=9), exit_requested=1.0996, exit_filled=1.0996,
+                              exit_reason="THESIS_FAILED", exit_detail="", spread_at_exit=1.0, gross=-3.4, commission=0.6,
+                              spread_cost=0.1, slippage_cost=0.0, net=-4.0, exit_slip=0.0, exit_latency=100.0)
+        b.deals_since = lambda since, magic=0, closing_only=True: [
+            {"position": 31, "symbol": "EURUSD", "volume": 0.1, "profit": -0.3, "commission": -0.3, "is_entry": True, "time": T0},
+            {"position": 31, "symbol": "EURUSD", "volume": 0.1, "profit": -4.8, "commission": -0.3, "is_entry": False, "time": T0},
+        ]
+        s = e.stats_today()
+        assert s["trades"] == 1 and s["losses"] == 1 and s["realised"] == -5.1 and s["net_today"] == -5.1
+        assert s["total_costs"] == 0.6 and s["largest_loss"] == -5.1
+        assert "broker" in s["source"]
+        st = e.status(b.now, 0.5)
+        assert st["trades_today"][0]["net"] == -5.1          # the trade list shows the broker's figure too
+
+    def test_when_the_broker_cannot_be_asked_the_page_says_so_rather_than_inventing(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="LIVE")
+        def boom(*a, **k): raise RuntimeError("terminal gone")
+        b.deals_since = boom
+        s = e.stats_today()
+        assert "unavailable" in s["source"]
+        p = _engine(b, tmp_path / "paper", mode="PAPER").stats_today()
+        assert p["source"].startswith("simulated")
+
+    def test_a_live_close_takes_its_money_from_the_brokers_deal(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="LIVE")
+        spec = b.spec("EURUSD")
+        t = ScalpTrade(41, "EURUSD", Side.BUY, 0.1, 1.1, 1.1, T0, 1.099, 1.099, 0.001, 10.0, spec.point, spec=spec)
+        e.trades[41] = t
+        e.journal.open_trade(t, "LIVE", 1.0, 2.0, {}, 0.0, 100.0)
+        b.closed_deal = lambda ticket: {"exit_price": 1.0997, "pnl": -2.75, "volume": 0.1}
+        from mintel.scalper.execution import Fill
+        e._finalise(t, T0 + dt.timedelta(seconds=20), Fill(True, 41, 1.0998, 1.0998, 0.0, 50.0), "THESIS_FAILED", "x")
+        row = e.journal.closed_since(T0)[0]
+        assert row["net_pnl"] == -2.75 and row["exit_filled"] == 1.0997
+
+    def test_trades_whose_costs_eat_the_planned_loss_are_refused(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        # a 60-a-lot commission makes costs dwarf the move
+        e = _engine(b, tmp_path, min_confidence=0.0, max_stop_points=400.0, commission_per_lot_round_turn=60.0)
+        from mintel.scalper.score import Opportunity
+        from mintel.scalper.features import compute as fc
+        opp = Opportunity("EURUSD", 1, 90.0)
+        buf = e.buffers["EURUSD"]
+        for t in synthetic_ticks():
+            buf.add(t)
+        e._bars_for("EURUSD", 100.0)
+        opp.features = fc("EURUSD", buf, e.bars["EURUSD"], 0.00001, b.now)
+        opp.expected_move_points = 5.0
+        why = e._try_open(opp, b.now, {"EURUSD": buf.last})
+        assert not e.trades and not b.sent and ("costs" in why or "round-trip cost" in why)
+        assert e.journal.rejected_since(T0 - dt.timedelta(days=1)) == 1

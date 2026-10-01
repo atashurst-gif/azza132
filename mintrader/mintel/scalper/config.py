@@ -42,7 +42,8 @@ class ScalperConfig:
     slippage_allowance_points: float = 3.0        # per side, in points
     commission_per_lot_round_turn: float = 6.0    # account currency, configurable
     invalidation_buffer_spreads: float = 1.0      # invalidation sits this many spreads past the micro swing
-    min_stop_points: float = 8.0
+    min_stop_points: float = 15.0
+    min_stop_spreads: float = 4.0                # and never inside 4 spreads: the spread is not a signal
     max_stop_points: float = 120.0
     max_open_positions: int = 1
     # --- entry gates -----------------------------------------------------
@@ -54,11 +55,15 @@ class ScalperConfig:
     chop_block: bool = True
     late_entry_penalty_max: float = 25.0
     min_seconds_between_entries: float = 20.0
+    max_cost_fraction_of_risk: float = 0.30      # commission+spread+slippage <= 30% of the planned loss
+    min_expected_move_over_cost: float = 3.0     # the expected move must be >= 3x the round-trip cost
     cooldown_after_loss_seconds: float = 45.0
     # --- management ------------------------------------------------------
-    prove_it_seconds: float = 5.0                # the thesis must show within this
+    prove_it_seconds: float = 15.0               # the thesis must show within this
     prove_it_min_progress_r: float = 0.15        # else: THESIS_FAILED
-    thesis_fail_adverse_r: float = 0.55          # adverse beyond this inside prove-it = exit
+    thesis_fail_adverse_r: float = 0.8           # mid this far against AND still moving against = exit early
+    thesis_fail_stale_r: float = 0.5             # no progress, this far under AND moving against = exit
+    thesis_fail_min_ticks_against: int = 4       # "moving against": velocity < 0 or this many ticks in a row
     risk_reduction_at_r: float = 0.6
     capital_safe_at_r: float = 1.0
     profit_protect_at_r: float = 1.6

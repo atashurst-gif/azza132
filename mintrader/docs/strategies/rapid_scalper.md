@@ -96,6 +96,48 @@ Exit taxonomy: `INITIAL_STOP, THESIS_FAILED, MOMENTUM_DECAY, PROFIT_TRAIL,
 STRUCTURE_BREAK, SPREAD_EMERGENCY, SLIPPAGE_PROTECTION, RISK_KILL_SWITCH,
 ACCOUNT_PROTECTION, MANUAL_CLOSE, SYSTEM_SHUTDOWN`.
 
+## The spread is a cost, not a signal (change of 1 October)
+
+The first live hour showed four trades, every one cut inside five seconds as
+THESIS_FAILED. The cause was that progress was being judged on the price we
+could close at, so a fresh buy already read as "going against us" by one
+spread the instant it filled, and stops of around ten points sat inside
+ordinary spread noise. Three changes:
+
+- progress and adverse movement inside the proving window are judged on the
+  **mid** price; the spread was paid at entry and is not the thesis failing
+- a stop must clear **four spreads** as well as `min_stop_points`
+  (now 15); anything tighter is refused and logged as rejected
+- the proving window is 15 seconds, not 5
+
+The page's trade list now marks every scalper trade PAPER or LIVE.
+
+**The planned loss is the exit.** The early THESIS_FAILED exit now fires only
+when the trade is certainly heading for its stop: at least 0.8 R against on
+the mid price AND the tape still moving against it (negative velocity or
+four or more ticks in a row the wrong way). After the proving window a trade
+with no progress is cut only if it is at least 0.5 R under and moving
+against. A flat, wobbling or merely negative trade is left alone; the
+server-side stop is what takes the loss, and that loss is capped at the
+planned maximum. With no live features at all the bot never guesses.
+
+## True numbers and real costs (change of 1 October, later the same day)
+
+- **LIVE figures come from the broker.** The Rapid Scalper tab's money
+  (net, realised, trades, wins, losses, averages, costs, profit factor,
+  drawdown, and the net on every row of the trade list) is read from
+  MetaTrader's own deal history for the scalper's magic number, profit plus
+  commission plus swap. Every live close also takes its result from the
+  broker's deal rather than from our arithmetic. If the broker cannot be
+  asked, the tab says so and shows the bot's own records; it never shows an
+  invented zero. PAPER figures are labelled "simulated".
+- **Costs are a gate.** A trade is refused, and logged as rejected with the
+  reason, when commission + spread + slippage allowance would be more than
+  30% of the planned loss, or when the expected move is under three times
+  the round-trip cost in points. The first live hour's costs were about
+  £2.75 a trade against an average loss of £4.10, which is a trade that
+  loses before it starts.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

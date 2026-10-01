@@ -47,6 +47,10 @@ def plan(spec: SymbolSpec, side: Side, entry: float, invalidation: float,
         return RiskPlan(False, f"stop {pts:.1f} points is inside the noise floor ({cfg.min_stop_points:.0f})")
     if pts > cfg.max_stop_points:
         return RiskPlan(False, f"stop {pts:.1f} points is too far for a scalp ({cfg.max_stop_points:.0f} max)")
+    spread_pts = spread_price / spec.point if spec.point else 0.0
+    if spread_pts > 0 and pts < cfg.min_stop_spreads * spread_pts:
+        return RiskPlan(False, f"stop {pts:.1f} points is inside {cfg.min_stop_spreads:.0f} spreads "
+                               f"({cfg.min_stop_spreads * spread_pts:.1f}); the spread is not a signal")
     min_broker = spec.min_stop_distance_price(spread_price) if hasattr(spec, "min_stop_distance_price") else 0.0
     if min_broker and dist < min_broker:
         return RiskPlan(False, "stop closer than the broker's minimum distance")

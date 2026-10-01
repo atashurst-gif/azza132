@@ -265,6 +265,19 @@ class ScalperEngine:
         exit_price = fill.price if fill.ok and fill.price else trade.stop
         gross = spec.money((exit_price - trade.entry_filled) * trade.side.sign, trade.volume) if spec else 0.0
         commission = self.scfg.commission_per_lot_round_turn * trade.volume
+        if pnl_override is None and self.executor is not None and self.executor.mode == "LIVE":
+            # the broker's record of profit + commission + swap is the truth
+            for _ in range(3):
+                try:
+                    deal = self.broker.closed_deal(trade.ticket)
+                except Exception:
+                    deal = None
+                if deal and deal.get("pnl") is not None:
+                    pnl_override = deal["pnl"]
+                    if deal.get("exit_price"):
+                        exit_price = float(deal["exit_price"])
+                    break
+                time.sleep(0.2)
         if pnl_override is not None:
             net = float(pnl_override)
             gross = net + commission
@@ -359,6 +372,20 @@ class ScalperEngine:
         if not rp.ok:
             opp.blockers.append(rp.reason); self.journal.record_rejected(opp, f.spread_points, now)
             return f"{sym}: {rp.reason}"
+        # cost awareness: a trade whose costs eat the planned loss, or whose
+        # expected move barely covers its costs, is a loser before it starts
+        cost = rp.commission + rp.spread_cost + rp.slippage_allowance
+        if rp.planned_loss > 0 and cost > self.scfg.max_cost_fraction_of_risk * rp.planned_loss:
+            why = (f"costs {cost:.2f} would be {cost / rp.planned_loss:.0%} of the planned {rp.planned_loss:.2f} loss "
+                   f"(limit {self.scfg.max_cost_fraction_of_risk:.0%})")
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            return f"{sym}: {why}"
+        cost_points = (cost / rp.volume / spec.money_per_lot(spec.point)) if (rp.volume and spec.money_per_lot(spec.point)) else 0.0
+        if cost_points and opp.expected_move_points < self.scfg.min_expected_move_over_cost * cost_points:
+            why = (f"expected move {opp.expected_move_points:.1f} points is under {self.scfg.min_expected_move_over_cost:.0f}x "
+                   f"the {cost_points:.1f}-point round-trip cost")
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            return f"{sym}: {why}"
         # account-level safety: may block; never touches the other strategy
         try:
             account = self.broker.account()
@@ -420,6 +447,41 @@ class ScalperEngine:
             return 0.0
 
     # ------------------------------------------------------------- status --
+    def _broker_day(self, day: dt.datetime) -> Optional[dict]:
+        """The scalper's day as the BROKER records it (its magic only).
+
+        None when not LIVE or the broker could not be asked - never a
+        made-up zero."""
+        if self.executor is None or self.executor.mode != "LIVE":
+            return None
+        fn = getattr(self.broker, "deals_since", None)
+        if fn is None:
+            return None
+        try:
+            rows = fn(day, self.scfg.magic, False) or []
+        except Exception as exc:
+            self.breakers.record_api_error(to_utc(self.clock()))
+            log.warning("deal history unavailable: %s", exc)
+            return None
+        per_pos: dict[int, dict] = {}
+        for r in rows:
+            p = per_pos.setdefault(int(r.get("position") or 0), {"net": 0.0, "commission": 0.0, "closed": False,
+                                                                   "symbol": r.get("symbol"), "time": r.get("time")})
+            p["net"] += float(r.get("profit") or 0.0)
+            p["commission"] += float(r.get("commission") or 0.0)
+            if not r.get("is_entry"):
+                p["closed"] = True
+                p["time"] = r.get("time")
+        closed = [p for p in per_pos.values() if p["closed"]]
+        nets = [p["net"] for p in closed]
+        return {"trades": len(nets), "wins": sum(1 for x in nets if x > 0), "losses": sum(1 for x in nets if x < 0),
+                "realised": round(sum(nets), 2), "costs": round(abs(sum(p["commission"] for p in closed)), 2),
+                "avg_win": (round(sum(x for x in nets if x > 0) / max(1, sum(1 for x in nets if x > 0)), 2) if any(x > 0 for x in nets) else None),
+                "avg_loss": (round(sum(x for x in nets if x < 0) / max(1, sum(1 for x in nets if x < 0)), 2) if any(x < 0 for x in nets) else None),
+                "largest_win": round(max(nets), 2) if nets and max(nets) > 0 else None,
+                "largest_loss": round(min(nets), 2) if nets and min(nets) < 0 else None,
+                "by_position": {k: round(v["net"], 2) for k, v in per_pos.items() if v["closed"]}}
+
     def stats_today(self) -> dict:
         day = self.day_start()
         closed = self.journal.closed_since(day)
@@ -432,8 +494,33 @@ class ScalperEngine:
             currency = self.broker.account().currency
         except Exception:
             currency = "GBP"
-        return strategy_stats(closed, opens, label=STRATEGY_LABEL, strategy_id=STRATEGY_ID,
-                              currency=currency, scalper=True)
+        s = strategy_stats(closed, opens, label=STRATEGY_LABEL, strategy_id=STRATEGY_ID,
+                           currency=currency, scalper=True)
+        mode = self.executor.mode if self.executor is not None else "OFF"
+        s["mode"] = mode
+        s["source"] = "simulated (PAPER)" if mode == "PAPER" else "the bot's own records"
+        if mode == "LIVE":
+            b = self._broker_day(day)
+            if b is not None:
+                # the broker's money wins over anything we worked out ourselves
+                s.update({k: b[k] for k in ("trades", "wins", "losses", "realised", "avg_win", "avg_loss",
+                                            "largest_win", "largest_loss")})
+                s["total_costs"] = b["costs"]
+                s["net_today"] = round(s["realised"] + s["unrealised"], 2)
+                s["win_rate"] = round(100.0 * s["wins"] / s["trades"], 1) if s["trades"] else None
+                wins_sum = sum(v for v in b["by_position"].values() if v > 0)
+                loss_sum = abs(sum(v for v in b["by_position"].values() if v < 0))
+                s["profit_factor"] = (round(wins_sum / loss_sum, 2) if loss_sum else ("no losses" if wins_sum else None))
+                nets = list(b["by_position"].values())
+                peak = dd = cum = 0.0
+                for x in nets:
+                    cum += x; peak = max(peak, cum); dd = min(dd, cum - peak)
+                s["max_drawdown"] = round(dd, 2)
+                s["source"] = "the broker's own deal history (scalper magic number)"
+                s["broker_by_position"] = b["by_position"]
+            else:
+                s["source"] = "the bot's own records (broker history unavailable)"
+        return s
 
     def status(self, now: dt.datetime, tick_age: Optional[float]) -> dict:
         mode = self.scfg.mode
@@ -460,11 +547,14 @@ class ScalperEngine:
                 "exit_tolerance": t.exit_tolerance, "stop": t.stop, "reason": t.entry_reason,
                 "ticket": t.ticket, "volume": t.volume,
             }
+        stats = self.stats_today()
+        by_pos = stats.get("broker_by_position") or {}
         trades_today = [{"ticket": r["ticket"], "symbol": r["symbol"], "side": r["side"],
-                         "opened": r["opened_utc"], "closed": r["closed_utc"], "net": r.get("net_pnl"),
+                         "opened": r["opened_utc"], "closed": r["closed_utc"],
+                         "net": by_pos.get(int(r["ticket"]), r.get("net_pnl")),
                          "exit_reason": r.get("exit_reason"), "duration_seconds": r.get("duration_seconds"),
                          "confidence": r.get("confidence"), "peak_r": r.get("peak_r"),
-                         "strategy": STRATEGY_ID}
+                         "mode": r.get("mode"), "strategy": STRATEGY_ID}
                         for r in self.journal.closed_since(self.day_start())[-60:]]
         return {
             "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL, "tagline": TAGLINE,
@@ -484,7 +574,7 @@ class ScalperEngine:
                          "day_pnl": round(self.breakers.day_pnl, 2),
                          "avg_slippage_points": round(self.breakers.avg_slippage(), 2),
                          "tripped": self.breakers.tripped},
-            "stats": self.stats_today(),
+            "stats": stats,
             "trades_today": trades_today,
             "events": [{"ts": e["ts_utc"], "kind": e["kind"], "message": e["message"]}
                        for e in self.journal.recent_events(15)],

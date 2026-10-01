@@ -259,7 +259,7 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
             ("Win rate", plain(s.get("win_rate"), "%")), ("Average win", money(s.get("avg_win"))),
             ("Average loss", money(s.get("avg_loss"))), ("Largest win", money(s.get("largest_win"))),
             ("Largest loss", money(s.get("largest_loss"))), ("Profit factor", plain(s.get("profit_factor"))),
-            ("Total trading costs", money(s.get("total_costs"))),
+            ("Total trading costs", "-" if s.get("total_costs") is None else f"{abs(float(s['total_costs'])):.2f} {cur}"),
             ("Estimated slippage", plain(s.get("est_slippage_points"), " points")),
             ("Average holding time", plain(None if s.get("avg_hold_seconds") is None else f"{s['avg_hold_seconds']:.0f}", " s")),
             ("Open positions", plain(s.get("open_positions"))),
@@ -279,7 +279,8 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
     trades = s.get("trades_today") or []
     trows = "".join(
         f"<tr><td>{html.escape(str(t.get('closed') or '')[11:19])}</td><td>{html.escape(str(t.get('symbol')))}</td>"
-        f"<td>{html.escape(str(labels.get(t.get('strategy'), t.get('strategy'))))}</td>"
+        f"<td>{html.escape(str(labels.get(t.get('strategy'), t.get('strategy'))))}"
+        f"{(' <span class=pill>' + html.escape(str(t.get('mode'))) + '</span>') if t.get('mode') else ''}</td>"
         f"<td>{html.escape(str(t.get('tactic') or t.get('exit_reason') or ''))}</td>"
         f"<td>{money(t.get('net'))}</td></tr>" for t in trades[-300:][::-1])
     trade_html = (f'<h2>Trades - {plabel} ({html.escape(labels.get(selected, selected))})</h2><div class="box">'
@@ -288,7 +289,9 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
     src_txt = html.escape(str(period.get("source") or "the bots' own records"))
     p_start = html.escape(str(period.get("start") or "")[:10])
     p_end = html.escape(str(period.get("end") or "")[:10])
-    source = ("Today's figures are the broker's own." if pkey == "today" else
+    own = s.get("source")
+    source = ((f"Figures on this tab come from {html.escape(str(own))}." if own else "Today's figures are the broker's own.")
+              if pkey == "today" else
               f"Figures for {plabel} come from {src_txt}, {p_start} to {p_end} (UTC, end exclusive).")
     return (f'<h2>Strategies</h2><div class="tabs">{tabs}</div><div class="tabs periods">{pbar}</div>'
             f'<div class="box"><table>{table}</table>'

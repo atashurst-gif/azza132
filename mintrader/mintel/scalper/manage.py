@@ -57,6 +57,7 @@ class ScalpTrade:
     partial_done: bool = False
     exit_tolerance: str = "TIGHT"
     last_note: str = ""
+    peak_mid_r: float = 0.0
 
     def r_of(self, price: float) -> float:
         if self.risk_distance <= 0:
@@ -134,19 +135,33 @@ class Manager:
             if f is not None:
                 trade.peak_velocity = max(trade.peak_velocity, f.velocity_5s * sign)
         trade.mae_r = max(trade.mae_r, -r_now)
+        # Progress and adverse movement are judged on the MID price: a fresh
+        # buy sits at -spread on the bid the instant it fills, and that is a
+        # cost we already paid, not the thesis failing.
+        mid = (tick.bid + tick.ask) / 2.0
+        r_mid = trade.r_of(mid)
+        trade.peak_mid_r = max(getattr(trade, "peak_mid_r", 0.0), r_mid)
         secs = trade.duration(now)
         vel = (f.velocity_5s * sign) if f is not None else 0.0
         spread_pts = ((tick.ask - tick.bid) / trade.point) if trade.point else 0.0
 
         # ---- hard stop reached (paper) is handled by the executor; here: thesis checks
         # PHASE 1 - PROVE IT
+        # The planned loss IS the exit. We step out early only when the trade
+        # is certainly going there: deep against us on the mid AND the tape is
+        # still moving towards the stop. Flat, wobbling or merely negative
+        # trades are left to prove themselves or to the stop.
         if trade.state == "INITIAL_RISK" and secs <= c.prove_it_seconds * 3:
-            if r_now <= -c.thesis_fail_adverse_r:
+            against = f is not None and (vel < 0 or f.consecutive_ticks * sign <= -c.thesis_fail_min_ticks_against)
+            if r_mid <= -c.thesis_fail_adverse_r and against:
                 return Decision(close=True, exit_reason="THESIS_FAILED",
-                                reason=f"went {r_now:.2f}R against inside the proving window", state=trade.state)
-            if secs >= c.prove_it_seconds and trade.peak_r < c.prove_it_min_progress_r and vel <= 0:
+                                reason=f"{r_mid:.2f}R against on the mid and still moving towards the stop "
+                                       f"({secs:.0f}s): certainly going there", state=trade.state)
+            if (secs >= c.prove_it_seconds and trade.peak_mid_r < c.prove_it_min_progress_r
+                    and r_mid <= -c.thesis_fail_stale_r and against):
                 return Decision(close=True, exit_reason="THESIS_FAILED",
-                                reason=f"no progress after {secs:.1f}s and momentum gone", state=trade.state)
+                                reason=f"no progress after {secs:.0f}s, {r_mid:.2f}R under and moving against",
+                                state=trade.state)
         if spread_pts > c.max_spread_points * 2 and money > 0:
             return Decision(close=True, exit_reason="SPREAD_EMERGENCY",
                             reason=f"spread blew out to {spread_pts:.0f} points", state=trade.state)
