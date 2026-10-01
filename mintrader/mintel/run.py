@@ -530,6 +530,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         broker = build_broker(cfg)
         state = DashboardState()
+        try:
+            from .ops.attribution import make_period_resolver
+            state.period_resolver = make_period_resolver(cfg.ops.data_dir)
+        except Exception as exc:                 # the page still works for today
+            log.warning("period filter unavailable: %s", exc)
         if not args.no_dashboard:
             httpd = start_dashboard(state, cfg.ops.dashboard_host,
                                     cfg.ops.dashboard_port)

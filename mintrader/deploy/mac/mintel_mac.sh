@@ -1229,6 +1229,12 @@ final_report() {
   fi
   say "=============================================================="
   say ""
+  if [[ -f "$MINTEL_HOME/data/scalper.json" ]]; then
+    local rs_mode
+    rs_mode="$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([A-Za-z]*\)".*/\1/p' "$MINTEL_HOME/data/scalper.json" | head -1)"
+    say "  Rapid Scalper mode: ${BOLD}${rs_mode:-PAPER}${RESET}  (data/scalper.json)"
+    say ""
+  fi
   if (( ${#FAILURES[@]} )); then
     say "  Nothing has been started. Fix the problem below and double-click"
     say "  the icon again - everything already done is skipped."

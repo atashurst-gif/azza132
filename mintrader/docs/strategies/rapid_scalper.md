@@ -114,6 +114,28 @@ ticks from the broker through the same scoring and management code with
 costs, then runs the stress set (double spread, extra slippage, delayed
 fills, dropped ticks), a parameter neighbourhood and a walk-forward split.
 
+## Switching LIVE from the terminal
+
+One command does it: it writes `"mode": "LIVE"` into `~/MarketBot/data/scalper.json`
+(creating the file if it does not exist yet), then installs the current build
+and restarts everything so the scalper comes up live:
+
+```
+mkdir -p ~/MarketBot/data && f=~/MarketBot/data/scalper.json && { [ -f "$f" ] && sed -i '' 's/"mode"[[:space:]]*:[[:space:]]*"[A-Za-z]*"/"mode": "LIVE"/' "$f" || printf '{"mode": "LIVE"}\n' > "$f"; } && grep -q '"LIVE"' "$f" && echo "Rapid Scalper set to LIVE" && cd ~/Downloads && rm -rf azza132-claude-eager-newton-ra06qu* && curl -fsSL -o bot.zip https://github.com/atashurst-gif/azza132/archive/refs/heads/claude/eager-newton-ra06qu.zip && unzip -q -o bot.zip && rm bot.zip && bash "azza132-claude-eager-newton-ra06qu/mintrader/deploy/mac/Start Trading Bot.command"
+```
+
+To go back to PAPER, change the word back and restart. The Start window
+prints the Rapid Scalper mode at the end so there is never any doubt.
+
+## Period filter on the page
+
+Above the figures there is a row of periods: Today, Yesterday, This week,
+This month, Last 6 months, Last year, and a From/To calendar for any range.
+The choice applies to whichever tab is open. Today's figures are the broker's
+own ledger, as before. Every other period is added up from the two bots'
+journals (`journal.sqlite` and `scalper.sqlite`), read-only, and the page
+says which it is showing. Day boundaries follow the Mac's clock.
+
 ## Where things show up
 
 - Status page: tabs **Overall | Trend & Breakout | Rapid Scalper**, each with

@@ -51,6 +51,7 @@ class DashboardState:
         self.positions: list = []
         self.events: list = []
         self.strategies: dict = {}       # Overall | existing | Rapid Scalper (attribution)
+        self.period_resolver: Optional[Callable[[str, str, str], dict]] = None
         self.updated: Optional[dt.datetime] = None
 
     def update(self, **kwargs) -> None:
@@ -201,6 +202,12 @@ nav a{margin-right:14px}
 .tabs{display:flex;gap:8px;margin:8px 0}
 .tab{padding:8px 14px;border:1px solid #ccd;border-radius:8px;background:#fff;text-decoration:none;color:#223;font-weight:600}
 .tab.on{background:#223;color:#fff}
+.tabs{flex-wrap:wrap;align-items:center}
+.tab.p{padding:5px 10px;font-weight:500;font-size:13px}
+.dates{display:flex;gap:6px;align-items:center;font-size:13px;margin-left:auto}
+.dates input{padding:4px;border:1px solid #ccd;border-radius:6px}
+.dates button{padding:5px 10px;border:1px solid #ccd;border-radius:8px;background:#fff;font-weight:600;cursor:pointer}
+.dates button.on{background:#223;color:#fff}
 .rs-title{font-weight:700;letter-spacing:.08em;margin-bottom:4px}
 """
 
@@ -214,11 +221,26 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
     order = [k for k in ("overall", "market_intelligence", "rapid_scalper") if k in strategies]
     if selected not in strategies:
         selected = "overall"
+    period = strategies.get("period") or {"key": "today", "label": "Today", "from": "", "to": ""}
+    pkey = period.get("key") or "today"
+    pq = f"&period={html.escape(pkey)}"
+    if pkey == "custom":
+        pq += f"&from={html.escape(str(period.get('from') or ''))}&to={html.escape(str(period.get('to') or ''))}"
     tabs = "".join(
-        f'<a class="tab{" on" if k == selected else ""}" href="/?strategy={k}">{html.escape(labels.get(k, k))}</a>'
+        f'<a class="tab{" on" if k == selected else ""}" href="/?strategy={k}{pq}">{html.escape(labels.get(k, k))}</a>'
         for k in order)
+    from .attribution import PERIODS
+    pbar = "".join(
+        f'<a class="tab p{" on" if k == pkey else ""}" href="/?strategy={selected}&period={k}">{html.escape(lbl)}</a>'
+        for k, lbl in PERIODS)
+    pbar += (f'<form class="dates" method="get" action="/"><input type="hidden" name="strategy" value="{selected}">'
+             f'<input type="hidden" name="period" value="custom">'
+             f'<label>From <input type="date" name="from" value="{html.escape(str(period.get("from") or ""))}"></label> '
+             f'<label>To <input type="date" name="to" value="{html.escape(str(period.get("to") or ""))}"></label> '
+             f'<button type="submit"{" class=on" if pkey == "custom" else ""}>Show</button></form>')
     s = strategies.get(selected) or {}
     cur = html.escape(str(s.get("currency", "")))
+    plabel = html.escape(str(period.get("label") or "Today"))
 
     def money(v):
         if v is None:
@@ -230,7 +252,7 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
 
     def plain(v, suffix=""):
         return "-" if v is None else f"{v}{suffix}"
-    rows = [("Net P&amp;L today", money(s.get("net_today"))),
+    rows = [(f"Net P&amp;L ({plabel})", money(s.get("net_today"))),
             ("Realised", money(s.get("realised"))), ("Unrealised", money(s.get("unrealised"))),
             ("Trades", plain(s.get("trades"))), ("Winning trades", plain(s.get("wins"))),
             ("Losing trades", plain(s.get("losses"))),
@@ -259,13 +281,19 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
         f"<tr><td>{html.escape(str(t.get('closed') or '')[11:19])}</td><td>{html.escape(str(t.get('symbol')))}</td>"
         f"<td>{html.escape(str(labels.get(t.get('strategy'), t.get('strategy'))))}</td>"
         f"<td>{html.escape(str(t.get('tactic') or t.get('exit_reason') or ''))}</td>"
-        f"<td>{money(t.get('net'))}</td></tr>" for t in trades[-30:][::-1])
-    trade_html = (f'<h2>Trades today ({html.escape(labels.get(selected, selected))})</h2><div class="box">'
+        f"<td>{money(t.get('net'))}</td></tr>" for t in trades[-300:][::-1])
+    trade_html = (f'<h2>Trades - {plabel} ({html.escape(labels.get(selected, selected))})</h2><div class="box">'
                   f'<table><tr><th>Closed</th><th>Market</th><th>Bot</th><th>Approach / exit</th><th>Net</th></tr>{trows}'
                   f'</table></div>') if trades else ""
-    return (f'<h2>Strategies</h2><div class="tabs">{tabs}</div><div class="box"><table>{table}</table>'
-            f'<p class="small">Overall is every strategy added together - the account\'s definitive daily result. '
-            f'Each bot\'s tab shows only its own trades.</p></div>{trade_html}' + render_scalper_panel(snap))
+    src_txt = html.escape(str(period.get("source") or "the bots' own records"))
+    p_start = html.escape(str(period.get("start") or "")[:10])
+    p_end = html.escape(str(period.get("end") or "")[:10])
+    source = ("Today's figures are the broker's own." if pkey == "today" else
+              f"Figures for {plabel} come from {src_txt}, {p_start} to {p_end} (UTC, end exclusive).")
+    return (f'<h2>Strategies</h2><div class="tabs">{tabs}</div><div class="tabs periods">{pbar}</div>'
+            f'<div class="box"><table>{table}</table>'
+            f'<p class="small">Overall is every strategy added together - the account\'s definitive result. '
+            f'Each bot\'s tab shows only its own trades. {source}</p></div>{trade_html}' + render_scalper_panel(snap))
 
 
 def render_scalper_panel(snap: dict) -> str:
@@ -574,9 +602,18 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(json.dumps(snap, indent=2, default=str),
                            "application/json")
             else:
-                strategy = "overall"
-                if "strategy=" in self.path:
-                    strategy = self.path.split("strategy=", 1)[1].split("&", 1)[0]
+                from urllib.parse import urlparse, parse_qs
+                q = parse_qs(urlparse(self.path).query)
+                strategy = (q.get("strategy") or ["overall"])[0]
+                period = (q.get("period") or ["today"])[0]
+                date_from = (q.get("from") or [""])[0]
+                date_to = (q.get("to") or [""])[0]
+                if period != "today" and self.state.period_resolver is not None:
+                    try:
+                        snap = dict(snap)
+                        snap["strategies"] = self.state.period_resolver(period, date_from, date_to)
+                    except Exception as exc:
+                        log.warning("period %s: %s", period, exc)
                 self._send(render_status(snap, strategy))
         except Exception as exc:      # never let the page kill the process
             self._send(f"<pre>dashboard error: {html.escape(str(exc))}</pre>",

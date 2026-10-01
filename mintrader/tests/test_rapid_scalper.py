@@ -522,3 +522,89 @@ class TestRealTickBacktest:
         assert wf["train_days"] and wf["unseen_days"] and len(wf["results"]) == 9
         worse = replay("EURUSD", ticks, spec, c, Stress(spread_multiplier=1.5, extra_slippage_points=3.0, label="w"))
         assert worse.net <= r.net + 1e-6 or not r.trades
+
+
+# ================================================================ period filter --
+class TestPeriodFilter:
+    def _seed(self, tmp_path, now):
+        import sqlite3
+        from mintel.engine.journal import Journal
+        from mintel.scalper.journal import ScalperJournal
+        Journal(tmp_path / "journal.sqlite")
+        ScalperJournal(tmp_path / "scalper.sqlite").close()
+        con = sqlite3.connect(tmp_path / "journal.sqlite")
+        for i, (days, pnl) in enumerate([(0, 3.0), (1, -2.0), (3, 5.0), (40, 7.0), (400, 100.0)]):
+            o = now - dt.timedelta(days=days, hours=2); c = now - dt.timedelta(days=days, hours=1)
+            con.execute("INSERT INTO trades (ticket,symbol,opened_utc,closed_utc,pnl_money,tactic) VALUES (?,?,?,?,?,?)",
+                        (i + 1, "EURUSD", o.isoformat(), c.isoformat(), pnl, "SESSION_EXPANSION"))
+        con.commit(); con.close()
+        con = sqlite3.connect(tmp_path / "scalper.sqlite")
+        con.execute("INSERT INTO trades (ticket,symbol,opened_utc,closed_utc,net_pnl,exit_reason,duration_seconds,mode) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (99, "GBPUSD", (now - dt.timedelta(days=1, hours=3)).isoformat(),
+                     (now - dt.timedelta(days=1, hours=2)).isoformat(), -4.0, "THESIS_FAILED", 8, "PAPER"))
+        con.commit(); con.close()
+
+    def test_bounds_cover_every_period_and_a_custom_range(self):
+        from mintel.ops.attribution import period_bounds
+        now = dt.datetime(2026, 10, 1, 12, 0, tzinfo=dt.timezone.utc)
+        for key in ("today", "yesterday", "week", "month", "6m", "1y"):
+            a, b, label = period_bounds(key, now)
+            assert a < b and label
+            if key == "yesterday":
+                assert b <= now and (b - a) == dt.timedelta(days=1)
+            else:
+                assert a <= now < b
+        a, b, label = period_bounds("custom", now, "2026-09-10", "2026-09-01")   # reversed dates are fine
+        assert (b - a) == dt.timedelta(days=10) and label == "2026-09-01 to 2026-09-10"
+        a, b, _ = period_bounds("custom", now, "nonsense", "")                   # bad input -> today
+        assert a <= now < b
+
+    def test_each_period_adds_up_the_right_trades_from_both_journals(self, tmp_path):
+        from mintel.ops.attribution import make_period_resolver
+        now = dt.datetime.now(dt.timezone.utc).replace(hour=12)
+        self._seed(tmp_path, now)
+        r = make_period_resolver(tmp_path)
+        y = r("yesterday")
+        assert y["overall"]["trades"] == 2 and y["overall"]["net_today"] == -6.0
+        assert y[EXISTING_STRATEGY_ID]["net_today"] == -2.0 and y[STRATEGY_ID]["net_today"] == -4.0
+        assert y["period"]["key"] == "yesterday" and y["period"]["label"] == "Yesterday"
+        assert r("6m")["overall"]["trades"] == 5 and r("1y")["overall"]["trades"] == 5
+        assert r("custom", (now - dt.timedelta(days=500)).date().isoformat(), now.date().isoformat())["overall"]["trades"] == 6
+        assert r("today")["overall"]["trades"] == 1
+
+    def test_the_page_offers_the_periods_and_a_calendar(self, tmp_path):
+        from mintel.ops.attribution import make_period_resolver
+        from mintel.ops.dashboard import render_status
+        now = dt.datetime.now(dt.timezone.utc).replace(hour=12)
+        self._seed(tmp_path, now)
+        strategies = make_period_resolver(tmp_path)("yesterday")
+        snap = {"status": {"bot": "RUNNING"}, "health": {}, "thinking": [], "results": {}, "positions": [], "events": [],
+                "strategies": strategies}
+        page = render_status(snap, "overall")
+        for needle in ("Today", "Yesterday", "This week", "This month", "Last 6 months", "Last year",
+                       'type="date"', "THESIS_FAILED", "Net P&amp;L (Yesterday)", "period=yesterday"):
+            assert needle in page, needle
+
+    def test_the_server_answers_period_queries_without_touching_today(self, tmp_path):
+        import urllib.request
+        from mintel.ops.attribution import make_period_resolver
+        from mintel.ops.dashboard import DashboardState, start_dashboard
+        now = dt.datetime.now(dt.timezone.utc).replace(hour=12)
+        self._seed(tmp_path, now)
+        state = DashboardState()
+        state.period_resolver = make_period_resolver(tmp_path)
+        state.update(status={"bot": "RUNNING"}, strategies={"overall": {"net_today": 3.0, "trades": 1, "currency": "GBP"},
+                                                             "labels": {"overall": "Overall"}})
+        httpd = start_dashboard(state, "127.0.0.1", 0)
+        port = httpd.server_address[1]
+        try:
+            today = urllib.request.urlopen(f"http://127.0.0.1:{port}/?strategy=overall").read().decode()
+            week = urllib.request.urlopen(f"http://127.0.0.1:{port}/?strategy=overall&period=week").read().decode()
+            custom = urllib.request.urlopen(f"http://127.0.0.1:{port}/?strategy=rapid_scalper&period=custom"
+                                            f"&from={(now - dt.timedelta(days=2)).date()}&to={now.date()}").read().decode()
+        finally:
+            httpd.shutdown()
+        assert "Net P&amp;L (Today)" in today and "+3.00" in today
+        assert "Net P&amp;L (This week)" in week
+        assert "Exits under 10 s" in custom and "THESIS_FAILED" in custom
