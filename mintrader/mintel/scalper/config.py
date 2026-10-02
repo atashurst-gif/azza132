@@ -68,7 +68,7 @@ class ScalperConfig:
     thesis_fail_stale_r: float = 0.5             # no progress, this far under AND moving against = exit
     thesis_fail_min_ticks_against: int = 4       # "moving against": velocity < 0 or this many ticks in a row
     risk_reduction_at_r: float = 0.6
-    capital_safe_at_r: float = 1.0
+    capital_safe_at_r: float = 0.8               # break-even after costs once 0.8 R is reached (2 Oct: 1.0)
     profit_protect_at_r: float = 1.6
     runner_at_r: float = 2.5
     giveback_early: float = 0.35                 # fraction of the high-water mark allowed back

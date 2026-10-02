@@ -181,6 +181,16 @@ only re-measures on new fills, and it was blocking the fills. Now the
 limit is the larger of 4 points and one average spread, and tripping it
 rests the scalper for 15 minutes and then measures afresh.
 
+## Break-even earlier (change of 2 October, evening)
+
+On 2 October four trades were up 0.64 to 0.98 R and then stopped out for
+a loss, -30.12 between them, two of them (peaks 0.85 R and 0.98 R) just
+short of the 1.0 R where the stop moves to break-even. The day was -1.62
+on 24 trades; with break-even at 0.8 R those two are flat and the day is
+about +14. The 1 October trades show the same shape at 0.5 R (two full
+stops after 0.52 R and 0.57 R peaks). `capital_safe_at_r` is now 0.8.
+The runner and profit-protection thresholds are unchanged.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily
