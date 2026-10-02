@@ -171,6 +171,16 @@ was commission. The broker's records showed four things, each now a rule:
 Fewer trades, each one able to pay its own commission, no pressing after
 losses, and the stop as the exit unless the trade is certainly going there.
 
+## Slippage is measured in spreads, and a bad patch is a rest, not a lock (2 October)
+
+On the morning of 2 October the scalper made +17.34 on six gold trades by
+00:46 and then sat paused for eight hours: "average slippage 4.8 points".
+On gold a point is one cent and the spread is around fifteen points, so
+4.8 points was nothing. Worse, the breaker could never clear because it
+only re-measures on new fills, and it was blocking the fills. Now the
+limit is the larger of 4 points and one average spread, and tripping it
+rests the scalper for 15 minutes and then measures afresh.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

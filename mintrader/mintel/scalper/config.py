@@ -91,8 +91,10 @@ class ScalperConfig:
     max_account_daily_loss_gbp: float = 80.0
     max_total_open_risk_gbp: float = 60.0
     min_margin_level_pct: float = 300.0
-    max_avg_slippage_points: float = 4.0
+    max_avg_slippage_points: float = 4.0         # absolute floor, in points...
+    max_avg_slippage_spreads: float = 1.0        # ...but never stricter than one spread (gold has 0.01 points)
     slippage_window_trades: int = 10
+    slippage_pause_seconds: float = 900.0        # bad fills: rest 15 min, then measure afresh
     stale_tick_seconds: float = 5.0
     max_latency_ms: float = 1500.0
     max_api_errors_per_hour: int = 10

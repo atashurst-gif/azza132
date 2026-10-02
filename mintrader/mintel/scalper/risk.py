@@ -119,6 +119,8 @@ class Breakers:
     reconciliation_ok: bool = True
     tripped: dict = field(default_factory=dict)      # name -> reason (manual reset needed)
     streak_paused_until: Optional[dt.datetime] = None
+    slippage_paused_until: Optional[dt.datetime] = None
+    spreads: deque = field(default_factory=deque)    # spread at each fill, beside `slippage`
 
     def _roll(self, now: dt.datetime) -> None:
         if self.day != now.date():
@@ -147,13 +149,22 @@ class Breakers:
     def record_reject(self, now: dt.datetime) -> None:
         self._roll(now); self.rejects.append(now)
 
-    def record_slippage(self, points: float) -> None:
+    def record_slippage(self, points: float, spread_points: float = 0.0) -> None:
         self.slippage.append(abs(points))
+        self.spreads.append(max(0.0, float(spread_points or 0.0)))
         while len(self.slippage) > self.cfg.slippage_window_trades:
             self.slippage.popleft()
+        while len(self.spreads) > self.cfg.slippage_window_trades:
+            self.spreads.popleft()
 
     def avg_slippage(self) -> float:
         return sum(self.slippage) / len(self.slippage) if self.slippage else 0.0
+
+    def slippage_limit(self) -> float:
+        """Points. The absolute limit, or one spread, whichever is looser:
+        a 4-point rule means nothing on gold, where a point is a cent."""
+        avg_spread = sum(self.spreads) / len(self.spreads) if self.spreads else 0.0
+        return max(self.cfg.max_avg_slippage_points, self.cfg.max_avg_slippage_spreads * avg_spread)
 
     def check(self, now: dt.datetime, *, tick_age_seconds: Optional[float],
               connected: bool, latency_ms: float, spread_points: Optional[float] = None,
@@ -179,8 +190,16 @@ class Breakers:
             why.append(f"{self.consecutive_losses} losses in a row - paused for another {left:.0f} min")
         if self.day_pnl <= -c.max_daily_loss_gbp:
             why.append(f"daily loss limit reached ({self.day_pnl:+.2f})")
-        if len(self.slippage) >= min(3, c.slippage_window_trades) and self.avg_slippage() > c.max_avg_slippage_points:
-            why.append(f"execution quality poor: average slippage {self.avg_slippage():.1f} points")
+        if self.slippage_paused_until and now < self.slippage_paused_until:
+            left = (self.slippage_paused_until - now).total_seconds() / 60
+            why.append(f"execution quality poor - resting for another {left:.0f} min before measuring again")
+        elif len(self.slippage) >= min(3, c.slippage_window_trades) and self.avg_slippage() > self.slippage_limit():
+            # a timed rest, not a lock: a lock can never clear because no new
+            # fills arrive while it holds (that cost a whole morning once)
+            self.slippage_paused_until = now + dt.timedelta(seconds=c.slippage_pause_seconds)
+            why.append(f"execution quality poor: average slippage {self.avg_slippage():.1f} points "
+                       f"(limit {self.slippage_limit():.1f}) - resting {c.slippage_pause_seconds / 60:.0f} min")
+            self.slippage.clear(); self.spreads.clear()
         if spread_points is not None and spread_points > c.max_spread_points:
             why.append(f"spread {spread_points:.1f} points abnormal")
         if len(self.api_errors) >= c.max_api_errors_per_hour:

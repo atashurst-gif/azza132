@@ -295,7 +295,7 @@ class ScalperEngine:
                                  exit_latency=fill.latency_ms)
         self.journal.record_slippage(trade.ticket, "exit", fill.requested or exit_price, exit_price,
                                      fill.slippage_points, fill.latency_ms, spread_now, now)
-        self.breakers.record_slippage(fill.slippage_points)
+        self.breakers.record_slippage(fill.slippage_points, spread_now)
         self.breakers.record_result(net, now)
         if net < 0:
             self.last_loss_at = now
@@ -434,7 +434,7 @@ class ScalperEngine:
                            entry_reason=opp.explain())
         self.trades[fill.ticket] = trade
         self.last_entry_at = now
-        self.breakers.record_slippage(fill.slippage_points)
+        self.breakers.record_slippage(fill.slippage_points, f.spread_points)
         self.journal.open_trade(trade, self.scfg.mode, f.spread_points, f.realised_vol_points,
                                 {"velocity_5s": f.velocity_5s, "trend_bias": f.trend_bias, "vwap": f.vwap,
                                  "ema_fast": f.ema_fast, "ema_slow": f.ema_slow, "volume_ratio": f.volume_ratio,

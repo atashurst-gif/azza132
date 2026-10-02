@@ -287,10 +287,25 @@ class TestFailClosed:
         b.reconciliation_ok = False
         assert any("reconciled" in w for w in b.check(T0, tick_age_seconds=1.0, connected=True, latency_ms=10))
 
-    def test_slippage_deterioration_stops_new_trades(self):
+    def test_slippage_deterioration_rests_then_measures_again(self):
         b = Breakers(scfg(max_avg_slippage_points=2.0))
         for _ in range(4):
-            b.record_slippage(5.0)
+            b.record_slippage(5.0, spread_points=1.0)
+        assert any("slippage" in w for w in b.check(T0, tick_age_seconds=1.0, connected=True, latency_ms=10))
+        # a timed rest, not a lock
+        assert any("resting" in w for w in b.check(T0 + dt.timedelta(minutes=5), tick_age_seconds=1.0, connected=True, latency_ms=10))
+        assert not any("slippage" in w or "resting" in w
+                       for w in b.check(T0 + dt.timedelta(minutes=16), tick_age_seconds=1.0, connected=True, latency_ms=10))
+
+    def test_gold_slippage_is_judged_against_golds_spread_not_four_cents(self):
+        # 2 October: 4.8 points of slippage on gold (a point is 0.01) with a 15-point
+        # spread paused the scalper for eight hours. One spread is the real yardstick.
+        b = Breakers(scfg(max_avg_slippage_points=4.0))
+        for _ in range(4):
+            b.record_slippage(4.8, spread_points=15.0)
+        assert not any("slippage" in w for w in b.check(T0, tick_age_seconds=1.0, connected=True, latency_ms=10))
+        for _ in range(4):
+            b.record_slippage(40.0, spread_points=15.0)        # well over a spread: that IS poor
         assert any("slippage" in w for w in b.check(T0, tick_age_seconds=1.0, connected=True, latency_ms=10))
 
     def test_unknown_mode_is_off_and_default_is_paper(self, tmp_path):
