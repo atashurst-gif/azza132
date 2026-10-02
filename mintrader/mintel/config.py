@@ -146,6 +146,11 @@ class ScanConfig:
         # negative on five of nine days, the last five in a row.
         ("BREAKOUT_ACCEPTANCE", "TREND"),
         ("LIQUIDITY_SWEEP_REVERSAL", "HIGH_VOL"),
+        # 2 Oct standing rule: SESSION_EXPANSION in SQUEEZE negative on three
+        # of the four days it traded (25, 29 Sep, 2 Oct; 8 trades, 2 wins,
+        # net about -16 GBP). A session expansion wants a direction to
+        # expand into; a squeeze has not chosen one yet.
+        ("SESSION_EXPANSION", "SQUEEZE"),
     )
     tactic_min_score: dict = field(default_factory=lambda: {"MOMENTUM_CONTINUATION": 70.0})
     # --- the twin (29 Sep) ---------------------------------------------------

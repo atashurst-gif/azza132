@@ -111,6 +111,12 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   The twin's first day: 4 of 6, +8.18 GBP, against 2 of 7, -11.86 GBP on
   the normal exit for the same signals.
 
+- 2026-10-02 (midday): standing rule - SESSION_EXPANSION in SQUEEZE off.
+  Negative on three of the four days it traded: 25 Sep -3.77 (0/1),
+  29 Sep -4.66 (0/1), 1 Oct +4.60 (2/3), 2 Oct -11.71 (0/3 by noon).
+  Eight trades, two wins, net about -16 GBP. Session expansion in TREND,
+  the best approach on record, is untouched.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip
