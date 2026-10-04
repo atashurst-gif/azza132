@@ -134,6 +134,15 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   * Momentum continuation in HIGH_VOL is the engine: 47 trades, 30 wins,
     +80 GBP. Session expansion in TREND: 21 trades, 11 wins, +5.83.
 
+- 2026-10-04 (evening): the status page's live ledger counted only the
+  closing deal of each position, so every Trend & Breakout trade showed
+  half its commission. Found by reconciling 2 Oct against MetaTrader per
+  bot: page -29.66, broker -31.14, each of eleven trades short by exactly
+  half its commission; the scalper's figures were right. Both the page
+  and the daily-loss measure now count the entry deal too. The nightly
+  review was already correct. `python -m mintel.ops.reconcile` prints the
+  broker's per-bot record for any day and must match the History tab.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

@@ -295,7 +295,7 @@ class Trader:
         if fn is None:
             raise RuntimeError("broker has no deal history")
         start = self._strategy_day_start(now)
-        rows = fn(start, self.cfg.magic) or []
+        rows = fn(start, self.cfg.magic, False) or []     # entries too: half the commission sits there
         value = float(sum(float(r.get("profit") or 0.0) for r in rows))
         self._realised_cache = {"at": now, "value": value}
         return value

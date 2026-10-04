@@ -107,8 +107,9 @@ class TestLedger:
         tr = self._trader(_rows(), "2026-09-13T20:00:00+00:00")
         led = broker_ledger(tr, T0)
         assert led["source"] == "broker"
-        assert led["today"] == {"net": 0.0, "trades": 2, "wins": 1, "win_rate": 50.0}
-        assert led["since_start"] == {"net": 5.0, "trades": 3, "wins": 2, "win_rate": 66.7}
+        # entry deals carry half the commission: -0.3 per position comes off
+        assert led["today"] == {"net": -0.6, "trades": 2, "wins": 1, "win_rate": 50.0}
+        assert led["since_start"] == {"net": 4.1, "trades": 3, "wins": 2, "win_rate": 66.7}
         assert led["tracking_start"].startswith("2026-09-13T20:00")
         # asked the broker once, for the bot's magic, far enough back for the 14-day view
         assert len(tr.broker.calls) == 1
@@ -120,7 +121,7 @@ class TestLedger:
         # position 12 (opened 09:40) is in - and "today" starts at 09:30 too
         tr = self._trader(_rows(), "2026-09-14T09:30:00+00:00")
         led = broker_ledger(tr, T0)
-        assert led["since_start"] == {"net": 3.0, "trades": 1, "wins": 1, "win_rate": 100.0}
+        assert led["since_start"] == {"net": 2.7, "trades": 1, "wins": 1, "win_rate": 100.0}
         assert led["today"] == led["since_start"]
 
     def test_a_position_opened_before_the_start_but_closed_after_is_ignored(self):
@@ -132,7 +133,7 @@ class TestLedger:
         ]
         tr = self._trader(rows, "2026-09-14T09:30:00+00:00")
         led = broker_ledger(tr, T0)
-        assert led["since_start"]["trades"] == 1 and led["since_start"]["net"] == 3.0
+        assert led["since_start"]["trades"] == 1 and led["since_start"]["net"] == 2.7
 
     def test_no_start_means_today(self):
         tr = self._trader(_rows())

@@ -237,7 +237,9 @@ class TestTodayIsTheBrokersDay:
         from mintel.clock import ServerClock
         _LEDGER_CACHE["at"] = None
         us30_open = dt.datetime(2026, 9, 15, 20, 46, tzinfo=dt.timezone.utc)
-        rows = [{"position": 1, "symbol": "US30", "volume": 0.2, "profit": 0.0,
+        # the adapter's "profit" is profit + commission + swap per deal, so the
+        # entry deal carries its half of the commission as a small negative
+        rows = [{"position": 1, "symbol": "US30", "volume": 0.2, "profit": -0.4,
                  "commission": -0.4, "is_entry": True, "time": us30_open},
                 {"position": 1, "symbol": "US30", "volume": 0.2, "profit": 24.59,
                  "commission": -0.4, "is_entry": False, "time": us30_open + dt.timedelta(minutes=74)}]
@@ -246,7 +248,7 @@ class TestTodayIsTheBrokersDay:
         t = SimpleNamespace(broker=broker, cfg=cfg, journal=None)
         led = broker_ledger(t, dt.datetime(2026, 9, 16, 7, 46, tzinfo=dt.timezone.utc))
         # opened 23:46 server, closed 01:00 server: MetaTrader's Today has it
-        assert led["today"]["trades"] == 1 and led["today"]["net"] == pytest.approx(24.59)
+        assert led["today"]["trades"] == 1 and led["today"]["net"] == pytest.approx(24.19)   # both halves of the commission
         labels = [p["label"] for p in led["periods"]]
         assert labels == ["Today", "Yesterday", "This week", "Last 7 days", "Last 14 days", "Since start"]
         assert led["periods"][1]["trades"] == 0            # yesterday (broker's day)
@@ -266,3 +268,36 @@ class TestTodayIsTheBrokersDay:
         assert "Results by period" in page and "Yesterday" not in page
         assert "-£7.60" in page or "-GBP7.60" in page or "7.60" in page
         assert "38%" in page
+
+
+class TestBothHalvesOfTheCommission:
+    def test_the_live_ledger_counts_the_entry_deals_commission(self, workdir):
+        """2 Oct: GBPJPY entry deal -0.22, exit deal -4.25; the broker says -4.47,
+        the page said -4.25. Every one of the day's eleven trades was short by
+        exactly half its commission (-29.66 shown, -31.14 at the broker)."""
+        from mintel.run import broker_ledger, _LEDGER_CACHE
+        from mintel.clock import ServerClock
+        _LEDGER_CACHE["at"] = None
+        t0 = dt.datetime(2026, 10, 2, 0, 14, tzinfo=dt.timezone.utc)
+        rows = [{"position": 7, "symbol": "GBPJPY", "volume": 0.1, "profit": -0.22, "commission": -0.22, "is_entry": True, "time": t0},
+                {"position": 7, "symbol": "GBPJPY", "volume": 0.1, "profit": -4.25, "commission": -0.22, "is_entry": False, "time": t0 + dt.timedelta(minutes=3)},
+                # an entry with no exit yet is an open position: not in the day's result
+                {"position": 8, "symbol": "EURUSD", "volume": 0.1, "profit": -0.30, "commission": -0.30, "is_entry": True, "time": t0 + dt.timedelta(hours=8)}]
+        broker = SimpleNamespace(deals_since=lambda *a, **k: rows, clock=ServerClock(3 * 3600))
+        cfg = Config(); cfg.tracking_start_utc = "2026-09-15T12:59:00+00:00"
+        led = broker_ledger(SimpleNamespace(broker=broker, cfg=cfg, journal=None), t0 + dt.timedelta(hours=10))
+        assert led["today"]["trades"] == 1 and led["today"]["net"] == pytest.approx(-4.47)
+        _LEDGER_CACHE["at"] = None
+
+    def test_the_daily_loss_stop_sees_the_whole_commission_too(self, sim, cfg):
+        from tests.conftest import make_trader
+        t = make_trader(sim, cfg)
+        seen = {}
+        def deals_since(since, magic=0, closing_only=True):
+            seen["closing_only"] = closing_only
+            return [{"position": 1, "profit": -0.3, "is_entry": True, "time": sim.now},
+                    {"position": 1, "profit": -4.0, "is_entry": False, "time": sim.now}]
+        sim.deals_since = deals_since
+        t._realised_cache = {"at": None, "value": 0.0}
+        assert t.realised_today() == pytest.approx(-4.3)
+        assert seen["closing_only"] is False

@@ -245,16 +245,21 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
                 by_pos: dict = {}
                 last_close: dict = {}
                 for r in rows:
-                    if r.get("is_entry") or not r.get("time"):
+                    if not r.get("time"):
                         continue
                     pos = r.get("position") or id(r)
                     when = opened_at.get(pos)
                     if when is None or when < start:
                         continue
+                    # Every deal of the position counts, the ENTRY included:
+                    # MetaTrader charges half the commission on the way in.
+                    # (2 Oct: skipping entries left every trade short by half
+                    # its commission - the page said -29.66, the broker -31.14.)
                     by_pos[pos] = by_pos.get(pos, 0.0) + float(r["profit"])
-                    last_close[pos] = max(last_close.get(pos, r["time"]), r["time"])
+                    if not r.get("is_entry"):
+                        last_close[pos] = max(last_close.get(pos, r["time"]), r["time"])
                 keep = {p: v for p, v in by_pos.items()
-                        if last_close[p] >= closed_from
+                        if p in last_close and last_close[p] >= closed_from
                         and (closed_to is None or last_close[p] < closed_to)}
                 wins = sum(1 for v in keep.values() if v > 0)
                 return {"net": round(sum(keep.values()), 2),
