@@ -70,3 +70,14 @@ ten minutes counts as a deaf terminal, and both the terminal and the
 bridge are restarted; the bridge backs off 30 s to 5 min between dials;
 and a stale tick can no longer pose as live (offset must be within 14 h
 and the FX market open).
+
+
+## Checking a day against the broker, per bot
+
+    cd ~/MarketBot/app && ~/MarketBot/venv/bin/python -m mintel.ops.reconcile --config ~/MarketBot/data/config.json --day 2026-10-02
+
+Prints MetaTrader's own record for that day split by magic number: Trend &
+Breakout, Rapid Scalper, and anything that carried neither (a hand trade),
+each with positions, price result, commission and net, then the account
+total. The account line must match the bottom of MetaTrader's History tab
+for the same day. Add `--positions` to list every position. Read-only.

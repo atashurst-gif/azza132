@@ -866,3 +866,31 @@ class TestLessonsOfDayOne:
         assert any("paused for the day" in w for w in why)
         br.record_result(5.0, now + dt.timedelta(minutes=51))        # a win ends the streak
         assert br.consecutive_losses == 0
+
+
+# ================================================ reconcile a day against the broker --
+class TestReconcile:
+    def test_per_bot_totals_add_up_to_the_account(self):
+        from types import SimpleNamespace
+        from mintel.ops.reconcile import reconcile, render
+        day = dt.date(2026, 10, 2)
+        t = dt.datetime(2026, 10, 2, 10, 0, tzinfo=dt.timezone.utc)
+        deals = [  # position, magic, profit(net incl commission), commission, is_entry
+            (1, 990311, -0.30, -0.30, True), (1, 990311, -4.00, -0.30, False),
+            (2, 990311, 0.00, 0.00, True), (2, 990311, 7.54, 0.00, False),
+            (3, 990411, -0.30, -0.30, True), (3, 990411, 13.39, -0.30, False),
+            (4, 0, 0.00, 0.00, True), (4, 0, -1.48, 0.00, False),            # a hand trade
+            (5, 990311, -0.30, -0.30, True),                                  # still open: not counted
+        ]
+        class B:
+            clock = None
+            def deals_since(self, since, magic=0, closing_only=True):
+                return [{"position": p, "profit": pr, "commission": c, "is_entry": e, "time": t, "symbol": "X"}
+                        for p, m, pr, c, e in deals if not magic or m == magic]
+        cfg = Config()
+        res = reconcile(B(), cfg, day, 990411)
+        assert res["mi"]["net"] == 3.24 and res["mi"]["positions"] == 2 and res["mi"]["commission"] == -0.6
+        assert res["rs"]["net"] == 13.09 and res["rs"]["positions"] == 1
+        assert res["other"]["net"] == -1.48 and res["all"]["net"] == 14.85
+        text = render(res, cfg, day, SimpleNamespace(balance=100.0, equity=100.0))
+        assert "Profit +14.85" in text and "difference to the account: -1.48" in text
