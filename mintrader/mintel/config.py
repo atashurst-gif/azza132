@@ -81,6 +81,17 @@ class UniverseConfig:
     max_symbols: int = 60
     min_history_bars: int = 400
     exclude_patterns: tuple[str, ...] = ("BTC", "ETH", ".b", "-2", "TEST")
+    # Markets switched off on evidence (Trend & Breakout only; the Rapid
+    # Scalper keeps its own list). Rule, as for approaches: a market that
+    # was negative on at least two-thirds of the days it traded, over six
+    # or more days, is switched off. 4 Oct review of 17 Sep - 2 Oct, from
+    # the broker's records (net after commission, positive days / days):
+    #   USDJPY -39.98 (3/9)  DE40 -34.80 (2/9)  XAUGBP -33.90 (1/9)
+    #   CHFJPY -29.86 (1/7)  EURNZD -29.37 (1/6) UK100 -23.66 (1/8)
+    #   GBPJPY -19.33 (2/7)  XAUAUD -8.80 (2/7)
+    # 125 trades, -219.70 together.
+    excluded_symbols: tuple[str, ...] = ("USDJPY", "DE40", "XAUGBP", "CHFJPY",
+                                         "EURNZD", "UK100", "GBPJPY", "XAUAUD")
     require_full_spec: bool = True
 
 

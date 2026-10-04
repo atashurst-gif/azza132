@@ -105,6 +105,9 @@ def discover(broker: Broker, cfg: Config) -> Universe:
         if any(p.upper() in upper for p in cfg.universe.exclude_patterns):
             rejected[name] = "excluded by pattern"
             continue
+        if upper in {s.upper() for s in getattr(cfg.universe, "excluded_symbols", ())}:
+            rejected[name] = "switched off on evidence (loses on most days it trades)"
+            continue
         group = infer_group(name)
         if group not in wanted:
             rejected[name] = f"group {group} not enabled"

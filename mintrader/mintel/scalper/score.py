@@ -97,8 +97,9 @@ def score(f: Features, cfg: ScalperConfig) -> Opportunity:
     if f.spread_expansion > cfg.spread_expansion_limit:
         sq *= 0.3
         opp.blockers.append(f"spread has expanded ({f.spread_expansion:.1f}x normal)")
-    if f.spread_points > cfg.max_spread_points:
-        opp.blockers.append(f"spread too wide ({f.spread_points:.1f} points)")
+    max_spread_pts = cfg.limits_points(f.symbol, f.point)[0]
+    if f.spread_points > max_spread_pts:
+        opp.blockers.append(f"spread too wide ({f.spread_points:.1f} points, limit {max_spread_pts:.0f})")
     if frac > cfg.max_spread_fraction_of_expected_move:
         opp.blockers.append(f"spread is {frac:.0%} of the expected move (limit "
                             f"{cfg.max_spread_fraction_of_expected_move:.0%})")

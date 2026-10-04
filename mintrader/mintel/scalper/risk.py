@@ -43,10 +43,11 @@ def plan(spec: SymbolSpec, side: Side, entry: float, invalidation: float,
     if dist <= 0:
         return RiskPlan(False, "invalidation is on the wrong side of the entry")
     pts = dist / spec.point
-    if pts < cfg.min_stop_points:
-        return RiskPlan(False, f"stop {pts:.1f} points is inside the noise floor ({cfg.min_stop_points:.0f})")
-    if pts > cfg.max_stop_points:
-        return RiskPlan(False, f"stop {pts:.1f} points is too far for a scalp ({cfg.max_stop_points:.0f} max)")
+    _, min_stop, max_stop = cfg.limits_points(spec.name, spec.point)
+    if pts < min_stop:
+        return RiskPlan(False, f"stop {pts:.1f} points is inside the noise floor ({min_stop:.0f})")
+    if pts > max_stop:
+        return RiskPlan(False, f"stop {pts:.1f} points is too far for a scalp ({max_stop:.0f} max)")
     spread_pts = spread_price / spec.point if spec.point else 0.0
     if spread_pts > 0 and pts < cfg.min_stop_spreads * spread_pts:
         return RiskPlan(False, f"stop {pts:.1f} points is inside {cfg.min_stop_spreads:.0f} spreads "

@@ -66,6 +66,7 @@ def lifecycle_profile(c: Config) -> Config:
     c.scan.tier_normal = 58.0
     c.scan.disabled_tactics = ()
     c.scan.disabled_tactic_regimes = ()
+    c.universe.excluded_symbols = ()
     c.scan.tactic_min_score = {}
     c.scan.max_cost_fraction_of_stop = 0.30
     c.flowlock.profit_floor_giveback = 0.0

@@ -894,3 +894,46 @@ class TestReconcile:
         assert res["other"]["net"] == -1.48 and res["all"]["net"] == 14.85
         text = render(res, cfg, day, SimpleNamespace(balance=100.0, equity=100.0))
         assert "Profit +14.85" in text and "difference to the account: -1.48" in text
+
+
+
+# ======================================= 4 Oct: commission-free indices can actually trade --
+class TestIndicesCanTrade:
+    def _index_spec(self, name="US30"):
+        from mintel.contracts import SymbolSpec
+        return SymbolSpec(name=name, digits=2, point=0.01, tick_size=0.01, tick_value=0.0079,
+                          contract_size=1.0, volume_min=0.01, volume_max=100.0, volume_step=0.01,
+                          stops_level_points=0, freeze_level_points=0)
+
+    def test_index_limits_are_in_index_points_not_broker_points(self):
+        c = ScalperConfig()
+        ms, mn, mx = c.limits_points("US30", 0.01)
+        assert (ms, mn, mx) == pytest.approx((400.0, 600.0, 6000.0))
+        # gold and FX keep the point-based limits
+        assert c.limits_points("XAUUSD", 0.01) == (c.max_spread_points, c.min_stop_points, c.max_stop_points)
+
+    def test_a_normal_us30_trade_is_planned_not_refused(self):
+        spec = self._index_spec()
+        # 2.0 index-point spread, 10 index-point stop: ordinary for US30
+        rp = plan(spec, Side.BUY, 50700.00, 50690.00, 2.0, ScalperConfig())
+        assert rp.ok, rp.reason
+        assert rp.planned_loss <= 10.0 + 1e-9 and rp.commission == pytest.approx(ScalperConfig().commission_per_lot_round_turn * rp.volume)
+        # before the fix the same trade was "too far for a scalp"
+        old = ScalperConfig(); old.symbol_limits = {}
+        assert not plan(spec, Side.BUY, 50700.00, 50690.00, 2.0, old).ok
+
+    def test_the_spread_blocker_uses_the_per_market_limit(self):
+        from mintel.scalper.features import Features
+        from mintel.scalper.score import score
+        f = Features(symbol="US30", ok=True, point=0.01, spread_points=200.0, spread_avg_points=200.0,
+                     velocity_5s=50.0, rate_of_change_30s_points=800.0, realised_vol_points=300.0, atr_points=3000.0)
+        assert not any("spread too wide" in b for b in score(f, ScalperConfig()).blockers)
+        f.spread_points = 500.0                                   # 5 index points: genuinely wide
+        assert any("spread too wide" in b for b in score(f, ScalperConfig()).blockers)
+
+    def test_the_file_can_override_one_market(self, tmp_path):
+        p = tmp_path / "scalper.json"
+        p.write_text(json.dumps({"mode": "PAPER", "keep_overrides": True,
+                                 "symbol_limits": {"US500": {"max_spread": 0.6, "min_stop": 1.0, "max_stop": 10.0}}}))
+        c = ScalperConfig.load(p)
+        assert c.limits_points("US500", 0.01) == pytest.approx((60.0, 100.0, 1000.0))

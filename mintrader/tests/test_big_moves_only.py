@@ -860,3 +860,19 @@ class TestLadderForEveryTrade:
             fl.update(p, price=px, atr=0.0020, bar=Bar(t, px, px + 0.0001, px - 0.0001, px, 50.0),
                       momentum=strong, now=t)
         assert fl.trackers[1].stop < 1.1000 + 1.2 * 0.0050
+
+
+
+class TestMarketsSwitchedOffOnEvidence:
+    def test_losing_markets_are_out_of_the_trend_and_breakout_universe(self):
+        from mintel.engine.scanner import discover
+        cfg = Config()
+        for sym in ("USDJPY", "DE40", "XAUGBP", "CHFJPY", "EURNZD", "UK100", "GBPJPY", "XAUAUD"):
+            assert sym in cfg.universe.excluded_symbols
+        # the winners stay in
+        for sym in ("AUDJPY", "XAUCHF", "US500", "US30", "EURCHF", "XAUUSD", "GBPUSD"):
+            assert sym not in cfg.universe.excluded_symbols
+        broker = SimBroker(SYMS, start=NOW - dt.timedelta(days=5)); broker.connect()
+        cfg.universe.excluded_symbols = (SYMS[0],)
+        uni = discover(broker, cfg)
+        assert SYMS[0] not in uni.specs and "evidence" in uni.rejected.get(SYMS[0], "")

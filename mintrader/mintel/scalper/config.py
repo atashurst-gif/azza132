@@ -110,6 +110,25 @@ class ScalperConfig:
     status_file: str = "scalper-status.json"
     journal_file: str = "scalper.sqlite"
     weights: ScoreWeights = field(default_factory=ScoreWeights)
+    # Per-market limits in PRICE units (index points, not broker points).
+    # 4 Oct: the point-based limits above meant a 0.25 index-point spread cap
+    # and a 1.2 index-point maximum stop on US30/US500/DE40/UK100, where a
+    # point is 0.01 - so the commission-free indices could never trade.
+    # Markets not listed here use the point-based limits above.
+    symbol_limits: dict = field(default_factory=lambda: {
+        "US500": {"max_spread": 1.0, "min_stop": 1.5, "max_stop": 15.0},
+        "US30": {"max_spread": 4.0, "min_stop": 6.0, "max_stop": 60.0},
+        "DE40": {"max_spread": 3.0, "min_stop": 5.0, "max_stop": 50.0},
+        "UK100": {"max_spread": 2.5, "min_stop": 4.0, "max_stop": 40.0},
+    })
+
+    def limits_points(self, symbol: str, point: float) -> tuple[float, float, float]:
+        """(max spread, min stop, max stop) in this market's broker points."""
+        lim = (self.symbol_limits or {}).get(str(symbol).upper())
+        if lim and point and point > 0:
+            return (float(lim["max_spread"]) / point, float(lim["min_stop"]) / point,
+                    float(lim["max_stop"]) / point)
+        return float(self.max_spread_points), float(self.min_stop_points), float(self.max_stop_points)
 
     # ----------------------------------------------------------------- io --
     @property

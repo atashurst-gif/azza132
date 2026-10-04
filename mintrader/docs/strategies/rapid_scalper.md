@@ -201,6 +201,19 @@ THESIS_FAILED cuts cost 40 on 6 and fired as written. Break-even now at
 0.8 R (above). The slippage rest tripped twice on Friday for average
 slippage under one spread, so the yardstick is now 1.5 spreads.
 
+## Commission-free indices could never trade (fix of 4 October)
+
+Every scalper trade so far was gold or FX, never US30, US500, DE40 or
+UK100, although all four were in its list. The spread cap (25 points) and
+stop range (20 to 120 points) were in broker points, and an index point
+at this broker is 0.01. A normal 2-point US30 spread read as 200 points
+and was refused every time. Limits for the indices are now in index
+points (`symbol_limits`): US30 spread up to 4, stop 6 to 60; US500 1,
+1.5 to 15; DE40 3, 5 to 50; UK100 2.5, 4 to 40. The indices carry no
+commission at this broker, which is the cost the scalper was losing to.
+All the other gates still apply: confidence, the cost gate, the four-
+spread minimum stop, the GBP 10 planned loss, the rests after losses.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

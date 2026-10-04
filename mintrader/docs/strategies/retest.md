@@ -143,6 +143,23 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   review was already correct. `python -m mintel.ops.reconcile` prints the
   broker's per-bot record for any day and must match the History tab.
 
+- 2026-10-04 (night): markets, from every trade since 17 Sep (396, the
+  broker's net after commission).
+  * By market type: FX pairs 201 trades, +79.52 before fees, commission
+    122.40 (0.61 a trade), net -42.88. Gold and gold crosses 107 trades,
+    commission 0.06 a trade, net +28.13. Indices 88 trades, no
+    commission, net +14.74. FX's edge on price is eaten by its fees.
+  * New rule for markets, same shape as the standing rule for approaches:
+    negative on at least two-thirds of the days traded, over six or more
+    days, and it is switched off (`universe.excluded_symbols`). Out:
+    USDJPY, DE40, XAUGBP, CHFJPY, EURNZD, UK100, GBPJPY, XAUAUD - 125
+    trades, -219.70 together. This is a judgement made in hindsight on
+    under three weeks; the nightly review will watch the markets that
+    remain, and any of these can be switched back on.
+  * The best performers stay and are untouched: AUDJPY +49.75 (6 of 7
+    days positive), XAUCHF +47.80 (6/9), US500 +39.24 (4/7), EURCHF
+    +33.79 (2/2), US30 +29.21 (7/10), XAUUSD +17.46 (4/6).
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip
