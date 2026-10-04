@@ -27,7 +27,7 @@ SYMS = ("EURUSD", "GBPUSD", "USDJPY")
 class TestDefaultsAreSelective:
     def test_entry_rules(self):
         sc = Config().scan
-        assert sc.entry_tier == "NORMAL"
+        assert sc.entry_tier == "STRONG"          # 4 Oct: the week said under-70 entries lose
         assert sc.min_reward_risk == 1.8
         assert sc.tier_normal >= 60.0
         assert sc.max_cost_fraction_of_stop == 0.20
@@ -773,12 +773,14 @@ class TestTheTwin:
     def test_defaults_and_failed_breakout_off(self):
         c = Config()
         assert "FAILED_BREAKOUT_RECLAIM" in c.scan.disabled_tactics
-        assert c.scan.twin_enabled and c.scan.twin_tactics == ("SESSION_EXPANSION",)
+        assert not c.scan.twin_enabled            # 4 Oct: lost to its sibling over three days
+        assert c.scan.twin_tactics == ("SESSION_EXPANSION",)
         assert c.flowlock.ladder_locks[0] == (2.0, 1.2)
 
     def test_every_second_signal_is_the_twin(self):
         from mintel.engine.trader import apply_twin
         cfg = Config().scan
+        cfg.twin_enabled = True                    # the mechanism, when switched on
         counts = {}
         s1, t1 = apply_twin(self._state(), cfg, counts)
         s2, t2 = apply_twin(self._state(), cfg, counts)

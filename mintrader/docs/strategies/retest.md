@@ -117,6 +117,23 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   Eight trades, two wins, net about -16 GBP. Session expansion in TREND,
   the best approach on record, is untouched.
 
+- 2026-10-04 (weekend review of 28 Sep - 2 Oct, 115 trades):
+  * Entry floor raised to STRONG (score 70). Under-70 entries: 41 trades,
+    19 wins, about -21 GBP (negative on 28 and 30 Sep, positive only on
+    the 1st). 70 and over: 63 trades, 37 wins, about +73 GBP. Momentum
+    continuation already had a 70 floor; this extends it to everything.
+  * The twin is off. Same signals, alternate exits, three days: twin
+    -6.47 on 18 trades against +10.10 on 21 for the normal exit, and it
+    lost the head-to-head on two of the three days. The ladder for all
+    trades keeps the "hold the winner" idea in a form that worked (no
+    trade all week that reached +1R ended in a loss).
+  * Noted, not acted on: 02:00-05:00 UTC was 0 of 7 for -28 GBP, but all
+    on 30 Sep; 16:00 UTC was 0 of 4 on the 28th and 1 of 1 on the 1st.
+    CHFJPY 0 of 4, XAUJPY 1 of 5, UK100 1 of 4 this week; CHF crosses and
+    AUDJPY carried the week. One week is not enough for market rules.
+  * Momentum continuation in HIGH_VOL is the engine: 47 trades, 30 wins,
+    +80 GBP. Session expansion in TREND: 21 trades, 11 wins, +5.83.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

@@ -191,6 +191,16 @@ about +14. The 1 October trades show the same shape at 0.5 R (two full
 stops after 0.52 R and 0.57 R peaks). `capital_safe_at_r` is now 0.8.
 The runner and profit-protection thresholds are unchanged.
 
+## Weekend review, 4 October
+
+Two live days, 37 trades. Day one -27.23 (costs 108% of gross wins); day
+two to 15:32 UK -1.62 on 24 trades (costs 15% of gross wins, profit
+factor 0.98, average win 8.59 against average loss 7.39). The exits that
+earn are MOMENTUM_DECAY (+64 on 6) and the trailed winners; the early
+THESIS_FAILED cuts cost 40 on 6 and fired as written. Break-even now at
+0.8 R (above). The slippage rest tripped twice on Friday for average
+slippage under one spread, so the yardstick is now 1.5 spreads.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

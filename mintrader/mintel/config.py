@@ -105,7 +105,10 @@ class ScanConfig:
     # 1.8 sat out a whole London afternoon, then found four trades in the
     # evening including a 3.3:1 index trade that ran to its target - the best
     # trade so far. Quiet spells are the rule doing its job.
-    entry_tier: str = "NORMAL"
+    # 4 Oct (week 28 Sep - 2 Oct, 104 scored trades): entries scoring under
+    # 70 made 19 of 41 and lost about 21 GBP; entries at 70 and over made
+    # 37 of 63 and earned about 73 GBP. The floor is now STRONG (70).
+    entry_tier: str = "STRONG"
     min_reward_risk: float = 1.8
     # Per-approach rules from the day-three review (69 trades):
     # - NEWS_CONTINUATION trades into news spikes; 18 trades lost 16.52 and
@@ -158,7 +161,11 @@ class ScanConfig:
     # same entry and stop, a target twice as far, and a ladder of locked
     # profit instead of the runner (see FlowLockConfig.ladder_locks). Same
     # signals, alternate exits, so the two are judged on equal opportunity.
-    twin_enabled: bool = True
+    # 4 Oct: the twin lost to its sibling on the same signals - 30 Sep +6.87
+    # vs -11.02, 1 Oct -12.26 vs +29.46, 2 Oct -1.08 vs -8.34; twin -6.47
+    # on 18 trades against +10.10 on 21. The ladder (ladder_for_all) now
+    # does the "hold the winner" job for every trade. Twin off.
+    twin_enabled: bool = False
     twin_tactics: tuple[str, ...] = ("SESSION_EXPANSION",)
     twin_target_multiple: float = 2.0
     twin_suffix: str = "_2X"

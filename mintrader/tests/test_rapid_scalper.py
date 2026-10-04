@@ -305,7 +305,7 @@ class TestFailClosed:
             b.record_slippage(4.8, spread_points=15.0)
         assert not any("slippage" in w for w in b.check(T0, tick_age_seconds=1.0, connected=True, latency_ms=10))
         for _ in range(4):
-            b.record_slippage(40.0, spread_points=15.0)        # well over a spread: that IS poor
+            b.record_slippage(60.0, spread_points=15.0)        # well over 1.5 spreads: that IS poor
         assert any("slippage" in w for w in b.check(T0, tick_age_seconds=1.0, connected=True, latency_ms=10))
 
     def test_unknown_mode_is_off_and_default_is_paper(self, tmp_path):

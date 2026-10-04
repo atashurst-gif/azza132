@@ -92,7 +92,7 @@ class ScalperConfig:
     max_total_open_risk_gbp: float = 60.0
     min_margin_level_pct: float = 300.0
     max_avg_slippage_points: float = 4.0         # absolute floor, in points...
-    max_avg_slippage_spreads: float = 1.0        # ...but never stricter than one spread (gold has 0.01 points)
+    max_avg_slippage_spreads: float = 1.5        # ...but never stricter than 1.5 spreads (gold has 0.01 points)
     slippage_window_trades: int = 10
     slippage_pause_seconds: float = 900.0        # bad fills: rest 15 min, then measure afresh
     stale_tick_seconds: float = 5.0
