@@ -68,7 +68,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "21:56:06 UTC",
+    "last_scan": "22:06:11 UTC",
     "last_trade": "AUDCHF 2026-10-02T08:33",
     "not_trading_because": [
       "no new entries during the rollover window (21:45-23:30 UTC)"
@@ -81,11 +81,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 104,
-    "uptime_minutes": 9.2
+    "cycles": 217,
+    "uptime_minutes": 19.3
   },
   "health": {
-    "as_of": "2026-10-04T21:56:06.235862+00:00",
+    "as_of": "2026-10-04T22:06:11.731733+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -93,25 +93,25 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "59332 MB of disk space free",
+        "message": "59334 MB of disk space free",
         "detail": {
-          "free_mb": 59331.9
+          "free_mb": 59333.6
         }
       },
       {
         "name": "MEMORY",
         "severity": "OK",
-        "message": "memory 85% used",
+        "message": "memory 84% used",
         "detail": {
-          "percent": 84.6
+          "percent": 83.6
         }
       },
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock agrees with the broker (within 6s)",
+        "message": "clock agrees with the broker (within 2s)",
         "detail": {
-          "skew_seconds": 6.2
+          "skew_seconds": 1.7
         }
       },
       {
@@ -145,9 +145,9 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (0s old)",
+        "message": "live prices arriving (1s old)",
         "detail": {
-          "freshest_age_seconds": 0.4,
+          "freshest_age_seconds": 1.0,
           "weekend": false
         }
       },
@@ -171,8 +171,8 @@
         "message": "2 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 7.4,
-            "scalper": 0.2
+            "watchdog": 6.0,
+            "scalper": 0.0
           }
         }
       },
@@ -181,7 +181,7 @@
         "severity": "OK",
         "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 5.4
+          "age_seconds": 5.2
         }
       },
       {
@@ -195,18 +195,102 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "EURCAD",
+      "symbol": "NZDCHF",
+      "direction": "LONG",
+      "score": 71.08,
+      "tier": "STRONG",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "NZDCHF: UNCLEAR / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Execution supports it (99/100; spread 0.3 pips (0.0x normal), commission 0.6 pips). Structure supports it (80/100; range structure on M5). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Momentum argues against it (42/100; efficiency 0.06, ADX 30). Room to the first obstacle is 2 pips, giving about 0.5 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 0.50 after costs.",
+      "blockers": [
+        "reward:risk only 0.50 after costs"
+      ],
+      "reward_risk": 0.499
+    },
+    {
+      "rank": 2,
+      "symbol": "USDCHF",
+      "direction": "LONG",
+      "score": 60.36,
+      "tier": "NORMAL",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "USDCHF: UNCLEAR / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Execution supports it (99/100; spread 0.1 pips (0.0x normal), commission 0.6 pips). Structure supports it (80/100; range structure on M5). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Multi Tf supports it (71/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 4 pips, giving about 1.6 to 1 after 0.7 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 1.62 after costs.",
+      "blockers": [
+        "NORMAL setup - only STRONG or better is traded",
+        "reward:risk only 1.62 after costs"
+      ],
+      "reward_risk": 1.617
+    },
+    {
+      "rank": 3,
+      "symbol": "XAUCHF",
       "direction": "SHORT",
-      "score": 53.97,
+      "score": 42.69,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "RANGE / LOW VOL",
-      "reason": "EURCAD: RANGE / LOW VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Multi Tf supports it (72/100; 6 timeframes weighed, higher ones first). Momentum argues against it (30/100; efficiency 0.07, ADX 14). Room to the first obstacle is 13 pips, giving about -0.9 to 1 after 28.9 pips of cost. Blocked because: reward:risk only -0.92 after costs; costs would be 114% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "XAUCHF: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (100/100; spread 25.0 pips (0.2x normal), commission 6.5 pips). Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Momentum argues against it (20/100; efficiency 0.09, ADX 14). Room to the first obstacle is 178 pips, giving about 0.2 to 1 after 37.7 pips of cost. Blocked because: reward:risk only 0.19 after costs.",
       "blockers": [
-        "reward:risk only -0.92 after costs",
-        "costs would be 114% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.19 after costs"
       ],
-      "reward_risk": -0.917
+      "reward_risk": 0.192
+    },
+    {
+      "rank": 4,
+      "symbol": "EURJPY",
+      "direction": "LONG",
+      "score": 42.13,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "EURJPY: UNCLEAR / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Execution supports it (99/100; spread 0.2 pips (0.0x normal), commission 1.2 pips). Structure supports it (80/100; range structure on M5). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Multi Tf argues against it (38/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 1.4 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 1.38 after costs.",
+      "blockers": [
+        "reward:risk only 1.38 after costs"
+      ],
+      "reward_risk": 1.383
+    },
+    {
+      "rank": 5,
+      "symbol": "XAUUSD",
+      "direction": "SHORT",
+      "score": 42.11,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "XAUUSD: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (100/100; spread 12.0 pips (0.3x normal), commission 7.9 pips). Multi Tf supports it (75/100; 6 timeframes weighed, higher ones first). Momentum argues against it (25/100; efficiency 0.16, ADX 13). Room to the first obstacle is 268 pips, giving about 0.3 to 1 after 22.9 pips of cost. Blocked because: reward:risk only 0.31 after costs.",
+      "blockers": [
+        "reward:risk only 0.31 after costs"
+      ],
+      "reward_risk": 0.31
+    },
+    {
+      "rank": 6,
+      "symbol": "XAUJPY",
+      "direction": "SHORT",
+      "score": 41.03,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "XAUJPY: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (100/100; spread 32.0 pips (0.2x normal), commission 12.5 pips). Multi Tf supports it (84/100; 6 timeframes weighed, higher ones first). Momentum argues against it (22/100; efficiency 0.12, ADX 15). Room to the first obstacle is 289 pips, giving about 0.1 to 1 after 52.5 pips of cost. Blocked because: reward:risk only 0.13 after costs.",
+      "blockers": [
+        "reward:risk only 0.13 after costs"
+      ],
+      "reward_risk": 0.13
+    },
+    {
+      "rank": 7,
+      "symbol": "XAUEUR",
+      "direction": "SHORT",
+      "score": 33.3,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "XAUEUR: UNCLEAR / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (100/100; spread 20.0 pips (0.2x normal), commission 7.1 pips). Multi Tf supports it (88/100; 6 timeframes weighed, higher ones first). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 54 pips, giving about 1.3 to 1 after 32.1 pips of cost. Blocked because: reward:risk only 1.29 after costs.",
+      "blockers": [
+        "reward:risk only 1.29 after costs"
+      ],
+      "reward_risk": 1.291
     }
   ],
   "results": {
@@ -521,22 +605,32 @@
       "status": "SCANNING",
       "mode": "LIVE",
       "build": "a58a921162",
-      "updated": "2026-10-04T21:56:08.032324+00:00",
+      "updated": "2026-10-04T22:06:13.651043+00:00",
       "started": "2026-10-04T21:46:54.668160+00:00",
       "markets_monitored": 15,
-      "best_opportunity": "EURUSD",
-      "best_direction": "NONE",
-      "confidence": 0.0,
-      "spread_quality": "WEAK",
-      "momentum": "WEAK",
-      "best_breakdown": {},
+      "best_opportunity": "XAUUSD",
+      "best_direction": "SHORT",
+      "confidence": 62.4,
+      "spread_quality": "GOOD",
+      "momentum": "OK",
+      "best_breakdown": {
+        "Momentum": 11.4,
+        "Trend alignment": 0.0,
+        "Retest quality": 16.0,
+        "Volume": 12.0,
+        "Spread": 9.1,
+        "Liquidity": 10.0,
+        "Volatility fit": 0.0,
+        "Structure room": 3.9,
+        "Order flow (disabled)": 0.0
+      },
       "best_blockers": [
-        "no immediate directional move"
+        "confidence 62 below 70"
       ],
       "blocked_because": [],
       "position": null,
-      "tick_age_seconds": 1.032324,
-      "latency_ms": 7.3,
+      "tick_age_seconds": 0.651043,
+      "latency_ms": 12.6,
       "breakers": {
         "consecutive_losses": 0,
         "day_pnl": 0.0,
@@ -657,7 +751,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 0.235867
+      "age_seconds": 0.299911
     },
     "labels": {
       "overall": "Overall",
@@ -665,5 +759,5 @@
       "rapid_scalper": "Rapid Scalper"
     }
   },
-  "updated": "2026-10-04T21:56:08.268271+00:00"
+  "updated": "2026-10-04T22:06:13.951060+00:00"
 }
