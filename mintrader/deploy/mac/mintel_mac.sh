@@ -1061,6 +1061,14 @@ install_desktop_icon() {
   step "Putting an icon on your Desktop"
   local desktop="$HOME/Desktop"
   [[ -d "$desktop" ]] || { warn "No Desktop folder found."; return 0; }
+  # Only ever on the first install. After that the icons are the user's to
+  # move, file away or delete; nothing needs them (the bot runs from
+  # $APP_DIR), so an update must never put them back.
+  local marker="$DATA_DIR/.desktop-icons-placed"
+  if [[ -f "$marker" ]]; then
+    good "Desktop icons: left as you arranged them (the bot does not need them)"
+    return 0
+  fi
   local name
   for name in "Start Trading Bot" "Stop Trading Bot" "Self Test" "Day Review" "Send Report"; do
     local src="$APP_DIR/deploy/mac/$name.command"
@@ -1071,6 +1079,7 @@ install_desktop_icon() {
     # just made ourselves.
     xattr -d com.apple.quarantine "$desktop/$name.command" >/dev/null 2>&1
   done
+  mkdir -p "$DATA_DIR" && : > "$marker"
   good "Double-click ${BOLD}Start Trading Bot${RESET} on your Desktop from now on"
 }
 
