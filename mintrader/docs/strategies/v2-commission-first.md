@@ -38,6 +38,10 @@ The nightly review adds one line per trading day.
 
 ## Rapid Scalper (separate, in PAPER)
 
+From 6 October: "Pullback (version 2)" - gold and commission-free indices
+only, with the 20-minute trend, entered after a one-minute pullback, stop
+beyond the pullback. Why: docs/strategies/rapid_scalper.md.
+
 Simulated only; never in the account. It goes LIVE only when its result on
 price clearly beats its costs over several days, and then possibly only in
 the hours that earn (`entry_hours_utc`).

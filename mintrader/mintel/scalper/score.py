@@ -23,6 +23,7 @@ class Opportunity:
     blockers: list = field(default_factory=list)
     chop: float = 0.0
     expected_move_points: float = 0.0
+    invalidation: float = 0.0           # PULLBACK: the price beyond the pullback; 0 = use the tick extreme
     features: Optional[Features] = None
 
     @property
@@ -42,18 +43,90 @@ def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, x))
 
 
+def _arrow(x: float) -> str:
+    return "up" if x > 0 else ("down" if x < 0 else "flat")
+
+
+def _pullback(f: Features, cfg: ScalperConfig, opp: Opportunity) -> int:
+    """Trend, pullback, resumption - on the one-minute chart.
+
+    Returns the direction to trade, or 0 with the reason in the blockers.
+    Sets the invalidation (beyond the pullback) and the expected move (room
+    to where the move last turned) on the opportunity.
+    """
+    if not getattr(f, "bars_ok", False) or f.atr_points <= 0:
+        opp.blockers.append("not enough one-minute bars yet")
+        return 0
+    p = f.point
+    atr = f.atr_points * p
+    # 1. the trend: fast EMA over slow AND the last 20 minutes the same way
+    if f.ema_fast > f.ema_slow and f.move_20m_points > 0:
+        d = 1
+    elif f.ema_fast < f.ema_slow and f.move_20m_points < 0:
+        d = -1
+    else:
+        opp.blockers.append(f"no 20-minute trend (20-minute move {_arrow(f.move_20m_points)}, "
+                            f"EMAs {'up' if f.ema_fast > f.ema_slow else 'down'})")
+        return 0
+    opp.direction = d
+    side = "long" if d > 0 else "short"
+    # 2. the pullback: the last three bars came back to the fast EMA, not through the slow one
+    if d > 0:
+        touched = f.swing_low_3 <= f.ema_fast + cfg.pullback_touch_atr * atr
+        too_deep = f.swing_low_3 < f.ema_slow - cfg.pullback_max_depth_atr * atr
+        extreme = f.swing_low_3
+    else:
+        touched = f.swing_high_3 >= f.ema_fast - cfg.pullback_touch_atr * atr
+        too_deep = f.swing_high_3 > f.ema_slow + cfg.pullback_max_depth_atr * atr
+        extreme = f.swing_high_3
+    if not touched:
+        opp.blockers.append(f"{side}: waiting for a pullback to the fast EMA")
+    if too_deep:
+        opp.blockers.append(f"{side}: pullback went through the slow EMA - the trend is in doubt")
+    # 3. resumption: price takes out the last completed bar, the tape moving our way,
+    #    and the last minute already pointing with the trend
+    bid = f.mid - f.spread_points * p / 2.0             # bars are bid prices: compare like with like
+    took_out = (bid > f.last_bar_high) if d > 0 else (bid < f.last_bar_low)
+    if not took_out:
+        opp.blockers.append(f"{side}: waiting for price to take out the last one-minute bar")
+    if f.velocity_5s * d <= 0 or f.move_1m_points * d <= 0:
+        opp.blockers.append(f"{side}: the last minute is not moving with the trend yet")
+    # 4. the stop beyond the pullback, and room to where the move last turned
+    buffer = max(cfg.stop_buffer_atr * atr, f.spread_points * p)
+    opp.invalidation = (extreme - buffer) if d > 0 else (extreme + buffer)
+    risk = (f.mid - opp.invalidation) * d
+    if risk <= 0:
+        opp.blockers.append(f"{side}: price is already back through the pullback")
+        return d
+    target = f.high_20 if d > 0 else f.low_20
+    room = (target - f.mid) * d
+    if room <= 0:
+        room = 2.0 * risk                      # at a fresh 20-minute extreme: nothing in the way
+    opp.expected_move_points = room / p
+    if room < cfg.min_room_r * risk:
+        opp.blockers.append(f"{side}: only {room / risk:.1f}R of room to the 20-minute "
+                            f"{'high' if d > 0 else 'low'} (need {cfg.min_room_r:.1f}R)")
+    return d
+
+
 def score(f: Features, cfg: ScalperConfig) -> Opportunity:
     w: ScoreWeights = cfg.weights
     opp = Opportunity(symbol=f.symbol, direction=0, confidence=0.0, features=f)
     if not f.ok:
         opp.blockers.append(f.reason or "no features")
         return opp
-    d = f.direction()
-    if d == 0:
-        opp.blockers.append("no immediate directional move")
-        return opp
+    pullback = str(getattr(cfg, "entry_style", "BURST")).upper() == "PULLBACK"
+    if pullback:
+        d = _pullback(f, cfg, opp)
+        if d == 0:
+            return opp
+    else:
+        d = f.direction()
+        if d == 0:
+            opp.blockers.append("no immediate directional move")
+            return opp
     opp.direction = d
-    if cfg.require_timeframe_alignment and getattr(f, "bars_ok", False):
+    if not pullback and cfg.require_timeframe_alignment and getattr(f, "bars_ok", False):
         tf = f.timeframes()
         if any(x != d for x in tf):
             arrow = lambda x: "up" if x > 0 else ("down" if x < 0 else "flat")    # noqa: E731
@@ -96,6 +169,8 @@ def score(f: Features, cfg: ScalperConfig) -> Opportunity:
 
     # E. spread
     expected = max(2.0 * vol * 3.0, f.atr_points * 0.5)      # points a scalp can reasonably aim for
+    if pullback and opp.expected_move_points > 0:
+        expected = opp.expected_move_points                  # the room to the last turn
     opp.expected_move_points = expected
     frac = f.spread_points / expected if expected > 0 else 1.0
     sq = _clamp(1.0 - frac / cfg.max_spread_fraction_of_expected_move)

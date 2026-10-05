@@ -154,11 +154,18 @@ class Manager:
         # the reason for the trade has gone: the 1- and 5-minute moves have
         # turned against it while it is under water - cut it (5 Oct)
         if (trade.state == "INITIAL_RISK" and f is not None and getattr(f, "bars_ok", False)
-                and r_mid <= -0.3 and f.move_1m_points * sign < 0 and f.move_5m_points * sign < 0):
+                and r_mid <= -c.context_cut_r and f.move_1m_points * sign < 0 and f.move_5m_points * sign < 0):
             return Decision(close=True, exit_reason="THESIS_FAILED",
                             reason=f"{r_mid:.2f}R under and the 1- and 5-minute moves have turned against it",
                             state=trade.state)
-        if trade.state == "INITIAL_RISK" and secs <= c.prove_it_seconds * 3:
+        # no follow-through: a scalp that has not got going in five minutes
+        # is paying its costs for nothing
+        if (trade.state == "INITIAL_RISK" and secs >= c.no_follow_through_seconds
+                and trade.peak_mid_r < c.no_follow_through_peak_r and r_mid < 0):
+            return Decision(close=True, exit_reason="THESIS_FAILED",
+                            reason=f"no follow-through: {secs / 60:.0f} min in, never reached "
+                                   f"+{c.no_follow_through_peak_r:.1f}R, now {r_mid:.2f}R", state=trade.state)
+        if c.early_tick_cut and trade.state == "INITIAL_RISK" and secs <= c.prove_it_seconds * 3:
             against = f is not None and (vel < 0 or f.consecutive_ticks * sign <= -c.thesis_fail_min_ticks_against)
             if r_mid <= -c.thesis_fail_adverse_r and against:
                 return Decision(close=True, exit_reason="THESIS_FAILED",

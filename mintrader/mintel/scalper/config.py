@@ -34,9 +34,21 @@ class ScalperConfig:
     mode: str = "PAPER"
     strategy_id: str = "rapid_scalper"
     magic: int = 990_411                   # NEVER the existing bot's magic
-    symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD",
-                                "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "EURGBP",
-                                "XAUUSD", "US500", "US30", "DE40", "UK100")
+    # Gold and the commission-free indices only. 6 Oct review: 8 FX scalps
+    # made +9.87 on price and paid 22.20 commission - on a one-minute
+    # horizon the commission is bigger than the move.
+    symbols: tuple[str, ...] = ("XAUUSD", "US500", "US30", "DE40", "UK100")
+    # How it enters. "PULLBACK" (6 Oct): trade WITH the 20-minute trend, wait
+    # for a one-minute pullback towards the fast EMA, enter when price takes
+    # out the last one-minute bar in the trend's direction, stop beyond the
+    # pullback. "BURST" is the original: chase a 5-second spike with a stop
+    # at the last minute's tick extreme (82 trades, -67.15; 29 of the 32
+    # trades it cut early never got even 0.1 R into profit).
+    entry_style: str = "PULLBACK"
+    pullback_touch_atr: float = 0.35             # the pullback came within this of the fast EMA...
+    pullback_max_depth_atr: float = 1.0          # ...without going this far past the slow EMA
+    stop_buffer_atr: float = 0.15                # the stop sits this far beyond the pullback extreme
+    min_room_r: float = 1.0                      # room to the last 20-minute high/low, in R
     # --- risk ------------------------------------------------------------
     planned_max_trade_risk_gbp: float = 10.0      # a CEILING, not a target
     slippage_allowance_points: float = 3.0        # per side, in points
@@ -47,14 +59,15 @@ class ScalperConfig:
     max_stop_points: float = 120.0
     max_open_positions: int = 1
     # --- entry gates -----------------------------------------------------
-    min_confidence: float = 70.0
+    min_confidence: float = 60.0
     max_spread_points: float = 25.0
     max_spread_fraction_of_expected_move: float = 0.35
     spread_expansion_limit: float = 1.8          # now / rolling average
     min_ticks_per_minute: float = 20.0           # liquidity floor
     chop_block: bool = True
     late_entry_penalty_max: float = 25.0
-    min_seconds_between_entries: float = 20.0
+    min_seconds_between_entries: float = 60.0
+    symbol_reentry_seconds: float = 180.0       # one trade per pullback: a market rests 3 min after any exit
     # Look before moving: the last 1, 5 and 20 minutes must all point the
     # way of the trade (Aaron, 5 Oct). False switches the check off.
     require_timeframe_alignment: bool = True
@@ -73,6 +86,14 @@ class ScalperConfig:
     # --- management ------------------------------------------------------
     prove_it_seconds: float = 15.0               # the thesis must show within this
     prove_it_min_progress_r: float = 0.15        # else: THESIS_FAILED
+    # The tick-speed cuts (early_tick_cut) closed 32 trades for -182 within
+    # seconds, inside the normal wobble of a one-minute pullback. Off: the
+    # stop beyond the pullback, the context cut and the follow-through
+    # check do that job on the one-minute picture.
+    early_tick_cut: bool = False
+    context_cut_r: float = 0.4                   # under this AND the 1- and 5-minute moves against: out
+    no_follow_through_seconds: float = 300.0     # 5 min without reaching...
+    no_follow_through_peak_r: float = 0.5        # ...+0.5 R, and under water: out
     thesis_fail_adverse_r: float = 0.6           # mid this far against AND still moving against = exit early (5 Oct: cut losers sooner)
     thesis_fail_stale_r: float = 0.5             # no progress, this far under AND moving against = exit
     thesis_fail_min_ticks_against: int = 4       # "moving against": velocity < 0 or this many ticks in a row
@@ -132,6 +153,9 @@ class ScalperConfig:
         "US30": {"max_spread": 4.0, "min_stop": 6.0, "max_stop": 60.0, "commission": 0.0},
         "DE40": {"max_spread": 3.0, "min_stop": 5.0, "max_stop": 50.0, "commission": 0.0},
         "UK100": {"max_spread": 2.5, "min_stop": 4.0, "max_stop": 40.0, "commission": 0.0},
+        # gold: a one-minute pullback is $1-5; the old 1.20 maximum stop
+        # forced stops inside the noise (6 Oct)
+        "XAUUSD": {"max_spread": 0.30, "min_stop": 0.40, "max_stop": 6.0},
     })
 
     def commission_for(self, symbol: str) -> float:

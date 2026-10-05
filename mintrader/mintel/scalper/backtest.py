@@ -125,6 +125,7 @@ def replay(symbol: str, ticks: Sequence[Tick], spec: SymbolSpec, cfg: ScalperCon
     last_eval: Optional[dt.datetime] = None
     last_entry: Optional[dt.datetime] = None
     last_loss: Optional[dt.datetime] = None
+    last_exit: Optional[dt.datetime] = None
     slip_pts = cfg.paper_slippage_points + stress.extra_slippage_points
     latency = dt.timedelta(milliseconds=cfg.paper_latency_ms + stress.extra_latency_ms)
 
@@ -143,6 +144,7 @@ def replay(symbol: str, ticks: Sequence[Tick], spec: SymbolSpec, cfg: ScalperCon
                                   trade.state, (t.time - trade.opened_at).total_seconds()))
         if net < 0:
             last_loss = t.time
+        last_exit = t.time
         trade = None
 
     for t in ticks:
@@ -150,6 +152,9 @@ def replay(symbol: str, ticks: Sequence[Tick], spec: SymbolSpec, cfg: ScalperCon
         while bar_idx < len(bars) and bars[bar_idx].time <= t.time.replace(second=0, microsecond=0) - dt.timedelta(minutes=1):
             bar_idx += 1
         visible_bars = bars[max(0, bar_idx - 80):bar_idx]
+        # the live feed's last bar is the one still forming; give the replay
+        # the same shape so "the last completed bar" means the same thing
+        visible_bars = visible_bars + [Bar(t.time.replace(second=0, microsecond=0), t.mid, t.mid, t.mid, t.mid, 1.0)]
         # pending entry waiting for latency
         if pending is not None and t.time >= pending[0]:
             ready, side, rp, opp = pending
@@ -180,6 +185,8 @@ def replay(symbol: str, ticks: Sequence[Tick], spec: SymbolSpec, cfg: ScalperCon
             continue
         if last_loss and (t.time - last_loss).total_seconds() < cfg.cooldown_after_loss_seconds:
             continue
+        if last_exit and (t.time - last_exit).total_seconds() < cfg.symbol_reentry_seconds:
+            continue
         f = compute(symbol, buf, visible_bars, spec.point, t.time)
         opp = score(f, cfg)
         if opp.direction == 0:
@@ -193,6 +200,8 @@ def replay(symbol: str, ticks: Sequence[Tick], spec: SymbolSpec, cfg: ScalperCon
         entry = t.ask if side is Side.BUY else t.bid
         inval = (f.micro_low - cfg.invalidation_buffer_spreads * spread) if side is Side.BUY \
             else (f.micro_high + cfg.invalidation_buffer_spreads * spread)
+        if opp.invalidation:
+            inval = opp.invalidation
         rp = plan(spec, side, entry, inval, spread, cfg)
         if not rp.ok:
             res.rejected += 1

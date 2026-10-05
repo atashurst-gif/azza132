@@ -58,6 +58,7 @@ class ScalperEngine:
         self.last_entry_at: Optional[dt.datetime] = None
         self.last_loss_at: Optional[dt.datetime] = None
         self.last_loss_by_symbol: dict[str, dt.datetime] = {}
+        self.last_exit_by_symbol: dict[str, dt.datetime] = {}
         self.last_scan_at: float = 0.0
         self.last_tick_at: Optional[dt.datetime] = None
         self.latency_ms: float = 0.0
@@ -83,7 +84,7 @@ class ScalperEngine:
         return s
 
     def _bars_for(self, symbol: str, now_mono: float) -> list:
-        if now_mono - self._bars_at.get(symbol, 0.0) > 30.0:
+        if now_mono - self._bars_at.get(symbol, 0.0) > 15.0:
             try:
                 self.bars[symbol] = list(self.broker.bars(symbol, TF.M1, 80))
             except Exception as exc:
@@ -324,6 +325,7 @@ class ScalperEngine:
         self.breakers.record_slippage(fill.slippage_points, spread_now)
         self.breakers.record_result(net, now)
         self._broker_day_dirty = True
+        self.last_exit_by_symbol[trade.symbol] = now
         if net < 0:
             self.last_loss_at = now
             self.last_loss_by_symbol[trade.symbol] = now
@@ -400,6 +402,8 @@ class ScalperEngine:
         entry = tick.ask if side is Side.BUY else tick.bid
         buf = self.scfg.invalidation_buffer_spreads * spread
         invalidation = (f.micro_low - buf) if side is Side.BUY else (f.micro_high + buf)
+        if opp.invalidation:
+            invalidation = opp.invalidation       # PULLBACK: beyond the pullback, not the last minute's ticks
         rp = plan(spec, side, entry, invalidation, spread, self.scfg)
         if not rp.ok:
             opp.blockers.append(rp.reason); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
@@ -446,6 +450,12 @@ class ScalperEngine:
         for t in self.trades.values():
             if t.symbol == sym:
                 return f"{sym}: already in a trade here"
+        # one trade per pullback: after any exit the market rests a few minutes
+        out_at = self.last_exit_by_symbol.get(sym)
+        if out_at and (now - out_at).total_seconds() < self.scfg.symbol_reentry_seconds:
+            why = f"{sym} closed a trade {((now - out_at).total_seconds()):.0f}s ago - waiting for a fresh setup"
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
+            return f"{sym}: {why}"
         # no going straight back into a market that just took money off us
         lost_at = self.last_loss_by_symbol.get(sym)
         if lost_at and (now - lost_at).total_seconds() < self.scfg.symbol_pause_after_loss_seconds:

@@ -193,7 +193,7 @@ class TestProveItAndRunner:
         return ScalpTrade(1, "EURUSD", Side.BUY, 0.1, 1.1000, 1.1000, T0, 1.0990, 1.0990, 0.0010, 10.0, spec.point, spec=spec)
 
     def test_failed_thesis_exits_well_before_the_full_stop(self):
-        m = Manager(scfg(prove_it_seconds=3.0))
+        m = Manager(scfg(prove_it_seconds=3.0, early_tick_cut=True))
         t = self._trade()
         against = SimpleNamespace(velocity_5s=-0.5, persistence=0.2, trend_bias=0, volume_accel=1.0, acceleration=0.0,
                                   realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-6, micro_low=1.0995, micro_high=1.1003)
@@ -203,7 +203,7 @@ class TestProveItAndRunner:
         assert t.r_of(1.09909) > -1.0                      # cut before the full 1R, not at it
 
     def test_no_progress_after_the_proving_window_is_a_failed_thesis(self):
-        m = Manager(scfg(prove_it_seconds=3.0))
+        m = Manager(scfg(prove_it_seconds=3.0, early_tick_cut=True))
         t = self._trade()
         f = SimpleNamespace(velocity_5s=-0.2, persistence=0.2, trend_bias=0, volume_accel=1.0, acceleration=0.0,
                             realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-2, micro_low=1.0995, micro_high=1.1003)
@@ -268,7 +268,7 @@ class TestProveItAndRunner:
                               realised_vol_points=1.0, bar_range_ratio=1.0, consecutive_ticks=0, micro_low=1.0990, micro_high=1.1005,
                               bars_ok=True, move_1m_points=-20.0, move_5m_points=-40.0, move_20m_points=30.0,
                               bar_low_2=1.0990, bar_high_2=1.1005)
-        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=40), 1.09955, 1.09965), ctx, T0 + dt.timedelta(seconds=40))
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=40), 1.09945, 1.09955), ctx, T0 + dt.timedelta(seconds=40))
         assert d.close and d.exit_reason == "THESIS_FAILED" and "1- and 5-minute" in d.reason
 
 
@@ -673,7 +673,7 @@ class TestSpreadIsNotASignal:
 
     def test_a_fresh_buy_sitting_at_minus_spread_is_not_thesis_failed(self):
         spec = sim_broker().spec("EURUSD")
-        m = Manager(scfg(prove_it_seconds=15.0, thesis_fail_adverse_r=0.55))
+        m = Manager(scfg(prove_it_seconds=15.0, thesis_fail_adverse_r=0.55, early_tick_cut=True))
         entry, stop = 1.10020, 1.09990          # 30-point stop, 2-point spread
         t = ScalpTrade(1, "EURUSD", Side.BUY, 0.1, entry, entry, T0, stop, stop, entry - stop, 10.0, spec.point, spec=spec)
         # ask stays at entry; bid is 2 points under: the spread, nothing else
@@ -719,7 +719,7 @@ class TestTheStopIsTheExit:
         assert not d.close
 
     def test_moving_towards_the_stop_counts_by_ticks_as_well_as_velocity(self):
-        m = Manager(scfg(prove_it_seconds=3.0))
+        m = Manager(scfg(prove_it_seconds=3.0, early_tick_cut=True))
         t = self._trade()
         f = SimpleNamespace(velocity_5s=0.0, persistence=0.3, trend_bias=0, volume_accel=1.0, acceleration=0.0,
                             realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-4, micro_low=1.0995, micro_high=1.1003)
@@ -936,8 +936,9 @@ class TestIndicesCanTrade:
         c = ScalperConfig()
         ms, mn, mx = c.limits_points("US30", 0.01)
         assert (ms, mn, mx) == pytest.approx((400.0, 600.0, 6000.0))
-        # gold and FX keep the point-based limits
-        assert c.limits_points("XAUUSD", 0.01) == (c.max_spread_points, c.min_stop_points, c.max_stop_points)
+        # FX keeps the point-based limits; gold has its own, in dollars
+        assert c.limits_points("EURUSD", 0.00001) == (c.max_spread_points, c.min_stop_points, c.max_stop_points)
+        assert c.limits_points("XAUUSD", 0.01) == pytest.approx((30.0, 40.0, 600.0))
 
     def test_a_normal_us30_trade_is_planned_not_refused(self):
         spec = self._index_spec()
@@ -954,9 +955,10 @@ class TestIndicesCanTrade:
         from mintel.scalper.score import score
         f = Features(symbol="US30", ok=True, point=0.01, spread_points=200.0, spread_avg_points=200.0,
                      velocity_5s=50.0, rate_of_change_30s_points=800.0, realised_vol_points=300.0, atr_points=3000.0)
-        assert not any("spread too wide" in b for b in score(f, ScalperConfig()).blockers)
+        burst = ScalperConfig(entry_style="BURST")
+        assert not any("spread too wide" in b for b in score(f, burst).blockers)
         f.spread_points = 500.0                                   # 5 index points: genuinely wide
-        assert any("spread too wide" in b for b in score(f, ScalperConfig()).blockers)
+        assert any("spread too wide" in b for b in score(f, burst).blockers)
 
     def test_the_file_can_override_one_market(self, tmp_path):
         p = tmp_path / "scalper.json"
@@ -1180,10 +1182,11 @@ class TestLookBeforeMoving:
         f = Features(symbol="EURUSD", ok=True, point=0.00001, spread_points=1.0, spread_avg_points=1.0,
                      velocity_5s=2.0, rate_of_change_30s_points=20.0, realised_vol_points=1.0, atr_points=30.0,
                      bars_ok=True, move_1m_points=10.0, move_5m_points=30.0, move_20m_points=-50.0)
-        o = score(f, ScalperConfig())
+        burst = ScalperConfig(entry_style="BURST")
+        o = score(f, burst)
         assert any("1/5/20-minute moves not lined up (up, up, down)" in b for b in o.blockers)
         f.move_20m_points = 80.0
-        assert not any("not lined up" in b for b in score(f, ScalperConfig()).blockers)
+        assert not any("not lined up" in b for b in score(f, burst).blockers)
 
     def test_features_measure_the_last_1_5_and_20_minutes_from_bars(self):
         from mintel.broker.base import Bar
@@ -1215,3 +1218,134 @@ class TestCommissionOnThePage:
         page = render_status({"status": {"bot": "RUNNING"}, "health": {}, "thinking": [], "results": {}, "positions": [],
                               "events": [], "strategies": s}, "overall")
         assert "Commission paid (broker)" in page and "1.70 GBP" in page and "Before commission" in page
+
+
+# ===================== 6 Oct: pullback entries - with the trend, after a pullback, stop beyond it --
+def _pullback_features(**kw):
+    """US500 in an up-trend that has just pulled back to its fast EMA and is
+    taking out the last one-minute bar's high again."""
+    from mintel.scalper.features import Features
+    base = dict(symbol="US500", ok=True, point=0.01, spread_points=50.0, spread_avg_points=50.0,
+                velocity_5s=5.0, rate_of_change_30s_points=60.0, realised_vol_points=20.0, atr_points=200.0,
+                ticks_per_minute=120.0, persistence=0.8, efficiency=0.6, volume_ratio=1.2, volume_accel=1.1,
+                bar_range_ratio=1.3, consecutive_ticks=4, trend_bias=1,
+                ema_fast=5000.0, ema_slow=4998.0, vwap=4999.0, mid=5001.0, dist_from_fast_ema_points=100.0,
+                micro_low=5000.5, micro_high=5001.2,
+                bars_ok=True, move_1m_points=50.0, move_5m_points=-20.0, move_20m_points=300.0,
+                bar_low_2=5000.2, bar_high_2=5000.6, last_bar_high=5000.6, last_bar_low=5000.2,
+                swing_low_3=5000.2, swing_high_3=5001.5, high_20=5006.0, low_20=4990.0)
+    base.update(kw)
+    return Features(**base)
+
+
+class TestPullbackEntry:
+    def test_the_default_is_the_pullback_entry_on_gold_and_indices(self):
+        c = ScalperConfig()
+        assert c.entry_style == "PULLBACK" and not c.early_tick_cut
+        assert set(c.symbols) == {"XAUUSD", "US500", "US30", "DE40", "UK100"}
+
+    def test_trend_pullback_and_resumption_is_a_trade_with_the_stop_beyond_the_pullback(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(), ScalperConfig())
+        assert o.direction == 1 and o.tradable, o.blockers
+        assert o.invalidation == pytest.approx(5000.2 - 0.5)          # a spread (wider than 0.15 ATR) under the pullback low
+        assert o.expected_move_points == pytest.approx(500.0)         # room to the 20-minute high
+
+    def test_a_falling_five_minutes_inside_the_pullback_does_not_block_it(self):
+        from mintel.scalper.score import score
+        assert score(_pullback_features(move_5m_points=-60.0), ScalperConfig()).tradable
+
+    def test_no_trend_no_trade(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(move_20m_points=-50.0), ScalperConfig())
+        assert o.direction == 0 and any("no 20-minute trend" in b for b in o.blockers)
+
+    def test_no_pullback_yet_means_wait(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(swing_low_3=5002.0, last_bar_high=5000.5, mid=5003.0), ScalperConfig())
+        assert not o.tradable and any("waiting for a pullback" in b for b in o.blockers)
+
+    def test_a_pullback_through_the_slow_ema_is_not_a_pullback(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(swing_low_3=4995.5), ScalperConfig())
+        assert not o.tradable and any("through the slow EMA" in b for b in o.blockers)
+
+    def test_it_waits_for_price_to_take_out_the_last_bar(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(last_bar_high=5001.3), ScalperConfig())
+        assert not o.tradable and any("take out the last one-minute bar" in b for b in o.blockers)
+
+    def test_the_last_minute_must_point_with_the_trend(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(move_1m_points=-10.0), ScalperConfig())
+        assert not o.tradable and any("last minute" in b for b in o.blockers)
+
+    def test_no_room_to_the_last_high_no_trade(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(high_20=5001.5), ScalperConfig())
+        assert not o.tradable and any("of room" in b for b in o.blockers)
+
+    def test_at_a_fresh_high_the_room_is_two_r(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(high_20=5000.9), ScalperConfig())
+        assert o.tradable and o.expected_move_points == pytest.approx(2 * (5001.0 - 4999.7) / 0.01)
+
+    def test_shorts_mirror_longs(self):
+        from mintel.scalper.score import score
+        f = _pullback_features(ema_fast=5000.0, ema_slow=5002.0, mid=4999.0, move_20m_points=-300.0,
+                               move_1m_points=-50.0, velocity_5s=-5.0, rate_of_change_30s_points=-60.0, trend_bias=-1,
+                               last_bar_low=4999.2, swing_high_3=4999.8, low_20=4994.0, high_20=5010.0,
+                               micro_low=4998.8, micro_high=4999.5, vwap=5001.0, dist_from_fast_ema_points=-100.0)
+        o = score(f, ScalperConfig())
+        assert o.direction == -1 and o.tradable, o.blockers
+        assert o.invalidation == pytest.approx(4999.8 + 0.5)
+
+    def test_spread_limits_still_apply(self):
+        from mintel.scalper.score import score
+        o = score(_pullback_features(spread_points=150.0, spread_avg_points=150.0), ScalperConfig())
+        assert not o.tradable and any("spread too wide" in b for b in o.blockers)
+
+    def test_features_find_the_pullback_from_completed_bars(self):
+        from mintel.broker.base import Bar
+        from mintel.scalper.features import TickBuffer, compute
+        # 26 bars rising, then a three-bar dip, then the forming bar
+        closes = [1.1000 + i * 0.0002 for i in range(26)] + [1.1046, 1.1043, 1.1045, 1.1049]
+        bars = [Bar(T0 - dt.timedelta(minutes=len(closes) - i), c, c + 0.00005, c - 0.00005, c, tick_volume=100)
+                for i, c in enumerate(closes)]
+        buf = TickBuffer("EURUSD")
+        for k in range(40):
+            buf.add(Tick("EURUSD", T0 - dt.timedelta(seconds=40 - k), 1.10489, 1.10491, 1.1049, 1.0))
+        f = compute("EURUSD", buf, bars, 0.00001, T0)
+        assert f.ok
+        assert f.last_bar_high == pytest.approx(1.10455) and f.swing_low_3 == pytest.approx(1.10425)
+        assert f.high_20 == pytest.approx(max(b.high for b in bars[-21:-1]))
+
+
+class TestRideItDontTwitch:
+    def _trade(self):
+        spec = sim_broker().spec("EURUSD")
+        return ScalpTrade(1, "EURUSD", Side.BUY, 0.1, 1.1000, 1.1000, T0, 1.0990, 1.0990, 0.0010, 10.0, spec.point, spec=spec)
+
+    def test_a_dip_with_the_tape_running_down_is_left_to_the_stop_by_default(self):
+        m = Manager(scfg(prove_it_seconds=3.0))
+        t = self._trade()
+        against = SimpleNamespace(velocity_5s=-0.5, persistence=0.2, trend_bias=0, volume_accel=1.0, acceleration=0.0,
+                                  realised_vol_points=2.0, bar_range_ratio=1.0, consecutive_ticks=-6, micro_low=1.0995, micro_high=1.1003)
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=2), 1.09909, 1.09921), against, T0 + dt.timedelta(seconds=2))
+        assert not d.close
+
+    def test_no_follow_through_in_five_minutes_is_closed(self):
+        m = Manager(scfg())
+        t = self._trade()
+        tick = lambda s, bid, ask: Tick("EURUSD", T0 + dt.timedelta(seconds=s), bid, ask)      # noqa: E731
+        assert not m.update(t, tick(60, 1.10010, 1.10020), None, T0 + dt.timedelta(seconds=60)).close
+        assert not m.update(t, tick(299, 1.09975, 1.09985), None, T0 + dt.timedelta(seconds=299)).close
+        d = m.update(t, tick(301, 1.09975, 1.09985), None, T0 + dt.timedelta(seconds=301))
+        assert d.close and d.exit_reason == "THESIS_FAILED" and "follow-through" in d.reason
+
+    def test_a_trade_that_got_going_is_not_closed_for_follow_through(self):
+        m = Manager(scfg())
+        t = self._trade()
+        m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=30), 1.10060, 1.10070), None, T0 + dt.timedelta(seconds=30))
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=400), 1.09995, 1.10005), None, T0 + dt.timedelta(seconds=400))
+        assert d.exit_reason != "THESIS_FAILED"

@@ -1,6 +1,50 @@
 # Rapid Scalper
 
-**Fast in. Fast out. Cut failed trades quickly and give exceptional winners room to run.**
+**Pullback (version 2): trade with the 20-minute trend, enter when a one-minute
+pullback ends, stop beyond the pullback, ride the winners.**
+
+## Version 2, "Pullback" (6 October 2026) - why it changed
+
+Every scalper trade on record (1 and 5 October, live and paper, 82 trades):
+
+| | Trades | Net | What it shows |
+|---|---|---|---|
+| All | 82 | -67.15 | on price (before spread) it made about +36; spread 51.69 and commission 51.84 took that and more |
+| Never left the first stage | 52 | -255.33 | entries that were wrong from the first tick |
+| Got going (reached +0.6 R or more) | 30 | +188.18 | winners, once going, were worth riding (four runners: +93.85) |
+| Cut in seconds on tick speed ("idea failed") | 32 | -182.20 | 29 of the 32 never got even 0.1 R into profit |
+| FX | 8 | -12.33 | +9.87 on price, 22.20 commission |
+
+Diagnosis: the original entry chased a 5-second spike, so it bought the top
+of tiny bursts; its stop was the last minute's tick extreme, inside the
+normal wobble of the market; and on FX the commission was bigger than the
+move. The riding of winners was fine.
+
+What version 2 does instead:
+
+| Rule | Setting | Instead of |
+|---|---|---|
+| Markets | gold and the commission-free indices: XAUUSD, US500, US30, DE40, UK100 | 15 markets including 10 FX pairs |
+| Trend | fast EMA over slow EMA on one-minute bars AND the last 20 minutes the same way | the last 5 seconds |
+| Pullback | one of the last three one-minute bars came back within 0.35 ATR of the fast EMA, without going 1 ATR past the slow EMA | none - it bought strength |
+| Trigger | the price takes out the last completed one-minute bar in the trend's direction, with the last minute and the tape moving that way | a 5-second spike |
+| Stop | beyond the pullback's extreme, by 0.15 ATR or a spread | the last 60 seconds' tick extreme |
+| Room | at least 1 R to where the move last turned (the 20-minute high/low) | none |
+| Size | still GBP 10 at the stop, so a wider stop means a smaller size and costs become a small share | unchanged |
+| Early cuts | the tick-speed cuts are off (`early_tick_cut`); out if 0.4 R under AND the 1- and 5-minute moves have turned, or no follow-through (+0.5 R) in 5 minutes | cut in seconds on tick speed |
+| One trade per pullback | a market rests 3 minutes after any exit; 60 s between entries | 20 s |
+| Riding winners | unchanged: trail behind the last two one-minute bars, let go when the 1- and 5-minute moves both turn | - |
+
+It stays in PAPER. It goes LIVE only when several days of version 2 show a
+positive result after every cost - by market and by hour, so LIVE can be
+limited to what earns (`entry_hours_utc`). The original entry is still there
+(`"entry_style": "BURST"`) so the two can be compared on the same ticks with
+`python -m mintel.scalper.backtest`.
+
+## Original design (version 1)
+
+"Fast in. Fast out. Cut failed trades quickly and give exceptional winners
+room to run." The sections below describe the machinery both versions share.
 
 Rapid Scalper is a second, completely separate strategy that runs beside the
 existing bot ("Trend & Breakout"). It shares the broker connection and the

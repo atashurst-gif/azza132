@@ -103,6 +103,13 @@ class Features:
     bar_low_2: float = 0.0
     bar_high_2: float = 0.0
     dist_from_fast_ema_points: float = 0.0
+    # pullback structure, from COMPLETED one-minute bars (prices)
+    last_bar_high: float = 0.0           # the last completed bar
+    last_bar_low: float = 0.0
+    swing_low_3: float = 0.0             # lowest low / highest high of the last three
+    swing_high_3: float = 0.0
+    high_20: float = 0.0                 # the last twenty: where the move last turned
+    low_20: float = 0.0
     # order flow - not available over this feed
     order_flow_available: bool = False
 
@@ -227,13 +234,22 @@ def compute(symbol: str, buf: TickBuffer, bars: Sequence[Bar], point: float,
                 fails += 1
         f.failed_breakouts = fails
     if len(bars) >= 23:
-        now_px = closes[-1]                      # the forming bar's latest price
+        # now = the live price (bars are bid prices); the forming bar in the
+        # cache can be several seconds old
+        now_px = last.bid if last.bid else closes[-1]
         f.move_1m_points = (now_px - closes[-2]) / point
         f.move_5m_points = (now_px - closes[-6]) / point
         f.move_20m_points = (now_px - closes[-21]) / point
         done2 = bars[-3:-1]
         f.bar_low_2 = min(b.low for b in done2)
         f.bar_high_2 = max(b.high for b in done2)
+        f.last_bar_high, f.last_bar_low = bars[-2].high, bars[-2].low
+        done3 = bars[-4:-1]
+        f.swing_low_3 = min(b.low for b in done3)
+        f.swing_high_3 = max(b.high for b in done3)
+        done20 = bars[-21:-1]
+        f.high_20 = max(b.high for b in done20)
+        f.low_20 = min(b.low for b in done20)
         f.bars_ok = True
         if f.mid > f.ema_fast > f.ema_slow:
             f.trend_bias = 1
