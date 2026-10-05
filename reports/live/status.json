@@ -69,7 +69,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "21:15:48 UTC",
+    "last_scan": "21:25:53 UTC",
     "last_trade": "US500 2026-10-05T14:30",
     "not_trading_because": [],
     "strategy_rules": {
@@ -80,11 +80,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 65,
-    "uptime_minutes": 6.1
+    "cycles": 172,
+    "uptime_minutes": 16.2
   },
   "health": {
-    "as_of": "2026-10-05T21:15:48.752229+00:00",
+    "as_of": "2026-10-05T21:25:53.643393+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -92,9 +92,9 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "54159 MB of disk space free",
+        "message": "52956 MB of disk space free",
         "detail": {
-          "free_mb": 54158.8
+          "free_mb": 52955.7
         }
       },
       {
@@ -102,7 +102,7 @@
         "severity": "OK",
         "message": "memory 85% used",
         "detail": {
-          "percent": 85.3
+          "percent": 85.0
         }
       },
       {
@@ -110,7 +110,7 @@
         "severity": "OK",
         "message": "clock agrees with the broker (within 24s)",
         "detail": {
-          "skew_seconds": 23.8
+          "skew_seconds": 23.7
         }
       },
       {
@@ -144,18 +144,18 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (9s old)",
+        "message": "live prices arriving (0s old)",
         "detail": {
-          "freshest_age_seconds": 8.9,
+          "freshest_age_seconds": 0.3,
           "weekend": false
         }
       },
       {
         "name": "NEWS",
         "severity": "OK",
-        "message": "calendar live (40 events known)",
+        "message": "calendar live (39 events known)",
         "detail": {
-          "events_known": 40
+          "events_known": 39
         }
       },
       {
@@ -170,17 +170,17 @@
         "message": "2 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 0.0,
-            "scalper": 0.3
+            "watchdog": 1.2,
+            "scalper": 0.0
           }
         }
       },
       {
         "name": "SCAN_FRESHNESS",
         "severity": "OK",
-        "message": "markets scanned 5s ago",
+        "message": "markets scanned 6s ago",
         "detail": {
-          "age_seconds": 5.1
+          "age_seconds": 6.0
         }
       },
       {
@@ -196,64 +196,78 @@
       "rank": 1,
       "symbol": "EURCHF",
       "direction": "SHORT",
-      "score": 30.97,
+      "score": 30.62,
       "tier": "NO_TRADE",
       "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "EURCHF: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (86/100; spread 13.7 pips (0.9x normal), commission 0.6 pips). Momentum supports it (77/100; efficiency 0.11, ADX 13). Structure supports it (76/100; range structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about -0.7 to 1 after 17.7 pips of cost. Blocked because: reward:risk only -0.74 after costs; costs would be 86% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "regime": "RANGE / LOW VOL",
+      "reason": "EURCHF: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Execution supports it (84/100; spread 12.3 pips (0.8x normal), commission 0.6 pips). Momentum supports it (83/100; efficiency 0.08, ADX 12). Participation argues against it (23/100; 0.1x median tick volume). Structure supports it (76/100; range structure on M5). Room to the first obstacle is 1 pips, giving about -0.8 to 1 after 16.0 pips of cost. Blocked because: reward:risk only -0.78 after costs; costs would be 87% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.74 after costs",
-        "costs would be 86% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only -0.78 after costs",
+        "costs would be 87% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.743
+      "reward_risk": -0.781
     },
     {
       "rank": 2,
+      "symbol": "CADJPY",
+      "direction": "SHORT",
+      "score": 29.0,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "CADJPY: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout acceptance. Participation argues against it (22/100; 0.1x median tick volume). Structure supports it (70/100; range structure on M5). Multi Tf supports it (68/100; 6 timeframes weighed, higher ones first). Volatility supports it (62/100; volatility at the 54th percentile). Room to the first obstacle is 2 pips, giving about -1.2 to 1 after 35.8 pips of cost. Blocked because: reward:risk only -1.18 after costs; costs would be 138% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -1.18 after costs",
+        "costs would be 138% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -1.176
+    },
+    {
+      "rank": 3,
       "symbol": "XAUCHF",
       "direction": "LONG",
       "score": 20.69,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
       "regime": "RANGE / NORMAL VOL",
-      "reason": "XAUCHF: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution argues against it (0/100; spread 89.0 pips (1.0x normal), commission 6.5 pips). Momentum supports it (82/100; efficiency 0.02, ADX 11). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 59 pips, giving about -0.1 to 1 after 117.7 pips of cost. Blocked because: price data is 1010s old (limit 20s); reward:risk only -0.07 after costs; costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "XAUCHF: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution argues against it (0/100; spread 89.0 pips (1.0x normal), commission 6.5 pips). Momentum supports it (82/100; efficiency 0.02, ADX 11). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 59 pips, giving about -0.1 to 1 after 117.7 pips of cost. Blocked because: price data is 1615s old (limit 20s); reward:risk only -0.07 after costs; costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "price data is 1010s old (limit 20s)",
+        "price data is 1615s old (limit 20s)",
         "reward:risk only -0.07 after costs",
         "costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
       "reward_risk": -0.071
     },
     {
-      "rank": 3,
+      "rank": 4,
+      "symbol": "CADCHF",
+      "direction": "SHORT",
+      "score": 19.56,
+      "tier": "NO_TRADE",
+      "tactic": "SQUEEZE_RELEASE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "CADCHF: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Structure supports it (82/100; unclear structure on M5). Momentum argues against it (22/100; efficiency 0.02, ADX 35). Participation argues against it (24/100; 0.1x median tick volume). Multi Tf supports it (70/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about -1.0 to 1 after 18.5 pips of cost. Blocked because: reward:risk only -0.98 after costs; costs would be 120% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -0.98 after costs",
+        "costs would be 120% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.982
+    },
+    {
+      "rank": 5,
       "symbol": "XAGEUR",
       "direction": "LONG",
       "score": 14.43,
       "tier": "NO_TRADE",
       "tactic": "VWAP_REVERSION",
       "regime": "LOW_VOL / LOW VOL",
-      "reason": "XAGEUR: LOW_VOL / LOW VOL market. Best idea is buy using vwap reversion. Execution argues against it (0/100; spread 26.0 pips (1.0x normal), commission 6.6 pips). Structure supports it (70/100; range structure on M5). Volatility argues against it (32/100; volatility at the 6th percentile). Regime supports it (67/100; LOW_VOL / LOW VOL). Room to the first obstacle is 31 pips, giving about 0.4 to 1 after 39.1 pips of cost. Blocked because: price data is 1010s old (limit 20s); reward:risk only 0.39 after costs; costs would be 41% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "XAGEUR: LOW_VOL / LOW VOL market. Best idea is buy using vwap reversion. Execution argues against it (0/100; spread 26.0 pips (1.0x normal), commission 6.6 pips). Structure supports it (70/100; range structure on M5). Volatility argues against it (32/100; volatility at the 6th percentile). Regime supports it (67/100; LOW_VOL / LOW VOL). Room to the first obstacle is 31 pips, giving about 0.4 to 1 after 39.1 pips of cost. Blocked because: price data is 1615s old (limit 20s); reward:risk only 0.39 after costs; costs would be 41% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "price data is 1010s old (limit 20s)",
+        "price data is 1615s old (limit 20s)",
         "reward:risk only 0.39 after costs",
         "costs would be 41% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
       "reward_risk": 0.394
-    },
-    {
-      "rank": 4,
-      "symbol": "EURGBP",
-      "direction": "SHORT",
-      "score": 13.92,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / LOW VOL",
-      "reason": "EURGBP: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Execution argues against it (0/100; spread 3.2 pips (0.9x normal), commission 0.6 pips). Participation argues against it (26/100; 0.0x median tick volume). Momentum supports it (74/100; efficiency 0.16, ADX 15). Volatility argues against it (30/100; volatility at the 0th percentile). Room to the first obstacle is 0 pips, giving about -0.5 to 1 after 4.5 pips of cost. Blocked because: price data is 28s old (limit 20s); reward:risk only -0.48 after costs; costs would be 95% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "price data is 28s old (limit 20s)",
-        "reward:risk only -0.48 after costs",
-        "costs would be 95% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": -0.48
     }
   ],
   "results": {
@@ -844,7 +858,7 @@
       "status": "SCANNING",
       "mode": "PAPER",
       "build": "6909a35ca3",
-      "updated": "2026-10-05T21:15:49.558860+00:00",
+      "updated": "2026-10-05T21:25:55.166135+00:00",
       "started": "2026-10-05T21:09:45.927819+00:00",
       "markets_monitored": 15,
       "best_opportunity": "EURUSD",
@@ -854,13 +868,13 @@
       "momentum": "WEAK",
       "best_breakdown": {},
       "best_blockers": [
-        "not enough ticks yet"
+        "no immediate directional move"
       ],
       "blocked_because": [],
       "position": null,
-      "tick_age_seconds": 3.55886,
-      "latency_ms": 3.8,
-      "cycle_ms": 3.7,
+      "tick_age_seconds": 1.166135,
+      "latency_ms": 2.8,
+      "cycle_ms": 3.4,
       "breakers": {
         "consecutive_losses": 0,
         "day_pnl": 0.0,
@@ -980,7 +994,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 0.978117
+      "age_seconds": 0.795969
     },
     "labels": {
       "overall": "Overall",
@@ -988,5 +1002,5 @@
       "rapid_scalper": "Rapid Scalper"
     }
   },
-  "updated": "2026-10-05T21:15:50.537052+00:00"
+  "updated": "2026-10-05T21:25:55.962186+00:00"
 }
