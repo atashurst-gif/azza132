@@ -331,7 +331,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
                 f"<td>{html.escape(str(t.get('symbol')))}</td>"
                 f"<td class=nw>{html.escape(str(labels.get(t.get('strategy'), t.get('strategy'))))}"
                 f"{(' <span class=pill>' + html.escape(str(t.get('mode'))) + '</span>') if t.get('mode') else ''}</td>"
-                f"<td class=small>{html.escape(str(t.get('tactic') or t.get('exit_reason') or '').replace('_', ' ').lower())}</td>"
+                f"<td class=small>{html.escape(str(t.get('tactic') or t.get('exit_reason') or ''))}</td>"
                 f"<td class='mono nw {colour(t.get('net'))}'>{money(t.get('net'))}</td></tr>")
     thead = "<tr><th>Closed</th><th>Market</th><th>Bot</th><th>Approach / exit</th><th>Net</th></tr>"
     trade_html = ""
