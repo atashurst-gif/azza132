@@ -47,10 +47,28 @@ def existing_strategy_stats(journal, positions, day_start: dt.datetime, currency
         s["wins"] = int(ledger_today.get("wins", s["wins"]))
         s["losses"] = max(0, s["trades"] - s["wins"])
         s["win_rate"] = ledger_today.get("win_rate", s["win_rate"])
+        if ledger_today.get("commission") is not None:
+            s["total_costs"] = round(float(ledger_today["commission"]), 2)
+            s["before_fees"] = ledger_today.get("before_fees")
+        nets = [float(x) for x in (ledger_today.get("nets") or [])]
+        if nets:
+            s.update(_money_shape(nets))
     s["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r["net_pnl"],
                           "closed": r["closed_utc"], "tactic": r["tactic"], "strategy": EXISTING_STRATEGY_ID}
                          for r in closed[-60:]]
     return s
+
+
+def _money_shape(nets: list) -> dict:
+    """Average and largest win and loss, and profit factor, from per-trade nets."""
+    wins = [x for x in nets if x > 0]
+    losses = [x for x in nets if x < 0]
+    pf = (round(sum(wins) / abs(sum(losses)), 2) if losses else ("no losses" if wins else None))
+    return {"avg_win": round(sum(wins) / len(wins), 2) if wins else None,
+            "avg_loss": round(sum(losses) / len(losses), 2) if losses else None,
+            "largest_win": round(max(wins), 2) if wins else None,
+            "largest_loss": round(min(losses), 2) if losses else None,
+            "profit_factor": pf}
 
 
 def approach_name(tactic, regime) -> str:
@@ -112,6 +130,12 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
     overall = combine([mi, rs] if live_rs else [mi])
     overall["trades_today"] = sorted(mi["trades_today"] + (rs["trades_today"] if live_rs else []),
                                      key=lambda t: str(t.get("closed") or ""))
+    # the money shape of the account: from every real trade's net
+    nets = [float(t.get("net") or 0.0) for t in overall["trades_today"]]
+    if nets:
+        overall.update(_money_shape(nets))
+    if mi.get("before_fees") is not None and not live_rs:
+        overall["before_fees"] = mi["before_fees"]
     if not live_rs:
         rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
         overall["note"] = "The Rapid Scalper is in PAPER: its simulated results are on its own tab only."

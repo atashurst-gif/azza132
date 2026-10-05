@@ -108,8 +108,12 @@ class TestLedger:
         led = broker_ledger(tr, T0)
         assert led["source"] == "broker"
         # entry deals carry half the commission: -0.3 per position comes off
-        assert led["today"] == {"net": -0.6, "trades": 2, "wins": 1, "win_rate": 50.0}
-        assert led["since_start"] == {"net": 4.1, "trades": 3, "wins": 2, "win_rate": 66.7}
+        core = lambda d: {k: d[k] for k in ("net", "trades", "wins", "win_rate")}    # noqa: E731
+        assert core(led["today"]) == {"net": -0.6, "trades": 2, "wins": 1, "win_rate": 50.0}
+        assert core(led["since_start"]) == {"net": 4.1, "trades": 3, "wins": 2, "win_rate": 66.7}
+        # commission is shown in its own right: both halves of every position's charge
+        assert led["today"]["commission"] == 1.5 and led["today"]["before_fees"] == 0.9
+        assert sorted(led["today"]["nets"]) == [-3.3, 2.7]                # each after its own commission
         assert led["tracking_start"].startswith("2026-09-13T20:00")
         # asked the broker once, for the bot's magic, far enough back for the 14-day view
         assert len(tr.broker.calls) == 1
@@ -121,7 +125,8 @@ class TestLedger:
         # position 12 (opened 09:40) is in - and "today" starts at 09:30 too
         tr = self._trader(_rows(), "2026-09-14T09:30:00+00:00")
         led = broker_ledger(tr, T0)
-        assert led["since_start"] == {"net": 2.7, "trades": 1, "wins": 1, "win_rate": 100.0}
+        core = lambda d: {k: d[k] for k in ("net", "trades", "wins", "win_rate")}    # noqa: E731
+        assert core(led["since_start"]) == {"net": 2.7, "trades": 1, "wins": 1, "win_rate": 100.0}
         assert led["today"] == led["since_start"]
 
     def test_a_position_opened_before_the_start_but_closed_after_is_ignored(self):

@@ -243,6 +243,7 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
                 whose LAST closing deal fell in [closed_from, closed_to).
                 Closing time is what MetaTrader's History filter uses."""
                 by_pos: dict = {}
+                fees: dict = {}
                 last_close: dict = {}
                 for r in rows:
                     if not r.get("time"):
@@ -256,15 +257,22 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
                     # (2 Oct: skipping entries left every trade short by half
                     # its commission - the page said -29.66, the broker -31.14.)
                     by_pos[pos] = by_pos.get(pos, 0.0) + float(r["profit"])
+                    fees[pos] = fees.get(pos, 0.0) + abs(float(r.get("commission") or 0.0))
                     if not r.get("is_entry"):
                         last_close[pos] = max(last_close.get(pos, r["time"]), r["time"])
                 keep = {p: v for p, v in by_pos.items()
                         if p in last_close and last_close[p] >= closed_from
                         and (closed_to is None or last_close[p] < closed_to)}
                 wins = sum(1 for v in keep.values() if v > 0)
+                commission = sum(fees.get(p, 0.0) for p in keep)
                 return {"net": round(sum(keep.values()), 2),
                         "trades": len(keep), "wins": wins,
-                        "win_rate": round(wins / len(keep) * 100, 1) if keep else None}
+                        "win_rate": round(wins / len(keep) * 100, 1) if keep else None,
+                        # the broker's commission on these positions, both halves,
+                        # and what they made before it
+                        "commission": round(commission, 2),
+                        "before_fees": round(sum(keep.values()) + commission, 2),
+                        "nets": [round(v, 2) for v in keep.values()]}
 
             week_start = day_start - dt.timedelta(days=day_start.weekday())
             periods = [
@@ -277,7 +285,7 @@ def broker_ledger(trader: Trader, now: dt.datetime) -> dict:
             ]
             out = {"today": periods[0][1],
                    "since_start": periods[-1][1],
-                   "periods": [{"label": k, **v} for k, v in periods],
+                   "periods": [{"label": k, **{kk: vv for kk, vv in v.items() if kk != "nets"}} for k, v in periods],
                    "tracking_start": start.isoformat(),
                    "day_start": day_start.isoformat(),
                    "source": "broker"}

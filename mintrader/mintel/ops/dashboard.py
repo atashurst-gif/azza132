@@ -259,7 +259,8 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
             ("Win rate", plain(s.get("win_rate"), "%")), ("Average win", money(s.get("avg_win"))),
             ("Average loss", money(s.get("avg_loss"))), ("Largest win", money(s.get("largest_win"))),
             ("Largest loss", money(s.get("largest_loss"))), ("Profit factor", plain(s.get("profit_factor"))),
-            ("Total trading costs", "-" if s.get("total_costs") is None else f"{abs(float(s['total_costs'])):.2f} {cur}"),
+            ("Before commission", money(s.get("before_fees"))),
+            ("Commission paid (broker)", "-" if s.get("total_costs") is None else f"{abs(float(s['total_costs'])):.2f} {cur}"),
             ("Estimated slippage", plain(s.get("est_slippage_points"), " points")),
             ("Average holding time", plain(None if s.get("avg_hold_seconds") is None else f"{s['avg_hold_seconds']:.0f}", " s")),
             ("Open positions", plain(s.get("open_positions"))),
@@ -461,12 +462,14 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
             f'<tr><td>{html.escape(str(p["label"]))}</td>'
             f'<td class="mono {"ok" if (p.get("net") or 0) >= 0 else "bad"}">'
             f'{_fmt_money(p.get("net") or 0.0, st.get("currency", ""))}</td>'
+            f'<td class="mono">{"-" if p.get("before_fees") is None else _fmt_money(p["before_fees"], st.get("currency", ""))}</td>'
+            f'<td class="mono">{"-" if p.get("commission") is None else _fmt_money(-abs(p["commission"]), st.get("currency", ""))}</td>'
             f'<td class="mono">{p.get("trades", 0)}</td>'
             f'<td class="mono">{_pct(p.get("win_rate"))}</td></tr>'
             for p in periods)
         periods_html = ('<h2>Results by period</h2><div class="card"><table>'
-                        '<tr><th>Period</th><th>Net (fees included)</th><th>Trades</th>'
-                        '<th>Win rate</th></tr>' + prow + '</table>'
+                        '<tr><th>Period</th><th>Net (after commission)</th><th>Before commission</th>'
+                        '<th>Commission</th><th>Trades</th><th>Win rate</th></tr>' + prow + '</table>'
                         '<div class="small">This strategy\'s trades only, by the time they '
                         'closed, on the broker\'s day - the same way MetaTrader\'s History '
                         'filter counts them.</div></div>')

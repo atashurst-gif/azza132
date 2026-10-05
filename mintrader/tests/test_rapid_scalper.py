@@ -1196,3 +1196,22 @@ class TestLookBeforeMoving:
         f = compute("EURUSD", buf, bars, 0.00001, T0)
         assert f.bars_ok and f.timeframes() == (1, 1, 1)
         assert round(f.move_5m_points) == 50 and round(f.move_20m_points) == 200
+
+
+class TestCommissionOnThePage:
+    def test_trend_and_breakout_and_overall_show_the_brokers_commission(self, tmp_path):
+        from mintel.ops.attribution import build_strategies
+        from mintel.ops.dashboard import render_status
+        (tmp_path / "scalper-status.json").write_text(json.dumps({"updated": T0.isoformat(), "mode": "PAPER", "stats": {}}))
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        ledger = {"net": 67.47, "trades": 4, "wins": 3, "win_rate": 75.0, "commission": 1.70,
+                  "before_fees": 69.17, "nets": [22.51, 30.71, -7.38, 22.54]}
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=4), "GBP", tmp_path, ledger, now=T0)
+        mi, ov = s[EXISTING_STRATEGY_ID], s["overall"]
+        assert mi["total_costs"] == 1.70 and mi["before_fees"] == 69.17
+        assert mi["avg_win"] == 25.25 and mi["largest_loss"] == -7.38 and mi["profit_factor"] == 10.27
+        assert ov["total_costs"] == 1.70
+        page = render_status({"status": {"bot": "RUNNING"}, "health": {}, "thinking": [], "results": {}, "positions": [],
+                              "events": [], "strategies": s}, "overall")
+        assert "Commission paid (broker)" in page and "1.70 GBP" in page and "Before commission" in page
