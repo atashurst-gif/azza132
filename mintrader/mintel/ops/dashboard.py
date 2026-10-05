@@ -335,7 +335,7 @@ def render_scalper_panel(snap: dict) -> str:
     why = f'<tr><th>Not trading because</th><td>{e("; ".join(str(b) for b in blocked))}</td></tr>' if blocked else ""
     detail = {"breakdown of the best opportunity": rs.get("best_breakdown"), "its blockers": rs.get("best_blockers"),
               "breakers": rs.get("breakers"), "tick age (s)": rs.get("tick_age_seconds"),
-              "latency (ms)": rs.get("latency_ms"), "build": rs.get("build")}
+              "latency (ms)": rs.get("latency_ms"), "one full pass (ms)": rs.get("cycle_ms"), "build": rs.get("build")}
     tech = f'<details><summary class="small">Technical detail</summary><pre>{e(json.dumps(detail, indent=2, default=str))}</pre></details>'
     return head + body + why + "</table>" + tech + "</div>"
 

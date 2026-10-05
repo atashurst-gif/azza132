@@ -112,7 +112,21 @@ class ScalperJournal:
         self._exec("INSERT INTO stop_changes (ticket, ts_utc, old_stop, new_stop, state, why) VALUES (?,?,?,?,?,?)",
                    (ticket, to_utc(now or utcnow()).isoformat(), old, new, state, why))
 
-    def record_rejected(self, opp, spread_points: float, now: Optional[dt.datetime] = None) -> None:
+    def record_rejected(self, opp, spread_points: float, now: Optional[dt.datetime] = None,
+                        every_seconds: float = 0.0) -> None:
+        """One row per market per set of reasons per ``every_seconds``."""
+        when = to_utc(now or utcnow())
+        if every_seconds > 0:
+            key = (opp.symbol, tuple(opp.blockers))
+            seen = getattr(self, "_rejected_seen", None)
+            if seen is None:
+                seen = self._rejected_seen = {}
+            last = seen.get(key)
+            if last is not None and (when - last).total_seconds() < every_seconds:
+                return
+            seen[key] = when
+            if len(seen) > 5000:
+                seen.clear()
         self._exec("""INSERT INTO rejected (ts_utc, symbol, direction, confidence, components_json, blockers_json, spread_points)
                       VALUES (?,?,?,?,?,?,?)""",
                    (to_utc(now or utcnow()).isoformat(), opp.symbol, opp.direction, opp.confidence,

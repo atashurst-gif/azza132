@@ -167,7 +167,18 @@ def compute(symbol: str, buf: TickBuffer, bars: Sequence[Bar], point: float,
         f.persistence = agree / tot if tot else 0.0
     # ---- liquidity / activity
     w60 = buf.since(60.0, now)
-    f.ticks_per_minute = float(len(w60))
+    # The bot polls the latest price, so its own buffer can never hold more
+    # ticks than polls per minute (about nine on a full 15-market pass). The
+    # market's real activity is the broker's tick count per one-minute bar;
+    # use the median of the last three completed bars when we have them.
+    # (5 Oct: every market read "too thin (9 ticks/min)" overnight.)
+    polled = float(len(w60))
+    done = [b for b in bars[-4:-1] if getattr(b, "tick_volume", 0)] if len(bars) >= 4 else []
+    if done:
+        vols = sorted(float(b.tick_volume) for b in done)
+        f.ticks_per_minute = max(polled, vols[len(vols) // 2])
+    else:
+        f.ticks_per_minute = polled
     if len(w60) >= 3:
         diffs = [(b.mid - a.mid) / point for a, b in zip(w60[:-1], w60[1:])]
         f.realised_vol_points = st.pstdev(diffs) if len(diffs) > 1 else 0.0

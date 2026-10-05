@@ -937,3 +937,69 @@ class TestIndicesCanTrade:
                                  "symbol_limits": {"US500": {"max_spread": 0.6, "min_stop": 1.0, "max_stop": 10.0}}}))
         c = ScalperConfig.load(p)
         assert c.limits_points("US500", 0.01) == pytest.approx((60.0, 100.0, 1000.0))
+
+
+
+# ======================== 5 Oct: liquidity was the bot's own polling speed, not the market --
+class TestRealLiquidity:
+    def _bars(self, vols):
+        from mintel.broker.base import Bar
+        t = T0 - dt.timedelta(minutes=len(vols))
+        return [Bar(t + dt.timedelta(minutes=i), 1.1, 1.1001, 1.0999, 1.1, tick_volume=v) for i, v in enumerate(vols)]
+
+    def test_ticks_per_minute_uses_the_brokers_bar_tick_count(self):
+        from mintel.scalper.features import TickBuffer, compute
+        buf = TickBuffer("EURUSD")
+        for i in range(9):                                   # nine polls in the last minute
+            buf.add(Tick("EURUSD", T0 - dt.timedelta(seconds=60 - 6 * i), 1.1, 1.10002, 1.10001, 1.0))
+        bars = self._bars([30] * 30 + [140, 160, 150, 20])   # last bar still forming
+        f = compute("EURUSD", buf, bars, 0.00001, T0)
+        assert f.ticks_per_minute == 150.0
+        # without bar volumes it falls back to what it saw
+        f2 = compute("EURUSD", buf, self._bars([0] * 34), 0.00001, T0)
+        assert f2.ticks_per_minute == 9.0
+
+    def test_rejected_setups_are_logged_once_a_minute_per_reason(self, tmp_path):
+        from mintel.scalper.journal import ScalperJournal
+        from mintel.scalper.score import Opportunity
+        j = ScalperJournal(tmp_path / "s.sqlite")
+        o = Opportunity("EURUSD", 1, 50.0); o.blockers = ["confidence 50 below 70"]
+        for s in range(0, 120, 2):
+            j.record_rejected(o, 1.0, T0 + dt.timedelta(seconds=s), 60.0)
+        assert j.rejected_since(T0 - dt.timedelta(minutes=1)) == 2
+        o2 = Opportunity("EURUSD", 1, 50.0); o2.blockers = ["spread too wide"]
+        j.record_rejected(o2, 1.0, T0 + dt.timedelta(seconds=121), 60.0)
+        assert j.rejected_since(T0 - dt.timedelta(minutes=1)) == 3
+        j.close()
+
+    def test_the_status_file_is_written_every_two_seconds_not_every_pass(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="PAPER")
+        calls = []
+        real = e.status
+        e.status = lambda *a, **k: calls.append(1) or real(*a, **k)
+        for _ in range(20):
+            e.cycle()
+        assert 1 <= len(calls) <= 3
+        assert "cycle_ms" in json.loads(e.status_path.read_text())
+
+    def test_the_broker_day_is_cached_and_refreshed_after_a_close(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="LIVE")
+        n = []
+        b.deals_since = lambda *a, **k: n.append(1) or []
+        day = e.day_start()
+        for _ in range(5):
+            e._broker_day(day)
+        assert len(n) == 1
+        e._broker_day_dirty = True
+        e._broker_day(day)
+        assert len(n) == 2
+
+    def test_the_other_bots_day_counts_commission_once_and_includes_entries(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path, mode="LIVE")
+        b.deals_since = lambda since, magic=0, closing_only=True: [
+            {"position": 1, "profit": -0.3, "commission": -0.3, "is_entry": True},
+            {"position": 1, "profit": -4.3, "commission": -0.3, "is_entry": False}]
+        assert e._other_day_pnl(e.day_start()) == pytest.approx(-4.6)

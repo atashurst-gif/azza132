@@ -146,6 +146,7 @@ class ScalperEngine:
     def cycle(self) -> list[str]:
         """One pass: refresh ticks, manage, scan. Returns notes."""
         now = to_utc(self.clock())
+        self._cycle_t0 = time.monotonic()
         notes: list[str] = []
         ticks = self._ticks()
         fresh_any = False
@@ -169,6 +170,7 @@ class ScalperEngine:
 
         self.hb.beat({"mode": self.scfg.mode, "open": len(self.trades), "tick_age": tick_age})
         self.write_status(now, tick_age)
+        self.cycle_ms = (time.monotonic() - getattr(self, "_cycle_t0", time.monotonic())) * 1000.0
         return notes
 
     # ---------------------------------------------------------- reconcile --
@@ -297,6 +299,7 @@ class ScalperEngine:
                                      fill.slippage_points, fill.latency_ms, spread_now, now)
         self.breakers.record_slippage(fill.slippage_points, spread_now)
         self.breakers.record_result(net, now)
+        self._broker_day_dirty = True
         if net < 0:
             self.last_loss_at = now
             self.last_loss_by_symbol[trade.symbol] = now
@@ -346,7 +349,7 @@ class ScalperEngine:
                 continue
             if not opp.tradable:
                 if opp.confidence >= 40:
-                    self.journal.record_rejected(opp, opp.features.spread_points if opp.features else 0.0, now)
+                    self.journal.record_rejected(opp, opp.features.spread_points if opp.features else 0.0, now, self.scfg.rejected_log_seconds)
                 continue
             why = self._try_open(opp, now, ticks)
             notes.append(why)
@@ -363,7 +366,7 @@ class ScalperEngine:
         side = Side.BUY if opp.direction > 0 else Side.SELL
         black = self._news_blackout(sym, now)
         if black:
-            opp.blockers.append(black); self.journal.record_rejected(opp, f.spread_points, now)
+            opp.blockers.append(black); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {black}"
         # thesis invalidation: beyond the micro extreme by a spread
         spread = tick.ask - tick.bid
@@ -372,7 +375,7 @@ class ScalperEngine:
         invalidation = (f.micro_low - buf) if side is Side.BUY else (f.micro_high + buf)
         rp = plan(spec, side, entry, invalidation, spread, self.scfg)
         if not rp.ok:
-            opp.blockers.append(rp.reason); self.journal.record_rejected(opp, f.spread_points, now)
+            opp.blockers.append(rp.reason); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {rp.reason}"
         # cost awareness: a trade whose costs eat the planned loss, or whose
         # expected move barely covers its costs, is a loser before it starts
@@ -383,13 +386,13 @@ class ScalperEngine:
         if at_stop > 0 and cost > self.scfg.max_cost_fraction_of_risk * at_stop:
             why = (f"costs {cost:.2f} would be {cost / at_stop:.0%} of the {at_stop:.2f} at risk to the stop "
                    f"(limit {self.scfg.max_cost_fraction_of_risk:.0%}); stop too tight to carry the commission")
-            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {why}"
         cost_points = (cost / rp.volume / spec.money_per_lot(spec.point)) if (rp.volume and spec.money_per_lot(spec.point)) else 0.0
         if cost_points and opp.expected_move_points < self.scfg.min_expected_move_over_cost * cost_points:
             why = (f"expected move {opp.expected_move_points:.1f} points is under {self.scfg.min_expected_move_over_cost:.0f}x "
                    f"the {cost_points:.1f}-point round-trip cost")
-            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {why}"
         # account-level safety: may block; never touches the other strategy
         try:
@@ -410,7 +413,7 @@ class ScalperEngine:
         acct_day = rs_day + self._other_day_pnl(day)
         ok, why = account_safety(self.scfg, account, others, mine, other_risk, my_risk, rs_day, acct_day, sym, side)
         if not ok:
-            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {why}"
         # duplicate protection: never two of the same symbol/side
         for t in self.trades.values():
@@ -421,7 +424,7 @@ class ScalperEngine:
         if lost_at and (now - lost_at).total_seconds() < self.scfg.symbol_pause_after_loss_seconds:
             left = (self.scfg.symbol_pause_after_loss_seconds - (now - lost_at).total_seconds()) / 60
             why = f"lost here {((now - lost_at).total_seconds()) / 60:.0f} min ago - {sym} rests for another {left:.0f} min"
-            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now)
+            opp.blockers.append(why); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {why}"
         fill = self.executor.open(sym, side, rp.volume, rp.stop, tick, spec, now)
         if not fill.ok:
@@ -453,13 +456,27 @@ class ScalperEngine:
         if fn is None:
             return 0.0
         try:
-            rows = fn(day, self.cfg.magic, True) or []
-            return float(sum(float(r.get("profit", 0) or 0) + float(r.get("commission", 0) or 0) for r in rows))
+            # "profit" is profit + commission + swap per deal; entries carry half the commission
+            rows = fn(day, self.cfg.magic, False) or []
+            return float(sum(float(r.get("profit", 0) or 0) for r in rows))
         except Exception:
             return 0.0
 
     # ------------------------------------------------------------- status --
     def _broker_day(self, day: dt.datetime) -> Optional[dict]:
+        """Cached for broker_day_cache_seconds; refreshed at once after a close."""
+        cached = getattr(self, "_broker_day_cache", None)
+        mono = time.monotonic()
+        if (cached and cached[0] == day and not getattr(self, "_broker_day_dirty", False)
+                and mono - cached[1] < self.scfg.broker_day_cache_seconds):
+            return cached[2]
+        out = self._broker_day_uncached(day)
+        if out is not None:
+            self._broker_day_cache = (day, mono, out)
+            self._broker_day_dirty = False
+        return out
+
+    def _broker_day_uncached(self, day: dt.datetime) -> Optional[dict]:
         """The scalper's day as the BROKER records it (its magic only).
 
         None when not LIVE or the broker could not be asked - never a
@@ -585,6 +602,7 @@ class ScalperEngine:
             "best_blockers": (best.blockers if best else []),
             "blocked_because": self.blocked_because,
             "position": position, "tick_age_seconds": tick_age, "latency_ms": round(self.latency_ms, 1),
+            "cycle_ms": round(getattr(self, "cycle_ms", 0.0), 1),
             "breakers": {"consecutive_losses": self.breakers.consecutive_losses,
                          "day_pnl": round(self.breakers.day_pnl, 2),
                          "avg_slippage_points": round(self.breakers.avg_slippage(), 2),
@@ -596,7 +614,11 @@ class ScalperEngine:
             "planned_max_trade_risk_gbp": self.scfg.planned_max_trade_risk_gbp,
         }
 
-    def write_status(self, now: dt.datetime, tick_age: Optional[float]) -> None:
+    def write_status(self, now: dt.datetime, tick_age: Optional[float], force: bool = False) -> None:
+        mono = time.monotonic()
+        if not force and mono - getattr(self, "_status_at", 0.0) < self.scfg.status_interval_seconds:
+            return
+        self._status_at = mono
         try:
             tmp = self.status_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(self.status(now, tick_age), default=str))

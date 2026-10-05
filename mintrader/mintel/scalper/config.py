@@ -108,6 +108,9 @@ class ScalperConfig:
     manage_interval_seconds: float = 0.25
     scan_interval_seconds: float = 1.0
     status_file: str = "scalper-status.json"
+    status_interval_seconds: float = 2.0         # the page refreshes every 10 s; no need for more
+    broker_day_cache_seconds: float = 30.0
+    rejected_log_seconds: float = 60.0           # one row per market per reason per minute
     journal_file: str = "scalper.sqlite"
     weights: ScoreWeights = field(default_factory=ScoreWeights)
     # Per-market limits in PRICE units (index points, not broker points).

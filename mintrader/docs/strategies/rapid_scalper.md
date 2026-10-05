@@ -214,6 +214,31 @@ commission at this broker, which is the cost the scalper was losing to.
 All the other gates still apply: confidence, the cost gate, the four-
 spread minimum stop, the GBP 10 planned loss, the rests after losses.
 
+## The liquidity gate measured the bot, not the market (5 October)
+
+Three live days: 69 trades, +12.60 on price, 50.18 in costs, net -37.58.
+Back to PAPER on 5 October. The same morning the rejected-setup log
+showed almost every market "too thin (9 ticks/min)" all night - US30,
+EURUSD, USDJPY alike. The scalper polls the latest price once per pass
+over its 15 markets, so its buffer could never hold more ticks than
+passes per minute; a 20-tick floor therefore blocked nearly everything
+and only gold slipped through now and then. Every live trade so far was
+gold for that reason, not by choice.
+
+Fixes: liquidity is the broker's own tick count per one-minute bar
+(median of the last three completed bars); the status file is written
+every 2 s instead of every pass; the broker's day figures are cached for
+30 s (refreshed at once after a close); rejected setups are logged once
+per market per reason per minute (tens of thousands of rows a night
+before); the other bot's day, used by account safety, now counts
+commission once and includes the entry half. The status page shows how
+long one full pass takes ("one full pass (ms)").
+
+It stays in PAPER until its result on price is clearly larger than its
+costs over several days. With the gate fixed it will see many more
+setups; the cost gate (25% of the money at the stop) and the confidence
+bar decide which of them it takes.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily
