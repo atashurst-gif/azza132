@@ -34,7 +34,7 @@ The nightly review adds one line per trading day.
 
 | Day | Trades | Wins | Net | Commission | Best approach | Notes |
 |---|---|---|---|---|---|---|
-| 5 Oct (from 12:30 UK, to 15:45) | 4 | 3 | +67.47 | ~0.6 | Momentum continuation, fast market | GBPCHF +22.51, US30 +30.71, US30 -7.38, US500 +22.54; three of four on commission-free indices |
+| 5 Oct (from 12:30 UK) | 4 | 3 | +67.47 | 1.82 | Momentum continuation, fast market (4 of 4) | GBPCHF +21.60 (1.82 commission), US30 +30.71, US30 -7.38, US500 +22.54 (trailed, peak +3.2R); indices +45.87 of it; nothing after 15:30 UK. Scalper paper -41.12 on 36 (old build). Overnight before the reset, old rules: 8 FX/silver trades 02:00-04:00 UK, -26.31 |
 
 ## Rapid Scalper (separate, in PAPER)
 
