@@ -109,14 +109,25 @@ class ScalperEngine:
         return out
 
     def day_start(self) -> dt.datetime:
+        """The broker's day, or the measuring start if that is later (a reset
+        to zero starts the scalper's figures at the same moment as the page)."""
         now = to_utc(self.clock())
+        day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         clock = getattr(self.broker, "clock", None)
         if clock is not None and hasattr(clock, "day_start_utc"):
             try:
-                return clock.day_start_utc(now)
+                day = clock.day_start_utc(now)
             except Exception:
                 pass
-        return now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_txt = getattr(self.cfg, "tracking_start_utc", "") or ""
+        if start_txt:
+            try:
+                start = to_utc(dt.datetime.fromisoformat(start_txt.replace("Z", "+00:00")))
+                if start > day and start <= now:
+                    day = start
+            except ValueError:
+                pass
+        return day
 
     def _news_blackout(self, symbol: str, now: dt.datetime) -> str:
         c = self.scfg

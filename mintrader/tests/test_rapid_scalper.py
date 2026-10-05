@@ -1029,3 +1029,16 @@ class TestEntryHours:
         e.cycle()
         assert b.now.hour != 0 and any("outside its trading hours" in w for w in e.blocked_because)
         assert ScalperConfig().entry_hours_utc == ()                    # default: every hour
+
+
+
+class TestResetToZero:
+    def test_the_scalpers_day_starts_at_the_measuring_start_when_later(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path)
+        midnight = b.now.replace(hour=0, minute=0, second=0, microsecond=0)
+        assert e.day_start() == midnight
+        e.cfg.tracking_start_utc = (b.now - dt.timedelta(minutes=5)).isoformat()
+        assert e.day_start() == b.now - dt.timedelta(minutes=5)
+        e.cfg.tracking_start_utc = (b.now + dt.timedelta(hours=1)).isoformat()   # a future start is ignored
+        assert e.day_start() == midnight

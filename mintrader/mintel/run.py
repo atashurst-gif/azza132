@@ -469,7 +469,9 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
     try:
         from .ops.attribution import build_strategies
         state.update(strategies=build_strategies(
-            trader.journal, positions, broker_day_start(trader.broker, trader.clock()),
+            # the strategy tabs start where the rest of the page starts: the
+            # broker's day, or the measuring start if that is later
+            trader.journal, positions, trader._strategy_day_start(to_utc(trader.clock())),
             account.currency if account else "GBP", trader.cfg.ops.data_dir,
             ledger.get("today") if ledger.get("source") == "broker" else None))
     except Exception as exc:
