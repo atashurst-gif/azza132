@@ -1088,3 +1088,16 @@ class TestStreakRestartsAtTheReset:
         assert j.consecutive_losses(T0 + dt.timedelta(hours=1)) == 0
         assert j.consecutive_losses(mode="LIVE") == 0
         j.close()
+
+
+
+class TestScalperPicksUpALaterReset:
+    def test_a_reset_written_after_the_scalper_started_is_seen(self, tmp_path):
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path)
+        midnight = b.now.replace(hour=0, minute=0, second=0, microsecond=0)
+        assert e.day_start() == midnight
+        reset = b.now - dt.timedelta(minutes=3)
+        (tmp_path / "config.json").write_text(json.dumps({"tracking_start_utc": reset.isoformat()}))
+        e._start_read_at = -1e9
+        assert e.day_start() == reset

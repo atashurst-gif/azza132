@@ -121,6 +121,17 @@ class ScalperEngine:
                 day = clock.day_start_utc(now)
             except Exception:
                 pass
+        # the main bot writes the measuring start into config.json when it
+        # resets; the scalper may have started first, so re-read it each minute
+        mono = time.monotonic()
+        if mono - getattr(self, "_start_read_at", -1e9) > 60.0:
+            self._start_read_at = mono
+            try:
+                raw = json.loads((Path(self.cfg.ops.data_dir) / "config.json").read_text())
+                if raw.get("tracking_start_utc"):
+                    self.cfg.tracking_start_utc = str(raw["tracking_start_utc"])
+            except Exception:
+                pass
         start_txt = getattr(self.cfg, "tracking_start_utc", "") or ""
         if start_txt:
             try:
