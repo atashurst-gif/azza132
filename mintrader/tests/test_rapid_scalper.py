@@ -917,7 +917,7 @@ class TestIndicesCanTrade:
         # 2.0 index-point spread, 10 index-point stop: ordinary for US30
         rp = plan(spec, Side.BUY, 50700.00, 50690.00, 2.0, ScalperConfig())
         assert rp.ok, rp.reason
-        assert rp.planned_loss <= 10.0 + 1e-9 and rp.commission == pytest.approx(ScalperConfig().commission_per_lot_round_turn * rp.volume)
+        assert rp.planned_loss <= 10.0 + 1e-9 and rp.commission == 0.0          # indices: no commission
         # before the fix the same trade was "too far for a scalp"
         old = ScalperConfig(); old.symbol_limits = {}
         assert not plan(spec, Side.BUY, 50700.00, 50690.00, 2.0, old).ok
@@ -1003,3 +1003,29 @@ class TestRealLiquidity:
             {"position": 1, "profit": -0.3, "commission": -0.3, "is_entry": True},
             {"position": 1, "profit": -4.3, "commission": -0.3, "is_entry": False}]
         assert e._other_day_pnl(e.day_start()) == pytest.approx(-4.6)
+
+
+
+class TestScalperCommissionPerMarket:
+    def test_indices_carry_no_commission_in_the_plan(self):
+        from mintel.contracts import SymbolSpec
+        spec = SymbolSpec(name="US500", digits=2, point=0.01, tick_size=0.01, tick_value=0.0079,
+                          contract_size=1.0, volume_min=0.01, volume_max=100.0, volume_step=0.01,
+                          stops_level_points=0, freeze_level_points=0)
+        rp = plan(spec, Side.BUY, 7600.00, 7597.00, 0.5, ScalperConfig())
+        assert rp.ok and rp.commission == 0.0
+        assert ScalperConfig().commission_for("XAUUSD") == ScalperConfig().commission_per_lot_round_turn
+
+
+
+class TestEntryHours:
+    def test_entries_only_inside_the_chosen_hours(self, tmp_path):
+        p = tmp_path / "scalper.json"
+        p.write_text(json.dumps({"mode": "LIVE", "entry_hours_utc": [0]}))
+        c = ScalperConfig.load(p)
+        assert c.entry_hours_utc == (0,)
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        e = _engine(b, tmp_path / "e", entry_hours_utc=(0,))
+        e.cycle()
+        assert b.now.hour != 0 and any("outside its trading hours" in w for w in e.blocked_because)
+        assert ScalperConfig().entry_hours_utc == ()                    # default: every hour

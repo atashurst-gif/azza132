@@ -239,6 +239,19 @@ costs over several days. With the gate fixed it will see many more
 setups; the cost gate (25% of the money at the stop) and the confidence
 bar decide which of them it takes.
 
+## Commission per market, and when to trade (5 October)
+
+Indices now carry no commission in the scalper's plan and results
+(`symbol_limits[...]["commission"] = 0`); before, they were charged the
+6.00 a lot used for gold and FX, which made them look worse than they are.
+
+`entry_hours_utc` limits when new trades may open (empty = every hour).
+Gold in the first hour after midnight UTC: Fri 6 trades +17.34, Mon 6
+trades +74.38. Every other hour of the three live days: 57 trades, -128.
+Two days is not proof. The scalper stays in PAPER at every hour to
+measure it; if it holds, LIVE in that hour alone is
+`{"mode": "LIVE", "entry_hours_utc": [0]}` in data/scalper.json.
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

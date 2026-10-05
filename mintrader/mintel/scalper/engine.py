@@ -267,7 +267,7 @@ class ScalperEngine:
         spec = trade.spec or self.spec(trade.symbol)
         exit_price = fill.price if fill.ok and fill.price else trade.stop
         gross = spec.money((exit_price - trade.entry_filled) * trade.side.sign, trade.volume) if spec else 0.0
-        commission = self.scfg.commission_per_lot_round_turn * trade.volume
+        commission = self.scfg.commission_for(trade.symbol) * trade.volume
         if pnl_override is None and self.executor is not None and self.executor.mode == "LIVE":
             # the broker's record of profit + commission + swap is the truth
             for _ in range(3):
@@ -341,6 +341,9 @@ class ScalperEngine:
             blocked.append("spacing between entries")
         if self.last_loss_at and (now - self.last_loss_at).total_seconds() < self.scfg.cooldown_after_loss_seconds:
             blocked.append("cooling down after a loss")
+        hours = tuple(int(h) for h in (self.scfg.entry_hours_utc or ()))
+        if hours and now.hour not in hours:
+            blocked.append(f"outside its trading hours ({', '.join(f'{h:02d}:00' for h in hours)} UTC)")
         self.blocked_because = blocked
         if blocked:
             return notes

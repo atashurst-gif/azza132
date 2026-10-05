@@ -137,7 +137,7 @@ def replay(symbol: str, ticks: Sequence[Tick], spec: SymbolSpec, cfg: ScalperCon
         assert trade is not None
         exit_px = spec.normalise_price(px - trade.side.sign * slip_pts * spec.point)
         gross = spec.money((exit_px - trade.entry_filled) * trade.side.sign, trade.volume)
-        net = gross - cfg.commission_per_lot_round_turn * trade.volume
+        net = gross - cfg.commission_for(trade.symbol) * trade.volume
         res.trades.append(BTTrade(symbol, trade.side.value, trade.opened_at, t.time, trade.entry_filled, exit_px,
                                   trade.volume, net, gross, reason, trade.peak_r, trade.mae_r, trade.confidence,
                                   trade.state, (t.time - trade.opened_at).total_seconds()))

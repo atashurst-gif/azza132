@@ -55,6 +55,12 @@ class ScalperConfig:
     chop_block: bool = True
     late_entry_penalty_max: float = 25.0
     min_seconds_between_entries: float = 20.0
+    # Hours (UTC, 0-23) in which new trades may open. Empty = every hour.
+    # 5 Oct: gold, 00:00-00:59 UTC: Fri 6 trades +17.34, Mon 6 trades +74.38;
+    # every other hour of the three live days: 57 trades -128. Two days is
+    # not proof, so PAPER trades every hour to measure it; going LIVE in
+    # that hour alone is one line in scalper.json: "entry_hours_utc": [0].
+    entry_hours_utc: tuple[int, ...] = ()
     max_cost_fraction_of_risk: float = 0.25      # commission+spread+slippage <= 25% of the money at the stop
     min_expected_move_over_cost: float = 3.0     # the expected move must be >= 3x the round-trip cost
     cooldown_after_loss_seconds: float = 120.0   # no new trade anywhere for 2 min after a loss
@@ -119,11 +125,18 @@ class ScalperConfig:
     # point is 0.01 - so the commission-free indices could never trade.
     # Markets not listed here use the point-based limits above.
     symbol_limits: dict = field(default_factory=lambda: {
-        "US500": {"max_spread": 1.0, "min_stop": 1.5, "max_stop": 15.0},
-        "US30": {"max_spread": 4.0, "min_stop": 6.0, "max_stop": 60.0},
-        "DE40": {"max_spread": 3.0, "min_stop": 5.0, "max_stop": 50.0},
-        "UK100": {"max_spread": 2.5, "min_stop": 4.0, "max_stop": 40.0},
+        "US500": {"max_spread": 1.0, "min_stop": 1.5, "max_stop": 15.0, "commission": 0.0},
+        "US30": {"max_spread": 4.0, "min_stop": 6.0, "max_stop": 60.0, "commission": 0.0},
+        "DE40": {"max_spread": 3.0, "min_stop": 5.0, "max_stop": 50.0, "commission": 0.0},
+        "UK100": {"max_spread": 2.5, "min_stop": 4.0, "max_stop": 40.0, "commission": 0.0},
     })
+
+    def commission_for(self, symbol: str) -> float:
+        """Round-trip commission per lot for this market (indices: none)."""
+        lim = (self.symbol_limits or {}).get(str(symbol).upper()) or {}
+        if "commission" in lim:
+            return float(lim["commission"])
+        return float(self.commission_per_lot_round_turn)
 
     def limits_points(self, symbol: str, point: float) -> tuple[float, float, float]:
         """(max spread, min stop, max stop) in this market's broker points."""
@@ -161,6 +174,8 @@ class ScalperConfig:
                         setattr(cfg.weights, wk, float(wv))
             elif k == "symbols" and isinstance(v, (list, tuple)):
                 cfg.symbols = tuple(str(s) for s in v)
+            elif k == "entry_hours_utc" and isinstance(v, (list, tuple)):
+                cfg.entry_hours_utc = tuple(int(h) % 24 for h in v)
             elif hasattr(cfg, k) and k != "weights":
                 cur = getattr(cfg, k)
                 try:

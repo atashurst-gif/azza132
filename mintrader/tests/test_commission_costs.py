@@ -31,7 +31,10 @@ class TestCommissionInPips:
     def test_learned_commission_becomes_pips_and_part_of_cost(self):
         sc, broker = _scanner()
         spec = broker.spec("EURUSD")
-        assert sc.commission_pips("EURUSD", spec) == 0.0, "nothing learned yet: no invented cost"
+        # 5 Oct: nothing learned yet must NOT mean free - the measured fallback applies
+        assert sc.commission_pips("EURUSD", spec) == 0.6, "nothing learned yet: the fallback, never zero"
+        sc.cfg.risk.commission_fallback_per_lot = 0.0
+        assert sc.commission_pips("EURUSD", spec) == 0.0
         sc.commission_per_lot = {"EURUSD": 5.5, "*": 6.0}
         pips = sc.commission_pips("EURUSD", spec)
         expected = 5.5 / spec.money_per_lot(spec.pip_size)
@@ -121,3 +124,16 @@ class TestBridgePassesTheFlag:
         svc.handle("deals_since", {"since": NOW.isoformat(), "magic": 1, "closing_only": False})
         svc.handle("deals_since", {"since": NOW.isoformat(), "magic": 1})
         assert seen == [False, True]
+
+
+
+class TestNeverAssumeFree:
+    def test_indices_cost_nothing_and_unseen_fx_uses_the_fallback(self):
+        cfg = Config()
+        broker = SimBroker(["EURUSD", "US30"], start=NOW - dt.timedelta(days=3)); broker.connect()
+        sc = Scanner(broker, cfg)
+        assert sc.commission_money_per_lot("US30") == 0.0
+        assert sc.commission_money_per_lot("EURUSD") == 6.0
+        sc.commission_per_lot = {"EURUSD": 5.2, "*": 5.2}
+        assert sc.commission_money_per_lot("EURUSD") == 5.2           # learned wins
+        assert sc.commission_money_per_lot("GBPUSD") == 6.0           # unseen: never below the fallback

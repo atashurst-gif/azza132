@@ -45,6 +45,11 @@ class RiskConfig:
     # charged on this account); set it to override. Counted in every
     # reward:risk test, because on a 3-pip scalp it is most of the cost.
     commission_per_lot: float = 0.0
+    # Until the bot has seen a market's commission in its own deals, it must
+    # not assume zero. Measured at IC Markets Raw (GBP) from the broker's
+    # deals, 1-5 Oct: about 5.50 a lot round turn on FX, gold and silver;
+    # nothing on indices. A fresh account starts from these, then learns.
+    commission_fallback_per_lot: float = 6.00
     max_orders_per_hour: int = 30
     # --- Kelly (conservative, capped) ---------------------------------------
     use_fractional_kelly: bool = True
@@ -311,7 +316,7 @@ class OpsConfig:
 
 # Bump this whenever the trading rules change in a way that makes earlier
 # results a different experiment. The status page resets to it automatically.
-STRATEGY_VERSION = "2026-09-15 balanced - half the pace, wiser choices"
+STRATEGY_VERSION = "2026-10-05 fresh 2,000 account - commission first, losing markets off, entries 70+"
 
 
 @dataclass

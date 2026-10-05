@@ -57,7 +57,8 @@ def plan(spec: SymbolSpec, side: Side, entry: float, invalidation: float,
         return RiskPlan(False, "stop closer than the broker's minimum distance")
     slip = cfg.slippage_allowance_points * spec.point * 2      # entry and exit
     effective = dist + spread_price + slip
-    per_lot = spec.money_per_lot(effective) + cfg.commission_per_lot_round_turn
+    commission_lot = cfg.commission_for(spec.name)
+    per_lot = spec.money_per_lot(effective) + commission_lot
     if per_lot <= 0:
         return RiskPlan(False, "cannot value the stop distance")
     budget = cfg.planned_max_trade_risk_gbp
@@ -73,7 +74,7 @@ def plan(spec: SymbolSpec, side: Side, entry: float, invalidation: float,
     if planned > budget + 1e-9:
         return RiskPlan(False, "planned loss exceeds the ceiling after rounding")
     return RiskPlan(True, "", side, entry, invalidation, pts, effective / spec.point, volume,
-                    per_lot, planned, cfg.commission_per_lot_round_turn * volume,
+                    per_lot, planned, commission_lot * volume,
                     spec.money_per_lot(spread_price) * volume,
                     spec.money_per_lot(slip) * volume)
 

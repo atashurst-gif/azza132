@@ -217,7 +217,7 @@ class Manager:
             trade.exit_tolerance = "TIGHT"
         elif trade.state == "CAPITAL_SAFE":
             costs = (trade.spec.money_per_lot(tick.ask - tick.bid) * trade.volume if trade.spec else 0.0) \
-                + c.commission_per_lot_round_turn * trade.volume
+                + c.commission_for(trade.symbol) * trade.volume
             be_dist = (costs / max(trade.spec.money_per_lot(trade.point) * trade.volume, 1e-9)) * trade.point if trade.spec else 0.0
             cand = trade.entry_filled + sign * max(be_dist, 0.0)
             new_stop = self._advance(trade, cand, "capital safe: break-even after costs", now, price)

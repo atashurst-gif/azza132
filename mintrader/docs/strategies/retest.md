@@ -160,6 +160,18 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
     days positive), XAUCHF +47.80 (6/9), US500 +39.24 (4/7), EURCHF
     +33.79 (2/2), US30 +29.21 (7/10), XAUUSD +17.46 (4/6).
 
+- 2026-10-05: fresh GBP 2,000 account. The measuring clock restarts
+  (new STRATEGY_VERSION). Commission is never assumed to be zero any
+  more: until a market's commission has been seen in the bot's own deals
+  it uses 6.00 a lot round turn (measured 1-5 Oct at about 5.50 on FX,
+  gold and silver), and indices cost nothing. On a new account the old
+  rule meant the first trades in every market were judged as free.
+  Looked at and NOT changed: a tighter cost cap. Grouping 281 trades by
+  commission as a share of their risk gave no clean line (10-15%: -47.06
+  on 104 trades; 15-20%: +17.86 on 40), so the 20% cap stays.
+  Risk is a percentage of the account, so on 2,000 each trade risks
+  about 10 at the 0.5% default and the daily loss stop is about 60 at 3%.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

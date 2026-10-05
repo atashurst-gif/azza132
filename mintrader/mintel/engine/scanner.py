@@ -245,8 +245,15 @@ class Scanner:
         configured = float(getattr(self.cfg.risk, "commission_per_lot", 0.0) or 0.0)
         if configured > 0:
             return configured
-        return float(self.commission_per_lot.get(symbol)
-                     or self.commission_per_lot.get("*") or 0.0)
+        learned = self.commission_per_lot.get(symbol)
+        if learned:
+            return float(learned)
+        if infer_group(symbol) == "INDEX":
+            return 0.0                    # no commission on indices at this broker
+        # Never assume a market is free just because we have not traded it:
+        # the average of what we have seen, or the measured fallback.
+        fallback = float(getattr(self.cfg.risk, "commission_fallback_per_lot", 0.0) or 0.0)
+        return float(max(self.commission_per_lot.get("*") or 0.0, fallback))
 
     def commission_pips(self, symbol: str, spec: SymbolSpec) -> float:
         """Round-trip commission for this symbol, in pips of its price."""
