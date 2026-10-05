@@ -151,6 +151,13 @@ class Manager:
         # is certainly going there: deep against us on the mid AND the tape is
         # still moving towards the stop. Flat, wobbling or merely negative
         # trades are left to prove themselves or to the stop.
+        # the reason for the trade has gone: the 1- and 5-minute moves have
+        # turned against it while it is under water - cut it (5 Oct)
+        if (trade.state == "INITIAL_RISK" and f is not None and getattr(f, "bars_ok", False)
+                and r_mid <= -0.3 and f.move_1m_points * sign < 0 and f.move_5m_points * sign < 0):
+            return Decision(close=True, exit_reason="THESIS_FAILED",
+                            reason=f"{r_mid:.2f}R under and the 1- and 5-minute moves have turned against it",
+                            state=trade.state)
         if trade.state == "INITIAL_RISK" and secs <= c.prove_it_seconds * 3:
             against = f is not None and (vel < 0 or f.consecutive_ticks * sign <= -c.thesis_fail_min_ticks_against)
             if r_mid <= -c.thesis_fail_adverse_r and against:
@@ -201,17 +208,20 @@ class Manager:
                 trade.runner_history = trade.runner_history[-400:]
 
         # ---- momentum decay exit: the reason we entered is gone
-        if trade.state in ("CAPITAL_SAFE", "PROFIT_PROTECTED", "RUNNER") and f is not None:
-            decayed = (trade.peak_velocity > 0 and vel < c.momentum_decay_velocity_ratio * trade.peak_velocity)
-            opposing = f.consecutive_ticks * sign <= -5
-            if decayed and opposing and money > 0:
+        # Ride the high: a winner is only let go when the BIGGER picture turns -
+        # never on a few seconds of ticks (5 Oct). Momentum decay needs both the
+        # 1- and 5-minute moves against the trade; a structure break needs the
+        # price through the last two completed one-minute bars.
+        if trade.state in ("PROFIT_PROTECTED", "RUNNER") and f is not None and getattr(f, "bars_ok", False):
+            turned = f.move_1m_points * sign < 0 and f.move_5m_points * sign < 0
+            if turned and money > 0:
                 return Decision(close=True, exit_reason="MOMENTUM_DECAY",
-                                reason=f"momentum reversed (velocity {vel:+.1f} vs peak {trade.peak_velocity:.1f}, "
-                                       f"{abs(f.consecutive_ticks)} opposing ticks)", state=trade.state)
-            lost_level = ((price < f.micro_low) if sign > 0 else (price > f.micro_high)) and trade.state != "RUNNER"
-            if lost_level and money > 0 and trade.peak_r >= c.capital_safe_at_r:
+                                reason=f"the 1- and 5-minute moves have both turned "
+                                       f"({f.move_1m_points:+.0f}, {f.move_5m_points:+.0f} points)", state=trade.state)
+            lost_level = (price < f.bar_low_2) if sign > 0 else (price > f.bar_high_2)
+            if lost_level and money > 0 and trade.state != "RUNNER":
                 return Decision(close=True, exit_reason="STRUCTURE_BREAK",
-                                reason="price lost the structural level supporting the trade", state=trade.state)
+                                reason="price broke the last two one-minute bars", state=trade.state)
 
         # ---- stop advancement by state
         new_stop = None
@@ -233,9 +243,11 @@ class Manager:
                 giveback = min(0.75, giveback + 0.15 * (trade.runner_probability - c.runner_min_probability) / 40.0)
             hw = trade.high_water_price
             cand = hw - sign * max(giveback * abs(hw - trade.entry_filled), noise)
-            if f is not None:
-                struct = f.micro_low - noise if sign > 0 else f.micro_high + noise
-                cand = max(cand, struct) if sign > 0 else min(cand, struct)
+            if f is not None and getattr(f, "bars_ok", False):
+                # trail behind the last two completed one-minute bars, not the
+                # last few seconds of ticks: pullbacks inside a trend are allowed
+                struct = f.bar_low_2 - noise if sign > 0 else f.bar_high_2 + noise
+                cand = min(cand, struct) if sign > 0 else max(cand, struct)
             # the floor never retreats: at least what was already protected
             new_stop = self._advance(trade, cand, f"{trade.state.lower().replace('_', ' ')}: trailing "
                                      f"{giveback:.0%} behind the high-water mark", now, price)

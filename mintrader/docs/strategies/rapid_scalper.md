@@ -252,6 +252,26 @@ Two days is not proof. The scalper stays in PAPER at every hour to
 measure it; if it holds, LIVE in that hour alone is
 `{"mode": "LIVE", "entry_hours_utc": [0]}` in data/scalper.json.
 
+## Look before moving, ride the highs (5 October, Aaron's rules)
+
+The paper trades after the reset showed the scalper still cutting winners
+short. Three reasons, all fixed:
+
+- the profit trail followed the lowest tick of the last few seconds, so a
+  normal flicker inside a move closed the trade. It now trails behind the
+  last two completed one-minute bars (or the give-back from the high, now
+  50%, whichever leaves more room); the stop still only ever tightens
+- "momentum gone" fired on five ticks the wrong way. It now needs BOTH the
+  1-minute and 5-minute moves to have turned against the trade, and only
+  once profit is protected
+- it never looked past about 30 seconds of ticks. Every entry now needs
+  the last 1, 5 and 20 minutes all moving the trade's way
+  (`require_timeframe_alignment`)
+
+Losses are cut sooner, as allowed: a trade still at its initial risk exits
+when it is 0.3 R under and the 1- and 5-minute moves have turned against
+it, and the "certainly going there" early exit is now at 0.6 R (was 0.8).
+
 ## Safety
 
 Circuit breakers (all in `scalper.json`): consecutive losses, scalper daily

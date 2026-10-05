@@ -53,6 +53,11 @@ def score(f: Features, cfg: ScalperConfig) -> Opportunity:
         opp.blockers.append("no immediate directional move")
         return opp
     opp.direction = d
+    if cfg.require_timeframe_alignment and getattr(f, "bars_ok", False):
+        tf = f.timeframes()
+        if any(x != d for x in tf):
+            arrow = lambda x: "up" if x > 0 else ("down" if x < 0 else "flat")    # noqa: E731
+            opp.blockers.append(f"1/5/20-minute moves not lined up ({arrow(tf[0])}, {arrow(tf[1])}, {arrow(tf[2])})")
     vol = max(f.realised_vol_points, 0.1)
 
     # A. immediate momentum: movement beginning NOW

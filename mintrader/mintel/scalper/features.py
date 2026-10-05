@@ -94,9 +94,22 @@ class Features:
     # structure
     micro_low: float = 0.0
     micro_high: float = 0.0
+    # the bigger picture, from one-minute bars (points, signed: + is up)
+    move_1m_points: float = 0.0
+    move_5m_points: float = 0.0
+    move_20m_points: float = 0.0
+    bars_ok: bool = False
+    # the last two COMPLETED one-minute bars: where a trend's pullbacks hold
+    bar_low_2: float = 0.0
+    bar_high_2: float = 0.0
     dist_from_fast_ema_points: float = 0.0
     # order flow - not available over this feed
     order_flow_available: bool = False
+
+    def timeframes(self) -> tuple[int, int, int]:
+        """Direction (+1/-1/0) of the last 1, 5 and 20 minutes."""
+        sg = lambda x: 1 if x > 0 else (-1 if x < 0 else 0)    # noqa: E731
+        return sg(self.move_1m_points), sg(self.move_5m_points), sg(self.move_20m_points)
 
     def direction(self) -> int:
         """Where the immediate move is going, if anywhere."""
@@ -213,6 +226,15 @@ def compute(symbol: str, buf: TickBuffer, bars: Sequence[Bar], point: float,
             if (b.high > hi20 and b.close < hi20) or (b.low < lo20 and b.close > lo20):
                 fails += 1
         f.failed_breakouts = fails
+    if len(bars) >= 23:
+        now_px = closes[-1]                      # the forming bar's latest price
+        f.move_1m_points = (now_px - closes[-2]) / point
+        f.move_5m_points = (now_px - closes[-6]) / point
+        f.move_20m_points = (now_px - closes[-21]) / point
+        done2 = bars[-3:-1]
+        f.bar_low_2 = min(b.low for b in done2)
+        f.bar_high_2 = max(b.high for b in done2)
+        f.bars_ok = True
         if f.mid > f.ema_fast > f.ema_slow:
             f.trend_bias = 1
         elif f.mid < f.ema_fast < f.ema_slow:

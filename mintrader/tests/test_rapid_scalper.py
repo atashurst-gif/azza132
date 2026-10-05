@@ -233,16 +233,43 @@ class TestProveItAndRunner:
         if t.state == "RUNNER":
             assert t.exit_tolerance == "WIDENED"
 
-    def test_momentum_decay_exit_when_the_reason_is_gone(self):
+    def test_a_few_seconds_of_ticks_against_a_winner_do_not_close_it(self):
+        """5 Oct (Aaron): ride highs properly. Tick-level reversals are noise."""
         m = Manager(scfg())
         t = self._trade()
         strong = SimpleNamespace(velocity_5s=3.0, persistence=0.9, trend_bias=1, volume_accel=1.8, acceleration=0.5,
-                                 realised_vol_points=1.0, bar_range_ratio=2.0, consecutive_ticks=6, micro_low=1.0998, micro_high=1.1030)
-        for i, px in enumerate([1.1004, 1.1008, 1.1012, 1.1016]):
+                                 realised_vol_points=1.0, bar_range_ratio=2.0, consecutive_ticks=6, micro_low=1.0998, micro_high=1.1030,
+                                 bars_ok=True, move_1m_points=40.0, move_5m_points=120.0, move_20m_points=200.0,
+                                 bar_low_2=1.0995, bar_high_2=1.1018)
+        for i, px in enumerate([1.1004, 1.1008, 1.1012, 1.1016, 1.1020]):
             m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=10 + i), px, px + 0.0001), strong, T0 + dt.timedelta(seconds=10 + i))
-        dead = SimpleNamespace(**{**strong.__dict__, "velocity_5s": -2.5, "consecutive_ticks": -6, "micro_low": 1.0998})
-        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=20), 1.1012, 1.1013), dead, T0 + dt.timedelta(seconds=20))
-        assert d.close and d.exit_reason == "MOMENTUM_DECAY" and "reversed" in d.reason
+        assert t.state in ("PROFIT_PROTECTED", "RUNNER")
+        noise = SimpleNamespace(**{**strong.__dict__, "velocity_5s": -2.5, "consecutive_ticks": -6, "move_1m_points": -10.0})
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=20), 1.1012, 1.1013), noise, T0 + dt.timedelta(seconds=20))
+        assert not d.close, d.reason                       # 5-minute move still with us: hold
+
+    def test_momentum_decay_needs_the_one_and_five_minute_moves_to_turn(self):
+        m = Manager(scfg())
+        t = self._trade()
+        strong = SimpleNamespace(velocity_5s=3.0, persistence=0.9, trend_bias=1, volume_accel=1.8, acceleration=0.5,
+                                 realised_vol_points=1.0, bar_range_ratio=2.0, consecutive_ticks=6, micro_low=1.0998, micro_high=1.1030,
+                                 bars_ok=True, move_1m_points=40.0, move_5m_points=120.0, move_20m_points=200.0,
+                                 bar_low_2=1.0995, bar_high_2=1.1018)
+        for i, px in enumerate([1.1004, 1.1008, 1.1012, 1.1016, 1.1020]):
+            m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=10 + i), px, px + 0.0001), strong, T0 + dt.timedelta(seconds=10 + i))
+        turned = SimpleNamespace(**{**strong.__dict__, "move_1m_points": -30.0, "move_5m_points": -15.0})
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=80), 1.1014, 1.1015), turned, T0 + dt.timedelta(seconds=80))
+        assert d.close and d.exit_reason == "MOMENTUM_DECAY" and "5-minute" in d.reason
+
+    def test_a_loser_is_cut_when_the_bigger_picture_turns_against_it(self):
+        m = Manager(scfg())
+        t = self._trade()
+        ctx = SimpleNamespace(velocity_5s=0.0, persistence=0.3, trend_bias=0, volume_accel=1.0, acceleration=0.0,
+                              realised_vol_points=1.0, bar_range_ratio=1.0, consecutive_ticks=0, micro_low=1.0990, micro_high=1.1005,
+                              bars_ok=True, move_1m_points=-20.0, move_5m_points=-40.0, move_20m_points=30.0,
+                              bar_low_2=1.0990, bar_high_2=1.1005)
+        d = m.update(t, Tick("EURUSD", T0 + dt.timedelta(seconds=40), 1.09955, 1.09965), ctx, T0 + dt.timedelta(seconds=40))
+        assert d.close and d.exit_reason == "THESIS_FAILED" and "1- and 5-minute" in d.reason
 
 
 # ============================================================ score and features --
@@ -1143,3 +1170,29 @@ class TestWhatIsWorking:
         for needle in ("Commission First (version 2)", "By approach", "Momentum continuation in a high vol market",
                        "By kind of market", "Indices (no commission)"):
             assert needle in page, needle
+
+
+
+class TestLookBeforeMoving:
+    def test_entries_need_the_one_five_and_twenty_minute_moves_lined_up(self):
+        from mintel.scalper.features import Features
+        from mintel.scalper.score import score
+        f = Features(symbol="EURUSD", ok=True, point=0.00001, spread_points=1.0, spread_avg_points=1.0,
+                     velocity_5s=2.0, rate_of_change_30s_points=20.0, realised_vol_points=1.0, atr_points=30.0,
+                     bars_ok=True, move_1m_points=10.0, move_5m_points=30.0, move_20m_points=-50.0)
+        o = score(f, ScalperConfig())
+        assert any("1/5/20-minute moves not lined up (up, up, down)" in b for b in o.blockers)
+        f.move_20m_points = 80.0
+        assert not any("not lined up" in b for b in score(f, ScalperConfig()).blockers)
+
+    def test_features_measure_the_last_1_5_and_20_minutes_from_bars(self):
+        from mintel.broker.base import Bar
+        from mintel.scalper.features import TickBuffer, compute
+        bars = [Bar(T0 - dt.timedelta(minutes=30 - i), 1.1 + i * 0.0001, 1.1 + i * 0.0001 + 0.00005,
+                    1.1 + i * 0.0001 - 0.00005, 1.1 + i * 0.0001, tick_volume=100) for i in range(30)]
+        buf = TickBuffer("EURUSD")
+        for k in range(40):
+            buf.add(Tick("EURUSD", T0 - dt.timedelta(seconds=40 - k), 1.1029, 1.10292, 1.10291, 1.0))
+        f = compute("EURUSD", buf, bars, 0.00001, T0)
+        assert f.bars_ok and f.timeframes() == (1, 1, 1)
+        assert round(f.move_5m_points) == 50 and round(f.move_20m_points) == 200

@@ -55,6 +55,9 @@ class ScalperConfig:
     chop_block: bool = True
     late_entry_penalty_max: float = 25.0
     min_seconds_between_entries: float = 20.0
+    # Look before moving: the last 1, 5 and 20 minutes must all point the
+    # way of the trade (Aaron, 5 Oct). False switches the check off.
+    require_timeframe_alignment: bool = True
     # Hours (UTC, 0-23) in which new trades may open. Empty = every hour.
     # 5 Oct: gold, 00:00-00:59 UTC: Fri 6 trades +17.34, Mon 6 trades +74.38;
     # every other hour of the three live days: 57 trades -128. Two days is
@@ -70,15 +73,15 @@ class ScalperConfig:
     # --- management ------------------------------------------------------
     prove_it_seconds: float = 15.0               # the thesis must show within this
     prove_it_min_progress_r: float = 0.15        # else: THESIS_FAILED
-    thesis_fail_adverse_r: float = 0.8           # mid this far against AND still moving against = exit early
+    thesis_fail_adverse_r: float = 0.6           # mid this far against AND still moving against = exit early (5 Oct: cut losers sooner)
     thesis_fail_stale_r: float = 0.5             # no progress, this far under AND moving against = exit
     thesis_fail_min_ticks_against: int = 4       # "moving against": velocity < 0 or this many ticks in a row
     risk_reduction_at_r: float = 0.6
     capital_safe_at_r: float = 0.8               # break-even after costs once 0.8 R is reached (2 Oct: 1.0)
     profit_protect_at_r: float = 1.6
     runner_at_r: float = 2.5
-    giveback_early: float = 0.35                 # fraction of the high-water mark allowed back
-    giveback_established: float = 0.45
+    giveback_early: float = 0.50                 # fraction of the high-water mark allowed back (5 Oct: ride highs)
+    giveback_established: float = 0.50
     giveback_runner: float = 0.60
     runner_min_probability: float = 60.0
     enable_partial_profit: bool = False
