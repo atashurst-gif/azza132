@@ -162,9 +162,14 @@ class Manager:
                 return Decision(close=True, exit_reason="THESIS_FAILED",
                                 reason=f"no progress after {secs:.0f}s, {r_mid:.2f}R under and moving against",
                                 state=trade.state)
-        if spread_pts > c.max_spread_points * 2 and money > 0:
+        # twice this market's own spread limit (index limits are in index
+        # points; 5 Oct: a 25-point cap read every normal US30 spread as an
+        # emergency and closed 11 winners at +0.15 to +0.86)
+        emergency = c.limits_points(trade.symbol, trade.point)[0] * 2
+        if spread_pts > emergency and money > 0:
             return Decision(close=True, exit_reason="SPREAD_EMERGENCY",
-                            reason=f"spread blew out to {spread_pts:.0f} points", state=trade.state)
+                            reason=f"spread blew out to {spread_pts:.0f} points (limit {emergency:.0f})",
+                            state=trade.state)
 
         # ---- state progression (only forward)
         order = STATES

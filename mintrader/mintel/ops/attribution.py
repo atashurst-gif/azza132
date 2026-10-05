@@ -34,9 +34,11 @@ def existing_strategy_stats(journal, positions, day_start: dt.datetime, currency
         closed.append({"net_pnl": r.get("pnl_money") or 0.0, "duration_seconds": dur,
                        "commission": r.get("commission"), "symbol": r.get("symbol"),
                        "ticket": r.get("ticket"), "tactic": r.get("tactic"), "exit_reason": r.get("exit_reason"),
-                       "closed_utc": r.get("closed_utc")})
+                       "regime": r.get("regime"), "closed_utc": r.get("closed_utc")})
     opens = [{"symbol": p.symbol, "pnl": float(getattr(p, "profit", 0.0) or 0.0)} for p in positions]
     s = strategy_stats(closed, opens, label=EXISTING_STRATEGY_LABEL, strategy_id=EXISTING_STRATEGY_ID, currency=currency)
+    s["by_approach"] = breakdown(closed, lambda r: approach_name(r.get("tactic"), r.get("regime")))
+    s["by_market_type"] = breakdown(closed, lambda r: market_type(r.get("symbol")))
     if ledger_today:
         # the broker's own figures win where they exist, exactly as the main tiles do
         s["realised"] = round(float(ledger_today.get("net", s["realised"])), 2)
@@ -49,6 +51,30 @@ def existing_strategy_stats(journal, positions, day_start: dt.datetime, currency
                           "closed": r["closed_utc"], "tactic": r["tactic"], "strategy": EXISTING_STRATEGY_ID}
                          for r in closed[-60:]]
     return s
+
+
+def approach_name(tactic, regime) -> str:
+    t = str(tactic or "unknown").replace("_", " ").lower().capitalize()
+    g = str(regime or "").split(" ")[0].replace("_", " ").lower()
+    return f"{t} in a {g} market" if g else t
+
+
+def market_type(symbol) -> str:
+    from ..contracts import infer_group
+    g = infer_group(str(symbol or ""))
+    return {"INDEX": "Indices (no commission)", "GOLD": "Gold", "SILVER": "Silver",
+            "ENERGY": "Oil and gas"}.get(g, "FX pairs" if g.startswith("FX") else g.title())
+
+
+def breakdown(closed, key) -> list[dict]:
+    """Trades, wins and net per group, best first (the broker's net where the
+    journal has it; the nightly review reconciles to the broker)."""
+    groups: dict[str, list[float]] = {}
+    for r in closed:
+        groups.setdefault(key(r), []).append(float(r.get("net_pnl") or 0.0))
+    out = [{"name": k, "trades": len(v), "wins": sum(1 for x in v if x > 0), "net": round(sum(v), 2)}
+           for k, v in groups.items()]
+    return sorted(out, key=lambda x: -x["net"])
 
 
 def read_scalper_status(data_dir: str | Path, status_file: str = "scalper-status.json",

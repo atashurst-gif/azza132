@@ -283,6 +283,20 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
         f"{(' <span class=pill>' + html.escape(str(t.get('mode'))) + '</span>') if t.get('mode') else ''}</td>"
         f"<td>{html.escape(str(t.get('tactic') or t.get('exit_reason') or ''))}</td>"
         f"<td>{money(t.get('net'))}</td></tr>" for t in trades[-300:][::-1])
+    detail_html = ""
+    if selected == "market_intelligence":
+        st0 = snap.get("status") or {}
+        rules = html.escape(str(st0.get("strategy_name") or ""))
+        since = html.escape(str(st0.get("tracking_start") or "")[:16].replace("T", " "))
+        def tbl(title, rows_):
+            if not rows_:
+                return ""
+            body = "".join(f"<tr><td>{html.escape(str(r['name']))}</td><td>{r['trades']}</td><td>{r['wins']}</td>"
+                           f"<td>{money(r['net'])}</td></tr>" for r in rows_)
+            return (f'<h2>{title} ({plabel})</h2><div class="box"><table><tr><th>{title[:-1] if title.endswith("s") else title}</th>'
+                    f'<th>Trades</th><th>Wins</th><th>Net</th></tr>{body}</table></div>')
+        detail_html = ((f'<p class="small">Rules in force: <b>{rules}</b>, since {since} UTC.</p>' if rules else "")
+                       + tbl("By approach", s.get("by_approach")) + tbl("By kind of market", s.get("by_market_type")))
     trade_html = (f'<h2>Trades - {plabel} ({html.escape(labels.get(selected, selected))})</h2><div class="box">'
                   f'<table><tr><th>Closed</th><th>Market</th><th>Bot</th><th>Approach / exit</th><th>Net</th></tr>{trows}'
                   f'</table></div>') if trades else ""
@@ -298,7 +312,7 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
     return (f'<h2>Strategies</h2><div class="tabs">{tabs}</div><div class="tabs periods">{pbar}</div>'
             f'<div class="box"><table>{table}</table>'
             f'<p class="small">Overall is every strategy added together - the account\'s definitive result. '
-            f'Each bot\'s tab shows only its own trades. {source}</p></div>{trade_html}' + render_scalper_panel(snap))
+            f'Each bot\'s tab shows only its own trades. {source}</p></div>{detail_html}{trade_html}' + render_scalper_panel(snap))
 
 
 def render_scalper_panel(snap: dict) -> str:

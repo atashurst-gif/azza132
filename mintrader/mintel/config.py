@@ -317,6 +317,12 @@ class OpsConfig:
 # Bump this whenever the trading rules change in a way that makes earlier
 # results a different experiment. The status page resets to it automatically.
 STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, paper never in the account total"
+# The name of the rule set Trend & Breakout runs. Change it whenever the
+# rules change, so results are always tied to the rules that made them.
+# Version 2, "Commission First", from the 5 Oct reset: entries 70+, twin off,
+# eight losing markets off, session expansion in a squeeze off, commission
+# never assumed to be zero. See docs/strategies/v2-commission-first.md.
+STRATEGY_NAME = "Commission First (version 2)"
 
 
 @dataclass

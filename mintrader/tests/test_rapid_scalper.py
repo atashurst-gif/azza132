@@ -1101,3 +1101,45 @@ class TestScalperPicksUpALaterReset:
         (tmp_path / "config.json").write_text(json.dumps({"tracking_start_utc": reset.isoformat()}))
         e._start_read_at = -1e9
         assert e.day_start() == reset
+
+
+
+class TestSpreadEmergencyPerMarket:
+    def test_a_normal_us30_spread_is_not_an_emergency(self):
+        m = Manager(scfg())
+        t = ScalpTrade(1, "US30", Side.BUY, 0.1, 50700.0, 50700.0, T0, 50690.0, 50690.0, 10.0, 10.0, 0.01, spec=None)
+        tick = Tick("US30", T0 + dt.timedelta(seconds=30), 50702.0, 50704.0, 50703.0, 1.0)   # 2-point spread = 200 points
+        d = m.update(t, tick, None, T0 + dt.timedelta(seconds=30))
+        assert d.exit_reason != "SPREAD_EMERGENCY"
+        wide = Tick("US30", T0 + dt.timedelta(seconds=31), 50702.0, 50711.0, 50706.5, 1.0)   # 9 points: a real blow-out
+        t.spec = sim_broker().spec("EURUSD")                                                  # any spec so money > 0 is computed
+        d = m.update(t, wide, None, T0 + dt.timedelta(seconds=31))
+        assert d.exit_reason in ("SPREAD_EMERGENCY", "")
+
+
+
+class TestWhatIsWorking:
+    def test_trend_and_breakout_tab_names_the_rules_and_breaks_down_by_approach_and_market(self):
+        from mintel.ops.attribution import existing_strategy_stats
+        from mintel.ops.dashboard import render_status
+        rows = [
+            {"pnl_money": 22.51, "opened_utc": "2026-10-05T11:40:00+00:00", "closed_utc": "2026-10-05T11:53:17+00:00",
+             "symbol": "GBPCHF", "ticket": 1, "tactic": "MOMENTUM_CONTINUATION", "regime": "HIGH_VOL", "commission": -0.6},
+            {"pnl_money": 30.71, "opened_utc": "2026-10-05T13:30:00+00:00", "closed_utc": "2026-10-05T13:44:33+00:00",
+             "symbol": "US30", "ticket": 2, "tactic": "MOMENTUM_CONTINUATION", "regime": "HIGH_VOL", "commission": 0.0},
+            {"pnl_money": -7.38, "opened_utc": "2026-10-05T13:45:00+00:00", "closed_utc": "2026-10-05T13:50:29+00:00",
+             "symbol": "US30", "ticket": 3, "tactic": "MOMENTUM_CONTINUATION", "regime": "HIGH_VOL", "commission": 0.0}]
+        class J:
+            def closed_trades(self, limit=500, since=None): return rows
+        s = existing_strategy_stats(J(), [], T0, "GBP")
+        assert s["by_approach"] == [{"name": "Momentum continuation in a high vol market", "trades": 3, "wins": 2, "net": 45.84}]
+        assert s["by_market_type"][0] == {"name": "Indices (no commission)", "trades": 2, "wins": 1, "net": 23.33}
+        snap = {"status": {"bot": "RUNNING", "strategy_name": "Commission First (version 2)",
+                           "tracking_start": "2026-10-05T11:30:42+00:00"},
+                "health": {}, "thinking": [], "results": {}, "positions": [], "events": [],
+                "strategies": {"overall": s, EXISTING_STRATEGY_ID: s,
+                               "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: "Trend & Breakout"}}}
+        page = render_status(snap, EXISTING_STRATEGY_ID)
+        for needle in ("Commission First (version 2)", "By approach", "Momentum continuation in a high vol market",
+                       "By kind of market", "Indices (no commission)"):
+            assert needle in page, needle

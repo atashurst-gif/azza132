@@ -30,7 +30,7 @@ from .broker.base import Side
 from .broker.mt5_adapter import Mt5Broker, mt5_available
 from .clock import UTC, to_utc, utcnow
 from .version import RUNNING_STAMP
-from .config import Config, LIVE_MARKER
+from .config import STRATEGY_NAME, Config, LIVE_MARKER
 from .engine.trader import Trader
 from .ops.dashboard import DashboardState, build_results, start_dashboard
 from .ops.watchdog import pid_alive
@@ -433,6 +433,7 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "since_start_win_rate": (ledger.get("since_start") or {}).get("win_rate"),
             "tracking_start": ledger.get("tracking_start", trader.cfg.tracking_start_utc),
             "strategy": trader.cfg.tracking_strategy,
+            "strategy_name": STRATEGY_NAME,
             "build": RUNNING_STAMP,
             "started": trader.started_utc.strftime("%Y-%m-%d %H:%M UTC"),
             "pnl_source": ledger.get("source", "journal"),
