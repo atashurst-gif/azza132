@@ -452,7 +452,7 @@ class TestAttribution:
                 "opportunity, tier, exit_reason, realised_r, mfe_r, mae_r, final_flow_state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (1, "EURUSD", "BUY", "2026-10-01T08:00:00+00:00", "2026-10-01T08:30:00+00:00", 6.5, "SESSION_EXPANSION",
                  "TREND", 70.0, "NORMAL", "[tp 1.1]", 2.0, 2.0, 0.1, "STRONG_FLOW"))
-        status = {"updated": T0.isoformat(), "status": "SCANNING", "mode": "PAPER",
+        status = {"updated": T0.isoformat(), "status": "SCANNING", "mode": "LIVE",
                   "stats": strategy_stats([{"net_pnl": -4.0, "duration_seconds": 8.0, "commission": 0.3, "peak_r": 0.3, "mae_r": 1.0,
                                             "exit_reason": "THESIS_FAILED"},
                                            {"net_pnl": 12.0, "duration_seconds": 95.0, "commission": 0.3, "peak_r": 3.1, "mae_r": 0.2,
@@ -566,7 +566,7 @@ class TestPeriodFilter:
         con.execute("INSERT INTO trades (ticket,symbol,opened_utc,closed_utc,net_pnl,exit_reason,duration_seconds,mode) "
                     "VALUES (?,?,?,?,?,?,?,?)",
                     (99, "GBPUSD", (now - dt.timedelta(days=1, hours=3)).isoformat(),
-                     (now - dt.timedelta(days=1, hours=2)).isoformat(), -4.0, "THESIS_FAILED", 8, "PAPER"))
+                     (now - dt.timedelta(days=1, hours=2)).isoformat(), -4.0, "THESIS_FAILED", 8, "LIVE"))
         con.commit(); con.close()
 
     def test_bounds_cover_every_period_and_a_custom_range(self):
@@ -1042,3 +1042,49 @@ class TestResetToZero:
         assert e.day_start() == b.now - dt.timedelta(minutes=5)
         e.cfg.tracking_start_utc = (b.now + dt.timedelta(hours=1)).isoformat()   # a future start is ignored
         assert e.day_start() == midnight
+
+
+
+class TestPaperIsNeverInTheAccountTotal:
+    def test_overall_excludes_a_paper_scalper(self, tmp_path):
+        from mintel.ops.attribution import build_strategies
+        (tmp_path / "scalper-status.json").write_text(json.dumps({
+            "updated": T0.isoformat(), "mode": "PAPER", "status": "SCANNING",
+            "stats": {"net_today": -42.72, "realised": -42.72, "trades": 10, "wins": 3, "losses": 7, "currency": "GBP"},
+            "trades_today": [{"ticket": 1, "symbol": "XAUUSD", "net": -5.0, "closed": T0.isoformat(), "mode": "PAPER"}]}))
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=1), "GBP", tmp_path, None, now=T0)
+        assert s["overall"]["net_today"] == 0.0 and s["overall"]["trades"] == 0
+        assert s["overall"]["trades_today"] == []
+        assert s[STRATEGY_ID]["net_today"] == -42.72                      # still on its own tab
+        assert "PAPER" in s["overall"]["note"]
+
+    def test_overall_includes_a_live_scalper(self, tmp_path):
+        from mintel.ops.attribution import build_strategies
+        (tmp_path / "scalper-status.json").write_text(json.dumps({
+            "updated": T0.isoformat(), "mode": "LIVE", "status": "SCANNING",
+            "stats": {"net_today": 12.0, "realised": 12.0, "trades": 2, "wins": 2, "losses": 0, "currency": "GBP"},
+            "trades_today": []}))
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=1), "GBP", tmp_path, None, now=T0)
+        assert s["overall"]["net_today"] == 12.0
+
+
+
+class TestStreakRestartsAtTheReset:
+    def test_losses_before_the_reset_do_not_pause_the_scalper(self, tmp_path):
+        from mintel.scalper.journal import ScalperJournal
+        j = ScalperJournal(tmp_path / "s.sqlite")
+        spec = sim_broker().spec("EURUSD")
+        for i in range(4):
+            t = ScalpTrade(100 + i, "EURUSD", Side.BUY, 0.1, 1.1, 1.1, T0, 1.099, 1.099, 0.001, 10.0, spec.point, spec=spec)
+            j.open_trade(t, "PAPER", 1.0, 2.0, {}, 0.0, 100.0)
+            j.close_trade(t, closed_at=T0 + dt.timedelta(minutes=i), exit_requested=1.1, exit_filled=1.1, exit_reason="THESIS_FAILED",
+                          exit_detail="", spread_at_exit=1.0, gross=-5.0, commission=0.0, spread_cost=0.0, slippage_cost=0.0,
+                          net=-5.0, exit_slip=0.0, exit_latency=1.0)
+        assert j.consecutive_losses() == 4
+        assert j.consecutive_losses(T0 + dt.timedelta(hours=1)) == 0
+        assert j.consecutive_losses(mode="LIVE") == 0
+        j.close()

@@ -80,9 +80,15 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
     rs = dict(rs_status.get("stats") or {})
     rs.setdefault("id", STRATEGY_ID); rs.setdefault("label", STRATEGY_LABEL); rs.setdefault("currency", currency)
     rs["trades_today"] = rs_status.get("trades_today", [])
-    overall = combine([mi, rs])
-    overall["trades_today"] = sorted(mi["trades_today"] + rs["trades_today"],
+    # Overall is the ACCOUNT: money that really moved. A scalper in PAPER is
+    # simulated, so it has its own tab but is never added to the account.
+    live_rs = str(rs_status.get("mode") or "").upper() == "LIVE"
+    overall = combine([mi, rs] if live_rs else [mi])
+    overall["trades_today"] = sorted(mi["trades_today"] + (rs["trades_today"] if live_rs else []),
                                      key=lambda t: str(t.get("closed") or ""))
+    if not live_rs:
+        rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
+        overall["note"] = "The Rapid Scalper is in PAPER: its simulated results are on its own tab only."
     return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, "scalper": rs_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL}}
 
@@ -183,7 +189,14 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
                         strategy_id=STRATEGY_ID, currency=currency, scalper=True)
     rs["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
                            "exit_reason": r.get("exit_reason"), "mode": r.get("mode"), "strategy": STRATEGY_ID} for r in rs_rows]
-    overall = combine([mi, rs])
+    # the account total only ever counts trades that really happened
+    live_rows = [r for r in rs_rows if str(r.get("mode") or "").upper() == "LIVE"]
+    rs_live = strategy_stats(live_rows, [], label=STRATEGY_LABEL, strategy_id=STRATEGY_ID,
+                             currency=currency, scalper=True)
+    overall = combine([mi, rs_live])
+    overall["trades_today"] = sorted(mi["trades_today"] + [t for t in rs["trades_today"]
+                                                           if str(t.get("mode") or "").upper() == "LIVE"],
+                                     key=lambda t: str(t.get("closed") or ""))
     return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs,
             "scalper": read_scalper_status(data_dir, now=now),
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL},

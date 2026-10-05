@@ -316,7 +316,7 @@ class OpsConfig:
 
 # Bump this whenever the trading rules change in a way that makes earlier
 # results a different experiment. The status page resets to it automatically.
-STRATEGY_VERSION = "2026-10-05 reset to zero - fresh 2,000 account, commission first, losing markets off, entries 70+"
+STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, paper never in the account total"
 
 
 @dataclass

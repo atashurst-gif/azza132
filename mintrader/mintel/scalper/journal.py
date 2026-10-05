@@ -162,8 +162,14 @@ class ScalperJournal:
         row = cur.fetchone()
         return int(row["n"]) if row else 0
 
-    def consecutive_losses(self) -> int:
-        cur = self._exec("SELECT net_pnl FROM trades WHERE closed_utc IS NOT NULL ORDER BY closed_utc DESC LIMIT 20")
+    def consecutive_losses(self, since: Optional[dt.datetime] = None, mode: str = "") -> int:
+        sql = "SELECT net_pnl FROM trades WHERE closed_utc IS NOT NULL"
+        args: list = []
+        if since is not None:
+            sql += " AND closed_utc >= ?"; args.append(to_utc(since).isoformat())
+        if mode:
+            sql += " AND mode = ?"; args.append(mode)
+        cur = self._exec(sql + " ORDER BY closed_utc DESC LIMIT 20", args)
         n = 0
         for r in cur.fetchall():
             if (r["net_pnl"] or 0) < 0:

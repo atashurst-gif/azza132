@@ -66,7 +66,9 @@ class ScalperEngine:
         self.status_path = data / scfg.status_file
         self.blocked_because: list[str] = []
         self._news_cache: tuple[float, list] = (0.0, [])
-        self.breakers.consecutive_losses = self.journal.consecutive_losses()
+        # a reset to zero (or a new day) starts the streak afresh; paper and
+        # live never share one
+        self.breakers.consecutive_losses = self.journal.consecutive_losses(self.day_start(), scfg.mode)
 
     # ------------------------------------------------------------ helpers --
     def spec(self, symbol: str):

@@ -290,6 +290,8 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
     p_start = html.escape(str(period.get("start") or "")[:10])
     p_end = html.escape(str(period.get("end") or "")[:10])
     own = s.get("source")
+    if s.get("note"):
+        own = (str(own) + ". " if own else "") + str(s["note"])
     source = ((f"Figures on this tab come from {html.escape(str(own))}." if own else "Today's figures are the broker's own.")
               if pkey == "today" else
               f"Figures for {plabel} come from {src_txt}, {p_start} to {p_end} (UTC, end exclusive).")
