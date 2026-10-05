@@ -169,54 +169,84 @@ def _what_happened(t: dict) -> str:
 
 CSS = """
 body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-margin:0;background:#f5f6f8;color:#1b1c1e}
-.wrap{max-width:1000px;margin:0 auto;padding:18px}
-h1{font-size:22px;margin:6px 0 14px}
-h2{font-size:17px;margin:22px 0 8px}
-.card{background:#fff;border:1px solid #e2e4e8;border-radius:10px;
-padding:14px 16px;margin-bottom:12px}
-.row{display:flex;flex-wrap:wrap;gap:10px}
-.tile{flex:1 1 150px;background:#fff;border:1px solid #e2e4e8;border-radius:10px;
-padding:12px 14px}
-.tile .k{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:#6b7280}
-.tile .v{font-size:20px;font-weight:600;margin-top:4px}
+margin:0;background:#f5f6f8;color:#1b1c1e;font-size:13px}
+.wrap{max-width:1500px;margin:0 auto;padding:10px 14px}
+h1{font-size:18px;margin:4px 0 8px}
+h2{font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:.5px;color:#374151}
+.card,.box{background:#fff;border:1px solid #e2e4e8;border-radius:8px;
+padding:8px 10px;margin-bottom:8px}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.tile{flex:1 1 92px;background:#fff;border:1px solid #e2e4e8;border-radius:8px;
+padding:5px 8px}
+.tile .k,.st .k{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#6b7280;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .v{font-size:13px;white-space:nowrap;font-weight:600;margin-top:2px}
 .ok{color:#0a7c35}.bad{color:#b91c1c}.warn{color:#b45309}
-.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;
-font-weight:600}
+.pill{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;
+font-weight:600;background:#eef0f3}
 .pill.ok{background:#e7f6ec;color:#0a7c35}
 .pill.bad{background:#fdeaea;color:#b91c1c}
 .pill.warn{background:#fef4e6;color:#b45309}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{text-align:left;padding:7px 8px;border-bottom:1px solid #eef0f3;
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{text-align:left;padding:3px 5px;border-bottom:1px solid #eef0f3;
 vertical-align:top}
-th{font-size:12px;text-transform:uppercase;color:#6b7280;letter-spacing:.4px}
+th{font-size:10px;text-transform:uppercase;color:#6b7280;letter-spacing:.3px}
 .mono{font-variant-numeric:tabular-nums}
-.small{font-size:13px;color:#4b5563}
+.small{font-size:11px;color:#4b5563}
 a{color:#1d4ed8;text-decoration:none}
-.banner{padding:12px 16px;border-radius:10px;font-weight:600;margin-bottom:12px}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.banner{padding:6px 12px;border-radius:8px;font-weight:600;flex:1 1 auto}
 .banner.ok{background:#e7f6ec;color:#0a7c35;border:1px solid #b7e3c6}
 .banner.bad{background:#fdeaea;color:#b91c1c;border:1px solid #f3c0c0}
-nav{margin-bottom:10px;font-size:14px}
-nav a{margin-right:14px}
-
-.tabs{display:flex;gap:8px;margin:8px 0}
-.tab{padding:8px 14px;border:1px solid #ccd;border-radius:8px;background:#fff;text-decoration:none;color:#223;font-weight:600}
+nav{font-size:13px}
+nav a{margin-right:12px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.tab{padding:5px 11px;border:1px solid #ccd;border-radius:7px;background:#fff;text-decoration:none;color:#223;font-weight:600}
 .tab.on{background:#223;color:#fff}
-.tabs{flex-wrap:wrap;align-items:center}
-.tab.p{padding:5px 10px;font-weight:500;font-size:13px}
-.dates{display:flex;gap:6px;align-items:center;font-size:13px;margin-left:auto}
-.dates input{padding:4px;border:1px solid #ccd;border-radius:6px}
-.dates button{padding:5px 10px;border:1px solid #ccd;border-radius:8px;background:#fff;font-weight:600;cursor:pointer}
+.tab.p{padding:3px 8px;font-weight:500;font-size:12px}
+.sep{width:1px;height:22px;background:#ccd;margin:0 4px}
+.dates{display:flex;gap:5px;align-items:center;font-size:12px;margin-left:auto}
+.dates input{padding:2px;border:1px solid #ccd;border-radius:6px;font-size:12px}
+.dates button{padding:3px 9px;border:1px solid #ccd;border-radius:7px;background:#fff;font-weight:600;cursor:pointer}
 .dates button.on{background:#223;color:#fff}
-.rs-title{font-weight:700;letter-spacing:.08em;margin-bottom:4px}
+.rs-title{font-weight:700;letter-spacing:.08em;margin-bottom:2px}
+.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:8px;align-items:start}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.st{border:1px solid #eef0f3;border-radius:6px;padding:3px 6px;min-width:0}
+.st .v{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.st.big{grid-column:span 3;background:#f8fafc}
+.st.big .v{font-size:18px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;font-size:12px}
+.kv .k{color:#6b7280}
+details{margin-top:4px}
+summary{cursor:pointer;font-size:11px;color:#1d4ed8}
+td.nw{white-space:nowrap}
+pre{font-size:11px;white-space:pre-wrap;margin:4px 0}
+@media (max-width:1150px){.grid{grid-template-columns:1fr 1fr}}
+@media (max-width:720px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}
+.st.big{grid-column:span 2}.dates{margin-left:0}}
 """
 
+# Remembers which folded sections were open, so the 10-second refresh does not
+# close them again. Display only; nothing is sent anywhere.
+KEEP_OPEN_JS = """<script>
+(function(){var k='mintel-open';var o={};
+try{o=JSON.parse(localStorage.getItem(k)||'{}')}catch(e){}
+document.querySelectorAll('details[id]').forEach(function(d){
+if(o[d.id])d.open=true;
+d.addEventListener('toggle',function(){o[d.id]=d.open;
+try{localStorage.setItem(k,JSON.stringify(o))}catch(e){}});});})();
+</script>"""
 
-def render_strategies(snap: dict, selected: str = "overall") -> str:
-    """The strategy tabs and the selected strategy's figures. Display only."""
+RECENT_TRADES_SHOWN = 8
+
+
+def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
+    """The strategy tabs and the selected strategy's figures, in pieces for the
+    one-screen layout. Display only."""
     strategies = snap.get("strategies") or {}
     if not strategies:
-        return ""
+        return {}
     labels = strategies.get("labels") or {}
     order = [k for k in ("overall", "market_intelligence", "rapid_scalper") if k in strategies]
     if selected not in strategies:
@@ -252,55 +282,90 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
 
     def plain(v, suffix=""):
         return "-" if v is None else f"{v}{suffix}"
-    rows = [(f"Net P&amp;L ({plabel})", money(s.get("net_today"))),
-            ("Realised", money(s.get("realised"))), ("Unrealised", money(s.get("unrealised"))),
-            ("Trades", plain(s.get("trades"))), ("Winning trades", plain(s.get("wins"))),
-            ("Losing trades", plain(s.get("losses"))),
-            ("Win rate", plain(s.get("win_rate"), "%")), ("Average win", money(s.get("avg_win"))),
-            ("Average loss", money(s.get("avg_loss"))), ("Largest win", money(s.get("largest_win"))),
-            ("Largest loss", money(s.get("largest_loss"))), ("Profit factor", plain(s.get("profit_factor"))),
-            ("Before commission", money(s.get("before_fees"))),
-            ("Commission paid (broker)", "-" if s.get("total_costs") is None else f"{abs(float(s['total_costs'])):.2f} {cur}"),
-            ("Estimated slippage", plain(s.get("est_slippage_points"), " points")),
-            ("Average holding time", plain(None if s.get("avg_hold_seconds") is None else f"{s['avg_hold_seconds']:.0f}", " s")),
-            ("Open positions", plain(s.get("open_positions"))),
-            ("Max intraday drawdown", money(s.get("max_drawdown")))]
+
+    def colour(v):
+        try:
+            return "ok" if float(v) >= 0 else "bad"
+        except Exception:
+            return ""
+    wins, losses = s.get("wins"), s.get("losses")
+    rows = [("Realised", money(s.get("realised")), colour(s.get("realised"))),
+            ("Unrealised", money(s.get("unrealised")), colour(s.get("unrealised"))),
+            ("Before commission", money(s.get("before_fees")), ""),
+            ("Commission paid (broker)",
+             "-" if s.get("total_costs") is None else f"{abs(float(s['total_costs'])):.2f} {cur}", "bad"),
+            ("Trades", plain(s.get("trades")), ""),
+            ("Wins / losses", f"{plain(wins)} / {plain(losses)}", ""),
+            ("Win rate", plain(s.get("win_rate"), "%"), ""),
+            ("Average win", money(s.get("avg_win")), ""), ("Average loss", money(s.get("avg_loss")), ""),
+            ("Largest win", money(s.get("largest_win")), ""), ("Largest loss", money(s.get("largest_loss")), ""),
+            ("Profit factor", plain(s.get("profit_factor")), ""),
+            ("Max intraday drawdown", money(s.get("max_drawdown")), ""),
+            ("Open positions", plain(s.get("open_positions")), ""),
+            ("Average holding time",
+             plain(None if s.get("avg_hold_seconds") is None else f"{s['avg_hold_seconds']:.0f}", " s"), ""),
+            ("Estimated slippage", plain(s.get("est_slippage_points"), " points"), "")]
     if selected == "rapid_scalper":
-        rows += [("Average trade duration", plain(None if s.get("avg_duration_seconds") is None else f"{s['avg_duration_seconds']:.1f}", " s")),
-                 ("Exits under 10 s", plain(s.get("exits_under_10s"))), ("Exits under 30 s", plain(s.get("exits_under_30s"))),
-                 ("Reached protected-profit mode", plain(s.get("reached_protected"))),
-                 ("Reached runner mode", plain(s.get("reached_runner"))),
-                 ("Max favourable excursion", plain(s.get("max_favourable_r"), " R")),
-                 ("Max adverse excursion", plain(s.get("max_adverse_r"), " R")),
-                 ("Profit captured vs available", plain(s.get("captured_vs_available_pct"), "%"))]
+        rows += [("Average trade duration",
+                  plain(None if s.get("avg_duration_seconds") is None else f"{s['avg_duration_seconds']:.1f}", " s"), ""),
+                 ("Exits under 10 s", plain(s.get("exits_under_10s")), ""),
+                 ("Exits under 30 s", plain(s.get("exits_under_30s")), ""),
+                 ("Reached protected-profit mode", plain(s.get("reached_protected")), ""),
+                 ("Reached runner mode", plain(s.get("reached_runner")), ""),
+                 ("Max favourable excursion", plain(s.get("max_favourable_r"), " R"), ""),
+                 ("Max adverse excursion", plain(s.get("max_adverse_r"), " R"), ""),
+                 ("Profit captured vs available", plain(s.get("captured_vs_available_pct"), "%"), "")]
     if selected == "overall" and s.get("by_strategy"):
         for b in s["by_strategy"]:
-            rows.append((f"of which {html.escape(str(b['label']))}", money(b.get("net_today"))))
-    table = "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in rows)
-    trades = s.get("trades_today") or []
-    trows = "".join(
-        f"<tr><td>{html.escape(str(t.get('closed') or '')[11:19])}</td><td>{html.escape(str(t.get('symbol')))}</td>"
-        f"<td>{html.escape(str(labels.get(t.get('strategy'), t.get('strategy'))))}"
-        f"{(' <span class=pill>' + html.escape(str(t.get('mode'))) + '</span>') if t.get('mode') else ''}</td>"
-        f"<td>{html.escape(str(t.get('tactic') or t.get('exit_reason') or ''))}</td>"
-        f"<td>{money(t.get('net'))}</td></tr>" for t in trades[-300:][::-1])
+            rows.append((f"of which {html.escape(str(b['label']))}", money(b.get("net_today")),
+                         colour(b.get("net_today"))))
+    stats = (f'<div class="st big"><div class="k">Net P&amp;L ({plabel}) - after commission</div>'
+             f'<div class="v {colour(s.get("net_today"))}">{money(s.get("net_today"))}</div></div>'
+             + "".join(f'<div class="st"><div class="k" title="{k}">{k}</div><div class="v {c}">{v}</div></div>'
+                       for k, v, c in rows))
+
+    trades = (s.get("trades_today") or [])[-300:][::-1]
+
+    def trow(t):
+        return (f"<tr><td class=mono>{html.escape(str(t.get('closed') or '')[11:19])}</td>"
+                f"<td>{html.escape(str(t.get('symbol')))}</td>"
+                f"<td class=nw>{html.escape(str(labels.get(t.get('strategy'), t.get('strategy'))))}"
+                f"{(' <span class=pill>' + html.escape(str(t.get('mode'))) + '</span>') if t.get('mode') else ''}</td>"
+                f"<td class=small>{html.escape(str(t.get('tactic') or t.get('exit_reason') or '').replace('_', ' ').lower())}</td>"
+                f"<td class='mono nw {colour(t.get('net'))}'>{money(t.get('net'))}</td></tr>")
+    thead = "<tr><th>Closed</th><th>Market</th><th>Bot</th><th>Approach / exit</th><th>Net</th></tr>"
+    trade_html = ""
+    if trades:
+        shown = trades[:RECENT_TRADES_SHOWN]
+        rest = trades[RECENT_TRADES_SHOWN:]
+        trade_html = (f'<div class="box"><h2>Trades - {plabel} ({html.escape(labels.get(selected, selected))})'
+                      f' - {len(trades)}</h2><table>{thead}{"".join(trow(t) for t in shown)}</table>'
+                      + (f'<details id="all-trades"><summary>{len(rest)} earlier trades</summary>'
+                         f'<table>{"".join(trow(t) for t in rest)}</table></details>' if rest else "")
+                      + '</div>')
+
     detail_html = ""
     if selected == "market_intelligence":
         st0 = snap.get("status") or {}
         rules = html.escape(str(st0.get("strategy_name") or ""))
         since = html.escape(str(st0.get("tracking_start") or "")[:16].replace("T", " "))
+
         def tbl(title, rows_):
             if not rows_:
                 return ""
             body = "".join(f"<tr><td>{html.escape(str(r['name']))}</td><td>{r['trades']}</td><td>{r['wins']}</td>"
-                           f"<td>{money(r['net'])}</td></tr>" for r in rows_)
-            return (f'<h2>{title} ({plabel})</h2><div class="box"><table><tr><th>{title[:-1] if title.endswith("s") else title}</th>'
-                    f'<th>Trades</th><th>Wins</th><th>Net</th></tr>{body}</table></div>')
-        detail_html = ((f'<p class="small">Rules in force: <b>{rules}</b>, since {since} UTC.</p>' if rules else "")
-                       + tbl("By approach", s.get("by_approach")) + tbl("By kind of market", s.get("by_market_type")))
-    trade_html = (f'<h2>Trades - {plabel} ({html.escape(labels.get(selected, selected))})</h2><div class="box">'
-                  f'<table><tr><th>Closed</th><th>Market</th><th>Bot</th><th>Approach / exit</th><th>Net</th></tr>{trows}'
-                  f'</table></div>') if trades else ""
+                           f"<td class='mono {colour(r['net'])}'>{money(r['net'])}</td></tr>" for r in rows_)
+            return (f'<h2>{title} ({plabel})</h2><table><tr><th>{title[:-1] if title.endswith("s") else title}</th>'
+                    f'<th>Trades</th><th>Wins</th><th>Net</th></tr>{body}</table>')
+        tables = tbl("By approach", s.get("by_approach")) + tbl("By kind of market", s.get("by_market_type"))
+        if rules or tables:
+            detail_html = ('<div class="box">'
+                           + (f'<p class="small" style="margin:0 0 4px">Rules in force: <b>{rules}</b>, since {since} UTC.</p>'
+                              if rules else "")
+                           + (f'<details id="what-works"><summary>What is working: by approach and by kind of market'
+                              f'</summary>{tables}</details>' if tables else "")
+                           + '</div>')
+
     src_txt = html.escape(str(period.get("source") or "the bots' own records"))
     p_start = html.escape(str(period.get("start") or "")[:10])
     p_end = html.escape(str(period.get("end") or "")[:10])
@@ -310,10 +375,20 @@ def render_strategies(snap: dict, selected: str = "overall") -> str:
     source = ((f"Figures on this tab come from {html.escape(str(own))}." if own else "Today's figures are the broker's own.")
               if pkey == "today" else
               f"Figures for {plabel} come from {src_txt}, {p_start} to {p_end} (UTC, end exclusive).")
-    return (f'<h2>Strategies</h2><div class="tabs">{tabs}</div><div class="tabs periods">{pbar}</div>'
-            f'<div class="box"><table>{table}</table>'
-            f'<p class="small">Overall is every strategy added together - the account\'s definitive result. '
-            f'Each bot\'s tab shows only its own trades. {source}</p></div>{detail_html}{trade_html}' + render_scalper_panel(snap))
+    figures = (f'<div class="box"><div class="stats">{stats}</div>'
+               f'<p class="small" style="margin:6px 0 0">Overall is every strategy added together - the account\'s '
+               f'definitive result. Each bot\'s tab shows only its own trades. {source}</p></div>')
+    return {"tabs": (f'<div class="tabs">{tabs}<span class="sep"></span>{pbar}</div>'),
+            "figures": figures, "detail": detail_html, "trades": trade_html,
+            "scalper": render_scalper_panel(snap)}
+
+
+def render_strategies(snap: dict, selected: str = "overall") -> str:
+    """The strategy tabs and the selected strategy's figures. Display only."""
+    p = _strategy_parts(snap, selected)
+    if not p:
+        return ""
+    return p["tabs"] + p["figures"] + p["detail"] + p["trades"] + p["scalper"]
 
 
 def render_scalper_panel(snap: dict) -> str:
@@ -321,40 +396,43 @@ def render_scalper_panel(snap: dict) -> str:
     if not rs:
         return ""
     e = html.escape
+
+    def kv(k, v):
+        return f'<div class="k">{k}</div><div>{v}</div>'
     pos = rs.get("position")
     head = (f'<div class="box"><div class="rs-title">RAPID SCALPER</div>'
-            f'<div class="small">{e(str(rs.get("tagline", "")))}</div>'
-            f'<table><tr><th>Status</th><td>{e(str(rs.get("status")))}</td></tr>'
-            f'<tr><th>Mode</th><td>{e(str(rs.get("mode")))}</td></tr>')
+            f'<div class="small">{e(str(rs.get("tagline", "")))}</div><div class="kv">'
+            + kv("Status", e(str(rs.get("status")))) + kv("Mode", f'<span class="pill">{e(str(rs.get("mode")))}</span>'))
     if pos:
         floor_txt = "-" if pos.get("protected_floor") is None else f"{pos['protected_floor']:+.2f}"
-        body = (f'<tr><th>Position</th><td>{e(str(pos.get("symbol")))} {e(str(pos.get("side")))}</td></tr>'
-                f'<tr><th>Opened</th><td>{e(str(pos.get("opened")))}</td></tr>'
-                f'<tr><th>Duration</th><td>{pos.get("duration_seconds")} sec</td></tr>'
-                f'<tr><th>Entry</th><td>{pos.get("entry")}</td></tr>'
-                f'<tr><th>Current P&amp;L</th><td>{pos.get("current_pnl"):+.2f}</td></tr>'
-                f'<tr><th>Peak P&amp;L</th><td>{pos.get("peak_pnl"):+.2f}</td></tr>'
-                f'<tr><th>Planned maximum initial risk</th><td>{pos.get("planned_max_risk"):.2f}</td></tr>'
-                f'<tr><th>Current protected floor</th><td>{floor_txt}</td></tr>'
-                f'<tr><th>Mode</th><td>{e(str(pos.get("mode")))}</td></tr>'
-                f'<tr><th>Runner probability</th><td>{pos.get("runner_probability")}%</td></tr>'
-                f'<tr><th>Exit tolerance</th><td>{e(str(pos.get("exit_tolerance")))}</td></tr>'
-                f'<tr><th>Reason</th><td>{e(str(pos.get("reason")))}</td></tr>')
+        body = (kv("Position", f'{e(str(pos.get("symbol")))} {e(str(pos.get("side")))}')
+                + kv("Opened", e(str(pos.get("opened"))))
+                + kv("Duration", f'{pos.get("duration_seconds")} sec')
+                + kv("Entry", pos.get("entry"))
+                + kv("Current P&amp;L", f'{pos.get("current_pnl"):+.2f}')
+                + kv("Peak P&amp;L", f'{pos.get("peak_pnl"):+.2f}')
+                + kv("Planned maximum initial risk", f'{pos.get("planned_max_risk"):.2f}')
+                + kv("Current protected floor", floor_txt)
+                + kv("Position mode", e(str(pos.get("mode"))))
+                + kv("Runner probability", f'{pos.get("runner_probability")}%')
+                + kv("Exit tolerance", e(str(pos.get("exit_tolerance"))))
+                + kv("Reason", e(str(pos.get("reason")))))
     else:
         conf_txt = "-" if rs.get("confidence") is None else f"{rs['confidence']:.0f}/100"
-        body = (f'<tr><th>Markets monitored</th><td>{rs.get("markets_monitored", "-")}</td></tr>'
-                f'<tr><th>Best opportunity</th><td>{e(str(rs.get("best_opportunity") or "-"))} {e(str(rs.get("best_direction") or ""))}</td></tr>'
-                f'<tr><th>Confidence</th><td>{conf_txt}</td></tr>'
-                f'<tr><th>Spread quality</th><td>{e(str(rs.get("spread_quality") or "-"))}</td></tr>'
-                f'<tr><th>Momentum</th><td>{e(str(rs.get("momentum") or "-"))}</td></tr>'
-                f'<tr><th>Current position</th><td>NONE</td></tr>')
+        body = (kv("Markets monitored", rs.get("markets_monitored", "-"))
+                + kv("Best opportunity", f'{e(str(rs.get("best_opportunity") or "-"))} {e(str(rs.get("best_direction") or ""))}')
+                + kv("Confidence", conf_txt)
+                + kv("Spread quality", e(str(rs.get("spread_quality") or "-")))
+                + kv("Momentum", e(str(rs.get("momentum") or "-")))
+                + kv("Current position", "NONE"))
     blocked = rs.get("blocked_because") or []
-    why = f'<tr><th>Not trading because</th><td>{e("; ".join(str(b) for b in blocked))}</td></tr>' if blocked else ""
+    why = kv("Not trading because", e("; ".join(str(b) for b in blocked))) if blocked else ""
     detail = {"breakdown of the best opportunity": rs.get("best_breakdown"), "its blockers": rs.get("best_blockers"),
               "breakers": rs.get("breakers"), "tick age (s)": rs.get("tick_age_seconds"),
               "latency (ms)": rs.get("latency_ms"), "one full pass (ms)": rs.get("cycle_ms"), "build": rs.get("build")}
-    tech = f'<details><summary class="small">Technical detail</summary><pre>{e(json.dumps(detail, indent=2, default=str))}</pre></details>'
-    return head + body + why + "</table>" + tech + "</div>"
+    tech = (f'<details id="scalper-tech"><summary>Technical detail</summary>'
+            f'<pre>{e(json.dumps(detail, indent=2, default=str))}</pre></details>')
+    return head + body + why + "</div>" + tech + "</div>"
 
 
 def render_status(snap: dict, strategy: str = "overall") -> str:
@@ -382,14 +460,8 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
                 else f'<span class="pill bad">{bad}</span>')
 
     tiles = "".join([
-        tile("MT5", yesno(st.get("mt5_connected"))),
-        tile("Broker", yesno(st.get("broker_connected"))),
-        tile("Market data", yesno(st.get("data_live"), "LIVE", "STALE")),
-        tile("News", yesno(st.get("news_live"), "LIVE", "DEGRADED")),
-        tile("Watchdog", yesno(st.get("watchdog_ok"), "HEALTHY", "NOT SEEN")),
-        tile("Mode", f'<span class="pill {"bad" if st.get("mode")=="LIVE" else "ok"}">'
-                     f'{html.escape(str(st.get("mode", "?")))}</span>'),
-        tile("Open trades", st.get("open_positions", 0)),
+        tile("Equity", _fmt_money(st.get("equity", 0.0),
+                                  st.get("currency", ""))),
         tile("Today (broker's day)", _fmt_money(st.get("today_pnl", 0.0),
                                                 st.get("currency", "")),
              "ok" if (st.get("today_pnl") or 0) >= 0 else "bad"),
@@ -403,10 +475,16 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
               + (f" over {st.get('since_start_trades')} trades"
                  if st.get("since_start_trades") is not None else "")),
              "ok" if (st.get("since_start_pnl") or 0) >= 0 else "bad"),
+        tile("Open trades", st.get("open_positions", 0)),
+        tile("Mode", f'<span class="pill {"bad" if st.get("mode")=="LIVE" else "ok"}">'
+                     f'{html.escape(str(st.get("mode", "?")))}</span>'),
+        tile("MT5", yesno(st.get("mt5_connected"))),
+        tile("Broker", yesno(st.get("broker_connected"))),
+        tile("Market data", yesno(st.get("data_live"), "LIVE", "STALE")),
+        tile("News", yesno(st.get("news_live"), "LIVE", "DEGRADED")),
+        tile("Watchdog", yesno(st.get("watchdog_ok"), "HEALTHY", "NOT SEEN")),
         tile("Last scan", html.escape(str(st.get("last_scan", "never")))),
         tile("Last trade", html.escape(str(st.get("last_trade", "none yet")))),
-        tile("Equity", _fmt_money(st.get("equity", 0.0),
-                                  st.get("currency", ""))),
     ])
 
     prob_html = ""
@@ -416,58 +494,62 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
             f'{"bad" if c["severity"] == "FAIL" else "warn"}">'
             f'{c["severity"]}</span></td><td>{html.escape(c["message"])}</td></tr>'
             for c in problems)
-        prob_html = (f'<h2>What is wrong</h2><div class="card">'
+        prob_html = (f'<div class="card"><h2>What is wrong</h2>'
                      f'<table>{rows}</table></div>')
 
     think = snap.get("thinking") or []
     if think:
-        rows = "".join(
-            f'<tr><td class="mono">{t["rank"]}</td><td><b>{html.escape(t["symbol"])}</b></td>'
-            f'<td>{t["direction"]}</td><td class="mono">{t["score"]:.0f}</td>'
-            f'<td>{html.escape(t["tier"])}</td>'
-            f'<td>{html.escape(t["tactic"].replace("_", " ").title())}</td>'
-            f'<td class="small">{html.escape(t["regime"])}'
-            + (f'<br><i>waiting: {html.escape("; ".join(t["blockers"]))}</i>'
-               if t.get("blockers") else "")
-            + '</td></tr>'
-            for t in think)
+        def trow(t):
+            return (f'<tr><td class="mono">{t["rank"]}</td><td><b>{html.escape(t["symbol"])}</b> {t["direction"]}</td>'
+                    f'<td class="mono">{t["score"]:.0f} {html.escape(t["tier"])}</td>'
+                    f'<td>{html.escape(t["tactic"].replace("_", " ").title())}'
+                    f'<div class="small">{html.escape(t["regime"])}'
+                    + (f' - waiting: {html.escape("; ".join(t["blockers"]))}'
+                       if t.get("blockers") else "")
+                    + '</div></td></tr>')
+        thead = ('<tr><th>#</th><th>Market</th><th>Score</th><th>Approach and why</th></tr>')
+        top, rest = think[:4], think[4:]
         think_html = (
-            '<h2>What the bot is looking at right now</h2><div class="card">'
-            '<table><tr><th>#</th><th>Market</th><th>Side</th><th>Score</th>'
-            '<th>Tier</th><th>Approach</th><th>Why</th></tr>'
-            + rows + '</table></div>')
+            '<div class="card"><h2>What the bot is looking at right now</h2>'
+            '<table>' + thead + "".join(trow(t) for t in top) + '</table>'
+            + (f'<details id="thinking-rest"><summary>{len(rest)} more markets</summary><table>'
+               + "".join(trow(t) for t in rest) + '</table></details>' if rest else "")
+            + '</div>')
     else:
-        think_html = ('<h2>What the bot is looking at right now</h2>'
-                      '<div class="card small">No scan has completed yet.</div>')
+        think_html = ('<div class="card"><h2>What the bot is looking at right now</h2>'
+                      '<div class="small">No scan has completed yet.</div></div>')
 
     build_html = ""
     if st.get("build"):
-        build_html = (f'<div class="small">Build <b class="mono">{html.escape(str(st["build"]))}</b>'
+        build_html = (f'Build <b class="mono">{html.escape(str(st["build"]))}</b>'
                       f' running since {html.escape(str(st.get("started", "")))}. '
-                      f'Compare this code with the one in the latest message from the installer.</div>')
+                      f'Compare this code with the one in the latest message from the installer. ')
     src = str(st.get("pnl_source") or "")
+    src_warn = ""
     if src == "broker":
-        src_html = ('<div class="small">Profit figures come from the broker\'s own '
-                    'deal records, commission included, for this strategy\'s trades only.</div>')
+        src_html = ('Profit figures come from the broker\'s own '
+                    'deal records, commission included, for this strategy\'s trades only.')
     elif st.get("pnl_error"):
-        src_html = ('<div class="card small bad"><b>The broker\'s trade history could not '
+        src_html = ""
+        src_warn = ('<div class="card small bad"><b>The broker\'s trade history could not '
                     'be read</b>, so the profit figures above are from the bot\'s own records '
                     'and may lag: ' + html.escape(str(st.get("pnl_error"))) + '</div>')
     else:
-        src_html = ('<div class="small">Profit figures are from the bot\'s own records.</div>')
+        src_html = 'Profit figures are from the bot\'s own records.'
 
+    cur = st.get("currency", "")
     periods = st.get("periods") or []
     if periods:
         prow = "".join(
             f'<tr><td>{html.escape(str(p["label"]))}</td>'
             f'<td class="mono {"ok" if (p.get("net") or 0) >= 0 else "bad"}">'
-            f'{_fmt_money(p.get("net") or 0.0, st.get("currency", ""))}</td>'
-            f'<td class="mono">{"-" if p.get("before_fees") is None else _fmt_money(p["before_fees"], st.get("currency", ""))}</td>'
-            f'<td class="mono">{"-" if p.get("commission") is None else _fmt_money(-abs(p["commission"]), st.get("currency", ""))}</td>'
+            f'{_fmt_money(p.get("net") or 0.0, cur)}</td>'
+            f'<td class="mono">{"-" if p.get("before_fees") is None else _fmt_money(p["before_fees"], cur)}</td>'
+            f'<td class="mono">{"-" if p.get("commission") is None else _fmt_money(-abs(p["commission"]), cur)}</td>'
             f'<td class="mono">{p.get("trades", 0)}</td>'
             f'<td class="mono">{_pct(p.get("win_rate"))}</td></tr>'
             for p in periods)
-        periods_html = ('<h2>Results by period</h2><div class="card"><table>'
+        periods_html = ('<div class="card"><h2>Results by period</h2><table>'
                         '<tr><th>Period</th><th>Net (after commission)</th><th>Before commission</th>'
                         '<th>Commission</th><th>Trades</th><th>Win rate</th></tr>' + prow + '</table>'
                         '<div class="small">This strategy\'s trades only, by the time they '
@@ -492,13 +574,14 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
                          else '; no limit on the number of trades.'))
                      + '</div>')
     if why:
-        why_html = ('<h2>Why no new trade right now</h2><div class="card small"><ul>'
+        why_html = ('<div class="card"><h2>Why no new trade right now</h2><ul class="small" '
+                    'style="margin:0;padding-left:16px">'
                     + "".join(f'<li>{html.escape(w)}</li>' for w in why)
                     + '</ul>' + rules_txt + '</div>')
     else:
-        why_html = ('<h2>Why no new trade right now</h2><div class="card small">'
+        why_html = ('<div class="card"><h2>Why no new trade right now</h2><div class="small">'
                     'Nothing is holding entries back overall - each market below '
-                    'shows its own reason for waiting.' + rules_txt + '</div>')
+                    'shows its own reason for waiting.</div>' + rules_txt + '</div>')
 
     pos = snap.get("positions") or []
     if pos:
@@ -507,31 +590,36 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
             f'<td class="mono">{p["volume"]}</td>'
             f'<td class="mono">{p["entry"]}</td><td class="mono">{p["stop"]}</td>'
             f'<td class="mono {"ok" if p["profit"] >= 0 else "bad"}">'
-            f'{_fmt_money(p["profit"], st.get("currency", ""))}</td>'
+            f'{_fmt_money(p["profit"], cur)}</td>'
             f'<td class="small">{html.escape(str(p.get("flow_state", "")))} '
             f'{html.escape(str(p.get("note", "")))}</td></tr>' for p in pos)
-        pos_html = ('<h2>Open trades</h2><div class="card"><table>'
+        pos_html = ('<div class="card"><h2>Open trades</h2><table>'
                     '<tr><th>Market</th><th>Side</th><th>Lots</th><th>Entry</th>'
                     '<th>Stop</th><th>P&amp;L</th><th>State</th></tr>'
                     + rows + '</table></div>')
     else:
-        pos_html = ('<h2>Open trades</h2><div class="card small">'
+        pos_html = ('<div class="card"><h2>Open trades</h2><div class="small">'
                     'No open trades. The bot is watching and waiting for a '
-                    'strong enough opportunity.</div>')
+                    'strong enough opportunity.</div></div>')
 
+    parts = _strategy_parts(snap, strategy)
+    col1 = parts.get("figures", "") + parts.get("detail", "")
+    col2 = periods_html + pos_html + why_html + think_html
+    col3 = parts.get("scalper", "") + parts.get("trades", "")
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="10"><title>Trading bot status</title>
 <style>{CSS}</style></head><body><div class="wrap">
-<nav><a href="/">Status</a><a href="/results">Results</a>
+<div class="top"><nav><a href="/">Status</a><a href="/results">Results</a>
 <a href="/health">Health (JSON)</a></nav>
-<div class="banner {banner_cls}">{html.escape(banner_txt)}</div>
-{render_strategies(snap, strategy)}
+<div class="banner {banner_cls}">{html.escape(banner_txt)}</div></div>
+{prob_html}{src_warn}
 <div class="row">{tiles}</div>
-{prob_html}{build_html}{src_html}{periods_html}{pos_html}{why_html}{think_html}
-<p class="small">Updated {html.escape(str(snap.get('updated')))} (UTC).
+{parts.get("tabs", "")}
+<div class="grid"><div>{col1}</div><div>{col2}</div><div>{col3}</div></div>
+<p class="small">{build_html}{src_html} Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
-</div></body></html>"""
+</div>{KEEP_OPEN_JS}</body></html>"""
 
 
 def render_results(results: dict) -> str:
