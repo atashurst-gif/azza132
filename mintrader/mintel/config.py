@@ -165,6 +165,9 @@ class ScanConfig:
         # negative on five of nine days, the last five in a row.
         ("BREAKOUT_ACCEPTANCE", "TREND"),
         ("LIQUIDITY_SWEEP_REVERSAL", "HIGH_VOL"),
+        # 6 Oct standing rule: BREAKOUT_ACCEPTANCE in HIGH_VOL negative on all
+        # three days it traded (17, 30 Sep, 1 Oct; 3 trades, 0 wins, -17.39).
+        ("BREAKOUT_ACCEPTANCE", "HIGH_VOL"),
         # 2 Oct standing rule: SESSION_EXPANSION in SQUEEZE negative on three
         # of the four days it traded (25, 29 Sep, 2 Oct; 8 trades, 2 wins,
         # net about -16 GBP). A session expansion wants a direction to
@@ -322,7 +325,9 @@ STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, pap
 # Version 2, "Commission First", from the 5 Oct reset: entries 70+, twin off,
 # eight losing markets off, session expansion in a squeeze off, commission
 # never assumed to be zero. See docs/strategies/v2-commission-first.md.
-STRATEGY_NAME = "Commission First (version 2)"
+# Version 3 from 7 Oct: the same, plus breakout acceptance in a fast market
+# off (standing rule). The measuring clock is unchanged: still from the reset.
+STRATEGY_NAME = "Commission First (version 3)"
 
 
 @dataclass

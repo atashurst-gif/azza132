@@ -172,6 +172,17 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   Risk is a percentage of the account, so on 2,000 each trade risks
   about 10 at the 0.5% default and the daily loss stop is about 60 at 3%.
 
+- 2026-10-06 (night, standing rule): BREAKOUT_ACCEPTANCE switched off in
+  HIGH_VOL. Negative on all three days it traded (17 Sep -3.59, 30 Sep
+  -6.08, 1 Oct -7.72; 3 trades, 0 wins). Rule set renamed "Commission First
+  (version 3)"; the measuring clock is unchanged (still from the 5 Oct
+  reset). Looked at and NOT changed (two days only): indices +79.21 on 6
+  trades since the reset against -52.66 on 10 trades everywhere else;
+  scores of 80+ 0 wins in 4 (-41.27) against 70-80 6 in 12 (+67.82).
+  XAUJPY is negative on 6 of 9 days but net +3.47: left on, as net-positive
+  lines have been before. Risk per trade is NOT a flat 0.5%: STRONG setups
+  have been sized at 0.65-0.9% (13-18 GBP on 2,000).
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip
