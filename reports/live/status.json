@@ -81,7 +81,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "16:31:40 UTC",
+    "last_scan": "16:41:53 UTC",
     "last_trade": "USDCHF 2026-10-06T16:12",
     "not_trading_because": [],
     "strategy_rules": {
@@ -92,11 +92,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 11574,
-    "uptime_minutes": 1033.3
+    "cycles": 11689,
+    "uptime_minutes": 1043.5
   },
   "health": {
-    "as_of": "2026-10-06T16:31:40.649299+00:00",
+    "as_of": "2026-10-06T16:41:53.390238+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -104,17 +104,17 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "51416 MB of disk space free",
+        "message": "51396 MB of disk space free",
         "detail": {
-          "free_mb": 51415.8
+          "free_mb": 51396.0
         }
       },
       {
         "name": "MEMORY",
         "severity": "OK",
-        "message": "memory 83% used",
+        "message": "memory 85% used",
         "detail": {
-          "percent": 83.4
+          "percent": 84.8
         }
       },
       {
@@ -122,7 +122,7 @@
         "severity": "OK",
         "message": "clock agrees with the broker (within 1s)",
         "detail": {
-          "skew_seconds": 0.7
+          "skew_seconds": 1.4
         }
       },
       {
@@ -156,9 +156,9 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (-0s old)",
+        "message": "live prices arriving (1s old)",
         "detail": {
-          "freshest_age_seconds": -0.2,
+          "freshest_age_seconds": 0.6,
           "weekend": false
         }
       },
@@ -182,8 +182,8 @@
         "message": "2 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 3.2,
-            "scalper": 0.2
+            "watchdog": 10.5,
+            "scalper": 0.0
           }
         }
       },
@@ -192,7 +192,7 @@
         "severity": "OK",
         "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 5.5
+          "age_seconds": 5.2
         }
       },
       {
@@ -206,176 +206,138 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "AUDNZD",
+      "symbol": "GBPCAD",
       "direction": "SHORT",
-      "score": 70.32,
-      "tier": "STRONG",
+      "score": 61.63,
+      "tier": "NORMAL",
       "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / LOW VOL",
-      "reason": "AUDNZD: TREND / LOW VOL market. Best idea is sell using session expansion. Execution supports it (88/100; spread 0.4 pips (0.8x normal), commission 1.3 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Multi Tf supports it (75/100; 6 timeframes weighed, higher ones first). Volatility argues against it (30/100; volatility at the 1th percentile). Room to the first obstacle is 11 pips, giving about 1.0 to 1 after 1.8 pips of cost. Blocked because: reward:risk only 0.98 after costs; costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "GBPCAD: TREND / NORMAL VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Execution supports it (85/100; spread 0.4 pips (1.0x normal), commission 1.0 pips). Regime supports it (85/100; TREND / NORMAL VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 5 pips, giving about 0.6 to 1 after 1.5 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.65 after costs; entry is 3.5 ATR from the level that invalidates this idea - the move has been missed.",
       "blockers": [
-        "reward:risk only 0.98 after costs",
-        "costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "NORMAL setup - only STRONG or better is traded",
+        "reward:risk only 0.65 after costs",
+        "entry is 3.5 ATR from the level that invalidates this idea - the move has been missed"
       ],
-      "reward_risk": 0.98
+      "reward_risk": 0.649
     },
     {
       "rank": 2,
-      "symbol": "AUDCAD",
-      "direction": "SHORT",
-      "score": 62.55,
-      "tier": "NORMAL",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "AUDCAD: SQUEEZE / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution supports it (99/100; spread 0.1 pips (0.3x normal), commission 1.0 pips). Regime supports it (85/100; SQUEEZE / NORMAL VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Momentum supports it (73/100; efficiency 0.11, ADX 20). Room to the first obstacle is 5 pips, giving about 0.8 to 1 after 1.2 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.83 after costs.",
-      "blockers": [
-        "NORMAL setup - only STRONG or better is traded",
-        "reward:risk only 0.83 after costs"
-      ],
-      "reward_risk": 0.832
-    },
-    {
-      "rank": 3,
-      "symbol": "GBPCAD",
-      "direction": "SHORT",
-      "score": 56.86,
+      "symbol": "AUDJPY",
+      "direction": "LONG",
+      "score": 57.37,
       "tier": "NO_TRADE",
       "tactic": "SESSION_EXPANSION",
       "regime": "TREND / LOW VOL",
-      "reason": "GBPCAD: TREND / LOW VOL market. Best idea is sell using session expansion. Structure supports it (100/100; down structure on M5). Execution supports it (100/100; spread 0.1 pips (0.2x normal), commission 1.0 pips). Regime supports it (85/100; TREND / LOW VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 4 pips, giving about 0.6 to 1 after 1.2 pips of cost. Blocked because: reward:risk only 0.63 after costs; entry is 3.8 ATR from the level that invalidates this idea - the move has been missed.",
+      "reason": "AUDJPY: TREND / LOW VOL market. Best idea is buy using session expansion. Structure supports it (100/100; up structure on M5). Execution supports it (100/100; spread 0.1 pips (0.3x normal), commission 1.2 pips). Regime supports it (85/100; TREND / LOW VOL). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 3 pips, giving about 1.4 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.45 after costs; costs would be 22% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.63 after costs",
-        "entry is 3.8 ATR from the level that invalidates this idea - the move has been missed"
+        "reward:risk only 1.45 after costs",
+        "costs would be 22% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.626
+      "reward_risk": 1.448
+    },
+    {
+      "rank": 3,
+      "symbol": "AUDNZD",
+      "direction": "SHORT",
+      "score": 41.83,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / LOW VOL",
+      "reason": "AUDNZD: TREND / LOW VOL market. Best idea is sell using session expansion. Execution argues against it (0/100; spread 1.6 pips (3.2x normal), commission 1.3 pips). Structure supports it (92/100; unclear structure on M5). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 10 pips, giving about 0.4 to 1 after 5.1 pips of cost. Blocked because: spread is 3.2x its normal size; reward:risk only 0.39 after costs; costs would be 57% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "spread is 3.2x its normal size",
+        "reward:risk only 0.39 after costs",
+        "costs would be 57% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.391
     },
     {
       "rank": 4,
       "symbol": "GBPAUD",
       "direction": "LONG",
-      "score": 54.14,
-      "tier": "NO_TRADE",
-      "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / NORMAL VOL",
-      "reason": "GBPAUD: TREND / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (100/100; spread 0.2 pips (0.3x normal), commission 1.0 pips). Regime supports it (85/100; TREND / NORMAL VOL). Structure argues against it (16/100; down structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 5 pips, giving about 1.1 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.14 after costs.",
-      "blockers": [
-        "reward:risk only 1.14 after costs"
-      ],
-      "reward_risk": 1.14
-    },
-    {
-      "rank": 5,
-      "symbol": "AUDCHF",
-      "direction": "SHORT",
-      "score": 52.11,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "AUDCHF: SQUEEZE / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution supports it (100/100; spread 0.1 pips (0.3x normal), commission 0.6 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Regime supports it (69/100; SQUEEZE / NORMAL VOL). Participation argues against it (31/100; 0.3x median tick volume). Room to the first obstacle is 1 pips, giving about 1.2 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 1.20 after costs; costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 1.20 after costs",
-        "costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 1.203
-    },
-    {
-      "rank": 6,
-      "symbol": "AUDJPY",
-      "direction": "LONG",
-      "score": 50.22,
+      "score": 38.08,
       "tier": "NO_TRADE",
       "tactic": "SESSION_EXPANSION",
       "regime": "TREND / LOW VOL",
-      "reason": "AUDJPY: TREND / LOW VOL market. Best idea is buy using session expansion. Execution supports it (100/100; spread 0.1 pips (0.3x normal), commission 1.2 pips). Structure supports it (98/100; up structure on M5). Regime supports it (85/100; TREND / LOW VOL). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 2 pips, giving about 1.3 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.28 after costs.",
+      "reason": "GBPAUD: TREND / LOW VOL market. Best idea is buy using session expansion. Execution supports it (92/100; spread 0.4 pips (0.7x normal), commission 1.0 pips). Structure argues against it (16/100; down structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Regime supports it (74/100; TREND / LOW VOL). Room to the first obstacle is 2 pips, giving about 0.9 to 1 after 1.6 pips of cost. Blocked because: reward:risk only 0.93 after costs.",
       "blockers": [
-        "reward:risk only 1.28 after costs"
+        "reward:risk only 0.93 after costs"
       ],
-      "reward_risk": 1.279
+      "reward_risk": 0.927
+    },
+    {
+      "rank": 5,
+      "symbol": "JP225",
+      "direction": "SHORT",
+      "score": 36.05,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / LOW VOL",
+      "reason": "JP225: TREND / LOW VOL market. Best idea is sell using session expansion. Execution supports it (88/100; spread 400.0 pips (0.8x normal)). Structure supports it (80/100; range structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Volatility argues against it (30/100; volatility at the 0th percentile). Room to the first obstacle is 800 pips, giving about 1.2 to 1 after 500.0 pips of cost. Blocked because: reward:risk only 1.20 after costs.",
+      "blockers": [
+        "reward:risk only 1.20 after costs"
+      ],
+      "reward_risk": 1.198
+    },
+    {
+      "rank": 6,
+      "symbol": "GBPUSD",
+      "direction": "SHORT",
+      "score": 32.16,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "GBPUSD: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (83/100; spread 0.2 pips (1.0x normal), commission 0.7 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 1 pips, giving about 0.1 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 0.10 after costs.",
+      "blockers": [
+        "reward:risk only 0.10 after costs"
+      ],
+      "reward_risk": 0.1
     },
     {
       "rank": 7,
-      "symbol": "EURAUD",
+      "symbol": "AUS200",
       "direction": "LONG",
-      "score": 46.72,
+      "score": 28.69,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "EURAUD: SQUEEZE / NORMAL VOL market. Best idea is buy using breakout acceptance. Execution supports it (98/100; spread 0.2 pips (0.4x normal), commission 1.0 pips). Regime supports it (85/100; SQUEEZE / NORMAL VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Multi Tf supports it (71/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 4 pips, giving about 1.1 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.07 after costs.",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "AUS200: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Regime supports it (85/100; SQUEEZE / LOW VOL). Execution supports it (84/100; spread 120.0 pips (1.0x normal)). Structure supports it (76/100; range structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 70 pips, giving about 0.8 to 1 after 150.0 pips of cost. Blocked because: reward:risk only 0.78 after costs.",
       "blockers": [
-        "reward:risk only 1.07 after costs"
+        "reward:risk only 0.78 after costs"
       ],
-      "reward_risk": 1.071
+      "reward_risk": 0.78
     },
     {
       "rank": 8,
       "symbol": "NZDCAD",
       "direction": "SHORT",
-      "score": 42.27,
+      "score": 19.6,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
       "regime": "RANGE / LOW VOL",
-      "reason": "NZDCAD: RANGE / LOW VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (92/100; spread 0.2 pips (0.7x normal), commission 1.0 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 1 pips, giving about -0.1 to 1 after 1.3 pips of cost. Blocked because: reward:risk only -0.09 after costs; costs would be 20% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "NZDCAD: RANGE / LOW VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution argues against it (0/100; spread 1.0 pips (3.3x normal), commission 1.0 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 1 pips, giving about -0.5 to 1 after 3.5 pips of cost. Blocked because: spread is 3.3x its normal size; reward:risk only -0.45 after costs; costs would be 52% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only -0.09 after costs",
-        "costs would be 20% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "spread is 3.3x its normal size",
+        "reward:risk only -0.45 after costs",
+        "costs would be 52% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": -0.085
+      "reward_risk": -0.454
     },
     {
       "rank": 9,
-      "symbol": "JP225",
-      "direction": "SHORT",
-      "score": 38.7,
-      "tier": "NO_TRADE",
-      "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / LOW VOL",
-      "reason": "JP225: TREND / LOW VOL market. Best idea is sell using session expansion. Execution supports it (90/100; spread 400.0 pips (0.8x normal)). Session supports it (75/100; session: NEWYORK,US_CASH). Structure supports it (70/100; range structure on M5). Volatility argues against it (31/100; volatility at the 2th percentile). Room to the first obstacle is 2300 pips, giving about 1.3 to 1 after 500.0 pips of cost. Blocked because: reward:risk only 1.28 after costs.",
-      "blockers": [
-        "reward:risk only 1.28 after costs"
-      ],
-      "reward_risk": 1.284
-    },
-    {
-      "rank": 10,
       "symbol": "NZDUSD",
       "direction": "LONG",
-      "score": 29.87,
+      "score": 15.82,
       "tier": "NO_TRADE",
       "tactic": "SESSION_EXPANSION",
       "regime": "TREND / LOW VOL",
-      "reason": "NZDUSD: TREND / LOW VOL market. Best idea is buy using session expansion. Structure argues against it (16/100; down structure on M5). Execution supports it (83/100; spread 0.1 pips (1.0x normal), commission 0.7 pips). Momentum argues against it (21/100; efficiency 0.08, ADX 23). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 1 pips, giving about 2.0 to 1 after 0.8 pips of cost. Blocked because: costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "NZDUSD: TREND / LOW VOL market. Best idea is buy using session expansion. Execution argues against it (0/100; spread 0.6 pips (6.0x normal), commission 0.7 pips). Structure argues against it (16/100; down structure on M5). Momentum argues against it (17/100; efficiency 0.02, ADX 18). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 1 pips, giving about 1.0 to 1 after 3.0 pips of cost. Blocked because: spread is 6.0x its normal size; reward:risk only 0.97 after costs; costs would be 93% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "spread is 6.0x its normal size",
+        "reward:risk only 0.97 after costs",
+        "costs would be 93% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 1.97
-    },
-    {
-      "rank": 11,
-      "symbol": "GBPNZD",
-      "direction": "SHORT",
-      "score": 29.34,
-      "tier": "NO_TRADE",
-      "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / LOW VOL",
-      "reason": "GBPNZD: TREND / LOW VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Execution supports it (88/100; spread 0.7 pips (0.9x normal), commission 1.3 pips). Regime supports it (85/100; TREND / LOW VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 2 pips, giving about 2.3 to 1 after 2.2 pips of cost. Blocked because: costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 2.286
-    },
-    {
-      "rank": 12,
-      "symbol": "XAGUSD",
-      "direction": "LONG",
-      "score": 28.81,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "XAGUSD: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Regime supports it (85/100; SQUEEZE / LOW VOL). Execution supports it (76/100; spread 14.0 pips (1.4x normal), commission 7.9 pips). Session supports it (75/100; session: NEWYORK,US_CASH). Structure supports it (70/100; range structure on M5). Room to the first obstacle is 8 pips, giving about 1.1 to 1 after 28.2 pips of cost. Blocked because: reward:risk only 1.10 after costs.",
-      "blockers": [
-        "reward:risk only 1.10 after costs"
-      ],
-      "reward_risk": 1.097
+      "reward_risk": 0.972
     }
   ],
   "results": {
@@ -1884,38 +1846,38 @@
       "status": "PAUSED",
       "mode": "PAPER",
       "build": "ccdea84b1f",
-      "updated": "2026-10-06T16:31:42.518913+00:00",
+      "updated": "2026-10-06T16:41:54.272300+00:00",
       "started": "2026-10-05T23:18:22.689967+00:00",
       "markets_monitored": 5,
-      "best_opportunity": "DE40",
+      "best_opportunity": "XAUUSD",
       "best_direction": "SHORT",
-      "confidence": 69.3,
+      "confidence": 59.7,
       "spread_quality": "OK",
-      "momentum": "GOOD",
+      "momentum": "WEAK",
       "best_breakdown": {
-        "Momentum": 16.7,
+        "Momentum": 0.9,
         "Trend alignment": 14.0,
         "Retest quality": 16.0,
         "Volume": 0.0,
-        "Spread": 5.0,
-        "Liquidity": 6.0,
-        "Volatility fit": 5.6,
+        "Spread": 7.7,
+        "Liquidity": 10.0,
+        "Volatility fit": 5.1,
         "Structure room": 6.0,
         "Order flow (disabled)": 0.0
       },
       "best_blockers": [
-        "short: waiting for a pullback to the fast EMA",
         "short: waiting for price to take out the last one-minute bar",
         "short: the last minute is not moving with the trend yet",
-        "short: price is already back through the pullback"
+        "short: only 0.6R of room to the 20-minute low (need 1.0R)",
+        "confidence 60 below 60"
       ],
       "blocked_because": [
         "6 losses in a row - paused for the day"
       ],
       "position": null,
-      "tick_age_seconds": 0.518913,
-      "latency_ms": 4.1,
-      "cycle_ms": 9.0,
+      "tick_age_seconds": 0.2723,
+      "latency_ms": 6.1,
+      "cycle_ms": 7.7,
       "breakers": {
         "consecutive_losses": 6,
         "day_pnl": -36.31,
@@ -2714,7 +2676,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 0.109421
+      "age_seconds": 1.204231
     },
     "labels": {
       "overall": "Overall",
@@ -2722,5 +2684,5 @@
       "rapid_scalper": "Rapid Scalper"
     }
   },
-  "updated": "2026-10-06T16:31:42.628505+00:00"
+  "updated": "2026-10-06T16:41:55.476714+00:00"
 }
