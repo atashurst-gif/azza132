@@ -54,3 +54,15 @@ def test_render_and_missing_history():
 def test_the_since_date_is_read_as_utc():
     assert since_utc("2026-09-17") == dt.datetime(2026, 9, 17, tzinfo=dt.timezone.utc)
     assert since_utc("2026-09-17T10:00+01:00").hour == 9
+
+
+def test_the_rule_table_scores_every_rule_on_the_same_bars():
+    # up 5 R by minute 2, back to +2 R by minute 3, then flat for hours
+    path = [(99, 101, 100), (100, 120, 118), (115, 150, 148), (118, 140, 120)] + [(118, 122, 120)] * 300
+    p = analyse(trade(), bars(path), 0.01)
+    assert p.rules["trail 1R"] == 4.0            # out at 150 - 10
+    assert p.rules["trail 3R"] == 2.0            # out at 150 - 30
+    assert p.rules["hold 2h"] == 2.0             # the close at the deadline
+    assert p.rules["wide, trail 2R"] == 3.0
+    text = render([p], 8)
+    assert "EVERY TRADE" in text and "the ladder (as traded)" in text and "trail 3R" in text

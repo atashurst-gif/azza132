@@ -59,19 +59,41 @@ class Potential:
     reach_wide_r: float = 0.0        # stop 1.5x further
     ride_r: float = 0.0              # trail 1 R behind once +1 R
     ride_wide_r: float = 0.0         # 1.5x stop, trail 1.5 R behind once +1.5 R
+    rules: dict = field(default_factory=dict)   # name -> R banked, for every rule in RULES
     bars: int = 0
     note: str = ""
 
 
+# The riding rules compared, all on the same bars. (stop, trail, hold hours)
+#   stop   how far the first stop sits, in R of the trade's own stop (1.5 = 15 on a 10)
+#   trail  once the best price is this many R ahead, the stop trails this far behind it
+#   hold   None = until stopped or the window ends; otherwise out at this many hours
+RULES: dict[str, tuple[float, Optional[float], Optional[float]]] = {
+    "trail 1R": (1.0, 1.0, None),
+    "trail 2R": (1.0, 2.0, None),
+    "trail 3R": (1.0, 3.0, None),
+    "wide, trail 1.5R": (1.5, 1.5, None),
+    "wide, trail 2R": (1.5, 2.0, None),
+    "wide, trail 3R": (1.5, 3.0, None),
+    "hold 2h": (1.0, None, 2.0),
+    "hold 4h": (1.0, None, 4.0),
+    "hold 8h": (1.0, None, 8.0),
+    "wide, hold 4h": (1.5, None, 4.0),
+}
+
+
 def _walk(bars, sign: int, entry: float, dist: float, point: float, opened: dt.datetime,
-          stop_mult: float, trail_r: Optional[float]) -> tuple[float, float, bool, float]:
+          stop_mult: float, trail_r: Optional[float],
+          hold_hours: Optional[float] = None) -> tuple[float, float, bool, float]:
     """Walk the bars from the entry. Returns (peak R before the stop, minutes
-    to that peak, stopped?, R at exit under the trailing rule or at the end)."""
+    to that peak, stopped?, R at exit under the rule or at the end)."""
     stop_r = -stop_mult
     peak = 0.0
     peak_min = 0.0
     last_r = 0.0
     for i, b in enumerate(bars):
+        if hold_hours is not None and (b.time - opened).total_seconds() >= hold_hours * 3600:
+            return peak, peak_min, False, last_r        # out at the last close before the deadline
         spr = (b.spread_points or 0.0) * point
         if sign > 0:
             worst = (b.low - entry) / dist
@@ -120,6 +142,8 @@ def analyse(trade: dict, bars: Sequence, point: float) -> Potential:
     p.reach_wide_r, _, _, _ = _walk(seq, sign, entry, dist, point, opened, 1.5, None)
     _, _, _, p.ride_r = _walk(seq, sign, entry, dist, point, opened, 1.0, 1.0)
     _, _, _, p.ride_wide_r = _walk(seq, sign, entry, dist, point, opened, 1.5, 1.5)
+    for name, (stop_mult, trail, hold) in RULES.items():
+        p.rules[name] = round(_walk(seq, sign, entry, dist, point, opened, stop_mult, trail, hold)[3], 2)
     for k in ("reach_r", "reach_wide_r", "ride_r", "ride_wide_r", "reach_minutes"):
         setattr(p, k, round(getattr(p, k), 2))
     return p
@@ -168,19 +192,42 @@ def render(res: list[Potential], hours: float) -> str:
     lines += ["", "ALL TRADES ADDED UP (R; x10 for money at a 10 stop)",
               f"  as traded {tot('kept_r'):+.1f}   ride 1R {tot('ride_r'):+.1f}   ride wide {tot('ride_wide_r'):+.1f}",
               f"  big winners that kept going past 3 R before the stop: {sum(p.reach_r >= 3 for p in winners)} of {len(winners)}"]
+    # the rule table: which plain riding rule, if any, beats what the ladder kept
+    def table(title, ps):
+        if not ps:
+            return []
+        out = ["", f"{title} ({len(ps)} trades): R per trade, and the total",
+               f"  {'rule':20} {'per trade':>10} {'total':>8}   {'beats the ladder on':>20}"]
+        kept = [p.kept_r for p in ps]
+        out.append(f"  {'the ladder (as traded)':20} {mean(kept):+10.2f} {sum(kept):+8.1f}")
+        for name in RULES:
+            xs = [p.rules.get(name, 0.0) for p in ps]
+            better = sum(1 for p in ps if p.rules.get(name, 0.0) > p.kept_r)
+            out.append(f"  {name:20} {mean(xs):+10.2f} {sum(xs):+8.1f}   {better:4d} of {len(ps)}")
+        return out
+    lines += table("EVERY TRADE", ok)
+    lines += table("THE BIG WINNERS ONLY", winners)
+    idx = [p for p in ok if p.symbol in INDICES]
+    lines += table("INDICES ONLY", idx)
+    lines += ["", "Money: with a 10 stop, 1 R = 10; the 'wide' rules risk 15 on every trade.",
+              "A 'hold' rule still has the stop; it just does not trail. Commission is left out of every column."]
     skipped = [p for p in res if not p.bars]
     if skipped:
         lines.append(f"  ({len(skipped)} trades had no price history and are left out)")
     return "\n".join(lines)
 
 
+INDICES = ("US30", "US500", "DE40", "UK100", "NAS100", "USTEC", "JP225", "AUS200", "FRA40", "EU50")
+
+
 def to_csv(res: list[Potential]) -> str:
     out = io.StringIO()
     w = csv.writer(out)
-    cols = list(Potential.__dataclass_fields__)
+    cols = [c for c in Potential.__dataclass_fields__ if c != "rules"] + list(RULES)
     w.writerow(cols)
     for p in res:
-        w.writerow([getattr(p, c) for c in cols])
+        w.writerow([getattr(p, c) for c in cols if c in Potential.__dataclass_fields__]
+                   + [p.rules.get(name, "") for name in RULES])
     return out.getvalue()
 
 
