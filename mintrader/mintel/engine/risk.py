@@ -327,6 +327,11 @@ class RiskManager:
 
         risk_pct = min(risk_pct, r.max_risk_pct)
         risk_money = account.equity * risk_pct / 100.0
+        money_cap = float(getattr(r, "max_risk_money", 0.0) or 0.0)
+        if money_cap > 0 and risk_money > money_cap:
+            risk_money = money_cap
+            risk_pct = money_cap / max(account.equity, 1e-9) * 100.0
+            reasons.append(f"capped at {money_cap:.2f} {account.currency} a trade")
 
         # Correlated exposure: the cap applies to the BUCKET, not the symbol.
         if snapshot is not None:
@@ -376,6 +381,8 @@ class RiskManager:
         # Never let rounding push actual risk above the ceiling.
         actual_risk_money = money_per_lot * volume
         ceiling = account.equity * r.max_risk_pct / 100.0
+        if money_cap > 0:
+            ceiling = min(ceiling, money_cap)
         while actual_risk_money > ceiling + 1e-9 and volume > 0:
             volume = spec.normalise_volume(volume - spec.volume_step)
             actual_risk_money = money_per_lot * volume

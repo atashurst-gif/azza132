@@ -15,6 +15,14 @@ from mintel.engine.risk import RiskManager, exposure_key
 UTC = dt.timezone.utc
 
 
+def pct_config() -> Config:
+    """The percentage engine on its own: these tests use 10,000 accounts, where
+    the 10 GBP money cap (tested in TestMoneyCap) would hide the arithmetic."""
+    c = Config()
+    c.risk.max_risk_money = 0.0
+    return c
+
+
 def spec(**kw) -> SymbolSpec:
     base = dict(name="EURUSD", digits=5, point=0.00001, tick_size=0.00001,
                 tick_value=1.0, contract_size=100_000, volume_min=0.01,
@@ -47,18 +55,18 @@ def state(tier="STRONG", direction=1, entry=1.1000, stop=1.0980,
 
 class TestRiskPercentage:
     def test_no_trade_tier_gets_no_risk(self):
-        rm = RiskManager(Config())
+        rm = RiskManager(pct_config())
         pct, _ = rm.risk_pct_for(state(tier="NO_TRADE"), 0.9)
         assert pct == 0.0
 
     def test_normal_tier_gets_base_risk(self):
-        cfg = Config()
+        cfg = pct_config()
         rm = RiskManager(cfg)
         pct, _ = rm.risk_pct_for(state(tier="NORMAL"), 0.9)
         assert pct == pytest.approx(cfg.risk.base_risk_pct)
 
     def test_exceptional_tier_can_reach_the_ceiling(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.aggression = "MAXIMUM"
         rm = RiskManager(cfg)
         pct, _ = rm.risk_pct_for(state(tier="EXCEPTIONAL"), 1.0)
@@ -68,14 +76,14 @@ class TestRiskPercentage:
         for aggression in ("CONSERVATIVE", "NORMAL", "AGGRESSIVE", "MAXIMUM"):
             for conf in (0.0, 0.5, 1.0, 5.0):
                 for tier in ("NORMAL", "STRONG", "EXCEPTIONAL"):
-                    cfg = Config()
+                    cfg = pct_config()
                     cfg.aggression = aggression
                     pct, _ = RiskManager(cfg).risk_pct_for(state(tier=tier),
                                                            conf)
                     assert pct <= cfg.risk.max_risk_pct + 1e-9
 
     def test_low_confidence_sizes_smaller_than_high_confidence(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.aggression = "AGGRESSIVE"
         rm = RiskManager(cfg)
         low, _ = rm.risk_pct_for(state(tier="EXCEPTIONAL"), 0.1)
@@ -85,7 +93,7 @@ class TestRiskPercentage:
     def test_conservative_trades_smaller_than_maximum(self):
         results = {}
         for aggression in ("CONSERVATIVE", "NORMAL", "AGGRESSIVE", "MAXIMUM"):
-            cfg = Config()
+            cfg = pct_config()
             cfg.aggression = aggression
             results[aggression], _ = RiskManager(cfg).risk_pct_for(
                 state(tier="STRONG"), 0.8)
@@ -95,7 +103,7 @@ class TestRiskPercentage:
 
 class TestKelly:
     def test_kelly_is_ignored_on_a_small_sample(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.aggression = "MAXIMUM"
         rm = RiskManager(cfg)
         pct, reasons = rm.risk_pct_for(state(tier="EXCEPTIONAL"), 1.0,
@@ -104,7 +112,7 @@ class TestKelly:
         assert any("too few" in r for r in reasons)
 
     def test_kelly_only_ever_reduces_risk(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.aggression = "MAXIMUM"
         rm = RiskManager(cfg)
         without, _ = rm.risk_pct_for(state(tier="EXCEPTIONAL"), 1.0)
@@ -113,7 +121,7 @@ class TestKelly:
         assert with_kelly <= without
 
     def test_negative_kelly_falls_back_to_base(self):
-        cfg = Config()
+        cfg = pct_config()
         rm = RiskManager(cfg)
         pct, reasons = rm.risk_pct_for(state(tier="EXCEPTIONAL"), 1.0,
                                        (300, 0.2, 1.0))
@@ -121,7 +129,7 @@ class TestKelly:
         assert any("negative" in r for r in reasons)
 
     def test_kelly_is_always_capped_by_the_configured_maximum(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.aggression = "MAXIMUM"
         rm = RiskManager(cfg)
         # Absurdly favourable stats must still not breach the ceiling.
@@ -134,7 +142,7 @@ class TestNoMartingale:
     """Losses must never increase the next position's size."""
 
     def test_sizing_ignores_recent_losses(self):
-        cfg = Config()
+        cfg = pct_config()
         rm = RiskManager(cfg)
         s, sp, acct = state(), spec(), account()
         snap = rm.snapshot(acct, [])
@@ -161,7 +169,7 @@ class TestNoMartingale:
                           "kelly_stats"}
 
     def test_equity_drop_reduces_money_at_risk(self):
-        cfg = Config()
+        cfg = pct_config()
         rm = RiskManager(cfg)
         big = rm.size(state(), spec(), account(10_000), [], 1.0,
                       rm.snapshot(account(10_000), []), margin_per_lot=3000.0)
@@ -172,7 +180,7 @@ class TestNoMartingale:
 
 class TestSizing:
     def test_volume_matches_the_hand_calculation(self):
-        cfg = Config()
+        cfg = pct_config()
         rm = RiskManager(cfg)
         acct = account(10_000)
         # 1% of 10,000 = 100 GBP; a 20-pip stop costs 200 GBP per lot -> 0.5 lots
@@ -183,7 +191,7 @@ class TestSizing:
         assert r.stop_pips == pytest.approx(20.0)
 
     def test_long_and_short_are_symmetric(self):
-        cfg = Config()
+        cfg = pct_config()
         rm = RiskManager(cfg)
         acct = account()
         snap = rm.snapshot(acct, [])
@@ -195,7 +203,7 @@ class TestSizing:
         assert long_r.risk_money == pytest.approx(short_r.risk_money)
 
     def test_rounding_never_pushes_risk_over_the_ceiling(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.risk.max_risk_pct = 1.0
         rm = RiskManager(cfg)
         acct = account(10_000)
@@ -206,7 +214,7 @@ class TestSizing:
         assert r.risk_pct <= 1.0 + 1e-9
 
     def test_stop_too_tight_for_the_minimum_lot_is_refused(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.risk.max_risk_pct = 0.05
         rm = RiskManager(cfg)
         acct = account(200)
@@ -215,14 +223,14 @@ class TestSizing:
         assert not r.ok and r.rejected
 
     def test_zero_stop_distance_is_refused(self):
-        rm = RiskManager(Config())
+        rm = RiskManager(pct_config())
         acct = account()
         r = rm.size(state(entry=1.1, stop=1.1), spec(), acct, [], 1.0,
                     rm.snapshot(acct, []))
         assert not r.ok and "zero" in r.rejected
 
     def test_jpy_pair_sizing_uses_its_own_tick_value(self):
-        rm = RiskManager(Config())
+        rm = RiskManager(pct_config())
         acct = account(10_000)
         jpy = spec(name="USDJPY", digits=3, point=0.001, tick_size=0.001,
                    tick_value=0.68)
@@ -232,7 +240,7 @@ class TestSizing:
         assert r.volume == pytest.approx(0.49, abs=0.01)
 
     def test_margin_level_projection_prevents_a_margin_call(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.risk.min_margin_level_pct = 300.0
         rm = RiskManager(cfg)
         acct = account(10_000)
@@ -255,7 +263,7 @@ class TestExposure:
         assert not (keys_a & keys_b)
 
     def test_correlated_cap_reduces_or_refuses_a_second_trade(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.risk.max_correlated_risk_pct = 1.0
         rm = RiskManager(cfg)
         acct = account(10_000)
@@ -268,7 +276,7 @@ class TestExposure:
         assert r.risk_money <= 0.0 or r.risk_money <= 100.0
 
     def test_bucket_full_refuses_outright(self):
-        cfg = Config()
+        cfg = pct_config()
         cfg.risk.max_correlated_risk_pct = 0.5
         rm = RiskManager(cfg)
         acct = account(10_000)
@@ -283,7 +291,7 @@ class TestExposure:
 
 class TestCircuitBreakers:
     def _rm(self, **risk):
-        cfg = Config()
+        cfg = pct_config()
         for k, v in risk.items():
             setattr(cfg.risk, k, v)
         return RiskManager(cfg)
@@ -367,3 +375,32 @@ class TestCircuitBreakers:
         import inspect
         src = inspect.getsource(Trader.manage)
         assert "entries_allowed" not in src
+
+
+class TestMoneyCap:
+    """7 Oct: no trade risks more than 10 GBP at its stop, whatever the
+    percentages say. Smaller size, same stop."""
+
+    def test_the_default_caps_a_trade_at_ten(self):
+        cfg = Config()
+        assert cfg.risk.max_risk_money == 10.0
+        rm = RiskManager(cfg)
+        acct = account(2_000)
+        r = rm.size(state(), spec(), acct, [], 0.85, rm.snapshot(acct, []), margin_per_lot=3000.0)
+        assert r.ok and r.risk_money <= 10.0 + 1e-9
+        assert r.stop_distance == pytest.approx(0.0020)            # the stop did not move
+        assert any("capped at 10.00" in x for x in r.reasons)
+
+    def test_under_the_cap_nothing_changes(self):
+        cfg = Config()
+        rm = RiskManager(cfg)
+        acct = account(1_000)                                      # 0.5% = 5
+        r = rm.size(state(), spec(), acct, [], 0.5, rm.snapshot(acct, []), margin_per_lot=3000.0)
+        assert r.ok and 0 < r.risk_money <= 5.0 + 1e-9                # lot rounding only rounds down
+        assert not any("capped" in x for x in r.reasons)
+
+    def test_a_settings_file_without_the_key_still_gets_the_cap(self, tmp_path):
+        import json
+        p = tmp_path / "config.json"
+        p.write_text(json.dumps({"risk": {"base_risk_pct": 0.5, "max_risk_pct": 1.5}}))
+        assert Config.load(p).risk.max_risk_money == 10.0

@@ -28,6 +28,12 @@ class RiskConfig:
     # --- operator-owned boundaries -------------------------------------------
     base_risk_pct: float = 0.50          # risk at NORMAL confidence
     max_risk_pct: float = 1.50           # hard ceiling; never exceeded
+    # A cap in MONEY (account currency) on what any one trade may lose at its
+    # stop, on top of the percentages. 0 = no cap. 7 Oct, Aaron: "stick with
+    # your advice" - every trade risks at most 10 GBP until two weeks of
+    # results can be trusted (5-6 Oct STRONG setups were sized at 13-18).
+    # Smaller size, same stop: the chart decides where the idea is wrong.
+    max_risk_money: float = 10.0
     min_risk_pct: float = 0.10
     # --- portfolio limits ----------------------------------------------------
     max_total_risk_pct: float = 4.00     # sum of open risk
