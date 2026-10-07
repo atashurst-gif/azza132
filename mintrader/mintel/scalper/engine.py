@@ -26,9 +26,12 @@ from .execution import Fill, make_executor
 from .features import TickBuffer, compute
 from .journal import ScalperJournal
 from .manage import Manager, ScalpTrade
+from .rider import RiderManager
 from .risk import Breakers, account_safety, plan
 from .score import Opportunity, score
-from .stats import strategy_stats
+from .sessions import SessionTracker, Window, current_window, default_windows, threshold_for
+from .stats import rider_analytics, strategy_stats
+from .velocity import micro as micro_features, read_market, structural_stop
 
 log = logging.getLogger("mintel.scalper")
 
@@ -46,8 +49,18 @@ class ScalperEngine:
         self.data_dir = data
         self.journal = journal or ScalperJournal(data / scfg.journal_file)
         self.executor = executor if executor is not None else make_executor(scfg, broker)
-        self.manager = Manager(scfg)
+        self.velocity_style = str(getattr(scfg, "entry_style", "")).upper() == "VELOCITY"
+        self.manager = RiderManager(scfg) if self.velocity_style else Manager(scfg)
         self.breakers = Breakers(scfg)
+        self.sessions = SessionTracker(moving_ratio=getattr(scfg, "session_moving_ratio", 1.3))
+        self.windows = tuple(Window(*w) if not isinstance(w, Window) else w for w in (scfg.session_windows or ())) or default_windows()
+        self.window: Optional[Window] = None
+        self.threshold_now: float = scfg.min_confidence
+        self.threshold_why: str = ""
+        self.thinking: str = "starting"
+        self.session_pnl: float = 0.0
+        self.session_key: str = ""
+        self.micros: dict = {}
         self.buffers: dict[str, TickBuffer] = {s: TickBuffer(s) for s in scfg.symbols}
         self.specs: dict = {}
         self.bars: dict[str, list] = {}
@@ -266,7 +279,12 @@ class ScalperEngine:
                             trade.point, now)
                 if not f.ok:
                     f = None
-            d = self.manager.update(trade, tick, f, now)
+            if self.velocity_style:
+                m = micro_features(self.buffers[trade.symbol], trade.point, now) if trade.symbol in self.buffers else None
+                self.micros[trade.symbol] = m
+                d = self.manager.update(trade, tick, f, now, m)
+            else:
+                d = self.manager.update(trade, tick, f, now)
             if d.close:
                 fill = self.executor.close(ticket, tick, spec)
                 notes.append(self._finalise(trade, now, fill, d.exit_reason, d.reason))
@@ -324,6 +342,11 @@ class ScalperEngine:
                                      fill.slippage_points, fill.latency_ms, spread_now, now)
         self.breakers.record_slippage(fill.slippage_points, spread_now)
         self.breakers.record_result(net, now)
+        self.session_pnl += net
+        try:
+            self.sessions.note(self.window, trade.symbol, net)
+        except Exception:
+            pass
         self._broker_day_dirty = True
         self.last_exit_by_symbol[trade.symbol] = now
         if net < 0:
@@ -337,10 +360,68 @@ class ScalperEngine:
         return msg
 
     # --------------------------------------------------------------- scan --
+    def _loss_ladder(self) -> tuple[float, float]:
+        """(size multiplier, extra bar) for the current run of losses. Never above 1x."""
+        n = self.breakers.consecutive_losses
+        sizes = tuple(self.scfg.loss_ladder_size) or (1.0,)
+        bumps = tuple(self.scfg.loss_ladder_threshold) or (0.0,)
+        return (min(1.0, float(sizes[min(n, len(sizes) - 1)])), float(bumps[min(n, len(bumps) - 1)]))
+
+    def _session_update(self, now: dt.datetime, mono: float) -> None:
+        self.window = current_window(now, self.windows)
+        key = f"{self.window.name}:{now.date()}" if self.window else ""
+        if key != self.session_key:
+            self.session_key = key
+            self.session_pnl = 0.0
+        for sym in self.scfg.symbols:
+            spec = self.spec(sym)
+            if spec is not None:
+                try:
+                    self.sessions.update(sym, self._bars_for(sym, mono), spec.point)
+                except Exception:
+                    pass
+
+    def _velocity_scan(self, now: dt.datetime, mono: float) -> list[Opportunity]:
+        opps: list[Opportunity] = []
+        size_mult, bump = self._loss_ladder()
+        in_open = self.window is not None and self.window.phase == "OPENING"
+        for sym in self.scfg.symbols:
+            buf = self.buffers.get(sym)
+            spec = self.spec(sym)
+            if buf is None or spec is None or not buf.ticks or not getattr(spec, "trade_allowed", True):
+                continue
+            m = micro_features(buf, spec.point, now)
+            self.micros[sym] = m
+            moving = self.sessions.moving(sym)
+            threshold, why = threshold_for(self.window, self.scfg.min_confidence, self.scfg.opening_bonus,
+                                           self.scfg.quiet_penalty, moving)
+            threshold += bump
+            self.threshold_now, self.threshold_why = threshold, why + (f"; +{bump:.0f} after {self.breakers.consecutive_losses} losses" if bump else "")
+            per_point = spec.money_per_lot(spec.point)
+            commission_pts = (self.scfg.commission_for(sym) / per_point) if per_point > 0 else 0.0
+            r = read_market(m, self.scfg, commission_points=commission_pts,
+                            slippage_points=self.scfg.slippage_allowance_points * 2,
+                            in_open_window=in_open and moving, session_bonus=(1.0 if in_open and moving else 0.4 if in_open else 0.0),
+                            threshold=threshold)
+            opp = Opportunity(symbol=sym, direction=r.direction, confidence=r.confidence, contributions=r.contributions,
+                              penalties=r.penalties, blockers=list(r.blockers), expected_move_points=r.expected_move_points,
+                              features=None, setup=r.setup, scalpability=r.scalpability, threshold=threshold)
+            if r.direction:
+                opp.invalidation = structural_stop(buf, m, r.direction, self.scfg, spec.point, now)
+                opp.notes.append(f"{r.setup.replace('_', ' ').lower()}; v1s {m.v(1.0):+.2f} pts/s; accel {m.accel_ratio:+.1f}x; "
+                                 f"consistency {m.consistency:.0%}; {m.ticks_per_second:.1f} ticks/s; scalpability {r.scalpability:.0f}")
+            opps.append(opp)
+        return opps
+
     def _scan(self, now: dt.datetime, ticks: dict, tick_age: Optional[float], mono: float) -> list[str]:
         notes: list[str] = []
         opps: list[Opportunity] = []
-        for sym in self.scfg.symbols:
+        if self.velocity_style:
+            if mono - getattr(self, "_session_at", 0.0) > 5.0:
+                self._session_at = mono
+                self._session_update(now, mono)
+            opps = self._velocity_scan(now, mono)
+        for sym in (() if self.velocity_style else self.scfg.symbols):
             buf = self.buffers.get(sym)
             spec = self.spec(sym)
             if buf is None or spec is None or not buf.ticks:
@@ -370,7 +451,10 @@ class ScalperEngine:
         hours = tuple(int(h) for h in (self.scfg.entry_hours_utc or ()))
         if hours and now.hour not in hours:
             blocked.append(f"outside its trading hours ({', '.join(f'{h:02d}:00' for h in hours)} UTC)")
+        if self.velocity_style and self.window is not None and self.session_pnl <= -self.scfg.max_session_loss_gbp:
+            blocked.append(f"{self.window.name} session loss limit reached ({self.session_pnl:+.2f})")
         self.blocked_because = blocked
+        self._update_thinking(now, blocked)
         if blocked:
             return notes
         for opp in opps:
@@ -390,8 +474,17 @@ class ScalperEngine:
         f = opp.features
         spec = self.spec(sym)
         tick = ticks.get(sym) or self.buffers[sym].last
-        if tick is None or spec is None or f is None:
+        if tick is None or spec is None or (f is None and not self.velocity_style):
             return f"{sym}: no tick"
+        if f is None:
+            # the velocity engine scores from the tick tape; the bar features are context only
+            f = compute(sym, self.buffers[sym], self.bars.get(sym, []), spec.point, now)
+            m = self.micros.get(sym)
+            if m is not None and m.ok:
+                f.spread_points = m.spread_points
+                f.realised_vol_points = m.noise_points
+                f.micro_low = min(t.bid for t in list(self.buffers[sym].ticks)[-20:])
+                f.micro_high = max(t.ask for t in list(self.buffers[sym].ticks)[-20:])
         side = Side.BUY if opp.direction > 0 else Side.SELL
         black = self._news_blackout(sym, now)
         if black:
@@ -403,8 +496,9 @@ class ScalperEngine:
         buf = self.scfg.invalidation_buffer_spreads * spread
         invalidation = (f.micro_low - buf) if side is Side.BUY else (f.micro_high + buf)
         if opp.invalidation:
-            invalidation = opp.invalidation       # PULLBACK: beyond the pullback, not the last minute's ticks
-        rp = plan(spec, side, entry, invalidation, spread, self.scfg)
+            invalidation = opp.invalidation       # PULLBACK/VELOCITY: the structural stop, not the last minute's ticks
+        size_mult = self._loss_ladder()[0] if self.velocity_style else 1.0
+        rp = plan(spec, side, entry, invalidation, spread, self.scfg, size_multiplier=size_mult)
         if not rp.ok:
             opp.blockers.append(rp.reason); self.journal.record_rejected(opp, f.spread_points, now, self.scfg.rejected_log_seconds)
             return f"{sym}: {rp.reason}"
@@ -472,6 +566,16 @@ class ScalperEngine:
                            rp.stop, rp.stop, abs(fill.price - rp.stop), rp.planned_loss, spec.point, spec=spec,
                            confidence=opp.confidence, components={**opp.contributions, **opp.penalties},
                            entry_reason=opp.explain())
+        if self.velocity_style:
+            m = self.micros.get(sym)
+            trade.state = "TRADE_VALIDATION"
+            trade.setup = opp.setup
+            trade.session = f"{self.window.name} {self.window.phase.lower().replace('_', '-')}" if self.window else "quiet hours"
+            trade.momentum_at_entry = opp.confidence
+            trade.velocity_at_entry = m.v(1.0) if m is not None else 0.0
+            trade.acceleration_at_entry = m.accel_ratio if m is not None else 0.0
+            trade.state_reason = f"{opp.setup.replace('_', ' ').lower()} at {opp.confidence:.0f}/100 (bar {opp.threshold:.0f})"
+            trade.last_new_high_at = now
         self.trades[fill.ticket] = trade
         self.last_entry_at = now
         self.breakers.record_slippage(fill.slippage_points, f.spread_points)
@@ -482,8 +586,15 @@ class ScalperEngine:
                                 fill.slippage_points, fill.latency_ms)
         self.journal.record_slippage(fill.ticket, "entry", fill.requested, fill.price, fill.slippage_points,
                                      fill.latency_ms, f.spread_points, now)
+        if self.velocity_style:
+            self.journal.update_trade(trade)
+            try:
+                self.journal._exec("UPDATE trades SET scalpability=? WHERE ticket=?", (opp.scalpability, trade.ticket))
+            except Exception:
+                pass
         msg = (f"{sym} {side.value} {rp.volume:g} lots at {fill.price} stop {rp.stop} "
-               f"(planned loss {rp.planned_loss:.2f}, confidence {opp.confidence:.0f})")
+               f"(planned loss {rp.planned_loss:.2f}, confidence {opp.confidence:.0f}"
+               + (f", {opp.setup.replace('_', ' ').lower()}" if opp.setup else "") + ")")
         self.journal.log_event("ENTRY", msg, {"ticket": fill.ticket, "components": trade.components}, now)
         log.info("%s", msg)
         return msg
@@ -564,6 +675,10 @@ class ScalperEngine:
             currency = "GBP"
         s = strategy_stats(closed, opens, label=STRATEGY_LABEL, strategy_id=STRATEGY_ID,
                            currency=currency, scalper=True)
+        try:
+            s["analytics"] = rider_analytics(closed, self.journal.rejection_counts(day))
+        except Exception:
+            pass
         mode = self.executor.mode if self.executor is not None else "OFF"
         s["mode"] = mode
         s["source"] = "simulated (PAPER)" if mode == "PAPER" else "the bot's own records"
@@ -590,6 +705,39 @@ class ScalperEngine:
                 s["source"] = "the bot's own records (broker history unavailable)"
         return s
 
+    def _update_thinking(self, now: dt.datetime, blocked: list) -> None:
+        """One plain-English line on what the strategy is doing right now."""
+        if not self.velocity_style:
+            return
+        if self.trades:
+            t = next(iter(self.trades.values()))
+            side = "LONG" if t.side is Side.BUY else "SHORT"
+            st_ = t.state
+            if st_ == "TRADE_VALIDATION":
+                self.thinking = f"{side} {t.symbol} - {t.setup.replace('_', ' ').lower()} confirmed, proving it"
+            elif st_ == "INITIAL_RISK":
+                self.thinking = f"{side} {t.symbol} - waiting for progress (momentum {t.momentum_now:.0f}/100)"
+            elif st_ == "PROFIT_PROTECTION":
+                self.thinking = f"PROTECTING {t.symbol} - {t.protected_floor_money:+.2f} locked"
+            elif st_ == "MOMENTUM_RIDE":
+                self.thinking = f"RIDING {t.symbol} - momentum {t.momentum_now:.0f}/100, trailing {t.trail_points:.1f} points"
+            elif st_ == "MAXIMUM_RIDE":
+                self.thinking = f"MAXIMUM RIDE {t.symbol} - exceptional acceleration, floor {t.protected_floor_money:+.2f}"
+            return
+        if blocked:
+            b = blocked[0]
+            self.thinking = ("COOLDOWN - " + b) if ("losses" in b or "cooling" in b or "resting" in b) else ("BLOCKED - " + b)
+            return
+        best = self.best
+        where = self.window.name if self.window else "quiet hours"
+        if best is not None and best.direction and best.tradable:
+            self.thinking = f"ENTRY READY - {best.symbol} {best.setup.replace('_', ' ').lower()} at {best.confidence:.0f}/100"
+        elif best is not None and best.direction:
+            self.thinking = f"WATCHING {best.symbol} - momentum {best.confidence:.0f}/100 (bar {best.threshold:.0f}); {best.blockers[0] if best.blockers else ''}"
+        else:
+            moving = any(self.sessions.moving(sy) for sy in self.scfg.symbols)
+            self.thinking = f"SCANNING - {where} {'volatility building' if moving else 'quiet'}; {self.threshold_why}"
+
     def status(self, now: dt.datetime, tick_age: Optional[float]) -> dict:
         mode = self.scfg.mode
         if mode == "OFF":
@@ -614,6 +762,13 @@ class ScalperEngine:
                 "mode": t.state, "runner_probability": t.runner_probability,
                 "exit_tolerance": t.exit_tolerance, "stop": t.stop, "reason": t.entry_reason,
                 "ticket": t.ticket, "volume": t.volume,
+                "price": px, "spread_points": round(((last.ask - last.bid) / t.point) if (last and t.point) else 0.0, 1),
+                "initial_risk": round(t.planned_loss, 2), "protected_pnl": round(t.protected_floor_money, 2),
+                "trailing_points": round(getattr(t, "trail_points", 0.0), 1),
+                "momentum": round(getattr(t, "momentum_now", 0.0), 1),
+                "acceleration": round((self.micros.get(t.symbol).accel_ratio * t.side.sign) if self.micros.get(t.symbol) else 0.0, 2),
+                "session": getattr(t, "session", ""), "setup": getattr(t, "setup", ""),
+                "state_reason": getattr(t, "state_reason", ""),
             }
         stats = self.stats_today()
         by_pos = stats.get("broker_by_position") or {}
@@ -638,6 +793,13 @@ class ScalperEngine:
             "best_breakdown": ({**best.contributions, **best.penalties} if best else {}),
             "best_blockers": (best.blockers if best else []),
             "blocked_because": self.blocked_because,
+            "thinking": self.thinking if self.velocity_style else None,
+            "entry_style": self.scfg.entry_style,
+            "session": ({"name": self.window.name, "phase": self.window.phase, "moving": [sy for sy in self.scfg.symbols if self.sessions.moving(sy)]}
+                        if self.window else {"name": "quiet hours", "phase": "QUIET", "moving": [sy for sy in self.scfg.symbols if self.sessions.moving(sy)]}),
+            "threshold": {"now": round(self.threshold_now, 1), "why": self.threshold_why},
+            "best_setup": (best.setup if best else None), "best_scalpability": (best.scalpability if best else None),
+            "session_pnl": round(self.session_pnl, 2),
             "position": position, "tick_age_seconds": tick_age, "latency_ms": round(self.latency_ms, 1),
             "cycle_ms": round(getattr(self, "cycle_ms", 0.0), 1),
             "breakers": {"consecutive_losses": self.breakers.consecutive_losses,

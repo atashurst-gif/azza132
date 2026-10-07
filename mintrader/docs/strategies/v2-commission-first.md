@@ -39,7 +39,11 @@ The nightly review adds one line per trading day.
 
 ## Rapid Scalper (separate, in PAPER)
 
-From 6 October: "Pullback (version 2)" - gold and commission-free indices
+From 7 October (evening): "High-Velocity Session Rider (version 3)" -
+seconds-level acceleration in scalpable markets within session windows,
+failed scalps cut in seconds, winners protected by a rising floor and
+ridden with a momentum-driven trail. docs/strategies/rapid_scalper.md.
+Before that, from 6 October: "Pullback (version 2)" - gold and commission-free indices
 only, with the 20-minute trend, entered after a one-minute pullback, stop
 beyond the pullback. Why: docs/strategies/rapid_scalper.md.
 

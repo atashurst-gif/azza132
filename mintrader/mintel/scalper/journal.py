@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS events (
 """
 
 
+# Version 3 (the rider) records more about every trade; older files gain the
+# columns on first open, so nothing is lost or rewritten.
+V3_COLUMNS = (("setup", "TEXT"), ("session", "TEXT"), ("momentum_at_entry", "REAL"),
+              ("velocity_at_entry", "REAL"), ("acceleration_at_entry", "REAL"),
+              ("protected_floor", "REAL"), ("trailing_distance_points", "REAL"),
+              ("surrendered_from_peak", "REAL"), ("state_reason", "TEXT"), ("scalpability", "REAL"))
+
+
 class ScalperJournal:
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -55,6 +63,11 @@ class ScalperJournal:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(SCHEMA)
+            self._conn.commit()
+            have = {r[1] for r in self._conn.execute("PRAGMA table_info(trades)")}
+            for col, typ in V3_COLUMNS:
+                if col not in have:
+                    self._conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {typ}")
             self._conn.commit()
 
     def close(self) -> None:
@@ -88,12 +101,18 @@ class ScalperJournal:
     def update_trade(self, trade) -> None:
         self._exec("""UPDATE trades SET final_stop=?, peak_profit=?, peak_r=?, mae_r=?, final_state=?,
             stop_changes_json=?, runner_json=?, max_runner_probability=?,
-            reached_protected=?, reached_runner=? WHERE ticket=?""",
+            reached_protected=?, reached_runner=?, setup=?, session=?, momentum_at_entry=?,
+            velocity_at_entry=?, acceleration_at_entry=?, protected_floor=?, trailing_distance_points=?,
+            state_reason=? WHERE ticket=?""",
                    (trade.stop, trade.high_water_money, trade.peak_r, trade.mae_r, trade.state,
                     json.dumps(trade.stop_changes), json.dumps(trade.runner_history[-120:]),
                     max([p for _, p in trade.runner_history], default=0.0),
-                    1 if trade.state in ("PROFIT_PROTECTED", "RUNNER") else 0,
-                    1 if trade.state == "RUNNER" else 0, trade.ticket))
+                    1 if trade.state in ("PROFIT_PROTECTED", "RUNNER", "PROFIT_PROTECTION", "MOMENTUM_RIDE", "MAXIMUM_RIDE") else 0,
+                    1 if trade.state in ("RUNNER", "MOMENTUM_RIDE", "MAXIMUM_RIDE") else 0,
+                    getattr(trade, "setup", ""), getattr(trade, "session", ""), getattr(trade, "momentum_at_entry", 0.0),
+                    getattr(trade, "velocity_at_entry", 0.0), getattr(trade, "acceleration_at_entry", 0.0),
+                    getattr(trade, "protected_floor_money", 0.0), getattr(trade, "trail_points", 0.0),
+                    getattr(trade, "state_reason", ""), trade.ticket))
 
     def close_trade(self, trade, *, closed_at: dt.datetime, exit_requested: float, exit_filled: float,
                     exit_reason: str, exit_detail: str, spread_at_exit: float, gross: float,
@@ -106,6 +125,27 @@ class ScalperJournal:
                    (to_utc(closed_at).isoformat(), exit_requested, exit_filled, exit_reason, exit_detail,
                     spread_at_exit, trade.duration(closed_at), gross, commission, spread_cost, slippage_cost,
                     net, exit_slip, exit_latency, trade.ticket))
+        self._exec("UPDATE trades SET surrendered_from_peak=? WHERE ticket=?",
+                   (round(max(0.0, float(trade.high_water_money) - float(net)), 2), trade.ticket))
+
+    def rejection_counts(self, since: dt.datetime) -> dict:
+        """How many rejected looks, by the first reason given, since ``since``."""
+        out: dict = {}
+        cur = self._exec("SELECT blockers_json FROM rejected WHERE ts_utc >= ?", (to_utc(since).isoformat(),))
+        for (raw,) in cur.fetchall():
+            try:
+                reasons = json.loads(raw or "[]")
+            except Exception:
+                reasons = []
+            key = (reasons[0] if reasons else "?")
+            for tag, label in (("spread", "spread too wide"), ("momentum", "momentum too low"), ("scalpable", "not scalpable"),
+                               ("costs", "costs too high"), ("thin", "market too thin"), ("moved", "chasing"),
+                               ("stop", "stop placement"), ("news", "news blackout")):
+                if tag in key:
+                    key = label
+                    break
+            out[key] = out.get(key, 0) + 1
+        return out
 
     def record_stop_change(self, ticket: int, old: float, new: float, state: str, why: str,
                            now: Optional[dt.datetime] = None) -> None:

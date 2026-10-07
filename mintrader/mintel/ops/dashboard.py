@@ -455,7 +455,24 @@ def render_scalper_panel(snap: dict) -> str:
     head = (f'<div class="box"><div class="rs-title">RAPID SCALPER</div>'
             f'<div class="small">{e(str(rs.get("tagline", "")))}</div><div class="kv">'
             + kv("Status", e(str(rs.get("status")))) + kv("Mode", f'<span class="pill">{e(str(rs.get("mode")))}</span>'))
-    if pos:
+    if rs.get("thinking"):
+        sess = rs.get("session") or {}
+        thr = rs.get("threshold") or {}
+        head += kv("Thinking", f'<b>{e(str(rs["thinking"]))}</b>')
+        head += kv("Session", f'{e(str(sess.get("name", "")))} {e(str(sess.get("phase", "")).lower().replace("_", "-"))}'
+                              f' - moving: {e(", ".join(sess.get("moving") or []) or "none")}; bar {thr.get("now", "")} ({e(str(thr.get("why", "")))})')
+    if pos and rs.get("thinking"):
+        body = (kv("Position", f'{e(str(pos.get("symbol")))} {e(str(pos.get("side")))} {pos.get("volume")} lots, {e(str(pos.get("setup", "")).replace("_", " ").lower())}')
+                + kv("Session", e(str(pos.get("session", ""))))
+                + kv("Entry / now / spread", f'{pos.get("entry")} / {pos.get("price")} / {pos.get("spread_points")} pts')
+                + kv("Duration", f'{pos.get("duration_seconds")} s')
+                + kv("Initial risk", f'{pos.get("initial_risk"):.2f}')
+                + kv("P&amp;L now / peak / protected", f'{pos.get("current_pnl"):+.2f} / {pos.get("peak_pnl"):+.2f} / {pos.get("protected_pnl"):+.2f}')
+                + kv("Trailing distance", f'{pos.get("trailing_points")} points')
+                + kv("Momentum / acceleration", f'{pos.get("momentum")}/100 / {pos.get("acceleration"):+.2f}x')
+                + kv("Stage", f'{e(str(pos.get("mode")))} - {e(str(pos.get("state_reason", "")))}')
+                + kv("Entry reason", e(str(pos.get("reason")))))
+    elif pos:
         floor_txt = "-" if pos.get("protected_floor") is None else f"{pos['protected_floor']:+.2f}"
         body = (kv("Position", f'{e(str(pos.get("symbol")))} {e(str(pos.get("side")))}')
                 + kv("Opened", e(str(pos.get("opened"))))

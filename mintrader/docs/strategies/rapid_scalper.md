@@ -1,7 +1,121 @@
 # Rapid Scalper
 
-**Pullback (version 2): trade with the 20-minute trend, enter when a one-minute
-pullback ends, stop beyond the pullback, ride the winners.**
+**High-Velocity Session Rider (version 3): seconds-level acceleration in a
+scalpable market; cut failed scalps fast, protect winners, give exceptional
+winners room to become very large winners.**
+
+## Version 3, "High-Velocity Session Rider" (7 October 2026)
+
+Aaron's brief, in one line: lose small and quickly; win disproportionately
+when the market gives a genuine explosive move. Detect, enter, validate,
+protect, ride, scrape, exit. Never widen the risk of a losing trade; widen
+the trailing distance only after profit is created and protected; the
+protected profit floor never moves backwards.
+
+### What was inspected, and what was replaced
+
+| Part | Before (version 2) | Now (version 3) |
+|---|---|---|
+| Process, tick polling, buffers, heartbeat, watchdog | own process, 0.25 s loop | **kept**; loop 0.2 s, scan 0.5 s |
+| Entry engine | one-minute pullback with the 20-minute trend (`score.py`) | **replaced** by the micro-momentum engine `velocity.py`; the pullback and burst styles are kept behind `entry_style` for comparison |
+| Trade management | version-2 manager (`manage.py`) | **replaced** by the rider state machine `rider.py` for version 3; the old manager still serves the old styles |
+| Sessions | a UTC hour list | **new** `sessions.py`: London 08:00, New York 13:00, US cash 14:30 (London time, DST-aware), each with pre-open, opening and post-open windows; the opening window is aggressive only when the market is measured to be moving |
+| Risk sizing (`risk.plan`) | money at the stop, never over the ceiling | **kept**, with a size multiplier from the loss ladder that can only shrink it |
+| Breakers | daily loss, streak, slippage, latency, API errors, rejects, reconciliation | **kept**; streak pause now after 4 losses; a session loss limit added |
+| Execution (`execution.py`) | paper/live, stop honoured on every tick | **kept** |
+| Journal | one row per trade | **kept**, columns added (setup, session, momentum/velocity/acceleration at entry, protected floor, trailing distance, surrendered from peak, state reason, scalpability) |
+| Status / page | status file, tab, panel | **kept**; the panel now shows the plain-English thinking line and the rider's fields |
+| Other bots | - | **untouched**: Trend & Breakout, Momentum Runner and Band Breaker have their own code, settings and records |
+
+### How it decides (`velocity.py`)
+
+From the last 60 s of ticks, every pass: velocity at 0.5, 1, 2, 3, 5 and 10
+seconds; acceleration (1 s against 5 s, in units of the market's own noise,
+which is the median 5-second range of the last minute); directional
+consistency (the share of the last 3 s of tick moves going one way);
+tick frequency; micro-range expansion; distance travelled against what is
+normal; retracement of the last 10-second move; spread movement; distance
+beyond the prior 30-second range; fresh micro highs or lows; whether the
+minute's high or low was just swept. There is no order book over this
+feed, so that component is shown as zero rather than invented.
+
+Setups it names: **acceleration**, **micro breakout** (out of a small range
+and immediately faster), **pullback launch** (a strong move, a controlled
+20-60% retracement, momentum returning), **sweep reversal** (the minute's
+high or low taken, then an immediate accelerating reversal), **session
+burst** (one-directional tape in a moving opening window).
+
+Momentum confidence 0-100 from velocity, acceleration, consistency,
+expansion, breakout quality, liquidity, fresh extremes, room, spread and
+session, less penalties for chasing, a widening spread and a deep
+retracement. **Scalpability** 0-100: the realistic move (the usual
+5-second move scaled by how abnormal this one is, at least two noises)
+against spread + commission + slippage, times liquidity, expansion and
+consistency. Blocked when costs would eat more than 35% of the move, when
+scalpability is under 50, when the tape is too thin, or when the move has
+already run more than three noises without a pullback (**no chasing**).
+
+The bar (`min_confidence`, 70): lowered by 10 in a moving opening window,
+raised by 15 in quiet hours, raised by the loss ladder.
+
+### The stop and the size
+
+The micro structural stop sits beyond the last 10-second swing plus a
+buffer (a spread, or half a noise), never inside four spreads. The size is
+whatever risks the ceiling (`planned_max_trade_risk_gbp`, 10) at that stop;
+if the structural stop is wider than the market's maximum, there is no
+trade. Both limits are respected; the stricter one wins.
+
+### The rider (`rider.py`)
+
+| Stage | What happens |
+|---|---|
+| TRADE_VALIDATION (first 3 s) | out at once if momentum reverses and the mid is 0.25 R under, or a breakout is back inside its range |
+| INITIAL_RISK | out if acceleration collapses and reverses, if the spread widens while under water, or after 25 s without reaching +0.3 R (the time stop) |
+| PROFIT_PROTECTION (from +0.6 R) | the floor ladder starts: +0.6 R protects nothing lost after costs; +1 R protects 0.3 R; +2 R, 1 R; +3 R, 1.8 R; +4 R, 2.6 R; +6 R, 4 R; +8 R, 5.5 R (`floor_ladder_r`, configurable) |
+| MOMENTUM_RIDE (from +1.5 R with momentum >= 55) | the trailing distance follows momentum: weak 0.6 noises, normal 1.2, strong (>= 75) 2.0 |
+| MAXIMUM_RIDE (momentum >= 85, accelerating, retracement <= 20%, dense tape, fresh highs, spread fine) | 3 noises, behind the last structural pullback; no stall exit |
+| Exits in profit | momentum collapse, an opposing burst, a stall (12 s without a new high and a quiet tape), a deep retracement with weak momentum, a spread emergency, the trailing stop |
+
+The trailing stop and the profit floor are separate. The stop may sit
+further from the price as profit and momentum grow; it is never set below
+the floor, and the floor only ever rises. The stop never moves against the
+trade (enforced in code and in tests, as before).
+
+### Loss control
+
+Per-trade ceiling 10 at the stop; the loss ladder (1.0x, 1.0x, 0.75x, 0.5x
+size and +0, +0, +5, +10 on the bar for 0, 1, 2, 3+ losses in a row; never
+martingale); 4 losses in a row pause 30 min, 6 end the day; a session loss
+limit of 25; the daily limit 40; the whole-account limit 80; slippage,
+latency, stale data, API errors, rejects, reconciliation and duplicate
+protection all fail closed; high-impact news blocks entries (on by
+default).
+
+### What the page shows
+
+One plain-English line (SCANNING / WATCHING / ENTRY READY / LONG / PROTECTING
+/ RIDING / MAXIMUM RIDE / COOLDOWN / BLOCKED), the session and whether it
+is moving, the bar in force and why, and in a trade: instrument,
+direction, size, setup, session, entry, price, spread, duration, initial
+risk, P&L now / peak / protected, trailing distance, momentum and
+acceleration, the stage and its reason, the entry reason.
+
+### Analytics in the status file (`stats.analytics`)
+
+Expectancy, average win over average loss, winning and losing durations,
+peak against realised and the average surrendered from the peak, captured
+share of the available move, average spread and slippage paid, commission,
+profit by session, by setup and by market, exits by reason, and the looks
+turned away by reason (spread, momentum, scalpability, costs, thin, chasing).
+
+### Judging it
+
+Not on win rate. On average winner over average loser, on how much of the
+exceptional moves it captures, and on expectancy after every cost. PAPER
+until several days show those three healthy.
+
+## Version 2, "Pullback" (6 October 2026) - kept as `entry_style: "PULLBACK"`
 
 ## Version 2, "Pullback" (6 October 2026) - why it changed
 

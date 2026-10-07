@@ -92,3 +92,43 @@ def combine(strategies: Sequence[dict], label: str = "Overall") -> dict:
     rows = [t for s in strategies for t in (s.get("trades_today") or [])]
     out["trades_today"] = sorted(rows, key=lambda t: str(t.get("closed") or ""))
     return out
+
+
+def _group(rows: Sequence[dict], key: str) -> dict:
+    out: dict = {}
+    for r in rows:
+        k = r.get(key) or "?"
+        g = out.setdefault(k, {"trades": 0, "wins": 0, "net": 0.0})
+        n = float(r.get("net_pnl") or 0.0)
+        g["trades"] += 1; g["wins"] += 1 if n > 0 else 0; g["net"] = round(g["net"] + n, 2)
+    return dict(sorted(out.items(), key=lambda kv: -kv[1]["net"]))
+
+
+def rider_analytics(closed: Sequence[dict], rejected: Optional[dict] = None) -> dict:
+    """Version 3: what makes money (session, setup, market), the shape of wins
+    against losses, how much of each peak was kept, and what was turned away."""
+    nets = [float(r.get("net_pnl") or 0.0) for r in closed]
+    wins = [x for x in nets if x > 0]; losses = [x for x in nets if x < 0]
+    win_d = [float(r.get("duration_seconds") or 0) for r in closed if float(r.get("net_pnl") or 0) > 0]
+    loss_d = [float(r.get("duration_seconds") or 0) for r in closed if float(r.get("net_pnl") or 0) < 0]
+    surrendered = [float(r.get("surrendered_from_peak") or 0) for r in closed if r.get("surrendered_from_peak") is not None]
+    spreads = [float(r.get("spread_cost") or 0) for r in closed]
+    slips = [float(r.get("slippage_cost") or 0) for r in closed]
+    comm = [float(r.get("commission") or 0) for r in closed]
+    expectancy = (sum(nets) / len(nets)) if nets else None
+    return {
+        "expectancy": round(expectancy, 2) if expectancy is not None else None,
+        "avg_win_over_avg_loss": (round(st.mean(wins) / abs(st.mean(losses)), 2) if wins and losses else None),
+        "avg_winning_duration_s": round(st.mean(win_d), 1) if win_d else None,
+        "avg_losing_duration_s": round(st.mean(loss_d), 1) if loss_d else None,
+        "peak_vs_realised": {"avg_peak": round(st.mean(float(r.get("peak_profit") or 0) for r in closed), 2) if closed else None,
+                             "avg_realised": round(st.mean(nets), 2) if nets else None,
+                             "avg_surrendered": round(st.mean(surrendered), 2) if surrendered else None},
+        "captured_vs_available_pct": _captured(closed),
+        "avg_spread_paid": round(st.mean(spreads), 2) if spreads else None,
+        "avg_slippage_cost": round(st.mean(slips), 2) if slips else None,
+        "commission_paid": round(sum(comm), 2),
+        "by_session": _group(closed, "session"), "by_setup": _group(closed, "setup"), "by_market": _group(closed, "symbol"),
+        "exit_reasons": _count(closed, "exit_reason"),
+        "rejected": dict(rejected or {}),
+    }

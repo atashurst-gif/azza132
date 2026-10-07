@@ -105,7 +105,9 @@ class FakeBroker:
 
 
 def scfg(**kw) -> ScalperConfig:
-    base = dict(symbols=("EURUSD",), min_ticks_per_minute=5.0, min_confidence=40.0)
+    # these tests pin the version-2 machinery (pullback entries, the version-2
+    # manager); version 3 has its own file, tests/test_velocity_scalper.py
+    base = dict(symbols=("EURUSD",), min_ticks_per_minute=5.0, min_confidence=40.0, entry_style="PULLBACK")
     base.update(kw)
     return ScalperConfig(**base)
 
@@ -870,7 +872,7 @@ class TestLessonsOfDayOne:
         assert not e.trades and "at risk to the stop" in why
 
     def test_a_market_that_just_lost_rests_for_ten_minutes(self, tmp_path):
-        b, e, opp, ticks = self._ready(tmp_path)
+        b, e, opp, ticks = self._ready(tmp_path, symbol_pause_after_loss_seconds=600.0)
         e.last_loss_by_symbol["EURUSD"] = b.now - dt.timedelta(minutes=2)
         why = e._try_open(opp, b.now, ticks)
         assert not e.trades and "rests for another 8 min" in why
@@ -879,7 +881,7 @@ class TestLessonsOfDayOne:
         assert len(e.trades) == 1
 
     def test_three_losses_in_a_row_pause_everything_for_half_an_hour_six_end_the_day(self):
-        br = Breakers(scfg())
+        br = Breakers(scfg(loss_streak_pause_after=3))
         now = T0
         for i in range(3):
             br.record_result(-1.0, now + dt.timedelta(minutes=i))
@@ -1239,55 +1241,56 @@ def _pullback_features(**kw):
 
 
 class TestPullbackEntry:
-    def test_the_default_is_the_pullback_entry_on_gold_and_indices(self):
+    def test_the_default_is_now_the_velocity_rider_and_pullback_is_kept(self):
         c = ScalperConfig()
-        assert c.entry_style == "PULLBACK" and not c.early_tick_cut
-        assert set(c.symbols) == {"XAUUSD", "US500", "US30", "DE40", "UK100"}
+        assert c.entry_style == "VELOCITY" and not c.early_tick_cut
+        assert "XAUUSD" in c.symbols and "US500" in c.symbols
+        assert ScalperConfig(entry_style="PULLBACK").entry_style == "PULLBACK"
 
     def test_trend_pullback_and_resumption_is_a_trade_with_the_stop_beyond_the_pullback(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(), ScalperConfig())
+        o = score(_pullback_features(), ScalperConfig(entry_style="PULLBACK"))
         assert o.direction == 1 and o.tradable, o.blockers
         assert o.invalidation == pytest.approx(5000.2 - 0.5)          # a spread (wider than 0.15 ATR) under the pullback low
         assert o.expected_move_points == pytest.approx(500.0)         # room to the 20-minute high
 
     def test_a_falling_five_minutes_inside_the_pullback_does_not_block_it(self):
         from mintel.scalper.score import score
-        assert score(_pullback_features(move_5m_points=-60.0), ScalperConfig()).tradable
+        assert score(_pullback_features(move_5m_points=-60.0), ScalperConfig(entry_style="PULLBACK")).tradable
 
     def test_no_trend_no_trade(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(move_20m_points=-50.0), ScalperConfig())
+        o = score(_pullback_features(move_20m_points=-50.0), ScalperConfig(entry_style="PULLBACK"))
         assert o.direction == 0 and any("no 20-minute trend" in b for b in o.blockers)
 
     def test_no_pullback_yet_means_wait(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(swing_low_3=5002.0, last_bar_high=5000.5, mid=5003.0), ScalperConfig())
+        o = score(_pullback_features(swing_low_3=5002.0, last_bar_high=5000.5, mid=5003.0), ScalperConfig(entry_style="PULLBACK"))
         assert not o.tradable and any("waiting for a pullback" in b for b in o.blockers)
 
     def test_a_pullback_through_the_slow_ema_is_not_a_pullback(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(swing_low_3=4995.5), ScalperConfig())
+        o = score(_pullback_features(swing_low_3=4995.5), ScalperConfig(entry_style="PULLBACK"))
         assert not o.tradable and any("through the slow EMA" in b for b in o.blockers)
 
     def test_it_waits_for_price_to_take_out_the_last_bar(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(last_bar_high=5001.3), ScalperConfig())
+        o = score(_pullback_features(last_bar_high=5001.3), ScalperConfig(entry_style="PULLBACK"))
         assert not o.tradable and any("take out the last one-minute bar" in b for b in o.blockers)
 
     def test_the_last_minute_must_point_with_the_trend(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(move_1m_points=-10.0), ScalperConfig())
+        o = score(_pullback_features(move_1m_points=-10.0), ScalperConfig(entry_style="PULLBACK"))
         assert not o.tradable and any("last minute" in b for b in o.blockers)
 
     def test_no_room_to_the_last_high_no_trade(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(high_20=5001.5), ScalperConfig())
+        o = score(_pullback_features(high_20=5001.5), ScalperConfig(entry_style="PULLBACK"))
         assert not o.tradable and any("of room" in b for b in o.blockers)
 
     def test_at_a_fresh_high_the_room_is_two_r(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(high_20=5000.9), ScalperConfig())
+        o = score(_pullback_features(high_20=5000.9), ScalperConfig(entry_style="PULLBACK"))
         assert o.tradable and o.expected_move_points == pytest.approx(2 * (5001.0 - 4999.7) / 0.01)
 
     def test_shorts_mirror_longs(self):
@@ -1296,13 +1299,13 @@ class TestPullbackEntry:
                                move_1m_points=-50.0, velocity_5s=-5.0, rate_of_change_30s_points=-60.0, trend_bias=-1,
                                last_bar_low=4999.2, swing_high_3=4999.8, low_20=4994.0, high_20=5010.0,
                                micro_low=4998.8, micro_high=4999.5, vwap=5001.0, dist_from_fast_ema_points=-100.0)
-        o = score(f, ScalperConfig())
+        o = score(f, ScalperConfig(entry_style="PULLBACK"))
         assert o.direction == -1 and o.tradable, o.blockers
         assert o.invalidation == pytest.approx(4999.8 + 0.5)
 
     def test_spread_limits_still_apply(self):
         from mintel.scalper.score import score
-        o = score(_pullback_features(spread_points=150.0, spread_avg_points=150.0), ScalperConfig())
+        o = score(_pullback_features(spread_points=150.0, spread_avg_points=150.0), ScalperConfig(entry_style="PULLBACK"))
         assert not o.tradable and any("spread too wide" in b for b in o.blockers)
 
     def test_features_find_the_pullback_from_completed_bars(self):

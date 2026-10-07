@@ -31,7 +31,7 @@ class RiskPlan:
 
 
 def plan(spec: SymbolSpec, side: Side, entry: float, invalidation: float,
-         spread_price: float, cfg: ScalperConfig) -> RiskPlan:
+         spread_price: float, cfg: ScalperConfig, size_multiplier: float = 1.0) -> RiskPlan:
     """Size so that the EXPECTED loss if the stop fills is <= the ceiling.
 
     Position size = allowable risk / real market stop distance, where the
@@ -61,7 +61,8 @@ def plan(spec: SymbolSpec, side: Side, entry: float, invalidation: float,
     per_lot = spec.money_per_lot(effective) + commission_lot
     if per_lot <= 0:
         return RiskPlan(False, "cannot value the stop distance")
-    budget = cfg.planned_max_trade_risk_gbp
+    # the ceiling is the ceiling; a loss ladder may only shrink it, never grow it
+    budget = cfg.planned_max_trade_risk_gbp * max(0.0, min(1.0, float(size_multiplier)))
     raw = budget / per_lot
     step = spec.volume_step or 0.01
     volume = math.floor(raw / step + 1e-9) * step

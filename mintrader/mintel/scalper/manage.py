@@ -58,6 +58,16 @@ class ScalpTrade:
     exit_tolerance: str = "TIGHT"
     last_note: str = ""
     peak_mid_r: float = 0.0
+    # version 3 (the rider)
+    setup: str = ""
+    session: str = ""
+    momentum_now: float = 0.0
+    state_reason: str = ""
+    trail_points: float = 0.0
+    last_new_high_at: Optional[dt.datetime] = None
+    momentum_at_entry: float = 0.0
+    velocity_at_entry: float = 0.0
+    acceleration_at_entry: float = 0.0
 
     def r_of(self, price: float) -> float:
         if self.risk_distance <= 0:

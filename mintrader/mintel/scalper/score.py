@@ -23,7 +23,10 @@ class Opportunity:
     blockers: list = field(default_factory=list)
     chop: float = 0.0
     expected_move_points: float = 0.0
-    invalidation: float = 0.0           # PULLBACK: the price beyond the pullback; 0 = use the tick extreme
+    invalidation: float = 0.0           # PULLBACK/VELOCITY: the structural stop; 0 = use the tick extreme
+    setup: str = ""                     # VELOCITY: which setup was seen
+    scalpability: float = 0.0           # VELOCITY: 0-100
+    threshold: float = 0.0              # VELOCITY: the bar in force when it was scored
     features: Optional[Features] = None
 
     @property

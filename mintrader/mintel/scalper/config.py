@@ -37,14 +37,85 @@ class ScalperConfig:
     # Gold and the commission-free indices only. 6 Oct review: 8 FX scalps
     # made +9.87 on price and paid 22.20 commission - on a one-minute
     # horizon the commission is bigger than the move.
-    symbols: tuple[str, ...] = ("XAUUSD", "US500", "US30", "DE40", "UK100")
-    # How it enters. "PULLBACK" (6 Oct): trade WITH the 20-minute trend, wait
+    symbols: tuple[str, ...] = ("EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "US500", "US30", "USTEC", "DE40", "UK100")
+    # ---- version 3, "High-Velocity Session Rider" (7 Oct) ----------------
+    # How it enters. "VELOCITY" (7 Oct, the default): seconds-level
+    # acceleration in a market that is scalpable right now, within session
+    # windows; see velocity.py, rider.py, sessions.py and
+    # docs/strategies/rapid_scalper.md. The older styles are kept so the
+    # three can be compared on the same ticks.
+    # "PULLBACK" (6 Oct): trade WITH the 20-minute trend, wait
     # for a one-minute pullback towards the fast EMA, enter when price takes
     # out the last one-minute bar in the trend's direction, stop beyond the
     # pullback. "BURST" is the original: chase a 5-second spike with a stop
     # at the last minute's tick extreme (82 trades, -67.15; 29 of the 32
     # trades it cut early never got even 0.1 R into profit).
-    entry_style: str = "PULLBACK"
+    entry_style: str = "VELOCITY"
+    # sessions (London local time, DST-aware): the opening window is aggressive
+    # ONLY when the market is measured to be moving; quiet hours set a higher bar
+    session_windows: tuple = ()                  # empty = sessions.default_windows()
+    opening_bonus: float = 10.0                  # momentum bar lowered by this in a moving opening window
+    quiet_penalty: float = 15.0                  # ...raised by this outside every window
+    session_moving_ratio: float = 1.3            # last 5 min against the typical minute of the hour
+    # micro-momentum engine thresholds (all in units of the market's own noise)
+    min_consistency: float = 0.6                 # share of the last 3 s of ticks going our way
+    min_accel_ratio: float = 1.0                 # (v1s - v5s) against noise per second
+    accel_min_distance_ratio: float = 1.5        # the 5 s move against the usual 5 s move
+    breakout_min_spreads: float = 1.0
+    compression_max_noise: float = 1.5           # the prior 10 s range, in noises, for a micro breakout
+    launch_min_distance_ratio: float = 2.5
+    launch_retrace_min: float = 0.2
+    launch_retrace_max: float = 0.6
+    burst_min_consistency: float = 0.75
+    burst_min_distance_ratio: float = 2.0
+    burst_min_expansion: float = 1.5
+    min_ticks_per_second: float = 0.8
+    full_marks_velocity_noise_per_s: float = 0.6
+    full_marks_accel_ratio: float = 3.0
+    max_chase_noise: float = 3.0                 # how far the move may already have run, in noises
+    chase_penalty_max: float = 25.0
+    # scalpability: the realistic move against every cost
+    scalpable_edge_full: float = 5.0             # expected move / cost for full marks
+    max_cost_share_of_move: float = 0.35
+    min_scalpability: float = 50.0
+    velocity_weights: dict = field(default_factory=lambda: {
+        "velocity": 20.0, "acceleration": 20.0, "consistency": 15.0, "expansion": 10.0, "breakout": 10.0,
+        "liquidity": 8.0, "fresh_extremes": 5.0, "room": 5.0, "spread": 4.0, "session": 3.0})
+    # the micro structural stop
+    stop_swing_seconds: float = 10.0
+    stop_buffer_spreads: float = 1.0
+    stop_buffer_noise: float = 0.5
+    # survival and the time stop
+    validate_seconds: float = 3.0
+    validate_fail_r: float = 0.25
+    collapse_pressure: float = 0.5
+    collapse_fail_r: float = 0.15
+    max_no_progress_seconds: float = 25.0
+    no_progress_min_r: float = 0.3
+    # protection and riding (R = the planned loss)
+    protect_at_r: float = 0.6
+    ride_at_r: float = 1.5
+    ride_min_momentum: float = 55.0
+    trail_strong_momentum: float = 75.0
+    floor_ladder_r: tuple = ((0.6, 0.0), (1.0, 0.3), (2.0, 1.0), (3.0, 1.8), (4.0, 2.6), (6.0, 4.0), (8.0, 5.5))
+    giveback_by_state: dict = field(default_factory=lambda: {"PROFIT_PROTECTION": 0.5, "MOMENTUM_RIDE": 0.6, "MAXIMUM_RIDE": 0.75})
+    trail_weak_noise: float = 0.6
+    trail_normal_noise: float = 1.2
+    trail_strong_noise: float = 2.0
+    trail_max_ride_noise: float = 3.0
+    min_trail_spreads: float = 1.5
+    collapse_momentum: float = 30.0
+    opposing_burst_ratio: float = 2.0
+    stall_seconds: float = 12.0
+    # maximum ride
+    max_ride_momentum: float = 85.0
+    max_ride_exit_momentum: float = 60.0
+    max_ride_max_retrace: float = 0.2
+    max_ride_min_fresh: int = 3
+    # consecutive-loss ladder: size multiplier and extra bar per loss in a row; never martingale
+    loss_ladder_size: tuple = (1.0, 1.0, 0.75, 0.5)
+    loss_ladder_threshold: tuple = (0.0, 0.0, 5.0, 10.0)
+    max_session_loss_gbp: float = 25.0
     pullback_touch_atr: float = 0.35             # the pullback came within this of the fast EMA...
     pullback_max_depth_atr: float = 1.0          # ...without going this far past the slow EMA
     stop_buffer_atr: float = 0.15                # the stop sits this far beyond the pullback extreme
@@ -66,8 +137,8 @@ class ScalperConfig:
     min_ticks_per_minute: float = 20.0           # liquidity floor
     chop_block: bool = True
     late_entry_penalty_max: float = 25.0
-    min_seconds_between_entries: float = 60.0
-    symbol_reentry_seconds: float = 180.0       # one trade per pullback: a market rests 3 min after any exit
+    min_seconds_between_entries: float = 10.0
+    symbol_reentry_seconds: float = 20.0        # a market rests briefly after any exit
     # Look before moving: the last 1, 5 and 20 minutes must all point the
     # way of the trade (Aaron, 5 Oct). False switches the check off.
     require_timeframe_alignment: bool = True
@@ -79,9 +150,9 @@ class ScalperConfig:
     entry_hours_utc: tuple[int, ...] = ()
     max_cost_fraction_of_risk: float = 0.25      # commission+spread+slippage <= 25% of the money at the stop
     min_expected_move_over_cost: float = 3.0     # the expected move must be >= 3x the round-trip cost
-    cooldown_after_loss_seconds: float = 120.0   # no new trade anywhere for 2 min after a loss
-    symbol_pause_after_loss_seconds: float = 600.0   # and none on THAT market for 10 min
-    loss_streak_pause_after: int = 3             # 3 losses in a row: pause everything...
+    cooldown_after_loss_seconds: float = 30.0    # no new trade anywhere for 30 s after a loss
+    symbol_pause_after_loss_seconds: float = 120.0   # and none on THAT market for 2 min
+    loss_streak_pause_after: int = 4             # 4 losses in a row: pause everything...
     loss_streak_pause_seconds: float = 1800.0    # ...for 30 min
     # --- management ------------------------------------------------------
     prove_it_seconds: float = 15.0               # the thesis must show within this
@@ -135,8 +206,8 @@ class ScalperConfig:
     news_blackout_after_seconds: float = 180.0
     news_min_importance: int = 3
     # --- loop ------------------------------------------------------------
-    manage_interval_seconds: float = 0.25
-    scan_interval_seconds: float = 1.0
+    manage_interval_seconds: float = 0.2
+    scan_interval_seconds: float = 0.5
     status_file: str = "scalper-status.json"
     status_interval_seconds: float = 2.0         # the page refreshes every 10 s; no need for more
     broker_day_cache_seconds: float = 30.0
@@ -203,6 +274,12 @@ class ScalperConfig:
                 cfg.symbols = tuple(str(s) for s in v)
             elif k == "entry_hours_utc" and isinstance(v, (list, tuple)):
                 cfg.entry_hours_utc = tuple(int(h) % 24 for h in v)
+            elif k in ("floor_ladder_r",) and isinstance(v, (list, tuple)):
+                cfg.floor_ladder_r = tuple((float(a), float(b)) for a, b in v)
+            elif k in ("loss_ladder_size", "loss_ladder_threshold") and isinstance(v, (list, tuple)):
+                setattr(cfg, k, tuple(float(x) for x in v))
+            elif k in ("velocity_weights", "giveback_by_state") and isinstance(v, dict):
+                getattr(cfg, k).update({str(a): float(b) for a, b in v.items()})
             elif hasattr(cfg, k) and k != "weights":
                 cur = getattr(cfg, k)
                 try:
