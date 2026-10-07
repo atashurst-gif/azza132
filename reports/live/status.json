@@ -81,7 +81,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "05:09:25 UTC",
+    "last_scan": "05:19:33 UTC",
     "last_trade": "JP225 2026-10-07T02:11",
     "not_trading_because": [],
     "strategy_rules": {
@@ -92,11 +92,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 2888,
-    "uptime_minutes": 261.3
+    "cycles": 3000,
+    "uptime_minutes": 271.4
   },
   "health": {
-    "as_of": "2026-10-07T05:09:25.571045+00:00",
+    "as_of": "2026-10-07T05:19:33.557558+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -104,25 +104,25 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "53811 MB of disk space free",
+        "message": "53815 MB of disk space free",
         "detail": {
-          "free_mb": 53810.8
+          "free_mb": 53814.8
         }
       },
       {
         "name": "MEMORY",
         "severity": "OK",
-        "message": "memory 83% used",
+        "message": "memory 82% used",
         "detail": {
-          "percent": 82.9
+          "percent": 82.1
         }
       },
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock agrees with the broker (within 1s)",
+        "message": "clock agrees with the broker (within 6s)",
         "detail": {
-          "skew_seconds": 0.6
+          "skew_seconds": 5.6
         }
       },
       {
@@ -158,7 +158,7 @@
         "severity": "OK",
         "message": "live prices arriving (1s old)",
         "detail": {
-          "freshest_age_seconds": 0.8,
+          "freshest_age_seconds": 0.7,
           "weekend": false
         }
       },
@@ -182,17 +182,17 @@
         "message": "2 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 0.3,
-            "scalper": 0.0
+            "watchdog": 1.1,
+            "scalper": 0.3
           }
         }
       },
       {
         "name": "SCAN_FRESHNESS",
         "severity": "OK",
-        "message": "markets scanned 6s ago",
+        "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 5.6
+          "age_seconds": 5.5
         }
       },
       {
@@ -206,49 +206,105 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "AUDCAD",
+      "symbol": "US500",
       "direction": "SHORT",
-      "score": 41.94,
+      "score": 40.25,
       "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "AUDCAD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Momentum supports it (100/100; efficiency 0.00, ADX 12). Structure supports it (98/100; down structure on M5). Execution supports it (94/100; spread 0.2 pips (0.5x normal), commission 1.0 pips). Regime supports it (85/100; SQUEEZE / LOW VOL). Room to the first obstacle is 1 pips, giving about 0.6 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 0.56 after costs; costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "US500: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Regime supports it (85/100; RANGE / NORMAL VOL). Execution supports it (84/100; spread 50.0 pips (1.0x normal)). Structure supports it (80/100; unclear structure on M5). Historical argues against it (26/100; 58 comparable trades (tactic): expectancy -4708.06R, 53% win rate). Room to the first obstacle is 30 pips, giving about 0.0 to 1 after 62.5 pips of cost. Blocked because: reward:risk only 0.04 after costs.",
       "blockers": [
-        "reward:risk only 0.56 after costs",
-        "costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.04 after costs"
       ],
-      "reward_risk": 0.561
+      "reward_risk": 0.035
     },
     {
       "rank": 2,
-      "symbol": "EURJPY",
+      "symbol": "XAUEUR",
       "direction": "SHORT",
-      "score": 30.47,
+      "score": 34.56,
       "tier": "NO_TRADE",
-      "tactic": "SQUEEZE_RELEASE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "EURJPY: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution argues against it (0/100; spread 1.0 pips (5.0x normal), commission 1.2 pips). Multi Tf supports it (82/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; range structure on M5). Cross Market supports it (70/100; 0 related markets with a usable relationship; EUR 12 vs JPY 96). Room to the first obstacle is 8 pips, giving about 0.7 to 1 after 4.4 pips of cost. Blocked because: spread is 5.0x its normal size; reward:risk only 0.75 after costs; costs would be 65% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "BREAKOUT_RETEST",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "XAUEUR: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout retest. Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Execution supports it (83/100; spread 11.0 pips (1.1x normal), commission 7.1 pips). Structure supports it (70/100; range structure on M5). Session supports it (62/100; session: ASIA). Room to the first obstacle is 17 pips, giving about 0.9 to 1 after 21.4 pips of cost. Blocked because: reward:risk only 0.87 after costs.",
       "blockers": [
-        "spread is 5.0x its normal size",
-        "reward:risk only 0.75 after costs",
-        "costs would be 65% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.87 after costs"
       ],
-      "reward_risk": 0.747
+      "reward_risk": 0.874
     },
     {
       "rank": 3,
-      "symbol": "CADJPY",
-      "direction": "LONG",
-      "score": 25.69,
+      "symbol": "CADCHF",
+      "direction": "SHORT",
+      "score": 33.29,
       "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "CADJPY: SQUEEZE / NORMAL VOL market. Best idea is buy using breakout acceptance. Execution supports it (85/100; spread 0.3 pips (1.0x normal), commission 1.2 pips). Momentum supports it (74/100; efficiency 0.09, ADX 11). Multi Tf supports it (71/100; 6 timeframes weighed, higher ones first). Regime supports it (69/100; SQUEEZE / NORMAL VOL). Room to the first obstacle is 0 pips, giving about 0.8 to 1 after 1.5 pips of cost. Blocked because: reward:risk only 0.76 after costs; costs would be 27% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "CADCHF: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (96/100; spread 0.1 pips (0.5x normal), commission 0.6 pips). Momentum supports it (75/100; efficiency 0.15, ADX 12). Regime supports it (65/100; RANGE / NORMAL VOL). Session supports it (62/100; session: ASIA). Room to the first obstacle is 0 pips, giving about 0.4 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 0.42 after costs; costs would be 82% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.76 after costs",
-        "costs would be 27% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.42 after costs",
+        "costs would be 82% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.76
+      "reward_risk": 0.42
+    },
+    {
+      "rank": 4,
+      "symbol": "GBPCAD",
+      "direction": "LONG",
+      "score": 30.74,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "GBPCAD: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Multi Tf supports it (80/100; 6 timeframes weighed, higher ones first). Momentum supports it (78/100; efficiency 0.14, ADX 15). Execution supports it (78/100; spread 0.4 pips (1.3x normal), commission 1.0 pips). Room to the first obstacle is 0 pips, giving about -0.3 to 1 after 1.6 pips of cost. Blocked because: reward:risk only -0.27 after costs; costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only -0.27 after costs",
+        "costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.271
+    },
+    {
+      "rank": 5,
+      "symbol": "US500",
+      "direction": "LONG",
+      "score": 29.39,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "US500: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Regime supports it (85/100; RANGE / NORMAL VOL). Execution supports it (84/100; spread 50.0 pips (1.0x normal)). Momentum supports it (71/100; efficiency 0.12, ADX 8). Structure argues against it (32/100; unclear structure on M5). Room to the first obstacle is 50 pips, giving about 0.6 to 1 after 62.5 pips of cost. Blocked because: reward:risk only 0.62 after costs; costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.62 after costs",
+        "costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.617
+    },
+    {
+      "rank": 6,
+      "symbol": "US30",
+      "direction": "LONG",
+      "score": 26.66,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "US30: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Regime supports it (74/100; RANGE / NORMAL VOL). Structure supports it (70/100; range structure on M5). Execution supports it (69/100; spread 120.0 pips (1.0x normal)). Momentum supports it (65/100; efficiency 0.14, ADX 22). Room to the first obstacle is 280 pips, giving about 1.2 to 1 after 150.0 pips of cost. Blocked because: reward:risk only 1.18 after costs.",
+      "blockers": [
+        "reward:risk only 1.18 after costs"
+      ],
+      "reward_risk": 1.178
+    },
+    {
+      "rank": 7,
+      "symbol": "GBPAUD",
+      "direction": "SHORT",
+      "score": 26.25,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "GBPAUD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (85/100; spread 0.4 pips (1.0x normal), commission 1.0 pips). Momentum argues against it (17/100; efficiency 0.02, ADX 13). Regime supports it (65/100; RANGE / NORMAL VOL). Session supports it (62/100; session: ASIA). Room to the first obstacle is 0 pips, giving about 0.7 to 1 after 1.6 pips of cost. Blocked because: reward:risk only 0.73 after costs; costs would be 38% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.73 after costs",
+        "costs would be 38% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.728
     }
   ],
   "results": {
@@ -621,33 +677,33 @@
       "id": "rapid_scalper",
       "label": "Rapid Scalper",
       "currency": "GBP",
-      "net_today": -6.25,
-      "realised": -6.25,
+      "net_today": -10.93,
+      "realised": -10.93,
       "unrealised": 0,
-      "trades": 13,
+      "trades": 14,
       "wins": 4,
-      "losses": 9,
-      "win_rate": 30.8,
+      "losses": 10,
+      "win_rate": 28.6,
       "avg_win": 9.79,
-      "avg_loss": -5.05,
+      "avg_loss": -5.01,
       "largest_win": 13.57,
       "largest_loss": -5.82,
-      "profit_factor": 0.86,
-      "total_costs": 13.75,
+      "profit_factor": 0.78,
+      "total_costs": 14.7,
       "est_slippage_points": 2.0,
-      "avg_hold_seconds": 230.0,
+      "avg_hold_seconds": 220.0,
       "open_positions": 0,
-      "max_drawdown": -15.86,
-      "avg_duration_seconds": 230.0,
+      "max_drawdown": -20.27,
+      "avg_duration_seconds": 220.0,
       "exits_under_10s": 1,
       "exits_under_30s": 2,
       "reached_protected": 4,
       "reached_runner": 2,
       "max_favourable_r": 3.15,
       "max_adverse_r": 0.69,
-      "captured_vs_available_pct": 16.0,
+      "captured_vs_available_pct": 14.7,
       "exit_reasons": {
-        "THESIS_FAILED": 9,
+        "THESIS_FAILED": 10,
         "PROFIT_TRAIL": 1,
         "STRUCTURE_BREAK": 1,
         "MOMENTUM_DECAY": 2
@@ -836,6 +892,20 @@
           "peak_r": 0.09346645221948433,
           "mode": "PAPER",
           "strategy": "rapid_scalper"
+        },
+        {
+          "ticket": 900000014,
+          "symbol": "XAUUSD",
+          "side": "SELL",
+          "opened": "2026-10-07T05:12:30.873657+00:00",
+          "closed": "2026-10-07T05:14:00.484620+00:00",
+          "net": -4.679241365268865,
+          "exit_reason": "THESIS_FAILED",
+          "duration_seconds": 89.610963,
+          "confidence": 74.1,
+          "peak_r": 0.008787622006905733,
+          "mode": "PAPER",
+          "strategy": "rapid_scalper"
         }
       ]
     },
@@ -883,41 +953,41 @@
       "status": "PAUSED",
       "mode": "PAPER",
       "build": "f2709a3a55",
-      "updated": "2026-10-07T05:09:26.441588+00:00",
+      "updated": "2026-10-07T05:19:33.809198+00:00",
       "started": "2026-10-07T00:48:11.201090+00:00",
       "markets_monitored": 5,
-      "best_opportunity": "XAUUSD",
+      "best_opportunity": "US30",
       "best_direction": "SHORT",
-      "confidence": 55.8,
-      "spread_quality": "GOOD",
+      "confidence": 49.0,
+      "spread_quality": "WEAK",
       "momentum": "WEAK",
       "best_breakdown": {
-        "Momentum": 1.1,
+        "Momentum": 4.2,
         "Trend alignment": 14.0,
         "Retest quality": 16.0,
-        "Volume": 0.0,
-        "Spread": 10.3,
-        "Liquidity": 10.0,
-        "Volatility fit": 2.8,
-        "Structure room": 1.6,
+        "Volume": 1.0,
+        "Spread": 4.7,
+        "Liquidity": 3.2,
+        "Volatility fit": 3.1,
+        "Structure room": 2.8,
         "Order flow (disabled)": 0.0
       },
       "best_blockers": [
         "short: waiting for price to take out the last one-minute bar",
         "short: the last minute is not moving with the trend yet",
-        "short: only 0.7R of room to the 20-minute low (need 1.0R)",
-        "confidence 56 below 60"
+        "short: only 0.9R of room to the 20-minute low (need 1.0R)",
+        "confidence 49 below 60"
       ],
       "blocked_because": [
-        "3 losses in a row - paused for another 3 min"
+        "4 losses in a row - paused for another 24 min"
       ],
       "position": null,
-      "tick_age_seconds": 2.441588,
-      "latency_ms": 3.4,
-      "cycle_ms": 6.6,
+      "tick_age_seconds": 0.809198,
+      "latency_ms": 2.6,
+      "cycle_ms": 9.2,
       "breakers": {
-        "consecutive_losses": 3,
-        "day_pnl": -6.25,
+        "consecutive_losses": 4,
+        "day_pnl": -10.93,
         "avg_slippage_points": 1.0,
         "tripped": {}
       },
@@ -925,33 +995,33 @@
         "id": "rapid_scalper",
         "label": "Rapid Scalper",
         "currency": "GBP",
-        "net_today": -6.25,
-        "realised": -6.25,
+        "net_today": -10.93,
+        "realised": -10.93,
         "unrealised": 0,
-        "trades": 13,
+        "trades": 14,
         "wins": 4,
-        "losses": 9,
-        "win_rate": 30.8,
+        "losses": 10,
+        "win_rate": 28.6,
         "avg_win": 9.79,
-        "avg_loss": -5.05,
+        "avg_loss": -5.01,
         "largest_win": 13.57,
         "largest_loss": -5.82,
-        "profit_factor": 0.86,
-        "total_costs": 13.75,
+        "profit_factor": 0.78,
+        "total_costs": 14.7,
         "est_slippage_points": 2.0,
-        "avg_hold_seconds": 230.0,
+        "avg_hold_seconds": 220.0,
         "open_positions": 0,
-        "max_drawdown": -15.86,
-        "avg_duration_seconds": 230.0,
+        "max_drawdown": -20.27,
+        "avg_duration_seconds": 220.0,
         "exits_under_10s": 1,
         "exits_under_30s": 2,
         "reached_protected": 4,
         "reached_runner": 2,
         "max_favourable_r": 3.15,
         "max_adverse_r": 0.69,
-        "captured_vs_available_pct": 16.0,
+        "captured_vs_available_pct": 14.7,
         "exit_reasons": {
-          "THESIS_FAILED": 9,
+          "THESIS_FAILED": 10,
           "PROFIT_TRAIL": 1,
           "STRUCTURE_BREAK": 1,
           "MOMENTUM_DECAY": 2
@@ -1141,9 +1211,33 @@
           "peak_r": 0.09346645221948433,
           "mode": "PAPER",
           "strategy": "rapid_scalper"
+        },
+        {
+          "ticket": 900000014,
+          "symbol": "XAUUSD",
+          "side": "SELL",
+          "opened": "2026-10-07T05:12:30.873657+00:00",
+          "closed": "2026-10-07T05:14:00.484620+00:00",
+          "net": -4.679241365268865,
+          "exit_reason": "THESIS_FAILED",
+          "duration_seconds": 89.610963,
+          "confidence": 74.1,
+          "peak_r": 0.008787622006905733,
+          "mode": "PAPER",
+          "strategy": "rapid_scalper"
         }
       ],
       "events": [
+        {
+          "ts": "2026-10-07T05:14:00.484620+00:00",
+          "kind": "EXIT",
+          "message": "XAUUSD SELL closed THESIS_FAILED: -4.68 after 89.6s (peak 0.01R, -0.51R under and the 1- and 5-minute moves have turned against it)"
+        },
+        {
+          "ts": "2026-10-07T05:12:30.873657+00:00",
+          "kind": "ENTRY",
+          "message": "XAUUSD SELL 0.09 lots at 4134.21 stop 4135.347964285715 (planned loss 9.35, confidence 74)"
+        },
         {
           "ts": "2026-10-07T04:42:20.059627+00:00",
           "kind": "EXIT",
@@ -1208,21 +1302,11 @@
           "ts": "2026-10-07T03:01:54.441972+00:00",
           "kind": "EXIT",
           "message": "US30 SELL closed STRUCTURE_BREAK: +11.63 after 601.0s (peak 2.47R, price broke the last two one-minute bars)"
-        },
-        {
-          "ts": "2026-10-07T02:51:53.407863+00:00",
-          "kind": "ENTRY",
-          "message": "US30 SELL 1.5 lots at 51484.59 stop 51491.8 (planned loss 9.57, confidence 61)"
-        },
-        {
-          "ts": "2026-10-07T02:16:06.885022+00:00",
-          "kind": "EXIT",
-          "message": "XAUUSD SELL closed THESIS_FAILED: -4.88 after 101.3s (peak 0.32R, -0.58R under and the 1- and 5-minute moves have turned against it)"
         }
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 1.169644
+      "age_seconds": 1.813432
     },
     "runner": {
       "strategy_id": "momentum_runner",
@@ -1230,7 +1314,7 @@
       "tagline": "Paper shadow of Trend & Breakout's index trades: same entry, the stop left alone until +3 R, then trailed 3 R behind the best price.",
       "mode": "PAPER",
       "status": "WATCHING",
-      "updated": "2026-10-07T05:09:25.562727+00:00",
+      "updated": "2026-10-07T05:19:33.544450+00:00",
       "trail_r": 3.0,
       "window_hours": 8.0,
       "markets": "every index market the main bot trades",
@@ -1244,5 +1328,5 @@
       "momentum_runner": "Momentum Runner"
     }
   },
-  "updated": "2026-10-07T05:09:27.611566+00:00"
+  "updated": "2026-10-07T05:19:35.622983+00:00"
 }
