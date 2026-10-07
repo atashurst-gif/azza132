@@ -62,3 +62,4 @@ call.
 
 | Day | Trades | Wins | Net (paper) | By market | Notes |
 |---|---|---|---|---|---|
+| 7 Oct | 0 | - | - | - | first day; the New York session fell after the Mac's last upload at 13:33 UK, so nothing is known |
