@@ -876,6 +876,19 @@ cfg = {
         "dashboard_port": int(os.environ.get("MINTEL_DASH") or 8787),
     },
 }
+# Re-entering the settings must never move the measuring clock or drop the
+# other bots' sections: carry them over from the file that is already there.
+# (7 Oct: answering "y" to "Change them?" restarted the page's count from now.)
+existing_path = data / "config.json"
+if existing_path.exists():
+    try:
+        old = json.loads(existing_path.read_text())
+    except Exception:
+        old = {}
+    if isinstance(old, dict):
+        for key in ("tracking_start_utc", "tracking_strategy", "runner", "bandbreaker"):
+            if key in old:
+                cfg[key] = old[key]
 (data / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True))
 
 secrets = data / "secrets.json"
