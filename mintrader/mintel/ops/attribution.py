@@ -116,6 +116,43 @@ def read_scalper_status(data_dir: str | Path, status_file: str = "scalper-status
     return d
 
 
+def runner_tab(data_dir: str | Path, start: dt.datetime, end: Optional[dt.datetime], currency: str,
+               now: Optional[dt.datetime] = None) -> tuple[dict, dict]:
+    """The Momentum Runner's figures from its own records: (stats, status)."""
+    from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
+    data = Path(data_dir)
+    now = to_utc(now or utcnow())
+    try:
+        st_ = json.loads((data / "runner-status.json").read_text())
+        age = (now - to_utc(dt.datetime.fromisoformat(st_["updated"]))).total_seconds()
+        st_["present"] = True
+        if age > STALE_SECONDS:
+            st_["status"] = f"NOT RUNNING (last seen {age / 60:.0f} min ago)"
+    except Exception:
+        st_ = {"strategy_id": RUNNER_ID, "label": RUNNER_LABEL, "mode": "PAPER", "status": "NOT RUNNING",
+               "open": [], "present": False}
+    a = to_utc(start).isoformat()
+    if end is None:
+        rows = _rows_ro(data / "runner.sqlite", "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
+                        "ORDER BY closed_utc ASC LIMIT 5000", (a,))
+        includes_now = True
+    else:
+        b = to_utc(end).isoformat()
+        rows = _rows_ro(data / "runner.sqlite", "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
+                        "AND closed_utc < ? ORDER BY closed_utc ASC LIMIT 5000", (a, b))
+        includes_now = to_utc(start) <= now < to_utc(end)
+    opens = [{"symbol": o.get("symbol"), "pnl": o.get("pnl") or 0.0} for o in (st_.get("open") or [])] if includes_now else []
+    stats = strategy_stats(rows, opens, label=RUNNER_LABEL, strategy_id=RUNNER_ID, currency=currency)
+    stats["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
+                              "exit_reason": r.get("exit_reason"), "mode": r.get("mode") or "PAPER",
+                              "strategy": RUNNER_ID, "tactic": r.get("tactic")} for r in rows]
+    peaks = [float(r.get("peak_r") or 0) for r in rows]
+    stats["avg_peak_r"] = round(sum(peaks) / len(peaks), 2) if peaks else None
+    stats["reached_trail"] = sum(1 for r in rows if float(r.get("peak_r") or 0) >= float(st_.get("trail_r") or 3.0))
+    stats["source"] = "simulated (PAPER) - a shadow of Trend & Breakout's index trades, not money, not in Overall"
+    return stats, st_
+
+
 def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
                      data_dir: str | Path, ledger_today: Optional[dict] = None,
                      now: Optional[dt.datetime] = None) -> dict:
@@ -138,9 +175,13 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
         overall["before_fees"] = mi["before_fees"]
     if not live_rs:
         rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
-        overall["note"] = "The Rapid Scalper is in PAPER: its simulated results are on its own tab only."
-    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, "scalper": rs_status,
-            "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL}}
+        overall["note"] = "The Rapid Scalper and the Momentum Runner are in PAPER: their simulated results are on their own tabs only."
+    from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
+    mr, mr_status = runner_tab(data_dir, day_start, None, currency, now)
+    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr,
+            "scalper": rs_status, "runner": mr_status,
+            "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
+                       RUNNER_ID: RUNNER_LABEL}}
 
 
 # ------------------------------------------------------------- periods --
@@ -247,9 +288,12 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
     overall["trades_today"] = sorted(mi["trades_today"] + [t for t in rs["trades_today"]
                                                            if str(t.get("mode") or "").upper() == "LIVE"],
                                      key=lambda t: str(t.get("closed") or ""))
-    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs,
-            "scalper": read_scalper_status(data_dir, now=now),
-            "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL},
+    from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
+    mr, mr_status = runner_tab(data_dir, start, end, currency, now)
+    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr,
+            "scalper": read_scalper_status(data_dir, now=now), "runner": mr_status,
+            "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
+                       RUNNER_ID: RUNNER_LABEL},
             "period": {"key": "custom" if label and label[:1].isdigit() else label.lower(), "label": label,
                        "start": a, "end": b, "source": "the bots' own records"}}
 

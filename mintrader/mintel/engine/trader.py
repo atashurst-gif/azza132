@@ -164,6 +164,17 @@ class Trader:
         self.scanner.losses_today = self.losses_today
         self.executor = Executor(broker, cfg, self.journal, self.risk, clock)
         self.flowlock = FlowLock(cfg.flowlock)
+        # Momentum Runner: a paper shadow of this bot's index trades, on its
+        # own tab. It reads prices and writes its own file; it never trades.
+        self.runner = None
+        try:
+            from ..runner.shadow import MomentumRunner, RunnerConfig
+            rc = cfg.runner if hasattr(cfg, "runner") else RunnerConfig()
+            if getattr(rc, "enabled", True):
+                self.runner = MomentumRunner(data_dir, RunnerConfig(**{k: getattr(rc, k) for k in RunnerConfig.__dataclass_fields__ if hasattr(rc, k)}),
+                                             spec_fn=self.broker.spec, clock=self.clock)
+        except Exception as exc:
+            log.warning("Momentum Runner not started: %s", exc)
         self.thesis = ThesisTracker()
 
         expected_login = cfg.account_login
@@ -718,7 +729,27 @@ class Trader:
             except Exception as exc:
                 log.error("managing %s failed: %s", p.symbol, exc)
                 notes.append(f"{p.symbol}: management error {exc}")
+        if self.runner is not None:
+            try:
+                stops = {t: tr.initial_stop for t, tr in self.flowlock.trackers.items()}
+                tactics = {int(r["ticket"]): r.get("tactic") for r in self._open_journal_rows()}
+                for note in self.runner.observe(positions, stops, self._tick_quietly, now, tactics):
+                    log.info("%s", note)
+            except Exception as exc:
+                log.debug("Momentum Runner skipped this pass: %s", exc)
         return notes
+
+    def _open_journal_rows(self) -> list[dict]:
+        try:
+            return self.journal.open_trades()
+        except Exception:
+            return []
+
+    def _tick_quietly(self, symbol: str):
+        try:
+            return self.broker.tick(symbol)
+        except Exception:
+            return None
 
     def _manage_one(self, position: Position, now: dt.datetime) -> list[str]:
         notes: list[str] = []

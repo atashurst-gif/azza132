@@ -113,6 +113,32 @@ def scalper_json(cfg: Config, day: dt.datetime) -> Optional[str]:
     return json.dumps(out, indent=2, default=str)
 
 
+def runner_json(cfg: Config, day: dt.datetime) -> Optional[str]:
+    """The Momentum Runner's day: its status file plus its closed shadows."""
+    data = Path(cfg.ops.data_dir)
+    status_path = data / "runner-status.json"
+    journal_path = data / "runner.sqlite"
+    if not journal_path.exists() and not status_path.exists():
+        return None
+    out: dict = {"status": None, "trades": []}
+    try:
+        out["status"] = json.loads(status_path.read_text())
+    except Exception as exc:
+        out["status"] = {"unavailable": str(exc)}
+    try:
+        import sqlite3
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        db = sqlite3.connect(f"file:{journal_path}?mode=ro", uri=True)
+        db.row_factory = sqlite3.Row
+        out["trades"] = [dict(r) for r in db.execute(
+            "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? ORDER BY closed_utc",
+            (to_utc(start).isoformat(),))]
+        db.close()
+    except Exception as exc:
+        out["trades_unavailable"] = str(exc)
+    return json.dumps(out, indent=2, default=str)
+
+
 def build_bundle(cfg: Config, broker, day: dt.datetime,
                  fetch: Optional[Callable[[str], str]] = None) -> dict[str, str]:
     from .day_review import build_day_review
@@ -131,6 +157,9 @@ def build_bundle(cfg: Config, broker, day: dt.datetime,
     scalper = scalper_json(cfg, day)
     if scalper is not None:
         files[f"reports/{key}/scalper.json"] = scalper
+    runner = runner_json(cfg, day)
+    if runner is not None:
+        files[f"reports/{key}/runner.json"] = runner
     files.update({p.replace(f"reports/{key}/", "reports/latest/"): v
                   for p, v in list(files.items())})
     files["reports/latest/DATE"] = key + "\n"

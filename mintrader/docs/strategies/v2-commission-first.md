@@ -46,3 +46,10 @@ beyond the pullback. Why: docs/strategies/rapid_scalper.md.
 Simulated only; never in the account. It goes LIVE only when its result on
 price clearly beats its costs over several days, and then possibly only in
 the hours that earn (`entry_hours_utc`).
+
+## Momentum Runner (separate, in PAPER)
+
+From 7 October: a paper shadow of this bot's index trades, same entry and
+size, stop left alone until +3 R then trailed 3 R behind the best price.
+Never in the account. Why, and what would earn it real money:
+docs/strategies/momentum_runner.md.

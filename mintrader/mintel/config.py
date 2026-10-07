@@ -309,6 +309,17 @@ class NewsConfig:
 
 
 @dataclass
+class RunnerConfig:
+    """Momentum Runner: a paper shadow on the main bot's index trades
+    (mintel/runner). PAPER only; it never places an order."""
+    enabled: bool = True
+    mode: str = "PAPER"
+    trail_r: float = 3.0            # once +3 R, trail 3 R behind the best price
+    window_hours: float = 8.0       # out at the price after 8 hours (the replay's window)
+    markets: tuple[str, ...] = ()   # empty = every index market the main bot trades
+
+
+@dataclass
 class OpsConfig:
     data_dir: str = "data"
     log_dir: str = "logs"
@@ -378,6 +389,7 @@ class Config:
     flowlock: FlowLockConfig = field(default_factory=FlowLockConfig)
     news: NewsConfig = field(default_factory=NewsConfig)
     ops: OpsConfig = field(default_factory=OpsConfig)
+    runner: RunnerConfig = field(default_factory=RunnerConfig)
 
     # ------------------------------------------------------------- live gate --
     @property
@@ -488,7 +500,7 @@ class Config:
         cfg = cls()
         nested = {"risk": RiskConfig, "universe": UniverseConfig,
                   "scan": ScanConfig, "flowlock": FlowLockConfig,
-                  "news": NewsConfig, "ops": OpsConfig}
+                  "news": NewsConfig, "ops": OpsConfig, "runner": RunnerConfig}
         for f in fields(cls):
             if f.name in nested:
                 sub = raw.get(f.name)
