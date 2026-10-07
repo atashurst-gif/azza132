@@ -2,7 +2,7 @@
 import datetime as dt
 
 from mintel.broker.base import Bar
-from mintel.ops.potential import analyse, render, run
+from mintel.ops.potential import analyse, render, run, since_utc
 
 T0 = dt.datetime(2026, 10, 6, 13, 0, tzinfo=dt.timezone.utc)
 
@@ -49,3 +49,8 @@ def test_render_and_missing_history():
     res = run([trade()], lambda sym, end, n: bars([(99, 101, 100), (100, 130, 129)]), lambda s: 0.01, 8)
     text = render(res, 8)
     assert "THE BIG WINNERS" in text and "US30" in text
+
+
+def test_the_since_date_is_read_as_utc():
+    assert since_utc("2026-09-17") == dt.datetime(2026, 9, 17, tzinfo=dt.timezone.utc)
+    assert since_utc("2026-09-17T10:00+01:00").hour == 9

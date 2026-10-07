@@ -184,6 +184,14 @@ def to_csv(res: list[Potential]) -> str:
     return out.getvalue()
 
 
+def since_utc(text: str) -> dt.datetime:
+    """A date or date-time on the command line, read as UTC unless it says otherwise."""
+    d = dt.datetime.fromisoformat(text)
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=dt.timezone.utc)
+    return to_utc(d)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="how far could each trade have gone")
     ap.add_argument("--config", default="data/config.json")
@@ -195,7 +203,7 @@ def main(argv=None) -> int:
     from ..engine.journal import Journal
     from ..run import build_broker
     j = Journal(Path(cfg.ops.data_dir) / "journal.sqlite")
-    since = to_utc(dt.datetime.fromisoformat(args.since))
+    since = since_utc(args.since)
     trades = [t for t in j.closed_trades(limit=5000, since=since) if t.get("entry") and t.get("stop")]
     trades.sort(key=lambda t: str(t.get("opened_utc")))
     broker = build_broker(cfg)
