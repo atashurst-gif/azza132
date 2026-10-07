@@ -153,6 +153,40 @@ def runner_tab(data_dir: str | Path, start: dt.datetime, end: Optional[dt.dateti
     return stats, st_
 
 
+def paper_tab(data_dir: str | Path, db_name: str, status_name: str, strategy_id: str, label: str,
+              start: dt.datetime, end: Optional[dt.datetime], currency: str,
+              now: Optional[dt.datetime] = None, source: str = "") -> tuple[dict, dict]:
+    """A paper bot's figures from its own sqlite and status file: (stats, status)."""
+    data = Path(data_dir)
+    now = to_utc(now or utcnow())
+    try:
+        st_ = json.loads((data / status_name).read_text())
+        age = (now - to_utc(dt.datetime.fromisoformat(st_["updated"]))).total_seconds()
+        st_["present"] = True
+        if age > STALE_SECONDS:
+            st_["status"] = f"NOT RUNNING (last seen {age / 60:.0f} min ago)"
+    except Exception:
+        st_ = {"strategy_id": strategy_id, "label": label, "mode": "PAPER", "status": "NOT RUNNING", "open": [], "present": False}
+    a = to_utc(start).isoformat()
+    if end is None:
+        rows = _rows_ro(data / db_name, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
+                        "ORDER BY closed_utc ASC LIMIT 5000", (a,))
+        includes_now = True
+    else:
+        rows = _rows_ro(data / db_name, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
+                        "AND closed_utc < ? ORDER BY closed_utc ASC LIMIT 5000", (a, to_utc(end).isoformat()))
+        includes_now = to_utc(start) <= now < to_utc(end)
+    opens = [{"symbol": o.get("symbol"), "pnl": o.get("pnl") or 0.0} for o in (st_.get("open") or [])] if includes_now else []
+    stats = strategy_stats(rows, opens, label=label, strategy_id=strategy_id, currency=currency)
+    stats["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
+                              "exit_reason": r.get("exit_reason"), "mode": r.get("mode") or "PAPER",
+                              "strategy": strategy_id, "tactic": r.get("tactic")} for r in rows]
+    peaks = [float(r.get("peak_r") or 0) for r in rows]
+    stats["avg_peak_r"] = round(sum(peaks) / len(peaks), 2) if peaks else None
+    stats["source"] = source or f"simulated (PAPER) - {label}'s own records, not money, not in Overall"
+    return stats, st_
+
+
 def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
                      data_dir: str | Path, ledger_today: Optional[dict] = None,
                      now: Optional[dt.datetime] = None) -> dict:
@@ -175,13 +209,16 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
         overall["before_fees"] = mi["before_fees"]
     if not live_rs:
         rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
-        overall["note"] = "The Rapid Scalper and the Momentum Runner are in PAPER: their simulated results are on their own tabs only."
+        overall["note"] = "The Rapid Scalper, the Momentum Runner and the Band Breaker are in PAPER: their simulated results are on their own tabs only."
     from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
     mr, mr_status = runner_tab(data_dir, day_start, None, currency, now)
-    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr,
-            "scalper": rs_status, "runner": mr_status,
+    from ..bandbreaker import STRATEGY_ID as BB_ID, STRATEGY_LABEL as BB_LABEL
+    bb, bb_status = paper_tab(data_dir, "bandbreaker.sqlite", "bandbreaker-status.json", BB_ID, BB_LABEL,
+                              day_start, None, currency, now)
+    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb,
+            "scalper": rs_status, "runner": mr_status, "bandbreaker": bb_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
-                       RUNNER_ID: RUNNER_LABEL}}
+                       RUNNER_ID: RUNNER_LABEL, BB_ID: BB_LABEL}}
 
 
 # ------------------------------------------------------------- periods --
@@ -290,10 +327,13 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
                                      key=lambda t: str(t.get("closed") or ""))
     from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
     mr, mr_status = runner_tab(data_dir, start, end, currency, now)
-    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr,
-            "scalper": read_scalper_status(data_dir, now=now), "runner": mr_status,
+    from ..bandbreaker import STRATEGY_ID as BB_ID, STRATEGY_LABEL as BB_LABEL
+    bb, bb_status = paper_tab(data_dir, "bandbreaker.sqlite", "bandbreaker-status.json", BB_ID, BB_LABEL,
+                              start, end, currency, now)
+    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb,
+            "scalper": read_scalper_status(data_dir, now=now), "runner": mr_status, "bandbreaker": bb_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
-                       RUNNER_ID: RUNNER_LABEL},
+                       RUNNER_ID: RUNNER_LABEL, BB_ID: BB_LABEL},
             "period": {"key": "custom" if label and label[:1].isdigit() else label.lower(), "label": label,
                        "start": a, "end": b, "source": "the bots' own records"}}
 

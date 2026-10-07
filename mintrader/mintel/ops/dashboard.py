@@ -248,7 +248,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     if not strategies:
         return {}
     labels = strategies.get("labels") or {}
-    order = [k for k in ("overall", "market_intelligence", "rapid_scalper", "momentum_runner") if k in strategies]
+    order = [k for k in ("overall", "market_intelligence", "rapid_scalper", "momentum_runner", "band_breaker") if k in strategies]
     if selected not in strategies:
         selected = "overall"
     period = strategies.get("period") or {"key": "today", "label": "Today", "from": "", "to": ""}
@@ -318,6 +318,8 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     if selected == "momentum_runner":
         rows += [("Average best point reached", plain(s.get("avg_peak_r"), " R"), ""),
                  ("Reached the 3 R trail", plain(s.get("reached_trail")), "")]
+    if selected == "band_breaker":
+        rows += [("Average best point reached", plain(s.get("avg_peak_r"), " R"), "")]
     if selected == "overall" and s.get("by_strategy"):
         for b in s["by_strategy"]:
             rows.append((f"of which {html.escape(str(b['label']))}", money(b.get("net_today")),
@@ -383,7 +385,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
                f'definitive result. Each bot\'s tab shows only its own trades. {source}</p></div>')
     return {"tabs": (f'<div class="tabs">{tabs}<span class="sep"></span>{pbar}</div>'),
             "figures": figures, "detail": detail_html, "trades": trade_html,
-            "scalper": render_scalper_panel(snap) + render_runner_panel(snap)}
+            "scalper": render_scalper_panel(snap) + render_runner_panel(snap) + render_bandbreaker_panel(snap)}
 
 
 def render_strategies(snap: dict, selected: str = "overall") -> str:
@@ -415,6 +417,30 @@ def render_runner_panel(snap: dict) -> str:
         body += kv("Shadows open", "none - it starts one whenever Trend &amp; Breakout opens an index trade")
     return (f'<div class="box"><div class="rs-title">MOMENTUM RUNNER</div>'
             f'<div class="small">{e(str(mr.get("tagline", "")))}</div><div class="kv">{body}</div></div>')
+
+
+def render_bandbreaker_panel(snap: dict) -> str:
+    bb = (snap.get("strategies") or {}).get("bandbreaker") or {}
+    if not bb:
+        return ""
+    e = html.escape
+
+    def kv(k, v):
+        return f'<div class="k">{k}</div><div>{v}</div>'
+    body = (kv("Status", e(str(bb.get("status")))) + kv("Mode", f'<span class="pill">{e(str(bb.get("mode")))}</span>')
+            + kv("Session", e(str(bb.get("session") or ""))) + kv("Rule", e(str(bb.get("rule") or ""))))
+    now = bb.get("markets_now") or {}
+    if now:
+        body += kv("Markets", "<br>".join(f"<b>{e(str(k))}</b>: {e(str(v))}" for k, v in now.items()))
+    opens = bb.get("open") or []
+    if opens:
+        rows = "".join(f'<tr><td><b>{e(str(o.get("symbol")))}</b> {e(str(o.get("side")))}</td><td class=mono>{o.get("r_now"):+.2f} R</td>'
+                       f'<td class=mono>peak {o.get("peak_r"):+.2f} R</td><td class=mono>stop {o.get("stop")}</td></tr>' for o in opens)
+        body += kv("Open", f'<table>{rows}</table>')
+    else:
+        body += kv("Open", "none")
+    return (f'<div class="box"><div class="rs-title">BAND BREAKER</div>'
+            f'<div class="small">{e(str(bb.get("tagline", "")))}</div><div class="kv">{body}</div></div>')
 
 
 def render_scalper_panel(snap: dict) -> str:

@@ -175,6 +175,19 @@ class Trader:
                                              spec_fn=self.broker.spec, clock=self.clock)
         except Exception as exc:
             log.warning("Momentum Runner not started: %s", exc)
+        # Band Breaker: the fourth bot, paper intraday index momentum. Same
+        # footing as the Runner: reads prices, writes its own files, never trades.
+        self.bandbreaker = None
+        try:
+            from ..bandbreaker.engine import BandBreaker, BandBreakerConfig
+            bc = getattr(cfg, "bandbreaker", None)
+            if bc is None or getattr(bc, "enabled", True):
+                kw = {k: getattr(bc, k) for k in BandBreakerConfig.__dataclass_fields__ if bc is not None and hasattr(bc, k)}
+                if "markets" in kw:
+                    kw["markets"] = tuple(kw["markets"])
+                self.bandbreaker = BandBreaker(data_dir, BandBreakerConfig(**kw), spec_fn=self.broker.spec, clock=self.clock)
+        except Exception as exc:
+            log.warning("Band Breaker not started: %s", exc)
         self.thesis = ThesisTracker()
 
         expected_login = cfg.account_login
@@ -737,7 +750,19 @@ class Trader:
                     log.info("%s", note)
             except Exception as exc:
                 log.debug("Momentum Runner skipped this pass: %s", exc)
+        if self.bandbreaker is not None:
+            try:
+                for note in self.bandbreaker.step(now, self._tick_quietly, self._bars_quietly):
+                    log.info("%s", note)
+            except Exception as exc:
+                log.debug("Band Breaker skipped this pass: %s", exc)
         return notes
+
+    def _bars_quietly(self, symbol: str, tf, count: int):
+        try:
+            return list(self.broker.bars(symbol, tf, int(count)))
+        except Exception:
+            return []
 
     def _open_journal_rows(self) -> list[dict]:
         try:

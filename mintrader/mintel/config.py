@@ -320,6 +320,23 @@ class RunnerConfig:
 
 
 @dataclass
+class BandBreakerConfig:
+    """Band Breaker: intraday index momentum from the published noise-band
+    rule (mintel/bandbreaker). PAPER only; it never places an order."""
+    enabled: bool = True
+    mode: str = "PAPER"
+    markets: tuple[str, ...] = ("US500", "US30", "USTEC")
+    lookback_days: int = 14
+    check_minutes: int = 30
+    first_check: str = "10:00"          # New York
+    last_entry: str = "15:30"
+    flat_before_close_minutes: int = 5
+    max_entries_per_day: int = 3
+    risk_money: float = 10.0
+    paper_slippage_points: float = 1.0
+
+
+@dataclass
 class OpsConfig:
     data_dir: str = "data"
     log_dir: str = "logs"
@@ -390,6 +407,7 @@ class Config:
     news: NewsConfig = field(default_factory=NewsConfig)
     ops: OpsConfig = field(default_factory=OpsConfig)
     runner: RunnerConfig = field(default_factory=RunnerConfig)
+    bandbreaker: BandBreakerConfig = field(default_factory=BandBreakerConfig)
 
     # ------------------------------------------------------------- live gate --
     @property
@@ -500,7 +518,8 @@ class Config:
         cfg = cls()
         nested = {"risk": RiskConfig, "universe": UniverseConfig,
                   "scan": ScanConfig, "flowlock": FlowLockConfig,
-                  "news": NewsConfig, "ops": OpsConfig, "runner": RunnerConfig}
+                  "news": NewsConfig, "ops": OpsConfig, "runner": RunnerConfig,
+                  "bandbreaker": BandBreakerConfig}
         for f in fields(cls):
             if f.name in nested:
                 sub = raw.get(f.name)

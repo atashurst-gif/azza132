@@ -53,3 +53,9 @@ From 7 October: a paper shadow of this bot's index trades, same entry and
 size, stop left alone until +3 R then trailed 3 R behind the best price.
 Never in the account. Why, and what would earn it real money:
 docs/strategies/momentum_runner.md.
+
+## Band Breaker (separate, in PAPER)
+
+From 7 October: intraday index momentum from the published noise-band rule
+(Zarattini, Aziz, Barbon 2024), New York session, flat before the close.
+Never in the account. docs/strategies/band_breaker.md.

@@ -115,9 +115,13 @@ def scalper_json(cfg: Config, day: dt.datetime) -> Optional[str]:
 
 def runner_json(cfg: Config, day: dt.datetime) -> Optional[str]:
     """The Momentum Runner's day: its status file plus its closed shadows."""
+    return paper_bot_json(cfg, day, "runner-status.json", "runner.sqlite")
+
+
+def paper_bot_json(cfg: Config, day: dt.datetime, status_name: str, db_name: str) -> Optional[str]:
     data = Path(cfg.ops.data_dir)
-    status_path = data / "runner-status.json"
-    journal_path = data / "runner.sqlite"
+    status_path = data / status_name
+    journal_path = data / db_name
     if not journal_path.exists() and not status_path.exists():
         return None
     out: dict = {"status": None, "trades": []}
@@ -160,6 +164,9 @@ def build_bundle(cfg: Config, broker, day: dt.datetime,
     runner = runner_json(cfg, day)
     if runner is not None:
         files[f"reports/{key}/runner.json"] = runner
+    bb = paper_bot_json(cfg, day, "bandbreaker-status.json", "bandbreaker.sqlite")
+    if bb is not None:
+        files[f"reports/{key}/bandbreaker.json"] = bb
     files.update({p.replace(f"reports/{key}/", "reports/latest/"): v
                   for p, v in list(files.items())})
     files["reports/latest/DATE"] = key + "\n"
