@@ -4,3 +4,98 @@
 @media(max-width:770px){.shell{display:block}.sidebar{height:auto;position:relative;padding:11px;flex-direction:row;align-items:center;overflow-x:auto;gap:8px}.brand{padding:0 10px 0 0}.brand small,.user-chip,.sidebar-label,.sidebar-bottom{display:none}.sidebar nav{display:flex;gap:3px;margin:0}.nav-link{white-space:nowrap;font-size:10px;padding:8px}.nav-link span:first-child{display:none}.nav-owner{display:none}.main{padding:0 14px}.topbar{height:48px}.topbar-right span:not(.status-dot){display:none}.heading-row{align-items:start}.heading-row p{font-size:12px}.session-pill{display:none}.stage-scene{height:275px}.guitar-demo{width:94%;transform:rotate(-3deg) scale(.94)}.stage-tip{display:none}.current-chord span:last-child{font-size:10px}.exercise-row{grid-template-columns:1fr 1fr}.exercise-row>div:last-child{grid-column:span 2}.backing-footer{flex-wrap:wrap}.settings-grid,.guitar-page-grid,.builder-grid{grid-template-columns:1fr}}
 @media(max-width:500px){.heading-row h1{font-size:26px}.brand strong{font-size:15px}.nav-link{font-size:9px}.stage-scene{height:240px}.guitar-demo{width:105%;transform:rotate(-3deg) scale(.83)}.picking-area{flex-basis:85px}.stage-panel,.backing-panel{padding:12px}.track-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.track-switch{padding:8px}.track-switch strong{font-size:10px}.stage-topline{top:8px}.current-chord{bottom:9px}.current-chord strong{font-size:12px}.play-controls button{flex-grow:1}.coach-panel{min-height:480px}.listen-panel{flex-wrap:wrap}.listen-panel .button-secondary{width:100%}.stats-grid{gap:7px}.stat{padding:12px}.stat strong{font-size:25px}}
 .import-label{display:block;font-size:10px;color:#b5e1ba;cursor:pointer;margin-top:8px}.import-label input{display:none}.hand-barre{position:absolute;display:none;height:56%;width:16px;border-radius:12px;background:linear-gradient(90deg,#e8b18a,#bd815f);z-index:5;border:1px solid #dbab8a;transform:translate(-50%,-50%);box-shadow:1px 3px 5px #0006}.hand-barre:after{content:'1';position:absolute;font-size:10px;color:#693d29;top:5px;left:4px}
+/* ---- 0.2 additions: timeline-driven hands, section practice, voice, memory tracks ---- */
+.guitar-wood{overflow:visible}
+.fret-numbers{position:absolute;left:0;right:0;top:calc(100% + 11px);display:grid;grid-template-columns:repeat(5,1fr);font-size:9px;color:#cbb79a;letter-spacing:.5px;text-align:center;pointer-events:none}
+.fret-numbers span{opacity:.85}.fret-numbers span.capo{color:#f0d8a8;font-weight:800}
+.body-strings{position:absolute;inset:0;pointer-events:none;z-index:2}
+.body-string{position:absolute;left:-6px;right:14px;height:1px;background:#d9c8a9;opacity:.75;box-shadow:0 1px 2px #20170e}
+.string-line.ringing,.body-string.ringing{animation:ring .22s ease-out}
+@keyframes ring{0%{box-shadow:0 0 0 1px #fff7d8,0 0 8px 2px #ffe9a7cc;transform:scaleY(2.4)}100%{box-shadow:0 1px 2px #20170e;transform:scaleY(1)}}
+.finger{transition:left .16s cubic-bezier(.3,.7,.3,1),top .16s cubic-bezier(.3,.7,.3,1),transform .12s ease}
+.finger.lift{transform:translate(-50%,-62%) rotate(16deg) scale(1.12);box-shadow:3px 9px 10px #0009}
+.hand-barre{transition:left .16s ease,top .16s ease,height .16s ease}
+.hand-thumb{position:absolute;width:26px;height:40px;border-radius:14px 14px 10px 10px;background:linear-gradient(120deg,#e0ad86,#a86e50);border:1px solid #d49d7c;top:-18px;left:30%;transform:translate(-50%,0) rotate(-8deg);z-index:4;opacity:.92;box-shadow:1px 2px 5px #0007;transition:left .18s ease}
+.pick-hand{top:auto;left:auto;transform:none;width:36px;height:36px;display:grid;place-items:center;transition:top var(--pick-dur,.08s) linear;will-change:top}
+.pick-hand .pick{display:block;width:12px;height:16px;background:linear-gradient(160deg,#fff2c4,#d8a85b);clip-path:polygon(50% 100%,0 25%,20% 0,80% 0,100% 25%);filter:drop-shadow(0 2px 2px #0009);transition:transform .07s ease}
+.pick-hand.down .pick{transform:rotate(12deg) translateY(2px)}.pick-hand.up .pick{transform:rotate(-168deg) translateY(2px)}
+.pick-hand.legato .pick{opacity:.45}
+.guitar-demo.is-playing .pick-hand{animation:none}
+.guitar-demo.your-turn{filter:drop-shadow(4px 10px 17px #0009) saturate(.85)}
+.count-in{position:absolute;inset:0;display:grid;place-items:center;z-index:6;pointer-events:none;font:800 96px Manrope,sans-serif;color:#e9fbe9;text-shadow:0 6px 30px #000c;animation:countpulse .5s ease-out}
+.count-in[hidden]{display:none}
+@keyframes countpulse{from{transform:scale(1.25);opacity:.4}to{transform:scale(1);opacity:1}}
+.stage-chip{font-size:9px;letter-spacing:1.1px;font-weight:800;color:#163021;background:#bfe9c6;padding:5px 8px;border-radius:5px}
+.stage-chip[hidden]{display:none}.stage-chip.turn{background:#f0d8a8}
+.section-tools{border-top:1px solid #374439;margin-top:14px;padding-top:12px;display:grid;gap:10px}
+.section-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.section-row .eyebrow{font-size:9px;white-space:nowrap}
+.section-chips{display:flex;gap:6px;flex-wrap:wrap}
+.section-chips button{border:1px solid #415444;color:#bedfc0;background:#26352a;border-radius:16px;font-size:10px;padding:6px 10px}
+.section-chips button.active{background:#35533e;border-color:#91d6a0;color:#fff}
+.range-label{font-size:11px;color:#dfeedd;font-weight:700;background:#27352b;border:1px solid #394a3c;padding:6px 9px;border-radius:7px}
+.inline-field{display:flex;align-items:center;gap:6px;font-size:11px;color:#c0cbbf}
+.inline-field select{background:#25332a;border:1px solid #445748;color:#ecf5e8;border-radius:6px;padding:5px 6px}
+.inline-field input[type=checkbox]{accent-color:var(--mint)}.inline-field input[type=range]{width:80px;accent-color:var(--mint)}
+.control-btn.small,.main-play.small{padding:7px 10px;font-size:11px}
+.control-btn.active{background:#35533e;border-color:#91d6a0;color:#fff}
+.confirm-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#2b3f31;border:1px solid #6f9a78;border-radius:10px;padding:10px 12px;font-size:12px;color:#e7f5e6}
+.confirm-bar[hidden]{display:none}.confirm-bar div{display:flex;gap:6px;flex-wrap:wrap}
+.step-card.in-range{background:#2d4233;border-color:#5c8564}
+.step-card.playing{box-shadow:0 0 0 2px #b4e5bc inset}
+.step-card .step-ok{display:block;font-size:9px;color:#9fd9ab;margin-top:3px}
+.track-vol{width:100%;accent-color:var(--mint);margin-top:6px}
+.backing-options{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.backing-options label{font-size:11px;color:#c0cbbf;display:flex;gap:6px;align-items:center}
+.attempt-bar,.speaking-bar{margin:0 13px 10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#2b3f31;border:1px solid #6f9a78;border-radius:10px;padding:9px 12px;font-size:12px;color:#e7f5e6}
+.attempt-bar[hidden],.speaking-bar[hidden]{display:none}.attempt-bar div{display:flex;gap:6px;flex-wrap:wrap}
+.speaking-bar span{display:flex;align-items:center;gap:8px}
+.mic-btn.recording{background:#944d4f;animation:recpulse 1s infinite}
+@keyframes recpulse{0%{box-shadow:0 0 0 0 #ff8a8a66}100%{box-shadow:0 0 0 9px #ff8a8a00}}
+.avatar.speaking .avatar-mouth{animation:talk .3s infinite alternate}
+@keyframes talk{from{height:7px;width:13px}to{height:11px;width:11px;border-radius:50%}}
+.bubble.tutor.honest{border-color:#b89a63}
+.memory-group{margin-bottom:12px}.memory-group .eyebrow{font-size:9px;margin-bottom:7px}
+.memory-item{display:flex;justify-content:space-between;gap:10px;align-items:start}
+.memory-item button{border:0;background:transparent;color:#9fb0a2;font-size:14px;line-height:1;cursor:pointer}
+.memory-item button:hover{color:#ffb1b1}
+.memory-item.fixed{border-left-color:#5e7a66;color:#b8c7b9}
+.memory-add{display:flex;gap:6px;margin:6px 0 12px}
+.memory-add select{background:#25332a;border:1px solid #445748;color:#ecf5e8;border-radius:6px;padding:6px}
+.memory-add input{flex:1;min-width:0;background:#121b15;border:1px solid #405043;padding:9px;color:white;border-radius:8px}
+.coach-status{margin-top:18px;background:#27372b;padding:12px 14px;border-radius:9px;font-size:12px;color:#b1c3b2;line-height:1.7}
+.coach-status code{background:#1a241d;padding:1px 5px;border-radius:4px}
+.progress-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.section-stats{display:grid;gap:8px;margin-top:12px}
+.section-stat{display:grid;grid-template-columns:1fr auto;gap:8px;background:#27362b;border-left:3px solid #86b88e;padding:10px 12px;font-size:12px;color:#d1dfd1}
+.section-stat small{display:block;color:#9fb0a2;font-size:10px;margin-top:3px}
+.section-stat .ok{color:#9fd9ab}.section-stat .tricky{color:#f0c38a}
+.change-item .change-status{margin-left:8px;background:#25332a;border:1px solid #445748;color:#ecf5e8;border-radius:6px;padding:3px 6px;font-size:10px}
+.builder-flag{display:inline-block;background:#3b3220;color:#f0d8a8;border:1px solid #8a6f3b;padding:6px 9px;border-radius:6px;font-size:11px;margin-bottom:10px}
+.builder-flag[hidden]{display:none}
+@media(max-width:1160px){.progress-grid{grid-template-columns:1fr}}
+@media(max-width:770px){.section-row{gap:7px}.fret-numbers{font-size:8px}.count-in{font-size:70px}.confirm-bar div,.attempt-bar div{width:100%}.confirm-bar button,.attempt-bar button{flex:1}}
+@media(max-width:500px){.play-controls{gap:6px}.loop-row .inline-field{font-size:10px}.hand-thumb{display:none}}
+/* The body frame matches the neck's string area (160px tall, vertically centred) so picked strings line up across the join. */
+.body-frame{position:absolute;left:-6px;right:0;top:calc(50% - 80px);height:160px;z-index:3;pointer-events:none}
+.body-strings{inset:0}.body-string{left:0;right:22px}
+.pick-hand{left:24px}
+.track-switch .track-vol{position:static;opacity:1;pointer-events:auto;width:100%;min-width:0}
+/* Articulated SVG hand (hand.js). The palm sits above the treble edge; fingers reach down onto the strings. */
+.hand-svg{position:absolute;left:0;width:100%;overflow:visible;pointer-events:none;z-index:5}
+.hand-palm-svg{fill:url(#palmSkin);stroke:#9a6447;stroke-width:1.5;filter:drop-shadow(0 6px 8px #0007)}
+.finger-outline{fill:none;stroke:#8f5a40;stroke-linecap:round;stroke-linejoin:round}
+.finger-flesh{fill:none;stroke:url(#skin);stroke-linecap:round;stroke-linejoin:round}
+.finger-pad{fill:#f2c6a4;stroke:#c98d6a;stroke-width:1}
+.finger-g.relaxed{opacity:.72}.finger-g.relaxed .finger-num{opacity:.6}
+.finger-g.pressed .finger-pad{fill:#f7d2b4}
+.finger-num{font:800 10px 'DM Sans',system-ui,sans-serif;fill:#6b3a2a;text-anchor:middle}
+.finger-shadow{fill:#1a0d06;transition:opacity .1s}
+.neck-capo{display:none}
+.guitar-wood.has-capo::before{content:"";position:absolute;left:-14px;top:-12px;bottom:-12px;width:11px;border-radius:5px;background:linear-gradient(90deg,#2b2b2b,#4d4d4d 40%,#1f1f1f);box-shadow:2px 2px 5px #0009;z-index:4}
+.fret-numbers{top:calc(100% + 13px)}
+.string-labels{left:-34px}
+@media(max-width:500px){.string-labels{left:-28px;font-size:10px}}
+.memory-add select{width:auto;flex:0 0 auto}
+.finger-g.relaxed{opacity:.6}
+.finger-g.pressed .finger-pad{fill:#ffe0c4;stroke:#fff3e2;stroke-width:1.6}
