@@ -483,14 +483,12 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             every_position = trader.broker.positions(None)
         except Exception:
             every_position = None
-        standing = account_standing(trader.broker, trader.cfg, now_, account, every_position)
-        try:
-            start_ = dt.datetime.fromisoformat(standing["start"])
-            standing["practice"] = practice_figures(trader.cfg.ops.data_dir, start_, now_,
-                                                    account.currency if account else "GBP")
-        except Exception:
-            standing["practice"] = {}
-        state.update(standing=standing)
+        from .ops.standing import open_rows
+        standing = dict(account_standing(trader.broker, trader.cfg, now_, account, every_position))
+        deals = standing.pop("deals", [])
+        state.update(standing=standing, deals=deals, data_dir=str(trader.cfg.ops.data_dir),
+                     open_live=open_rows(every_position, trader.cfg) if every_position is not None else None,
+                     open_at=now_.isoformat())
     except Exception as exc:
         log.debug("standing skipped: %s", exc)
     # Strategy attribution for the page: read-only, adds the Rapid Scalper's

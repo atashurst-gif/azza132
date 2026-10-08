@@ -958,6 +958,22 @@ apply_bot_modes() {
   return 0
 }
 
+apply_scalper_paper() {
+  # 8 Oct afternoon: Aaron's instruction - the Rapid Scalper back to PAPER until
+  # it is fixed; the other four stay LIVE. Once only (marker), like the switch above.
+  local marker="$DATA_DIR/.scalper-paper-2026-10-08"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  step "Putting the Rapid Scalper back to PAPER"
+  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --paper scalper 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    good "Rapid Scalper: PAPER (practice). Trend & Breakout, Momentum Runner, Band Breaker and Crowd Fader: LIVE"
+  else
+    warn "Could not put the Rapid Scalper back to PAPER. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper scalper"
+  fi
+  return 0
+}
+
 refresh_config_paths() {
   # Paths can change between runs (Wine reinstalled, MT5 moved). Keep the
   # stored settings but re-point them at what actually exists now.

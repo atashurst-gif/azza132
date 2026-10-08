@@ -265,7 +265,9 @@ class TestTodayIsTheBrokersDay:
                     {"label": "Since start", "net": 2.91, "trades": 15, "win_rate": 40.0}]},
                 "health": {}, "thinking": [], "results": {}, "positions": [], "events": []}
         page = render_status(snap)
-        assert "Results by period" in page and "Yesterday" not in page
+        card = page[page.index("Results by period"):]
+        card = card[:card.index("</table>")]
+        assert "Yesterday" not in card               # the table shows only the periods it was given
         assert "-£7.60" in page or "-GBP7.60" in page or "7.60" in page
         assert "38%" in page
 

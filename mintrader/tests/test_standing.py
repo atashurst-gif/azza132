@@ -88,8 +88,9 @@ class TestTheFigure:
     def test_a_balance_change_that_is_not_a_trade_gets_its_own_row(self):
         sd = standing(balance=2000 + TRADING - 1.5)              # a broker charge of 1.50
         assert sd["made"] == round(TRADING - 1.5, 2) and sd["adjustments"] == -1.5
-        html = render_standing({"standing": sd})
-        assert "Other changes to the balance" in html and "-£1.50" in html
+        top = _top({k: v for k, v in sd.items() if k != "deals"}, sd.get("deals") or ())
+        html = render_standing({"standing": sd}, top)
+        assert "other changes to the balance" in html and "-£1.50" in html
 
     def test_the_rows_add_up_and_a_trade_is_its_openers(self):
         sd = standing()
@@ -115,8 +116,8 @@ class TestWhenTheBrokerFails:
     def test_no_history_means_no_figure_not_a_wrong_one(self):
         sd = standing(fail=True)
         assert sd["made"] is None and "history unavailable" in sd["error"]
-        html = render_standing({"standing": sd})
-        assert "could not be read" in html and "£" not in html.split('class="hv')[1][:30]
+        html = render_standing({"standing": sd}, None)
+        assert "could not be read" in html and 'class="fv">-<' in html
 
     def test_an_older_bridge_is_asked_per_bot_and_a_failed_bot_is_unknown_not_hand_trading(self):
         sd = standing(old_bridge=True, fail_magic=990311)
@@ -124,7 +125,8 @@ class TestWhenTheBrokerFails:
         assert by["market_intelligence"]["made"] is None
         assert sd["other"]["made"] is None and sd["other"]["today"] is None      # never the missing bot's money
         assert "990311" in sd["error"]
-        html = render_standing({"standing": sd})
+        top = _top({k: v for k, v in sd.items() if k != "deals"}, sd.get("deals") or ())
+        html = render_standing({"standing": sd}, top)
         assert "could not be read just now" in html and sd["made"] == TRADING     # the big figure still stands
 
     def test_an_older_bridge_that_answers_still_adds_up(self):
@@ -139,26 +141,104 @@ class TestWhenTheBrokerFails:
         assert sd["open"] == -2.13 and "positions" in sd["error"]            # the account's own figure still shows
 
 
+def _top(sd, deals=(), period="today", **kw):
+    from mintel.ops.standing import period_view
+    return {"sel": period_view(sd, list(deals), period, now=NOW, **kw), "tot": period_view(sd, list(deals), "total", now=NOW),
+            "p_sel": {}, "p_tot": {"rapid_scalper": -57.09}}
+
+
 class TestThePage:
-    def test_the_figure_reaches_the_real_page_through_the_snapshot(self):
+    def test_the_headlines_reach_the_real_page_through_the_snapshot(self):
         state = DashboardState()
-        sd = standing()
-        sd["practice"] = {"rapid_scalper": -15.03}
+        sd = dict(standing())
+        deals = sd.pop("deals")
         state.update(status={"bot": "RUNNING"}, health={"checks": []}, standing=sd)
-        page = render_status(state.snapshot())
-        assert f"+£{TRADING:,.2f}" in page and "Made since Mon 05 Oct, 12:30 UK - after commission" in page
-        assert page.index('class="hero') < page.index('id="more"')
-        assert "£2,000.00 at the reset" in page
+        page = render_status(state.snapshot(), "overall", _top(sd, deals))
+        assert "Account - all bots, after commission" in page
+        assert f"+£{TRADING:,.2f}" in page                                   # Overall = the balance less £2,000
+        assert "started with £2,000.00 on Mon 05 Oct" in page
+        assert "reset" not in page.split('id="more"')[0].lower()            # no "reset" talk at the top
+        assert page.index('class="cards"') < page.index('id="more"')
 
-    def test_the_table_has_a_row_per_bot_and_the_account_total(self):
-        sd = standing()
-        sd["practice"] = {"rapid_scalper": -15.03}
-        html = render_standing({"standing": sd})
-        for label in ("Trend &amp; Breakout", "Rapid Scalper", "Momentum Runner", "Band Breaker", "Crowd Fader",
-                      "Anything else (placed by hand)", "Account"):
+    def test_a_card_per_bot_with_today_and_overall(self):
+        sd = dict(standing())
+        deals = sd.pop("deals")
+        html = render_standing({"standing": sd}, _top(sd, deals))
+        for label in ("Trend &amp; Breakout", "Rapid Scalper", "Momentum Runner", "Band Breaker", "Crowd Fader"):
             assert label in html, label
-        assert "-£15.03" in html
+        assert html.count('<div class="fk">Today</div>') == 6 and html.count('<div class="fk">Overall</div>') == 6
+        assert "Practice only, not real money" in html and "-£57.09" in html     # the paper scalper, in grey
+        assert "from trades placed by hand" in html                              # the +2.00 hand trade keeps the sum
 
-    def test_a_page_with_no_standing_yet_still_renders(self):
+    def test_a_page_with_no_figures_yet_still_renders(self):
         page = render_status({"status": {"bot": "WAITING FOR METATRADER", "waiting": "x"}, "health": {}})
-        assert "WAITING FOR METATRADER" in page and "has not heard from the broker yet" in page
+        assert "WAITING FOR METATRADER" in page and "has not heard from MetaTrader yet" in page
+
+
+class TestPeriodsAndOpenTrades:
+    def _state(self):
+        from mintel.ops.standing import open_rows
+        from mintel.broker.base import Side
+        b = Broker()
+        sd = dict(account_standing(b, cfg(), NOW, cache_seconds=0))
+        deals = sd.pop("deals")
+        pos = [NS(ticket=7, symbol="US30", side=Side.SELL, volume=0.3, entry_price=46850.2, sl=46910.0, tp=0.0,
+                  profit=3.10, swap=-0.1, magic=990311, open_time=NOW - dt.timedelta(minutes=25)),
+               NS(ticket=8, symbol="XAUUSD", side=Side.SELL, volume=0.01, entry_price=4123.6, sl=4141.2, tp=4061.0,
+                  profit=-0.77, swap=0.0, magic=990711, open_time=NOW - dt.timedelta(minutes=8)),
+               NS(ticket=9, symbol="EURUSD", side=Side.BUY, volume=0.01, entry_price=1.1, sl=0.0, tp=0.0,
+                  profit=0.05, swap=0.0, magic=0, open_time=NOW - dt.timedelta(minutes=3))]
+        return sd, deals, open_rows(pos, cfg())
+
+    def test_every_period_adds_up_and_total_is_the_balance_figure(self):
+        from mintel.ops.standing import PERIOD_BUTTONS, period_view
+        sd, deals, _ = self._state()
+        assert [k for k, _ in PERIOD_BUTTONS] == ["today", "yesterday", "week", "month", "6m", "1y", "total"]
+        for key, _label in PERIOD_BUTTONS:
+            v = period_view(sd, deals, key, now=NOW)
+            assert sum(b["made"] for b in v["bots"].values()) + v["other"] == pytest.approx(v["trading"]), key
+        total = period_view(sd, deals, "total", now=NOW)
+        assert total["made"] == sd["made"] and total["adjustments"] == 0.0
+        today = period_view(sd, deals, "today", now=NOW)
+        assert today["made"] == round(8.28 - 9.36 + 2.0 + 4.0, 2) and today["adjustments"] is None
+        assert period_view(sd, deals, "yesterday", now=NOW)["made"] == 0.0
+
+    def test_a_custom_range_counts_whole_days_and_never_before_the_reset(self):
+        from mintel.ops.standing import period_view
+        sd, deals, _ = self._state()
+        v = period_view(sd, deals, "custom", "2026-10-01", "2026-10-05", now=NOW)
+        assert v["start"] == START.isoformat()                              # clamped to the reset
+        assert v["made"] == round(-0.30 + 21.60, 2)                          # only the 5 Oct trade
+        both = period_view(sd, deals, "custom", "2026-10-08", "2026-10-05", now=NOW)   # reversed dates
+        assert both["made"] == period_view(sd, deals, "total", now=NOW)["trading"]
+
+    def test_open_trades_name_their_bot(self):
+        _sd, _deals, rows = self._state()
+        assert [(r["bot"], r["symbol"], r["profit"]) for r in rows] == [
+            ("Trend & Breakout", "US30", 3.0), ("Crowd Fader", "XAUUSD", -0.77), ("Placed by hand", "EURUSD", 0.05)]
+
+    def test_the_page_has_the_filter_the_open_box_and_the_chosen_period(self):
+        import urllib.request
+        from mintel.ops.dashboard import start_dashboard
+        sd, deals, rows = self._state()
+        state = DashboardState()
+        state.update(status={"bot": "RUNNING"}, health={"checks": []}, standing=sd, deals=deals,
+                     open_live=rows, open_at=NOW.isoformat(), data_dir="")
+        httpd = start_dashboard(state, "127.0.0.1", 0)
+        try:
+            port = httpd.server_address[1]
+            page = urllib.request.urlopen(f"http://127.0.0.1:{port}/").read().decode()
+            for lbl in ("Today", "Yesterday", "This week", "This month", "Last 6 months", "Last year", "Total", "Custom"):
+                assert f">{lbl}<" in page, lbl
+            assert 'class="tab p on" href="/?period=today"' in page                   # Today by default
+            assert "Open trades right now - 3 open" in page and "Crowd Fader" in page and "Placed by hand" in page
+            assert page.index('class="cards"') < page.index("Open trades right now")
+            week = urllib.request.urlopen(f"http://127.0.0.1:{port}/?period=week").read().decode()
+            assert '<div class="fk">This week</div>' in week and 'class="tab p on" href="/?period=week"' in week
+            total = urllib.request.urlopen(f"http://127.0.0.1:{port}/?period=total").read().decode()
+            assert '<div class="fk">Today</div>' not in total and '<div class="fk">Overall</div>' in total
+            custom = urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/?period=custom&from=2026-10-05&to=2026-10-05").read().decode()
+            assert "+£21.30" in custom
+        finally:
+            httpd.shutdown()

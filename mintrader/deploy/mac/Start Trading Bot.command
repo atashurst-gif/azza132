@@ -88,7 +88,7 @@ fi
 
 # ---- Fast path: already healthy? Then say so and stop touching things. -------
 if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
-   && [[ -f "$DATA_DIR/.all-bots-live-2026-10-08" ]]; then
+   && [[ -f "$DATA_DIR/.all-bots-live-2026-10-08" ]] && [[ -f "$DATA_DIR/.scalper-paper-2026-10-08" ]]; then
   say ""
   say "  ${GREEN}It is already running.${RESET} Checking it over..."
   # Keep these cheap and idempotent, so a routine double-click stays fast.
@@ -122,6 +122,7 @@ ensure_wine_python   || { final_report; trap - EXIT; read -r -p "Press Enter to 
 ensure_mt5           || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
 write_config         || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
 apply_bot_modes
+apply_scalper_paper
 install_launch_agent
 install_desktop_icon
 prevent_idle_sleep

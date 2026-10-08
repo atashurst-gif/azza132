@@ -220,6 +220,20 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
         out["bots"].append({"id": bid, "label": label, "magic": magic, "mode": mode, **b,
                             "open": round(open_by.get(magic, 0.0), 2) if pos_list is not None else None,
                             "open_trades": n_open.get(magic, 0)})
+    # every deal since the reset, tagged with the bot that opened it, so the page
+    # can work out any period from the broker's own rows (held in memory, never published)
+    tagged: list[dict] = []
+    for m, rows_m in per.items():
+        for r in rows_m or ():
+            t = r.get("time")
+            if t is None or to_utc(t) < start:
+                continue
+            tagged.append({"time": to_utc(t), "bot_magic": m, "position": r.get("position"),
+                           "profit": float(r.get("profit") or 0.0), "commission": float(r.get("commission") or 0.0),
+                           "is_entry": bool(r.get("is_entry"))})
+    tagged.sort(key=lambda r: r["time"])
+    out["deals"] = tagged
+    out["deals_complete"] = all(v is not None for v in per.values())
     rest = per.get(-1)
     if rest is None:
         out["other"] = {"label": "Anything else (placed by hand)", "made": None, "today": None,
@@ -232,13 +246,14 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     return done()
 
 
-def practice_figures(data_dir, start: dt.datetime, now: dt.datetime, currency: str = "GBP") -> dict:
-    """Each bot's PAPER results since ``start``, from its own records: practice,
-    never money. {bot id: net} for the bots that have paper rows."""
+def practice_figures(data_dir, start: dt.datetime, now: dt.datetime, currency: str = "GBP",
+                     end: Optional[dt.datetime] = None) -> dict:
+    """Each bot's PAPER results from ``start`` (to ``end``, default now), from
+    its own records: practice, never money. {bot id: net}."""
     out: dict = {}
     try:
         from .attribution import build_strategies_range
-        s = build_strategies_range(data_dir, start, to_utc(now) + dt.timedelta(seconds=1), currency, now=now)
+        s = build_strategies_range(data_dir, start, end or (to_utc(now) + dt.timedelta(seconds=1)), currency, now=now)
     except Exception as exc:
         log.debug("practice figures skipped: %s", exc)
         return out
@@ -249,4 +264,114 @@ def practice_figures(data_dir, start: dt.datetime, now: dt.datetime, currency: s
             v = tab.get("net_today")
         if v is not None:
             out[bid] = round(float(v), 2)
+    return out
+
+
+# ------------------------------------------------------------ the page's periods --
+PERIOD_BUTTONS = (("today", "Today"), ("yesterday", "Yesterday"), ("week", "This week"), ("month", "This month"),
+                  ("6m", "Last 6 months"), ("1y", "Last year"), ("total", "Total"))
+
+
+def _months_back(d: dt.date, n: int) -> dt.date:
+    y, m = d.year, d.month - n
+    while m <= 0:
+        m += 12
+        y -= 1
+    import calendar
+    return dt.date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
+
+
+def period_bounds(sd: dict, period: str, date_from: str = "", date_to: str = "",
+                  now: Optional[dt.datetime] = None) -> tuple[dt.datetime, dt.datetime, str, str]:
+    """(start, end, label, key) on the broker's days - the same days MetaTrader
+    and the daily-loss stop use - never earlier than the reset."""
+    now = to_utc(now or dt.datetime.now(dt.timezone.utc))
+    reset = to_utc(dt.datetime.fromisoformat(sd["start"]))
+    try:
+        d0 = to_utc(dt.datetime.fromisoformat(sd["day_start"]))
+    except Exception:
+        d0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if d0 > now:
+        d0 -= dt.timedelta(days=1)
+    # the broker day boundary is the same clock time every day: work in whole days from it
+    while d0 + dt.timedelta(days=1) <= now:
+        d0 += dt.timedelta(days=1)
+    bdate = (d0 + dt.timedelta(hours=12)).date()           # the broker's calendar date of "today"
+    one = dt.timedelta(days=1)
+
+    def day_start(d: dt.date) -> dt.datetime:
+        return d0 - dt.timedelta(days=(bdate - d).days)
+    key = period if period in {k for k, _ in PERIOD_BUTTONS} | {"custom"} else "total"
+    if key == "custom":
+        try:
+            a = dt.date.fromisoformat(date_from) if date_from else dt.date.fromisoformat(date_to)
+            b = dt.date.fromisoformat(date_to) if date_to else a
+        except ValueError:
+            key = "total"
+        else:
+            if b < a:
+                a, b = b, a
+            start, end = day_start(a), day_start(b) + one
+            label = (f"{a.strftime('%d %b %Y')} to {b.strftime('%d %b %Y')}" if a != b else a.strftime("%a %d %b %Y"))
+            return max(start, reset), max(end, reset), label, key
+    if key == "today":
+        start, end, label = d0, d0 + one, "Today"
+    elif key == "yesterday":
+        start, end, label = d0 - one, d0, "Yesterday"
+    elif key == "week":
+        start, end, label = day_start(bdate - dt.timedelta(days=bdate.weekday())), d0 + one, "This week"
+    elif key == "month":
+        start, end, label = day_start(bdate.replace(day=1)), d0 + one, "This month"
+    elif key == "6m":
+        start, end, label = day_start(_months_back(bdate, 6)), d0 + one, "Last 6 months"
+    elif key == "1y":
+        start, end, label = day_start(_months_back(bdate, 12)), d0 + one, "Last year"
+    else:
+        start, end, label, key = reset, d0 + one, "Total", "total"
+    return max(start, reset), max(end, reset), label, key
+
+
+def period_view(sd: dict, deals: list, period: str, date_from: str = "", date_to: str = "",
+                now: Optional[dt.datetime] = None) -> dict:
+    """The account and each bot for one period, from the broker's deal rows.
+    Total is the balance less the balance at the reset (as on the phone); any
+    other period is every deal booked in it (profit, commission and swap)."""
+    start, end, label, key = period_bounds(sd, period, date_from, date_to, now)
+    rows = [r for r in deals or () if start <= r["time"] < end]
+    bots = {}
+    for b in sd.get("bots") or ():
+        m = b.get("magic")
+        mine = [r for r in rows if r["bot_magic"] == m]
+        bots[b["id"]] = {"made": round(sum(r["profit"] for r in mine), 2),
+                         "trades": len({r["position"] for r in mine if not r["is_entry"]})}
+    other_rows = [r for r in rows if r["bot_magic"] == -1]
+    trading = round(sum(r["profit"] for r in rows), 2)
+    view = {"key": key, "label": label, "start": start.isoformat(), "end": end.isoformat(),
+            "trading": trading, "made": trading, "adjustments": None,
+            "trades": len({r["position"] for r in rows if not r["is_entry"]}),
+            "commission": round(sum(abs(r["commission"]) for r in rows), 2),
+            "bots": bots, "other": round(sum(r["profit"] for r in other_rows), 2),
+            "complete": bool(sd.get("deals_complete", True))}
+    if key == "total" and sd.get("made") is not None:
+        view["made"] = sd["made"]                          # the balance less the balance at the reset
+        view["adjustments"] = round(sd["made"] - trading, 2)
+    return view
+
+
+def open_rows(positions, cfg) -> list[dict]:
+    """Every open position on the account, with the bot that holds it."""
+    labels = dict(BOTS)
+    by_magic = {m: labels.get(bid, bid) for bid, (m, _mode) in bot_modes_and_magics(cfg).items()}
+    out = []
+    for q in positions or ():
+        m = int(getattr(q, "magic", 0) or 0)
+        opened = getattr(q, "open_time", None)
+        out.append({"bot": by_magic.get(m, "Placed by hand" if not m else f"magic {m}"), "magic": m,
+                    "ticket": int(getattr(q, "ticket", 0) or 0), "symbol": str(q.symbol),
+                    "side": getattr(getattr(q, "side", None), "value", str(getattr(q, "side", ""))),
+                    "volume": float(q.volume), "entry": float(q.entry_price), "stop": float(q.sl or 0.0),
+                    "target": float(q.tp or 0.0),
+                    "profit": round(float(q.profit or 0.0) + float(getattr(q, "swap", 0.0) or 0.0), 2),
+                    "opened": to_utc(opened).isoformat() if isinstance(opened, dt.datetime) else ""})
+    out.sort(key=lambda r: r["opened"])
     return out
