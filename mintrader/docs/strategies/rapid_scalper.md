@@ -479,3 +479,21 @@ says which it is showing. Day boundaries follow the Mac's clock.
 - Logs: `logs/scalper.out.log` and the journal tables `trades`, `rejected`,
   `stop_changes`, `slippage`, `events`.
 - The nightly bundle includes the scalper's day.
+
+## 8 October review fixes (version 3, no rule changes)
+
+- Live ticks now carry the terminal's millisecond stamp; before, every
+  tick inside one second looked simultaneous, so the 0.5 s and 1 s
+  velocities (and the rider's momentum read) were zero or doubled
+  depending on where the bot's clock fell in the second. Velocity is now
+  points per second over the horizon itself.
+- The New York and US-cash windows are kept in New York time, so the week
+  when UK and US clocks change on different dates no longer shifts the
+  aggressive window an hour late.
+- A stop change the broker refuses is rolled back on the page and retried
+  on the next tick; a close the broker refuses keeps the trade exactly as
+  it was. Neither is ever shown as done when it was not.
+- The protected floor is in money at the stop (one R = the money the
+  initial stop would lose at the trade's size), not the planned figure.
+- A malformed `scalper.json` entry keeps its default instead of stopping
+  the load.

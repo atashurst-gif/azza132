@@ -352,6 +352,38 @@ class BandBreakerConfig:
 
 
 @dataclass
+class CrowdConfig:
+    """Crowd Fader: positioning from Coinversa Pulse, faded once the price
+    turns (mintel/crowd). PAPER only; it never places an order. The API key
+    lives in secrets.json as "coinversa_api_key", never here."""
+    enabled: bool = True
+    mode: str = "PAPER"
+    markets: tuple[str, ...] = ("XAUUSD=xyz:GOLD", "XAGUSD=xyz:SILVER", "US500=xyz:SP500", "JP225=xyz:JP225",
+                                "EURUSD=xyz:EUR", "GBPUSD=xyz:GBP", "XTIUSD=xyz:CL", "XBRUSD=xyz:BRENTOIL")
+    poll_minutes: float = 10.0
+    stretch: float = 0.5
+    agree_cap: float = 0.1
+    min_score: float = 60.0
+    min_wallets: int = 200
+    heatmap_range_pct: float = 3.0
+    heatmap_buckets: int = 20
+    trigger_bars: int = 8
+    stop_bars: int = 4
+    min_stop_pct: float = 0.15
+    max_stop_pct: float = 1.5
+    target_r: float = 2.0
+    cluster_min_r: float = 1.0
+    cluster_max_r: float = 4.0
+    hold_hours: float = 24.0
+    max_entries_per_day: int = 2
+    risk_money: float = 10.0
+    max_risk_money: float = 30.0
+    paper_slippage_points: float = 1.0
+    entry_hours_utc: tuple[int, ...] = (7, 20)
+    weekend_flat_utc: str = "20:30"
+
+
+@dataclass
 class OpsConfig:
     data_dir: str = "data"
     log_dir: str = "logs"
@@ -426,6 +458,7 @@ class Config:
     ops: OpsConfig = field(default_factory=OpsConfig)
     runner: RunnerConfig = field(default_factory=RunnerConfig)
     bandbreaker: BandBreakerConfig = field(default_factory=BandBreakerConfig)
+    crowd: CrowdConfig = field(default_factory=CrowdConfig)
 
     # ------------------------------------------------------------- live gate --
     @property
@@ -537,7 +570,7 @@ class Config:
         nested = {"risk": RiskConfig, "universe": UniverseConfig,
                   "scan": ScanConfig, "flowlock": FlowLockConfig,
                   "news": NewsConfig, "ops": OpsConfig, "runner": RunnerConfig,
-                  "bandbreaker": BandBreakerConfig}
+                  "bandbreaker": BandBreakerConfig, "crowd": CrowdConfig}
         for f in fields(cls):
             if f.name in nested:
                 sub = raw.get(f.name)

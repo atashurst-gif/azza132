@@ -209,16 +209,19 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
         overall["before_fees"] = mi["before_fees"]
     if not live_rs:
         rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
-        overall["note"] = "The Rapid Scalper, the Momentum Runner and the Band Breaker are in PAPER: their simulated results are on their own tabs only."
+        overall["note"] = "The Rapid Scalper, the Momentum Runner, the Band Breaker and the Crowd Fader are in PAPER: their simulated results are on their own tabs only."
     from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
     mr, mr_status = runner_tab(data_dir, day_start, None, currency, now)
     from ..bandbreaker import STRATEGY_ID as BB_ID, STRATEGY_LABEL as BB_LABEL
     bb, bb_status = paper_tab(data_dir, "bandbreaker.sqlite", "bandbreaker-status.json", BB_ID, BB_LABEL,
                               day_start, None, currency, now)
-    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb,
-            "scalper": rs_status, "runner": mr_status, "bandbreaker": bb_status,
+    from ..crowd import STRATEGY_ID as CF_ID, STRATEGY_LABEL as CF_LABEL
+    cf, cf_status = paper_tab(data_dir, "crowd.sqlite", "crowd-status.json", CF_ID, CF_LABEL,
+                              day_start, None, currency, now)
+    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb, CF_ID: cf,
+            "scalper": rs_status, "runner": mr_status, "bandbreaker": bb_status, "crowd": cf_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
-                       RUNNER_ID: RUNNER_LABEL, BB_ID: BB_LABEL}}
+                       RUNNER_ID: RUNNER_LABEL, BB_ID: BB_LABEL, CF_ID: CF_LABEL}}
 
 
 # ------------------------------------------------------------- periods --
@@ -330,10 +333,13 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
     from ..bandbreaker import STRATEGY_ID as BB_ID, STRATEGY_LABEL as BB_LABEL
     bb, bb_status = paper_tab(data_dir, "bandbreaker.sqlite", "bandbreaker-status.json", BB_ID, BB_LABEL,
                               start, end, currency, now)
-    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb,
-            "scalper": read_scalper_status(data_dir, now=now), "runner": mr_status, "bandbreaker": bb_status,
+    from ..crowd import STRATEGY_ID as CF_ID, STRATEGY_LABEL as CF_LABEL
+    cf, cf_status = paper_tab(data_dir, "crowd.sqlite", "crowd-status.json", CF_ID, CF_LABEL,
+                              start, end, currency, now)
+    return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb, CF_ID: cf,
+            "scalper": read_scalper_status(data_dir, now=now), "runner": mr_status, "bandbreaker": bb_status, "crowd": cf_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
-                       RUNNER_ID: RUNNER_LABEL, BB_ID: BB_LABEL},
+                       RUNNER_ID: RUNNER_LABEL, BB_ID: BB_LABEL, CF_ID: CF_LABEL},
             "period": {"key": "custom" if label and label[:1].isdigit() else label.lower(), "label": label,
                        "start": a, "end": b, "source": "the bots' own records"}}
 

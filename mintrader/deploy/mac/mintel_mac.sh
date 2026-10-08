@@ -886,7 +886,7 @@ if existing_path.exists():
     except Exception:
         old = {}
     if isinstance(old, dict):
-        for key in ("tracking_start_utc", "tracking_strategy", "runner", "bandbreaker"):
+        for key in ("tracking_start_utc", "tracking_strategy", "runner", "bandbreaker", "crowd"):
             if key in old:
                 cfg[key] = old[key]
 (data / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True))
@@ -915,6 +915,9 @@ os.chmod(secrets, 0o600)
 if not new_secrets.get("github_token"):
     print("NOTE: no GitHub token saved - the nightly report and the ten-minute pulse will not publish "
           "until you run: python -m mintel.ops.report_upload --config <data>/config.json --set-token")
+if not new_secrets.get("coinversa_api_key"):
+    print("NOTE: no Coinversa key saved - the Crowd Fader will show NO KEY until you run: "
+          "python -m mintel.crowd --config <data>/config.json --set-key")
 
 # A shared token for the local bridge socket, so nothing else on this Mac can
 # drive the trading connection.
@@ -1276,6 +1279,11 @@ final_report() {
     say "  Rapid Scalper mode: ${BOLD}${rs_mode:-PAPER}${RESET}  (data/scalper.json)"
     say "  Momentum Runner: ${BOLD}PAPER${RESET} shadow of the index trades (its own tab on the page)"
     say "  Band Breaker:    ${BOLD}PAPER${RESET} intraday index momentum, New York session (its own tab)"
+    say "  Crowd Fader:     ${BOLD}PAPER${RESET} positioning from Coinversa, faded once the price turns (its own tab)"
+    if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('coinversa_api_key') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
+      say "  ${RED}No Coinversa key saved: the Crowd Fader cannot read anything.${RESET}"
+      say "  Fix: $VENV_DIR/bin/python -m mintel.crowd --config $CONFIG --set-key"
+    fi
     if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('github_token') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
       bad "No GitHub token saved: the nightly report and the ten-minute pulse will NOT publish."
       say "  Fix: $VENV_DIR/bin/python -m mintel.ops.report_upload --config $CONFIG --set-token"

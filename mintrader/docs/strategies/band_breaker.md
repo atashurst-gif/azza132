@@ -63,3 +63,4 @@ call.
 | Day | Trades | Wins | Net (paper) | By market | Notes |
 |---|---|---|---|---|---|
 | 7 Oct | 0 | - | 0 | - | first day: no trade, and no record of what it saw at each half hour. From 8 Oct every check is logged (close, band, VWAP, decision) so a quiet day can be told from a bug |
+| 8 Oct | - | - | - | - | review fixes before the session: the 15:30 check now fires (it compared seconds and skipped the exact half hour); the bar still forming at a check can no longer count as closed; a tick with a crossed spread or over two minutes old is ignored; the day's entry count survives a restart |

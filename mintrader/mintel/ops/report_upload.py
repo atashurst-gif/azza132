@@ -134,12 +134,13 @@ def paper_bot_json(cfg: Config, day: dt.datetime, status_name: str, db_name: str
         start = day.replace(hour=0, minute=0, second=0, microsecond=0)
         db = sqlite3.connect(f"file:{journal_path}?mode=ro", uri=True)
         db.row_factory = sqlite3.Row
+        end = to_utc(start + dt.timedelta(days=1)).isoformat()
         out["trades"] = [dict(r) for r in db.execute(
-            "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? ORDER BY closed_utc",
-            (to_utc(start).isoformat(),))]
+            "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? AND closed_utc < ? ORDER BY closed_utc",
+            (to_utc(start).isoformat(), end))]
         try:
             out["checks"] = [dict(r) for r in db.execute(
-                "SELECT * FROM checks WHERE ts_utc >= ? ORDER BY ts_utc", (to_utc(start).isoformat(),))]
+                "SELECT * FROM checks WHERE ts_utc >= ? AND ts_utc < ? ORDER BY ts_utc", (to_utc(start).isoformat(), end))]
         except Exception:
             pass                                   # not every paper bot keeps a checks table
         db.close()
@@ -172,6 +173,9 @@ def build_bundle(cfg: Config, broker, day: dt.datetime,
     bb = paper_bot_json(cfg, day, "bandbreaker-status.json", "bandbreaker.sqlite")
     if bb is not None:
         files[f"reports/{key}/bandbreaker.json"] = bb
+    cf = paper_bot_json(cfg, day, "crowd-status.json", "crowd.sqlite")
+    if cf is not None:
+        files[f"reports/{key}/crowd.json"] = cf
     files.update({p.replace(f"reports/{key}/", "reports/latest/"): v
                   for p, v in list(files.items())})
     files["reports/latest/DATE"] = key + "\n"

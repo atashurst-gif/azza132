@@ -13,7 +13,9 @@ import statistics as st
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
-from ..clock import TZ_LONDON, to_utc
+from zoneinfo import ZoneInfo
+
+from ..clock import TZ_LONDON, TZ_NEWYORK, to_utc
 
 PHASES = ("PRE_OPEN", "OPENING", "POST_OPEN", "QUIET")
 
@@ -22,18 +24,28 @@ PHASES = ("PRE_OPEN", "OPENING", "POST_OPEN", "QUIET")
 class Window:
     name: str            # "London", "New York", "US cash"
     phase: str           # PRE_OPEN / OPENING / POST_OPEN
-    start: str           # "HH:MM" London time
+    start: str           # "HH:MM" in the window's own zone
     end: str
+    tz: str = "Europe/London"
+
+    @property
+    def zone(self):
+        return TZ_NEWYORK if self.tz == "America/New_York" else (TZ_LONDON if self.tz == "Europe/London" else ZoneInfo(self.tz))
 
 
 def default_windows() -> tuple[Window, ...]:
+    """London windows in London time; New York and US-cash windows in New
+    York time, so the few weeks a year when UK and US clocks change on
+    different dates still line up with the actual activations."""
     return (
         Window("London", "PRE_OPEN", "07:30", "08:00"), Window("London", "OPENING", "08:00", "08:45"),
         Window("London", "POST_OPEN", "08:45", "10:00"),
-        Window("New York", "PRE_OPEN", "12:30", "13:00"), Window("New York", "OPENING", "13:00", "13:45"),
-        Window("New York", "POST_OPEN", "13:45", "14:30"),
-        Window("US cash", "PRE_OPEN", "14:15", "14:30"), Window("US cash", "OPENING", "14:30", "15:15"),
-        Window("US cash", "POST_OPEN", "15:15", "16:30"),
+        Window("New York", "PRE_OPEN", "07:30", "08:00", "America/New_York"),
+        Window("New York", "OPENING", "08:00", "08:45", "America/New_York"),
+        Window("New York", "POST_OPEN", "08:45", "09:15", "America/New_York"),
+        Window("US cash", "PRE_OPEN", "09:15", "09:30", "America/New_York"),
+        Window("US cash", "OPENING", "09:30", "10:15", "America/New_York"),
+        Window("US cash", "POST_OPEN", "10:15", "11:30", "America/New_York"),
     )
 
 
@@ -43,12 +55,12 @@ def _t(s: str) -> dt.time:
 
 
 def current_window(now: dt.datetime, windows: Sequence[Window]) -> Optional[Window]:
-    local = to_utc(now).astimezone(TZ_LONDON)
-    if local.weekday() >= 5:
-        return None
-    t = local.time()
+    utc = to_utc(now)
     for w in windows:
-        if _t(w.start) <= t < _t(w.end):
+        local = utc.astimezone(w.zone)
+        if local.weekday() >= 5:
+            continue
+        if _t(w.start) <= local.time() < _t(w.end):
             return w
     return None
 

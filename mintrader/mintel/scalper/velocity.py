@@ -90,8 +90,11 @@ def micro(buf: TickBuffer, point: float, now: Optional[dt.datetime] = None) -> M
         w = _window(ticks, now, h)
         if len(w) < 2:
             return 0.0
-        span = (w[-1].time - w[0].time).total_seconds()
-        return ((w[-1].mid - w[0].mid) / point) / span if span > 0 else 0.0
+        # points per second over the horizon itself, not over the span between
+        # the first and last stamps in the window: a feed that stamps ticks to
+        # the second (or a burst landing on one stamp) would otherwise read as
+        # zero velocity, or as double, depending on where the clock fell
+        return ((w[-1].mid - w[0].mid) / point) / max(h, 0.1)
     for h in HORIZONS:
         m.velocity[h] = vel(h)
     # noise: the median 5-second range over the last minute

@@ -45,6 +45,28 @@ def mt5_available() -> bool:
         return False
 
 
+def _tick_seconds(t) -> float:
+    """Seconds since the epoch for a tick, to the millisecond when the
+    terminal gives it (``time_msc``), else the whole second. The scalper's
+    velocities are measured over half-second spans, so the whole-second
+    stamp alone would make every tick inside one second look simultaneous."""
+    msc = 0
+    try:
+        msc = t.time_msc if hasattr(t, "time_msc") else t["time_msc"]
+    except (KeyError, IndexError, ValueError, TypeError):
+        msc = 0
+    try:
+        msc = int(msc or 0)
+    except (TypeError, ValueError):
+        msc = 0
+    if msc > 0:
+        return msc / 1000.0
+    try:
+        return float(int(t.time if hasattr(t, "time") else t["time"]))
+    except (KeyError, IndexError, ValueError, TypeError):
+        return 0.0
+
+
 class Mt5Broker:
     """Thread-safe MT5 wrapper.
 
@@ -352,7 +374,7 @@ class Mt5Broker:
             t = self.mt5.symbol_info_tick(symbol)
             if t is None or not t.time:
                 return None
-            ts = self._clock.server_to_utc(dt.datetime.utcfromtimestamp(int(t.time)))
+            ts = self._clock.server_to_utc(dt.datetime.utcfromtimestamp(_tick_seconds(t)))
             return Tick(symbol=symbol, time=ts, bid=float(t.bid),
                         ask=float(t.ask), last=float(t.last or 0.0),
                         volume=float(t.volume or 0.0))
@@ -423,7 +445,7 @@ class Mt5Broker:
             out = []
             for r in arr:
                 ts = self._clock.server_to_utc(
-                    dt.datetime.utcfromtimestamp(int(r["time"])))
+                    dt.datetime.utcfromtimestamp(_tick_seconds(r)))
                 out.append(Tick(symbol, ts, float(r["bid"]), float(r["ask"]),
                                 float(r["last"]), float(r["volume"])))
             return out

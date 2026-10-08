@@ -275,11 +275,20 @@ class ScalperConfig:
             elif k == "entry_hours_utc" and isinstance(v, (list, tuple)):
                 cfg.entry_hours_utc = tuple(int(h) % 24 for h in v)
             elif k in ("floor_ladder_r",) and isinstance(v, (list, tuple)):
-                cfg.floor_ladder_r = tuple((float(a), float(b)) for a, b in v)
+                try:
+                    cfg.floor_ladder_r = tuple((float(a), float(b)) for a, b in v)
+                except Exception:
+                    pass                                   # a malformed ladder keeps the default
             elif k in ("loss_ladder_size", "loss_ladder_threshold") and isinstance(v, (list, tuple)):
-                setattr(cfg, k, tuple(float(x) for x in v))
+                try:
+                    setattr(cfg, k, tuple(float(x) for x in v))
+                except Exception:
+                    pass
             elif k in ("velocity_weights", "giveback_by_state") and isinstance(v, dict):
-                getattr(cfg, k).update({str(a): float(b) for a, b in v.items()})
+                try:
+                    getattr(cfg, k).update({str(a): float(b) for a, b in v.items()})
+                except Exception:
+                    pass
             elif hasattr(cfg, k) and k != "weights":
                 cur = getattr(cfg, k)
                 try:

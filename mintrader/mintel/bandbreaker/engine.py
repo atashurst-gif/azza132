@@ -205,6 +205,13 @@ class BandBreaker:
         if tick is None:
             return notes
         bid, ask = float(tick.bid), float(tick.ask)
+        try:
+            age = (to_utc(now) - to_utc(tick.time)).total_seconds()
+        except Exception:
+            age = 0.0
+        if ask <= bid or age > 120.0:
+            self.notes_by_market[sym] = "no usable price (stale or crossed quote)"
+            return notes
         # every tick: a stop is a stop
         if pos is not None:
             price = bid if pos.side is Side.BUY else ask
@@ -233,6 +240,7 @@ class BandBreaker:
                 self.notes_by_market[sym] = "waiting for today's open and enough history"
                 return notes
             self.bands[sym] = bands
+        tmin = n.replace(second=0, microsecond=0)              # decisions are made on the minute
         hhmm = self._latest_check(n)
         if hhmm is None:
             self.notes_by_market[sym] = f"first check at {self.cfg.first_check} New York"
@@ -248,14 +256,21 @@ class BandBreaker:
                 self._save(pos)
         self.notes_by_market[sym] = (f"band {lb:.2f} - {ub:.2f} (noise {sigma:.2%} by {hhmm} NY), VWAP {vw:.2f}, "
                                      f"price {(bid + ask) / 2:.2f}")
-        # at a half-hour close: the decision
-        if n.minute % self.cfg.check_minutes != 0 or self.last_check.get(sym) == minute_key:
+        # at a half-hour close: the decision, once per boundary, never lost to a
+        # slow pass, never taken more than a few minutes late
+        check_key = f"{today.isoformat()} {hhmm}"
+        if self.last_check.get(sym) == check_key:
             return notes
-        if n.time() < _hhmm(self.cfg.first_check) or n.time() > _hhmm(self.cfg.last_entry):
+        boundary = _hhmm(hhmm)
+        if boundary < _hhmm(self.cfg.first_check) or boundary > _hhmm(self.cfg.last_entry):
             return notes
-        self.last_check[sym] = minute_key
+        self.last_check[sym] = check_key
+        late = (tmin.hour * 60 + tmin.minute) - (boundary.hour * 60 + boundary.minute)
+        if late > 5:
+            self._record_check(sym, now, hhmm, None, ub, lb, vw, sigma, f"missed: first seen {late} min after the close")
+            return notes
         m30 = bars_fn(sym, TF.M30, 4)
-        closed = [b for b in m30 if ny(b.time).time() < n.time() or ny(b.time).date() < today]
+        closed = [b for b in m30 if ny(b.time).date() < today or ny(b.time).time() < boundary]
         if not closed:
             self._record_check(sym, now, hhmm, None, ub, lb, vw, sigma, "no completed half-hour bar yet")
             return notes
@@ -372,6 +387,9 @@ class BandBreaker:
             self.db.commit()
 
     def _restore(self) -> None:
+        for sym, day, n in self.db.execute("SELECT symbol, session_date, COUNT(*) FROM trades GROUP BY symbol, session_date"):
+            if sym and day:
+                self.entries_today[(sym, day)] = int(n)
         for r in self.db.execute("SELECT * FROM trades WHERE closed_utc IS NULL"):
             p = Paper(int(r["ticket"]), r["symbol"], Side(r["side"]), float(r["volume"]), float(r["entry"]),
                       float(r["initial_stop"]), to_utc(dt.datetime.fromisoformat(r["opened_utc"])), r["session_date"] or "",

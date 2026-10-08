@@ -105,7 +105,9 @@ class RiderManager(Manager):
                 floor_r = max(floor_r, protect)
         costs = (trade.spec.money_per_lot((tick.ask - tick.bid)) * trade.volume if trade.spec else 0.0) \
             + c.commission_for(trade.symbol) * trade.volume
-        floor_money = floor_r * trade.planned_loss
+        r_money = (trade.spec.money_per_lot(trade.risk_distance) * trade.volume
+                   if (trade.spec is not None and trade.risk_distance > 0) else trade.planned_loss)
+        floor_money = floor_r * r_money
         if floor_r > 0 and floor_money < costs and trade.peak_r >= c.floor_ladder_r[0][0]:
             floor_money = costs                              # the first rung is "nothing lost after costs"
         if floor_money > trade.protected_floor_money:

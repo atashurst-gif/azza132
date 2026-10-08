@@ -199,6 +199,21 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   12:30-13:45 UK cluster (-30.11 on 8 trades on the 7th, -28.53 on the
   6th) - two days. The measuring clock is unchanged.
 
+- 2026-10-08 (later): a code review of everything built since the 5th,
+  each finding pinned by a test (tests/test_review_fixes.py). Rules and
+  the clock unchanged. What was wrong: live ticks were stamped to the whole
+  second, so the scalper's half-second and one-second velocities read zero
+  or double depending on where the clock fell (now stamped to the
+  millisecond, and velocity measured over the horizon); the New York and
+  US-cash session windows were in London time (now in New York time, so
+  the week the clocks differ is right); a refused stop change or close at
+  the broker was shown as done (now rolled back and retried); the protected
+  floor was in the wrong unit when the size was not one lot (now money at
+  the stop); the Band Breaker's 15:30 check never fired and its forming
+  bar could count (fixed); the nightly paper rows could include the next
+  morning (bounded). Also new: the Crowd Fader, the fifth bot, in PAPER
+  (docs/strategies/crowd_fader.md).
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

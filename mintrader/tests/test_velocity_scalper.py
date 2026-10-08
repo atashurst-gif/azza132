@@ -176,7 +176,8 @@ class TestTheRider:
         tk, now = self.tick(21.0, 6.0); d = self.m.update(t, tk, None, now, mk(accel_ratio=2.5, pressure=0.9))
         assert t.state in ("MOMENTUM_RIDE", "MAXIMUM_RIDE")
         floor = t.protected_floor_money
-        assert floor >= 1.0 * t.planned_loss                           # +2.0R reached: at least 1.0R banked
+        r_money = self.spec.money_per_lot(t.risk_distance) * t.volume    # one R is the money at the stop
+        assert floor >= 1.0 * r_money                                  # +2.0R reached: at least 1.0R banked
         assert t.stop > t.entry_filled                                 # the stop is above the entry
         # a dip with momentum still strong: the floor and the stop hold
         tk, now = self.tick(16.0, 7.0); d = self.m.update(t, tk, None, now, mk(retracement=0.25))

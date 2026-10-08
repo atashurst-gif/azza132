@@ -281,6 +281,7 @@ class ScalperEngine:
                             trade.point, now)
                 if not f.ok:
                     f = None
+            prev_stop, prev_floor, prev_changes = trade.stop, trade.protected_floor_money, len(trade.stop_changes)
             if self.velocity_style:
                 m = micro_features(self.buffers[trade.symbol], trade.point, now) if trade.symbol in self.buffers else None
                 self.micros[trade.symbol] = m
@@ -304,11 +305,24 @@ class ScalperEngine:
                     self.journal.record_stop_change(ticket, ch.get("from", 0.0), d.new_stop, trade.state,
                                                     ch.get("why", ""), now)
                     notes.append(f"{trade.symbol}: stop -> {d.new_stop} ({ch.get('why', '')})")
+                else:
+                    # the broker did not take it: the page must never show a stop
+                    # or a floor the broker does not hold. Roll back and retry next tick.
+                    trade.stop, trade.protected_floor_money = prev_stop, prev_floor
+                    del trade.stop_changes[prev_changes:]
+                    self.breakers.record_api_error(now)
+                    notes.append(f"{trade.symbol}: broker refused stop {d.new_stop}; keeping {prev_stop} and retrying")
             self.journal.update_trade(trade)
         return notes
 
     def _finalise(self, trade: ScalpTrade, now: dt.datetime, fill: Fill, reason: str,
                   detail: str, pnl_override=None) -> str:
+        if not fill.ok:
+            # a refused close is not a close: keep the trade, its state, peak and
+            # floor exactly as they are, and let the next tick try again
+            self.breakers.record_reject(now)
+            self.journal.log_event("EXIT_FAILED", f"{trade.symbol} {reason}: {fill.message}", now=now)
+            return f"{trade.symbol}: close refused ({fill.message}); keeping the trade and retrying"
         spec = trade.spec or self.spec(trade.symbol)
         exit_price = fill.price if fill.ok and fill.price else trade.stop
         gross = spec.money((exit_price - trade.entry_filled) * trade.side.sign, trade.volume) if spec else 0.0

@@ -188,6 +188,20 @@ class Trader:
                 self.bandbreaker = BandBreaker(data_dir, BandBreakerConfig(**kw), spec_fn=self.broker.spec, clock=self.clock)
         except Exception as exc:
             log.warning("Band Breaker not started: %s", exc)
+        # Crowd Fader: the fifth bot, paper positioning from Coinversa. Same
+        # footing: reads prices, polls on its own thread, never trades.
+        self.crowd = None
+        try:
+            from ..crowd.engine import CrowdConfig as _CrowdCfg, CrowdFader
+            cc = getattr(cfg, "crowd", None)
+            if cc is None or getattr(cc, "enabled", True):
+                kw = {k: getattr(cc, k) for k in _CrowdCfg.__dataclass_fields__ if cc is not None and hasattr(cc, k)}
+                for k in ("markets", "entry_hours_utc"):
+                    if k in kw:
+                        kw[k] = tuple(kw[k])
+                self.crowd = CrowdFader(data_dir, _CrowdCfg(**kw), spec_fn=self.broker.spec, clock=self.clock)
+        except Exception as exc:
+            log.warning("Crowd Fader not started: %s", exc)
         self.thesis = ThesisTracker()
 
         expected_login = cfg.account_login
@@ -756,6 +770,12 @@ class Trader:
                     log.info("%s", note)
             except Exception as exc:
                 log.debug("Band Breaker skipped this pass: %s", exc)
+        if self.crowd is not None:
+            try:
+                for note in self.crowd.step(now, self._tick_quietly, self._bars_quietly):
+                    log.info("%s", note)
+            except Exception as exc:
+                log.debug("Crowd Fader skipped this pass: %s", exc)
         return notes
 
     def _bars_quietly(self, symbol: str, tf, count: int):

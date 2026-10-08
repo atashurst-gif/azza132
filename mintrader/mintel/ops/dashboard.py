@@ -248,7 +248,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     if not strategies:
         return {}
     labels = strategies.get("labels") or {}
-    order = [k for k in ("overall", "market_intelligence", "rapid_scalper", "momentum_runner", "band_breaker") if k in strategies]
+    order = [k for k in ("overall", "market_intelligence", "rapid_scalper", "momentum_runner", "band_breaker", "crowd_fader") if k in strategies]
     if selected not in strategies:
         selected = "overall"
     period = strategies.get("period") or {"key": "today", "label": "Today", "from": "", "to": ""}
@@ -318,7 +318,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     if selected == "momentum_runner":
         rows += [("Average best point reached", plain(s.get("avg_peak_r"), " R"), ""),
                  ("Reached the 3 R trail", plain(s.get("reached_trail")), "")]
-    if selected == "band_breaker":
+    if selected in ("band_breaker", "crowd_fader"):
         rows += [("Average best point reached", plain(s.get("avg_peak_r"), " R"), "")]
     if selected == "overall" and s.get("by_strategy"):
         for b in s["by_strategy"]:
@@ -385,7 +385,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
                f'definitive result. Each bot\'s tab shows only its own trades. {source}</p></div>')
     return {"tabs": (f'<div class="tabs">{tabs}<span class="sep"></span>{pbar}</div>'),
             "figures": figures, "detail": detail_html, "trades": trade_html,
-            "scalper": render_scalper_panel(snap) + render_runner_panel(snap) + render_bandbreaker_panel(snap)}
+            "scalper": render_scalper_panel(snap) + render_runner_panel(snap) + render_bandbreaker_panel(snap) + render_crowd_panel(snap)}
 
 
 def render_strategies(snap: dict, selected: str = "overall") -> str:
@@ -441,6 +441,49 @@ def render_bandbreaker_panel(snap: dict) -> str:
         body += kv("Open", "none")
     return (f'<div class="box"><div class="rs-title">BAND BREAKER</div>'
             f'<div class="small">{e(str(bb.get("tagline", "")))}</div><div class="kv">{body}</div></div>')
+
+
+def render_crowd_panel(snap: dict) -> str:
+    cf = (snap.get("strategies") or {}).get("crowd") or {}
+    if not cf:
+        return ""
+    e = html.escape
+
+    def kv(k, v):
+        return f'<div class="k">{k}</div><div>{v}</div>'
+    body = (kv("Status", e(str(cf.get("status")))) + kv("Mode", f'<span class="pill">{e(str(cf.get("mode")))}</span>')
+            + kv("Rule", e(str(cf.get("rule") or ""))))
+    poll = cf.get("last_poll")
+    poll_txt = f"last read {e(str(poll)[11:16])} UTC, {cf.get('polls', 0)} reads, {cf.get('api_calls', 0)} API calls" if poll else "no read yet"
+    if cf.get("api_remaining") is not None:
+        poll_txt += f", {cf['api_remaining']} calls left this minute"
+    if cf.get("poll_error"):
+        poll_txt += f' - <span class="bad">{e(str(cf["poll_error"]))}</span>'
+    body += kv("Coinversa", poll_txt)
+    reads = cf.get("reads") or {}
+    if reads:
+        rows = ""
+        for sym, r in sorted(reads.items()):
+            d = r.get("direction") or 0
+            lean = "short" if d < 0 else ("long" if d > 0 else "-")
+            rows += (f'<tr><td><b>{e(str(sym))}</b></td><td class=mono>crowd {r.get("crowd_long_pct", 0):.0f}% long '
+                     f'({r.get("crowd_wallets", 0)})</td><td class=mono>winners {r.get("winners_bias", 0):+.2f}</td>'
+                     f'<td class=mono>fuel {r.get("fuel_below", 0) / 1e6:.1f}m / {r.get("fuel_above", 0) / 1e6:.1f}m</td>'
+                     f'<td class=mono>{r.get("score", 0):.0f} {lean}</td></tr>')
+        body += kv("Reads", f'<table>{rows}</table>')
+    now = cf.get("markets_now") or {}
+    if now:
+        body += kv("Markets", "<br>".join(f"<b>{e(str(k))}</b>: {e(str(v))}" for k, v in sorted(now.items())))
+    opens = cf.get("open") or []
+    if opens:
+        rows = "".join(f'<tr><td><b>{e(str(o.get("symbol")))}</b> {e(str(o.get("side")))}</td><td class=mono>{o.get("r_now"):+.2f} R</td>'
+                       f'<td class=mono>peak {o.get("peak_r"):+.2f} R</td><td class=mono>stop {o.get("stop")} target {o.get("target")}</td></tr>'
+                       for o in opens)
+        body += kv("Open", f'<table>{rows}</table>')
+    else:
+        body += kv("Open", "none")
+    return (f'<div class="box"><div class="rs-title">CROWD FADER</div>'
+            f'<div class="small">{e(str(cf.get("tagline", "")))}</div><div class="kv">{body}</div></div>')
 
 
 def render_scalper_panel(snap: dict) -> str:
