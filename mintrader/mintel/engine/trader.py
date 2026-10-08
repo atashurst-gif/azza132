@@ -172,7 +172,7 @@ class Trader:
             rc = cfg.runner if hasattr(cfg, "runner") else RunnerConfig()
             if getattr(rc, "enabled", True):
                 self.runner = MomentumRunner(data_dir, RunnerConfig(**{k: getattr(rc, k) for k in RunnerConfig.__dataclass_fields__ if hasattr(rc, k)}),
-                                             spec_fn=self.broker.spec, clock=self.clock)
+                                             spec_fn=self.broker.spec, clock=self.clock, **self._bot_kwargs(MomentumRunner))
         except Exception as exc:
             log.warning("Momentum Runner not started: %s", exc)
         # Band Breaker: the fourth bot, paper intraday index momentum. Same
@@ -185,7 +185,8 @@ class Trader:
                 kw = {k: getattr(bc, k) for k in BandBreakerConfig.__dataclass_fields__ if bc is not None and hasattr(bc, k)}
                 if "markets" in kw:
                     kw["markets"] = tuple(kw["markets"])
-                self.bandbreaker = BandBreaker(data_dir, BandBreakerConfig(**kw), spec_fn=self.broker.spec, clock=self.clock)
+                self.bandbreaker = BandBreaker(data_dir, BandBreakerConfig(**kw), spec_fn=self.broker.spec, clock=self.clock,
+                                               **self._bot_kwargs(BandBreaker))
         except Exception as exc:
             log.warning("Band Breaker not started: %s", exc)
         # Crowd Fader: the fifth bot, paper positioning from Coinversa. Same
@@ -199,7 +200,8 @@ class Trader:
                 for k in ("markets", "entry_hours_utc"):
                     if k in kw:
                         kw[k] = tuple(kw[k])
-                self.crowd = CrowdFader(data_dir, _CrowdCfg(**kw), spec_fn=self.broker.spec, clock=self.clock)
+                self.crowd = CrowdFader(data_dir, _CrowdCfg(**kw), spec_fn=self.broker.spec, clock=self.clock,
+                                        **self._bot_kwargs(CrowdFader))
         except Exception as exc:
             log.warning("Crowd Fader not started: %s", exc)
         self.thesis = ThesisTracker()
@@ -777,6 +779,36 @@ class Trader:
             except Exception as exc:
                 log.debug("Crowd Fader skipped this pass: %s", exc)
         return notes
+
+    def _bot_kwargs(self, kls) -> dict:
+        """The broker and the account gate, for an engine that can take them
+        (one still without a LIVE path is built exactly as before)."""
+        import inspect
+        try:
+            params = inspect.signature(kls.__init__).parameters
+        except (TypeError, ValueError):
+            return {}
+        out = {}
+        if "broker" in params:
+            out["broker"] = self.broker
+        if "entries_allowed" in params:
+            out["entries_allowed"] = self._bots_may_enter
+        return out
+
+    def _bots_may_enter(self) -> bool:
+        """The account-level gate the other bots share with Trend & Breakout:
+        no new entries while the daily-loss stop, a drawdown or exposure
+        breaker, or safe mode holds. Managing open positions is never gated."""
+        try:
+            if getattr(self.health, "safe_mode", False) or getattr(self.health, "safe_mode_reason", ""):
+                return False
+        except Exception:
+            pass
+        try:
+            allowed = self.risk.entries_allowed
+            return bool(allowed() if callable(allowed) else allowed)
+        except Exception:
+            return True
 
     def _bars_quietly(self, symbol: str, tf, count: int):
         try:

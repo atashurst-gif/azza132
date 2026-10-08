@@ -325,10 +325,11 @@ class NewsConfig:
 
 @dataclass
 class RunnerConfig:
-    """Momentum Runner: a paper shadow on the main bot's index trades
-    (mintel/runner). PAPER only; it never places an order."""
+    """Momentum Runner: the main bot's index entries ridden with a 3 R trail
+    (mintel/runner). PAPER shadows the real trade; LIVE opens its own."""
     enabled: bool = True
-    mode: str = "PAPER"
+    mode: str = "PAPER"             # PAPER simulates; LIVE places its own orders (magic below)
+    magic: int = 990_511            # the Runner's own orders; never another bot's number
     trail_r: float = 3.0            # once +3 R, trail 3 R behind the best price
     window_hours: float = 8.0       # out at the price after 8 hours (the replay's window)
     markets: tuple[str, ...] = ()   # empty = every index market the main bot trades
@@ -337,9 +338,10 @@ class RunnerConfig:
 @dataclass
 class BandBreakerConfig:
     """Band Breaker: intraday index momentum from the published noise-band
-    rule (mintel/bandbreaker). PAPER only; it never places an order."""
+    rule (mintel/bandbreaker). PAPER simulates; LIVE places real orders."""
     enabled: bool = True
-    mode: str = "PAPER"
+    mode: str = "PAPER"             # PAPER simulates; LIVE places its own orders (magic below)
+    magic: int = 990_611
     markets: tuple[str, ...] = ("US500", "US30", "USTEC")
     lookback_days: int = 14
     check_minutes: int = 30
@@ -354,10 +356,11 @@ class BandBreakerConfig:
 @dataclass
 class CrowdConfig:
     """Crowd Fader: positioning from Coinversa Pulse, faded once the price
-    turns (mintel/crowd). PAPER only; it never places an order. The API key
-    lives in secrets.json as "coinversa_api_key", never here."""
+    turns (mintel/crowd). PAPER simulates; LIVE places real orders. The API
+    key lives in secrets.json as "coinversa_api_key", never here."""
     enabled: bool = True
-    mode: str = "PAPER"
+    mode: str = "PAPER"             # PAPER simulates; LIVE places its own orders (magic below)
+    magic: int = 990_711
     markets: tuple[str, ...] = ("XAUUSD=xyz:GOLD", "XAGUSD=xyz:SILVER", "US500=xyz:SP500", "JP225=xyz:JP225",
                                 "EURUSD=xyz:EUR", "GBPUSD=xyz:GBP", "XTIUSD=xyz:CL", "XBRUSD=xyz:BRENTOIL")
     poll_minutes: float = 10.0
