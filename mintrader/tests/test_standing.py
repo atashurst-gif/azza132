@@ -6,6 +6,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from mintel.broker.base import Side
 from mintel.config import Config
 from mintel.ops.dashboard import DashboardState, render_standing, render_status
 from mintel.ops.standing import account_standing
@@ -242,3 +243,77 @@ class TestPeriodsAndOpenTrades:
             assert "+£21.30" in custom
         finally:
             httpd.shutdown()
+
+
+class TestTheSecondCheck:
+    def test_odd_custom_dates_never_break_the_page(self):
+        from mintel.ops.standing import period_view
+        sd = dict(standing())
+        deals = sd.pop("deals")
+        for a, b in (("0001-01-01", ""), ("9999-12-31", "9999-12-31"), ("not-a-date", ""), ("", "")):
+            v = period_view(sd, deals, "custom", a, b, now=NOW)
+            assert v["made"] is not None, (a, b)
+        far = period_view(sd, deals, "custom", "2020-01-01", "2030-01-01", now=NOW)
+        assert far["trading"] == period_view(sd, deals, "total", now=NOW)["trading"]
+
+    def test_a_bot_that_could_not_be_read_is_unknown_in_every_period(self):
+        from mintel.ops.standing import period_view
+        sd = dict(standing(old_bridge=True, fail_magic=990611))
+        deals = sd.pop("deals")
+        for key in ("today", "week", "total"):
+            v = period_view(sd, deals, key, now=NOW)
+            assert v["bots"]["band_breaker"]["made"] is None and v["other"] is None, key
+            assert v["bots"]["market_intelligence"]["made"] is not None
+        assert period_view(sd, deals, "today", now=NOW)["trading"] == round(8.28 - 9.36 + 2.0 + 4.0, 2)  # every deal still counts
+        assert period_view(sd, deals, "total", now=NOW)["adjustments"] is None                      # never a false "charge"
+        html = render_standing({"standing": sd}, _top(sd, deals))
+        assert "trades not known just now" in html and "broker charges" not in html
+
+    def test_a_trade_booked_between_the_reads_is_read_again(self):
+        b = Broker()
+        real_account, calls = b.account, {"n": 0}
+        def account():
+            calls["n"] += 1
+            a = real_account()
+            if calls["n"] >= 2:                         # a +7.40 trade lands after the first read
+                return NS(balance=a.balance + 7.40, equity=a.equity + 7.40, currency="GBP")
+            return a
+        b.account = account
+        extra = deal(77, 990711, 7.40, 0.0, False, NOW - dt.timedelta(minutes=1))
+        real_deals = b.deals_since
+        def deals_since(since, magic=0, closing_only=True):
+            rows = real_deals(since, magic, closing_only)
+            return rows + ([extra] if calls["n"] >= 2 else [])
+        b.deals_since = deals_since
+        sd = account_standing(b, cfg(), NOW, cache_seconds=0)
+        assert sd["made"] == round(TRADING + 7.40, 2) and sd["adjustments"] == 0.0
+
+    def test_the_page_refresh_never_wipes_a_date_being_picked(self):
+        page = render_status({"status": {"bot": "RUNNING"}, "health": {}})
+        assert "location.reload" in page and "defaultValue" in page
+        assert '<meta http-equiv="refresh"' not in page.replace('<noscript><meta http-equiv="refresh" content="10"></noscript>', "")
+
+
+class TestTheScalperLeavesNoRealTradeBehind:
+    def test_a_paper_scalper_closes_a_real_position_left_from_live(self, tmp_path):
+        from mintel.broker.base import OrderRequest
+        from tests.test_rapid_scalper import FakeBroker, synthetic_ticks, _engine
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        res = b.send(OrderRequest("EURUSD", Side.BUY, 0.05, sl=1.0, tp=0.0, magic=990411, comment="RS"))
+        left = res.ticket
+        other = b.send(OrderRequest("EURUSD", Side.BUY, 0.05, sl=1.0, tp=0.0, magic=990311, comment="MI")).ticket
+        e = _engine(b, tmp_path, mode="PAPER")
+        notes = e.cycle()
+        assert left not in b.positions_ and other in b.positions_          # only the scalper's own, never another bot's
+        assert any("left open from LIVE" in n for n in notes)
+        e.cycle()
+        assert len([c for c in b.closed if c[0] == left]) == 1             # once
+
+    def test_a_live_scalper_never_closes_its_own_positions_this_way(self, tmp_path):
+        from mintel.broker.base import OrderRequest
+        from tests.test_rapid_scalper import FakeBroker, synthetic_ticks, _engine
+        b = FakeBroker(); b.ticks_by_symbol["EURUSD"] = synthetic_ticks()
+        t = b.send(OrderRequest("EURUSD", Side.BUY, 0.05, sl=1.0, tp=0.0, magic=990411, comment="RS")).ticket
+        e = _engine(b, tmp_path, mode="LIVE")
+        e.cycle()
+        assert not [c for c in b.closed if c[0] == t and c[2] == "RS paper switch"]

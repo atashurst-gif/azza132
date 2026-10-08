@@ -484,7 +484,13 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
         except Exception:
             every_position = None
         from .ops.standing import open_rows
-        standing = dict(account_standing(trader.broker, trader.cfg, now_, account, every_position))
+        tickets = sorted(int(getattr(q, "ticket", 0) or 0) for q in (every_position or ()))
+        changed = every_position is not None and tickets != getattr(state, "_open_tickets", None)
+        if every_position is not None:
+            state._open_tickets = tickets
+        # a trade that just opened or closed: its money moves from "open" to "made" in the same refresh
+        standing = dict(account_standing(trader.broker, trader.cfg, now_, account, every_position,
+                                         cache_seconds=0 if changed else 30.0))
         deals = standing.pop("deals", [])
         state.update(standing=standing, deals=deals, data_dir=str(trader.cfg.ops.data_dir),
                      open_live=open_rows(every_position, trader.cfg) if every_position is not None else None,

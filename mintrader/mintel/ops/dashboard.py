@@ -267,6 +267,15 @@ d.addEventListener('toggle',function(){o[d.id]=d.open;
 try{localStorage.setItem(k,JSON.stringify(o))}catch(e){}});});})();
 </script>"""
 
+# Refreshes the page every 10 seconds, except while a date is being picked
+# for the Custom filter (a plain meta refresh would wipe it half-entered).
+REFRESH_JS = """<script>
+setInterval(function(){
+var busy=false;document.querySelectorAll('form.dates input[type=date]').forEach(function(i){
+if(document.activeElement===i||i.value!==i.defaultValue)busy=true;});
+if(!busy)location.reload();},10000);
+</script>"""
+
 RECENT_TRADES_SHOWN = 8
 
 
@@ -693,10 +702,8 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
         vt = (tot.get("bots") or {}).get(bid) or {}
         figs = (fig(sel_label, vs.get("made")) if show_sel else "") + fig("Overall", vt.get("made"))
         bits = []
-        if show_sel:
-            bits.append(f'{vs.get("trades", 0)} trade{"" if vs.get("trades") == 1 else "s"} {e(sel_label.lower())}')
-        else:
-            bits.append(f'{vt.get("trades", 0)} trade{"" if vt.get("trades") == 1 else "s"} overall')
+        n, when = (vs.get("trades"), sel_label.lower()) if show_sel else (vt.get("trades"), "overall")
+        bits.append("trades not known just now" if n is None else f'{n} trade{"" if n == 1 else "s"} {e(when)}')
         if open_by.get(label):
             bits.append(f'open now <b class="{cls(open_by[label])}">{m(round(open_by[label], 2))}</b>')
         practice = ""
@@ -903,7 +910,7 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
             f'</details>')
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="10"><title>Trading bot status</title>
+<noscript><meta http-equiv="refresh" content="10"></noscript><title>Trading bot status</title>
 <style>{CSS}</style></head><body><div class="wrap">
 <div class="top"><nav><a href="/">Status</a><a href="/results">Results</a>
 <a href="/health">Health (JSON)</a></nav>
@@ -913,7 +920,7 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
 {more}
 <p class="small">{build_html}Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
-</div>{KEEP_OPEN_JS}</body></html>"""
+</div>{KEEP_OPEN_JS}{REFRESH_JS}</body></html>"""
 
 
 def render_results(results: dict) -> str:
@@ -1013,13 +1020,15 @@ class _Handler(BaseHTTPRequestHandler):
                 date_from = (q.get("from") or [""])[0]
                 date_to = (q.get("to") or [""])[0]
                 headline = None
-                sd = snap.get("standing") or {}
+                with self.state.lock:                    # the figures and their deal rows from the same refresh
+                    sd = dict(self.state.standing or {})
+                    deals = list(self.state.deals or ())
+                    data_dir = self.state.data_dir
+                snap = dict(snap)
+                snap["standing"] = sd
                 if sd.get("start") and sd.get("made") is not None:
                     try:
                         from .standing import period_view, practice_figures
-                        with self.state.lock:
-                            deals = list(self.state.deals or ())
-                            data_dir = self.state.data_dir
                         sel = period_view(sd, deals, period, date_from, date_to)
                         sel["from"], sel["to"] = date_from, date_to
                         tot = period_view(sd, deals, "total")

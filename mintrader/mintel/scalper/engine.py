@@ -199,6 +199,8 @@ class ScalperEngine:
                 self.last_tick_at = t.time
         tick_age = (now - self.last_tick_at).total_seconds() if self.last_tick_at else None
 
+        if not getattr(self, "_leftovers_checked", False):
+            notes.extend(self._close_live_leftovers(now))
         if self.executor is not None:
             notes.extend(self._reconcile(now))
             notes.extend(self._manage(now, ticks))
@@ -211,6 +213,39 @@ class ScalperEngine:
         self.hb.beat({"mode": self.scfg.mode, "open": len(self.trades), "tick_age": tick_age})
         self.write_status(now, tick_age)
         self.cycle_ms = (time.monotonic() - getattr(self, "_cycle_t0", time.monotonic())) * 1000.0
+        return notes
+
+    def _close_live_leftovers(self, now: dt.datetime) -> list[str]:
+        """Not LIVE any more (PAPER or OFF): a real position still carrying the
+        scalper's magic was left from its LIVE days and nothing would manage it.
+        Close it at the broker (it has a stop there, but no one would trail or
+        exit it) and record why. Done until the broker has been read once."""
+        if self.scfg.mode == "LIVE":
+            self._leftovers_checked = True
+            return []
+        try:
+            mine = [p for p in (self.broker.positions(self.scfg.magic) or ())
+                    if int(getattr(p, "magic", 0) or 0) == int(self.scfg.magic)]
+        except Exception as exc:
+            return [f"could not check for real positions left from LIVE: {exc}"]
+        self._leftovers_checked = True
+        notes: list[str] = []
+        for p in mine:
+            try:
+                r = self.broker.close(p.ticket, 0.0, "RS paper switch")
+                ok = bool(getattr(r, "ok", False))
+            except Exception as exc:
+                ok, r = False, exc
+            msg = (f"{p.symbol}: closed real position {p.ticket} left open from LIVE mode (now {self.scfg.mode})"
+                   if ok else f"{p.symbol}: could not close real position {p.ticket} left from LIVE mode ({r}); "
+                              f"it keeps its stop at the broker - close it by hand")
+            if not ok:
+                self._leftovers_checked = False             # try again next pass
+            try:
+                self.journal.log_event("LIVE_LEFTOVER", msg, {"ticket": p.ticket, "symbol": p.symbol}, now=now)
+            except Exception:
+                pass
+            notes.append(msg)
         return notes
 
     # ---------------------------------------------------------- reconcile --

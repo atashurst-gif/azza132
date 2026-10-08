@@ -949,9 +949,10 @@ apply_bot_modes() {
   [[ -f "$marker" ]] && return 0
   [[ -f "$CONFIG" ]] || return 0
   step "Switching every bot to LIVE"
-  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --live all 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
+  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --live runner bandbreaker crowd 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
     date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
-    good "Trend & Breakout, Rapid Scalper, Momentum Runner, Band Breaker and Crowd Fader all trade LIVE"
+    CODE_CHANGED="yes"                       # the bots read their mode at start: restart them
+    good "Trend & Breakout, Momentum Runner, Band Breaker and Crowd Fader trade LIVE"
   else
     warn "Could not switch the bots to LIVE. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live all"
   fi
@@ -967,6 +968,7 @@ apply_scalper_paper() {
   step "Putting the Rapid Scalper back to PAPER"
   if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --paper scalper 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
     date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    CODE_CHANGED="yes"                       # the scalper reads scalper.json at start: restart it
     good "Rapid Scalper: PAPER (practice). Trend & Breakout, Momentum Runner, Band Breaker and Crowd Fader: LIVE"
   else
     warn "Could not put the Rapid Scalper back to PAPER. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper scalper"

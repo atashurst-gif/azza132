@@ -142,17 +142,31 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     if fn is None:
         errors.append("the broker gives no deal history")
         return done()
+    def balance_now():
+        try:
+            return broker.account()
+        except Exception:
+            return None
+    before = balance_now()
     try:
         everything = fn(start, 0, False) or []          # magic 0: every trade on the account
     except Exception as exc:
         errors.append(f"deal history not readable: {exc}")
         return done()
-    # the balance and the open positions, read straight after the deals
-    try:
-        account = broker.account() or account
-    except Exception as exc:
-        if account is None:
-            errors.append(f"account not readable: {exc}")
+    # the balance read on both sides of the deals: a trade booked in between means read once more,
+    # so the balance and the deal rows describe the same moment
+    after = balance_now()
+    if before is not None and after is not None and abs(float(before.balance) - float(after.balance)) >= 0.005:
+        try:
+            everything = fn(start, 0, False) or []
+            after = balance_now() or after
+        except Exception as exc:
+            errors.append(f"deal history not readable: {exc}")
+            return done()
+    if after is not None:
+        account = after
+    elif account is None:
+        errors.append("account not readable")
     pos_list = None
     try:
         pos_list = list(broker.positions(None) or [])
@@ -223,6 +237,10 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     # every deal since the reset, tagged with the bot that opened it, so the page
     # can work out any period from the broker's own rows (held in memory, never published)
     tagged: list[dict] = []
+    if split is None and any(v is None for v in per.values()):
+        claimed = {(r.get("position"), str(r.get("time")), r.get("profit"))
+                   for m, rows_m in per.items() if m != -1 and rows_m is not None for r in rows_m}
+        per[-2] = [r for r in everything if (r.get("position"), str(r.get("time")), r.get("profit")) not in claimed]
     for m, rows_m in per.items():
         for r in rows_m or ():
             t = r.get("time")
@@ -234,6 +252,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     tagged.sort(key=lambda r: r["time"])
     out["deals"] = tagged
     out["deals_complete"] = all(v is not None for v in per.values())
+    out["unknown_magics"] = [m for m, v in per.items() if v is None and m != -1]
     rest = per.get(-1)
     if rest is None:
         out["other"] = {"label": "Anything else (placed by hand)", "made": None, "today": None,
@@ -306,12 +325,16 @@ def period_bounds(sd: dict, period: str, date_from: str = "", date_to: str = "",
         try:
             a = dt.date.fromisoformat(date_from) if date_from else dt.date.fromisoformat(date_to)
             b = dt.date.fromisoformat(date_to) if date_to else a
-        except ValueError:
-            key = "total"
-        else:
             if b < a:
                 a, b = b, a
+            a = max(a, reset.date() - one)                         # nothing to count before the start
+            b = min(b, bdate + dt.timedelta(days=1))               # nor after today
+            if b < a:
+                b = a
             start, end = day_start(a), day_start(b) + one
+        except (ValueError, OverflowError):
+            key = "total"
+        else:
             label = (f"{a.strftime('%d %b %Y')} to {b.strftime('%d %b %Y')}" if a != b else a.strftime("%a %d %b %Y"))
             return max(start, reset), max(end, reset), label, key
     if key == "today":
@@ -338,9 +361,13 @@ def period_view(sd: dict, deals: list, period: str, date_from: str = "", date_to
     other period is every deal booked in it (profit, commission and swap)."""
     start, end, label, key = period_bounds(sd, period, date_from, date_to, now)
     rows = [r for r in deals or () if start <= r["time"] < end]
+    unknown = set(sd.get("unknown_magics") or ())
     bots = {}
     for b in sd.get("bots") or ():
         m = b.get("magic")
+        if m in unknown or b.get("made") is None:
+            bots[b["id"]] = {"made": None, "trades": None}
+            continue
         mine = [r for r in rows if r["bot_magic"] == m]
         bots[b["id"]] = {"made": round(sum(r["profit"] for r in mine), 2),
                          "trades": len({r["position"] for r in mine if not r["is_entry"]})}
@@ -352,9 +379,11 @@ def period_view(sd: dict, deals: list, period: str, date_from: str = "", date_to
             "commission": round(sum(abs(r["commission"]) for r in rows), 2),
             "bots": bots, "other": round(sum(r["profit"] for r in other_rows), 2),
             "complete": bool(sd.get("deals_complete", True))}
+    if not view["complete"]:
+        view["other"] = None                               # the hand-trade row is unknown while a bot is
     if key == "total" and sd.get("made") is not None:
         view["made"] = sd["made"]                          # the balance less the balance at the reset
-        view["adjustments"] = round(sd["made"] - trading, 2)
+        view["adjustments"] = round(sd["made"] - trading, 2) if view["complete"] else None
     return view
 
 
