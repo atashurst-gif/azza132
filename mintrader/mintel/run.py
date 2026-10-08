@@ -473,6 +473,26 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
         results=results,
         positions=pos_rows,
         events=trader.journal.recent_events(limit=25))
+    # The account's standing, from the broker alone: every trade on the
+    # account since the reset, after commission and swap, split by bot. The
+    # page leads with it. Never fatal.
+    try:
+        from .ops.standing import account_standing, practice_figures
+        now_ = to_utc(trader.clock())
+        try:
+            every_position = trader.broker.positions(None)
+        except Exception:
+            every_position = None
+        standing = account_standing(trader.broker, trader.cfg, now_, account, every_position)
+        try:
+            start_ = dt.datetime.fromisoformat(standing["start"])
+            standing["practice"] = practice_figures(trader.cfg.ops.data_dir, start_, now_,
+                                                    account.currency if account else "GBP")
+        except Exception:
+            standing["practice"] = {}
+        state.update(standing=standing)
+    except Exception as exc:
+        log.debug("standing skipped: %s", exc)
     # Strategy attribution for the page: read-only, adds the Rapid Scalper's
     # own figures (from its status file) to this strategy's. Never fatal.
     try:

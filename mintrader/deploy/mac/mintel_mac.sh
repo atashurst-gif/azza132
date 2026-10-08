@@ -940,6 +940,23 @@ PYEOF
   fi
 }
 
+apply_bot_modes() {
+  # 8 Oct: Aaron's instruction - every bot LIVE on the demo account. Done once
+  # by the installer (a marker file records it), so a later choice to put a
+  # bot back to PAPER with the modes command is never undone by a reinstall.
+  local marker="$DATA_DIR/.all-bots-live-2026-10-08"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  step "Switching every bot to LIVE"
+  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --live all 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    good "Trend & Breakout, Rapid Scalper, Momentum Runner, Band Breaker and Crowd Fader all trade LIVE"
+  else
+    warn "Could not switch the bots to LIVE. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live all"
+  fi
+  return 0
+}
+
 refresh_config_paths() {
   # Paths can change between runs (Wine reinstalled, MT5 moved). Keep the
   # stored settings but re-point them at what actually exists now.

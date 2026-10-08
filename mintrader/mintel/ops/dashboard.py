@@ -19,7 +19,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Optional
 
-from ..clock import to_utc, utcnow
+from ..clock import TZ_LONDON, to_utc, utcnow
 
 log = logging.getLogger("mintel.dashboard")
 
@@ -222,6 +222,16 @@ details{margin-top:4px}
 summary{cursor:pointer;font-size:11px;color:#1d4ed8}
 td.nw{white-space:nowrap}
 pre{font-size:11px;white-space:pre-wrap;margin:4px 0}
+.hero{background:#fff;border:2px solid #e2e4e8;border-radius:12px;padding:14px 18px;margin-bottom:8px}
+.hero.ok{border-color:#b7e3c6}.hero.bad{border-color:#f3c0c0}
+.hero .hk{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:#374151;font-weight:600}
+.hero .hv{font-size:52px;font-weight:800;line-height:1.1;margin:4px 0;font-variant-numeric:tabular-nums}
+.hero .hs{font-size:14px;color:#1b1c1e;margin-top:2px}
+.hero .hsrc{font-size:11px;color:#6b7280;margin-top:6px}
+.bots td,.bots th{font-size:13px;padding:5px 6px}
+.bots tr.total td{font-weight:700;border-top:2px solid #1b1c1e}
+.bots td.grey{color:#9ca3af}
+details.more>summary{font-size:13px;font-weight:600;padding:6px 0}
 @media (max-width:1150px){.grid{grid-template-columns:1fr 1fr}}
 @media (max-width:720px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}
 .st.big{grid-column:span 2}.dates{margin-left:0}}
@@ -547,6 +557,75 @@ def render_scalper_panel(snap: dict) -> str:
     return head + body + why + "</div>" + tech + "</div>"
 
 
+def render_standing(snap: dict) -> str:
+    """ONE big figure: what the account has made since the reset, after
+    commission, from the broker's own records; under it, the same money split
+    by bot so the rows add up to it. Display only."""
+    sd = snap.get("standing") or {}
+    e = html.escape
+    cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
+
+    def m(v):
+        return "-" if v is None else _fmt_money(float(v), cur)
+
+    def cls(v):
+        if v is None or abs(float(v)) < 0.005:
+            return ""
+        return "ok" if float(v) > 0 else "bad"
+    try:
+        start = dt.datetime.fromisoformat(str(sd.get("start")))
+        start_txt = start.astimezone(TZ_LONDON).strftime("%a %d %b, %H:%M UK")
+    except Exception:
+        start_txt = "the reset"
+    made = sd.get("made")
+    if made is None:
+        why = e(str(sd.get("error") or "the page has not heard from the broker yet"))
+        return (f'<div class="hero bad"><div class="hk">Made since {e(start_txt)} - after commission</div>'
+                f'<div class="hv">-</div><div class="hs">The broker\'s records could not be read just now ({why}). '
+                f'No figure is shown rather than a wrong one; it comes back on its own.</div></div>')
+    bal, start_bal, opened, today = sd.get("balance"), sd.get("start_balance"), sd.get("open"), sd.get("today")
+    sub = []
+    if bal is not None and start_bal is not None:
+        sub.append(f"Balance {m(bal).lstrip('+')} = {m(start_bal).lstrip('+')} at the reset {m(made)} from "
+                   f"{sd.get('made_trades', 0)} closed trades (commission {m(-abs(sd.get('made_commission') or 0.0))} included)")
+    sub.append(f'Today <b class="{cls(today)}">{m(today)}</b>')
+    if opened:
+        sub.append(f'Open trades right now <b class="{cls(opened)}">{m(opened)}</b> (not banked yet; '
+                   f'if they closed at this price the total would be {m(round(made + opened, 2))})')
+    hero = (f'<div class="hero {cls(made)}"><div class="hk">Made since {e(start_txt)} - after commission</div>'
+            f'<div class="hv {cls(made)}">{m(made)}</div>'
+            f'<div class="hs">{" &middot; ".join(sub)}</div>'
+            f'<div class="hsrc">Straight from MetaTrader\'s own records of every trade on the account (all bots, '
+            f'commission and swap included) - the same as the balance on your phone less the balance at the reset. '
+            f'Practice (paper) trades never reach the broker, so they are never in this figure.</div></div>')
+    practice = sd.get("practice") or {}
+    rows = ""
+    for b in sd.get("bots") or []:
+        live = b.get("mode") == "LIVE"
+        pr = practice.get(b.get("id"))
+        mode_pill = (f'<span class="pill {"ok" if live else ""}">{e(str(b.get("mode")))}</span>')
+        rows += (f'<tr><td><b>{e(str(b.get("label")))}</b></td><td>{mode_pill}</td>'
+                 f'<td class="mono {cls(b.get("made"))}">{m(b.get("made"))}</td>'
+                 f'<td class="mono {cls(b.get("today"))}">{m(b.get("today"))}</td>'
+                 f'<td class="mono {cls(b.get("open")) if b.get("open") else "grey"}">{m(b.get("open")) if b.get("open") else "-"}</td>'
+                 f'<td class="mono grey">{"-" if pr is None else m(pr)}</td></tr>')
+    other = sd.get("other") or {}
+    if any(abs(float(other.get(k) or 0.0)) >= 0.005 for k in ("made", "today", "open")):
+        rows += (f'<tr><td>{e(str(other.get("label")))}</td><td></td>'
+                 f'<td class="mono {cls(other.get("made"))}">{m(other.get("made"))}</td>'
+                 f'<td class="mono {cls(other.get("today"))}">{m(other.get("today"))}</td>'
+                 f'<td class="mono">{m(other.get("open")) if other.get("open") else "-"}</td><td></td></tr>')
+    rows += (f'<tr class="total"><td>Account</td><td></td><td class="mono {cls(made)}">{m(made)}</td>'
+             f'<td class="mono {cls(today)}">{m(today)}</td>'
+             f'<td class="mono">{m(opened) if opened else "-"}</td><td></td></tr>')
+    table = ('<div class="card"><h2>Where it came from - real money, by bot</h2><table class="bots">'
+             '<tr><th>Bot</th><th>Mode</th><th>Since the reset</th><th>Today</th><th>Open now</th>'
+             '<th>Practice since the reset (not money)</th></tr>' + rows + '</table>'
+             '<div class="small">Real money is the broker\'s record for each bot\'s own magic number, so the rows add up '
+             'to the account. A bot in PAPER places no orders: its practice result is shown in grey for comparison only.</div></div>')
+    return hero + table
+
+
 def render_status(snap: dict, strategy: str = "overall") -> str:
     st = snap.get("status") or {}
     health = snap.get("health") or {}
@@ -718,6 +797,10 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
     col1 = parts.get("figures", "") + parts.get("detail", "")
     col2 = periods_html + pos_html + why_html + think_html
     col3 = parts.get("scalper", "") + parts.get("trades", "")
+    more = (f'<details class="more" id="more"><summary>Each bot in detail, open trades, what the bots are looking '
+            f'at, connections</summary><div class="row">{tiles}</div>{src_warn}'
+            f'{parts.get("tabs", "")}<div class="grid"><div>{col1}</div><div>{col2}</div><div>{col3}</div></div>'
+            f'</details>')
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="10"><title>Trading bot status</title>
@@ -725,10 +808,9 @@ def render_status(snap: dict, strategy: str = "overall") -> str:
 <div class="top"><nav><a href="/">Status</a><a href="/results">Results</a>
 <a href="/health">Health (JSON)</a></nav>
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div></div>
-{prob_html}{src_warn}
-<div class="row">{tiles}</div>
-{parts.get("tabs", "")}
-<div class="grid"><div>{col1}</div><div>{col2}</div><div>{col3}</div></div>
+{prob_html}
+{render_standing(snap)}
+{more}
 <p class="small">{build_html}{src_html} Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
 </div>{KEEP_OPEN_JS}</body></html>"""

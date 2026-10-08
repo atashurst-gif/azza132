@@ -120,6 +120,7 @@ ensure_wine          || { final_report; trap - EXIT; read -r -p "Press Enter to 
 ensure_wine_python   || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
 ensure_mt5           || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
 write_config         || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+apply_bot_modes
 install_launch_agent
 install_desktop_icon
 prevent_idle_sleep
