@@ -75,7 +75,7 @@ The upload for this day arrived the morning after. Publishing stopped at 13:38 U
 | JP225 sell, 14:38 UK | +3.86 | -8.76 (full stop; it had reached +1.15 R) |
 | **Five** | **+1.50** | **+20.14** |
 
-The shape the replay predicted: four of five to the full stop (two of them where the ladder had banked a small win), paid for many times over by the one that ran. All five reached the 3 R trail? No: one did. Three days running it is ahead of the ladder on the same trades. Not a verdict yet.
+The shape the replay predicted: four of five to the full stop (two of them where the ladder had banked a small win), paid for many times over by the one that ran. Only that one reached the 3 R trail. Two days running the Runner is ahead of the ladder on the same trades. Not a verdict yet.
 
 ## Band Breaker (PAPER)
 
