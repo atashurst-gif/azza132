@@ -51,6 +51,7 @@ class DashboardState:
         self.positions: list = []
         self.events: list = []
         self.strategies: dict = {}       # Overall | existing | Rapid Scalper (attribution)
+        self.standing: dict = {}         # the account's figure from the broker (mintel/ops/standing.py)
         self.period_resolver: Optional[Callable[[str, str, str], dict]] = None
         self.updated: Optional[dt.datetime] = None
 
@@ -65,7 +66,7 @@ class DashboardState:
             return {"status": self.status, "health": self.health,
                     "thinking": self.thinking, "results": self.results,
                     "positions": self.positions, "events": self.events,
-                    "strategies": self.strategies,
+                    "strategies": self.strategies, "standing": self.standing,
                     "updated": self.updated.isoformat() if self.updated else None}
 
 
@@ -578,16 +579,18 @@ def render_standing(snap: dict) -> str:
     except Exception:
         start_txt = "the reset"
     made = sd.get("made")
+    err = str(sd.get("error") or "")
     if made is None:
-        why = e(str(sd.get("error") or "the page has not heard from the broker yet"))
+        why = e(err or "the page has not heard from the broker yet")
         return (f'<div class="hero bad"><div class="hk">Made since {e(start_txt)} - after commission</div>'
                 f'<div class="hv">-</div><div class="hs">The broker\'s records could not be read just now ({why}). '
                 f'No figure is shown rather than a wrong one; it comes back on its own.</div></div>')
     bal, start_bal, opened, today = sd.get("balance"), sd.get("start_balance"), sd.get("open"), sd.get("today")
+    adj = sd.get("adjustments")
     sub = []
     if bal is not None and start_bal is not None:
-        sub.append(f"Balance {m(bal).lstrip('+')} = {m(start_bal).lstrip('+')} at the reset {m(made)} from "
-                   f"{sd.get('made_trades', 0)} closed trades (commission {m(-abs(sd.get('made_commission') or 0.0))} included)")
+        sub.append(f"Balance {m(bal).lstrip('+')} less {m(start_bal).lstrip('+')} at the reset = <b>{m(made)}</b>, "
+                   f"after {m(-abs(sd.get('made_commission') or 0.0))} commission on {sd.get('made_trades', 0)} closed trades")
     sub.append(f'Today <b class="{cls(today)}">{m(today)}</b>')
     if opened:
         sub.append(f'Open trades right now <b class="{cls(opened)}">{m(opened)}</b> (not banked yet; '
@@ -595,9 +598,9 @@ def render_standing(snap: dict) -> str:
     hero = (f'<div class="hero {cls(made)}"><div class="hk">Made since {e(start_txt)} - after commission</div>'
             f'<div class="hv {cls(made)}">{m(made)}</div>'
             f'<div class="hs">{" &middot; ".join(sub)}</div>'
-            f'<div class="hsrc">Straight from MetaTrader\'s own records of every trade on the account (all bots, '
-            f'commission and swap included) - the same as the balance on your phone less the balance at the reset. '
-            f'Practice (paper) trades never reach the broker, so they are never in this figure.</div></div>')
+            f'<div class="hsrc">Straight from MetaTrader: the account balance now, less the balance at the reset - '
+            f'the same sum you can do on your phone. Every trade on the account counts (all bots, commission and swap '
+            f'included). Practice (paper) trades never reach the broker, so they are never in this figure.</div></div>')
     practice = sd.get("practice") or {}
     rows = ""
     for b in sd.get("bots") or []:
@@ -607,22 +610,29 @@ def render_standing(snap: dict) -> str:
         rows += (f'<tr><td><b>{e(str(b.get("label")))}</b></td><td>{mode_pill}</td>'
                  f'<td class="mono {cls(b.get("made"))}">{m(b.get("made"))}</td>'
                  f'<td class="mono {cls(b.get("today"))}">{m(b.get("today"))}</td>'
-                 f'<td class="mono {cls(b.get("open")) if b.get("open") else "grey"}">{m(b.get("open")) if b.get("open") else "-"}</td>'
+                 f'<td class="mono {cls(b.get("open"))}">{m(b.get("open")) if b.get("open") else "-"}</td>'
                  f'<td class="mono grey">{"-" if pr is None else m(pr)}</td></tr>')
     other = sd.get("other") or {}
-    if any(abs(float(other.get(k) or 0.0)) >= 0.005 for k in ("made", "today", "open")):
-        rows += (f'<tr><td>{e(str(other.get("label")))}</td><td></td>'
+    if other.get("made") is None or any(abs(float(other.get(k) or 0.0)) >= 0.005 for k in ("made", "today", "open")):
+        rows += (f'<tr><td>{e(str(other.get("label") or "Anything else (placed by hand)"))}</td><td></td>'
                  f'<td class="mono {cls(other.get("made"))}">{m(other.get("made"))}</td>'
                  f'<td class="mono {cls(other.get("today"))}">{m(other.get("today"))}</td>'
                  f'<td class="mono">{m(other.get("open")) if other.get("open") else "-"}</td><td></td></tr>')
+    if adj is not None and abs(float(adj)) >= 0.01:
+        rows += (f'<tr><td>Other changes to the balance (broker charges, deposits, corrections)</td><td></td>'
+                 f'<td class="mono {cls(adj)}">{m(adj)}</td><td class="mono">-</td><td class="mono">-</td><td></td></tr>')
     rows += (f'<tr class="total"><td>Account</td><td></td><td class="mono {cls(made)}">{m(made)}</td>'
              f'<td class="mono {cls(today)}">{m(today)}</td>'
              f'<td class="mono">{m(opened) if opened else "-"}</td><td></td></tr>')
+    warn = (f'<div class="small bad"><b>Part of the broker\'s records could not be read just now</b> ({e(err)}); '
+            f'a row showing "-" is unknown, so the rows may not add up until the next refresh. The big figure '
+            f'above is still the balance less the balance at the reset.</div>' if err else "")
     table = ('<div class="card"><h2>Where it came from - real money, by bot</h2><table class="bots">'
              '<tr><th>Bot</th><th>Mode</th><th>Since the reset</th><th>Today</th><th>Open now</th>'
-             '<th>Practice since the reset (not money)</th></tr>' + rows + '</table>'
-             '<div class="small">Real money is the broker\'s record for each bot\'s own magic number, so the rows add up '
-             'to the account. A bot in PAPER places no orders: its practice result is shown in grey for comparison only.</div></div>')
+             '<th>Practice since the reset (not money)</th></tr>' + rows + '</table>' + warn +
+             '<div class="small">Real money is the broker\'s record of each trade, credited to the bot whose magic '
+             'number opened it, so the rows add up to the account. A bot in PAPER places no orders: its practice '
+             'result is shown in grey for comparison only.</div></div>')
     return hero + table
 
 

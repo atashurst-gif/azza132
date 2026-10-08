@@ -689,10 +689,11 @@ class Mt5Broker:
                     continue
                 out.append({
                     "position": int(getattr(d, "position_id", 0)),
+                    "magic": int(getattr(d, "magic", 0) or 0),
                     "symbol": str(getattr(d, "symbol", "") or ""),
                     "volume": float(d.volume),
                     "profit": float(d.profit) + float(getattr(d, "commission", 0.0))
-                              + float(getattr(d, "swap", 0.0)),
+                              + float(getattr(d, "swap", 0.0)) + float(getattr(d, "fee", 0.0) or 0.0),
                     "commission": float(getattr(d, "commission", 0.0)),
                     "is_entry": is_entry,
                     "time": when,

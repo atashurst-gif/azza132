@@ -36,13 +36,15 @@ BOTS = (  # (id, label, where its magic and mode come from)
 
 
 def _start(cfg, now: dt.datetime) -> dt.datetime:
-    txt = getattr(cfg, "tracking_start_utc", "") or ""
-    try:
-        if txt:
-            s = dt.datetime.fromisoformat(txt.replace("Z", "+00:00"))
-            return to_utc(s if s.tzinfo else s.replace(tzinfo=dt.timezone.utc))
-    except ValueError:
-        pass
+    """The account's reset (``account_reset_utc``), never moved by a change of
+    rules; the strategy's tracking start only if no reset is configured."""
+    for txt in (getattr(cfg, "account_reset_utc", "") or "", getattr(cfg, "tracking_start_utc", "") or ""):
+        try:
+            if txt:
+                s = dt.datetime.fromisoformat(txt.replace("Z", "+00:00"))
+                return to_utc(s if s.tzinfo else s.replace(tzinfo=dt.timezone.utc))
+        except ValueError:
+            continue
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -93,81 +95,141 @@ def _sum(rows, since: dt.datetime) -> tuple[float, int, float]:
     return round(net, 2), len(closed), round(fees, 2)
 
 
+def _split_by_bot(rows, magics: set[int]) -> Optional[dict[int, list]]:
+    """Every deal credited to the bot that OPENED its position (the entry
+    deal's magic), so a bot's trade closed by hand on the phone still counts
+    as that bot's. None if the broker's rows do not say which magic they
+    carried (an older bridge): the caller then asks per magic."""
+    if any("magic" not in r for r in rows):
+        return None
+    opener: dict[int, int] = {}
+    for r in rows:
+        if r.get("is_entry") and r.get("position"):
+            opener.setdefault(int(r["position"]), int(r.get("magic") or 0))
+    out: dict[int, list] = {}
+    for r in rows:
+        m = opener.get(int(r.get("position") or 0), int(r.get("magic") or 0))
+        out.setdefault(m if m in magics else -1, []).append(r)
+    return out
+
+
 def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None,
                      cache_seconds: float = 30.0) -> dict:
     """The account's figures from the broker. Never raises: a figure the
-    broker could not give is None, with the reason in ``error``."""
+    broker could not give is None, with the reason in ``error`` (shown on the
+    page). One read of the deal history, split locally by magic number, so the
+    rows and the total come from the same moment; the balance and the open
+    positions are read straight after it."""
     now = to_utc(now)
     at = _CACHE["at"]
     if at is not None and cache_seconds and (now - at).total_seconds() < cache_seconds and _CACHE["value"]:
         return _CACHE["value"]
     start = _start(cfg, now)
     day = max(_day_start(broker, now), start)
+    reset_balance = float(getattr(cfg, "account_reset_balance", 0.0) or 0.0)
     out: dict = {"start": start.isoformat(), "day_start": day.isoformat(), "source": "broker",
-                 "made": None, "today": None, "open": None, "balance": None, "equity": None,
-                 "currency": "", "start_balance": None, "bots": [], "other": None, "error": ""}
+                 "made": None, "trading": None, "adjustments": None, "today": None, "open": None,
+                 "balance": None, "equity": None, "currency": "", "start_balance": reset_balance or None,
+                 "bots": [], "other": None, "error": ""}
+    errors: list[str] = []
+
+    def done() -> dict:
+        out["error"] = "; ".join(errors)
+        _CACHE["at"] = now                      # failures are cached too: a wedged bridge is not hammered
+        _CACHE["value"] = out
+        return out
+    fn = getattr(broker, "deals_since", None)
+    if fn is None:
+        errors.append("the broker gives no deal history")
+        return done()
     try:
-        account = account if account is not None else broker.account()
+        everything = fn(start, 0, False) or []          # magic 0: every trade on the account
     except Exception as exc:
-        account = None
-        out["error"] = f"account not readable: {exc}"
+        errors.append(f"deal history not readable: {exc}")
+        return done()
+    # the balance and the open positions, read straight after the deals
+    try:
+        account = broker.account() or account
+    except Exception as exc:
+        if account is None:
+            errors.append(f"account not readable: {exc}")
+    pos_list = None
+    try:
+        pos_list = list(broker.positions(None) or [])
+    except Exception as exc:
+        pos_list = list(positions) if positions is not None else None
+        if pos_list is None:
+            errors.append(f"open positions not readable: {exc}")
+    trading, n_since, fees_since = _sum(everything, start)
+    today, n_today, fees_today = _sum(everything, day)
+    out.update({"trading": trading, "made_trades": n_since, "made_commission": fees_since,
+                "today": today, "today_trades": n_today, "today_commission": fees_today})
     if account is not None:
         out["balance"] = round(float(account.balance), 2)
         out["equity"] = round(float(account.equity), 2)
         out["currency"] = str(account.currency or "")
-        out["open"] = round(float(account.equity) - float(account.balance), 2)
-    fn = getattr(broker, "deals_since", None)
-    if fn is None:
-        out["error"] = out["error"] or "the broker gives no deal history"
-        return out
-    try:
-        everything = fn(start, 0, False) or []          # magic 0: every trade on the account
-    except Exception as exc:
-        out["error"] = f"deal history not readable: {exc}"
-        return out
-    made, n_since, fees_since = _sum(everything, start)
-    today, n_today, fees_today = _sum(everything, day)
-    out.update({"made": made, "made_trades": n_since, "made_commission": fees_since,
-                "today": today, "today_trades": n_today, "today_commission": fees_today})
-    if out["balance"] is not None:
-        out["start_balance"] = round(out["balance"] - made, 2)
-    try:
-        open_by_magic: dict[int, float] = {}
-        n_open: dict[int, int] = {}
-        for p in (positions if positions is not None else broker.positions(None)) or ():
-            m = int(getattr(p, "magic", 0) or 0)
-            open_by_magic[m] = open_by_magic.get(m, 0.0) + float(p.profit or 0.0) + float(getattr(p, "swap", 0.0) or 0.0)
-            n_open[m] = n_open.get(m, 0) + 1
-    except Exception:
-        open_by_magic, n_open = {}, {}
-    rest_since, rest_today = made, today
-    rest_open = out["open"]
+    if out["balance"] is not None and reset_balance > 0:
+        # exactly what MetaTrader shows: the balance now, less the balance at the reset
+        out["made"] = round(out["balance"] - reset_balance, 2)
+        out["adjustments"] = round(out["made"] - trading, 2)    # anything on the balance that is not a trade
+    else:
+        out["made"] = trading
+        out["start_balance"] = round(out["balance"] - trading, 2) if out["balance"] is not None else None
     modes = bot_modes_and_magics(cfg)
+    magics = {m for m, _mode in modes.values() if m}
+    # open positions, per magic, from the one list
+    open_by: dict[int, float] = {}
+    n_open: dict[int, int] = {}
+    if pos_list is not None:
+        for q in pos_list:
+            m = int(getattr(q, "magic", 0) or 0)
+            k = m if m in magics else -1
+            open_by[k] = open_by.get(k, 0.0) + float(q.profit or 0.0) + float(getattr(q, "swap", 0.0) or 0.0)
+            n_open[k] = n_open.get(k, 0) + 1
+        out["open"] = round(sum(open_by.values()), 2)
+    elif out["equity"] is not None and out["balance"] is not None:
+        out["open"] = round(out["equity"] - out["balance"], 2)
+    split = _split_by_bot(everything, magics)
+    per: dict[int, Optional[list]] = {}
+    if split is not None:
+        per = {m: split.get(m, []) for m in magics}
+        per[-1] = split.get(-1, [])
+    else:
+        # an older bridge: ask per magic; any failure leaves that row and the rest unknown
+        for m in magics:
+            try:
+                per[m] = fn(start, m, False) or []
+            except Exception as exc:
+                per[m] = None
+                errors.append(f"magic {m}'s deals not readable: {exc}")
+        known = [r for m in magics if per.get(m) is not None for r in per[m]]
+        if all(per.get(m) is not None for m in magics):
+            keys = {(r.get("position"), str(r.get("time")), r.get("profit")) for r in known}
+            per[-1] = [r for r in everything if (r.get("position"), str(r.get("time")), r.get("profit")) not in keys]
+        else:
+            per[-1] = None
     for bid, label in BOTS:
         magic, mode = modes.get(bid, (0, "PAPER"))
-        try:
-            rows = (fn(start, magic, False) or []) if magic else []
+        rows = per.get(magic) if magic else []
+        if rows is None:
+            b = {"made": None, "today": None, "trades": 0, "today_trades": 0}
+        else:
             b_since, b_n_since, _ = _sum(rows, start)
             b_today, b_n_today, _ = _sum(rows, day)
-        except Exception as exc:
-            out["error"] = f"{label}'s deals not readable: {exc}"
-            b_since = b_today = None
-            b_n_since = b_n_today = 0
-        b_open = round(open_by_magic.get(magic, 0.0), 2) if magic in open_by_magic else 0.0
-        out["bots"].append({"id": bid, "label": label, "magic": magic, "mode": mode,
-                            "made": b_since, "today": b_today, "trades": b_n_since, "today_trades": b_n_today,
-                            "open": b_open, "open_trades": n_open.get(magic, 0)})
-        if b_since is not None:
-            rest_since = round(rest_since - b_since, 2)
-            rest_today = round(rest_today - b_today, 2)
-        if rest_open is not None:
-            rest_open = round(rest_open - b_open, 2)
-    # anything that carried no bot's magic (a trade placed by hand), so the rows add up
-    out["other"] = {"label": "Anything else (placed by hand)", "made": rest_since, "today": rest_today,
-                    "open": rest_open}
-    _CACHE["at"] = now
-    _CACHE["value"] = out
-    return out
+            b = {"made": b_since, "today": b_today, "trades": b_n_since, "today_trades": b_n_today}
+        out["bots"].append({"id": bid, "label": label, "magic": magic, "mode": mode, **b,
+                            "open": round(open_by.get(magic, 0.0), 2) if pos_list is not None else None,
+                            "open_trades": n_open.get(magic, 0)})
+    rest = per.get(-1)
+    if rest is None:
+        out["other"] = {"label": "Anything else (placed by hand)", "made": None, "today": None,
+                        "open": round(open_by.get(-1, 0.0), 2) if pos_list is not None else None}
+    else:
+        o_since, _, _ = _sum(rest, start)
+        o_today, _, _ = _sum(rest, day)
+        out["other"] = {"label": "Anything else (placed by hand)", "made": o_since, "today": o_today,
+                        "open": round(open_by.get(-1, 0.0), 2) if pos_list is not None else None}
+    return done()
 
 
 def practice_figures(data_dir, start: dt.datetime, now: dt.datetime, currency: str = "GBP") -> dict:

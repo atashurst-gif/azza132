@@ -427,6 +427,12 @@ class Config:
     # the first time the bot is set up; the status page measures the bot's
     # own trades from here using the broker's records.
     tracking_start_utc: str = ""
+    # The ACCOUNT's anchor for the page's big figure: when the demo account was
+    # last reset and to what balance. Never moved by a change of rules (the
+    # tracking start above is). Aaron's account was reset to 2,000 GBP on
+    # 5 Oct 2026 at 12:30 UK; set both again in config.json after another reset.
+    account_reset_utc: str = "2026-10-05T11:30:42+00:00"
+    account_reset_balance: float = 2000.0
     # Which strategy the measurement belongs to. When the code's strategy
     # changes, the bot restarts the measuring clock itself on start-up, so the
     # status page only ever shows the CURRENT strategy's trades.

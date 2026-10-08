@@ -886,7 +886,8 @@ if existing_path.exists():
     except Exception:
         old = {}
     if isinstance(old, dict):
-        for key in ("tracking_start_utc", "tracking_strategy", "runner", "bandbreaker", "crowd"):
+        for key in ("tracking_start_utc", "tracking_strategy", "account_reset_utc", "account_reset_balance",
+                    "runner", "bandbreaker", "crowd"):
             if key in old:
                 cfg[key] = old[key]
 (data / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True))
