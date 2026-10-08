@@ -450,6 +450,8 @@ fills, dropped ticks), a parameter neighbourhood and a walk-forward split.
 
 ## Switching LIVE from the terminal
 
+Since 8 Oct one command switches any bot: `python -m mintel.ops.modes --config ~/MarketBot/data/config.json --live scalper` writes `"mode": "LIVE"` into `scalper.json` (`--paper` or `--off` switch it back; `--show` looks), then restart. The older one-liner below still works.
+
 One command does it: it writes `"mode": "LIVE"` into `~/MarketBot/data/scalper.json`
 (creating the file if it does not exist yet), then installs the current build
 and restarts everything so the scalper comes up live:

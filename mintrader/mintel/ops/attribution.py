@@ -1,7 +1,23 @@
 """Strategy attribution for the status page: Overall | Trend & Breakout |
-Rapid Scalper. Read-only. It reads the existing strategy's own records and
-the Rapid Scalper's status file, and adds the money up. It changes
-nothing about either strategy."""
+Rapid Scalper | Momentum Runner | Band Breaker | Crowd Fader. Read-only. It
+reads each bot's own records and status file and adds the money up. It
+changes nothing about any bot.
+
+Overall is the ACCOUNT: money that really moved. Trend & Breakout is always
+real. Every other bot's rows carry a mode, LIVE or PAPER (a row with no
+mode is PAPER: simulated, never money), and only its LIVE rows are added to
+Overall, under the bot's own strategy id. PAPER rows stay on the bot's own
+tab, where the figures cover every row for the period and say how much of
+it was live and how much paper (live_net, paper_net).
+
+A LIVE row's figure is what the engine booked from the broker's closing
+deals (profit, commission and swap on the deal that closed the position).
+Where a market charges commission the entry half is not in that figure, so
+`python -m mintel.ops.reconcile`, which sums every deal, is the figure that
+must match MetaTrader. A row the broker's record could not be read for is
+booked at the last price with a '?' on its exit reason: it still counts (it
+is the best figure there is) but is counted separately (estimated_trades,
+estimated_net) and the page says so."""
 from __future__ import annotations
 
 import datetime as dt
@@ -15,6 +31,38 @@ from ..scalper import (EXISTING_STRATEGY_ID, EXISTING_STRATEGY_LABEL, STRATEGY_I
 from ..scalper.stats import combine, strategy_stats
 
 STALE_SECONDS = 120.0
+
+
+def row_mode(r: dict) -> str:
+    """How a row was traded. The engines write LIVE or PAPER; a row with no
+    mode (an older file) is PAPER: simulated, never money."""
+    return str(r.get("mode") or "PAPER").upper()
+
+
+def is_estimated(r: dict) -> bool:
+    """A LIVE row booked from the last price because the broker's record was
+    not there: the engines put a '?' on the exit reason (STOP?, WINDOW_END?)."""
+    return row_mode(r) == "LIVE" and str(r.get("exit_reason") or "").endswith("?")
+
+
+def estimated_split(rows) -> dict:
+    """How many LIVE rows are estimates, and their net."""
+    est = [float(r.get("net_pnl") or 0.0) for r in rows if is_estimated(r)]
+    return {"estimated_trades": len(est), "estimated_net": round(sum(est), 2)}
+
+
+def estimated_note(n: int) -> str:
+    """The plain statement the page carries when LIVE rows are estimates."""
+    return (f"{n} LIVE trade{'' if n == 1 else 's'} booked from the last price because the broker's record "
+            f"was not available: check with mintel.ops.reconcile")
+
+
+def mode_split(rows) -> dict:
+    """The live and the paper part of a bot's rows, by net."""
+    live = [float(r.get("net_pnl") or 0.0) for r in rows if row_mode(r) == "LIVE"]
+    paper = [float(r.get("net_pnl") or 0.0) for r in rows if row_mode(r) != "LIVE"]
+    return {"live_net": round(sum(live), 2), "paper_net": round(sum(paper), 2),
+            "live_trades": len(live), "paper_trades": len(paper)}
 
 
 def existing_strategy_stats(journal, positions, day_start: dt.datetime, currency: str,
@@ -56,6 +104,15 @@ def existing_strategy_stats(journal, positions, day_start: dt.datetime, currency
     s["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r["net_pnl"],
                           "closed": r["closed_utc"], "tactic": r["tactic"], "strategy": EXISTING_STRATEGY_ID}
                          for r in closed[-60:]]
+    _all_live(s)
+    return s
+
+
+def _all_live(s: dict) -> dict:
+    """Trend & Breakout is the account itself: every row is money."""
+    s["mode"] = "LIVE"
+    s["live_net"], s["paper_net"] = s["realised"], 0.0
+    s["live_trades"], s["paper_trades"] = int(s["trades"]), 0
     return s
 
 
@@ -116,75 +173,130 @@ def read_scalper_status(data_dir: str | Path, status_file: str = "scalper-status
     return d
 
 
-def runner_tab(data_dir: str | Path, start: dt.datetime, end: Optional[dt.datetime], currency: str,
-               now: Optional[dt.datetime] = None) -> tuple[dict, dict]:
-    """The Momentum Runner's figures from its own records: (stats, status)."""
-    from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
-    data = Path(data_dir)
-    now = to_utc(now or utcnow())
+def _read_status(path: Path, strategy_id: str, label: str, now: dt.datetime) -> dict:
+    """A bot's status file, marked NOT RUNNING when stale or missing."""
     try:
-        st_ = json.loads((data / "runner-status.json").read_text())
-        age = (now - to_utc(dt.datetime.fromisoformat(st_["updated"]))).total_seconds()
-        st_["present"] = True
-        if age > STALE_SECONDS:
-            st_["status"] = f"NOT RUNNING (last seen {age / 60:.0f} min ago)"
-    except Exception:
-        st_ = {"strategy_id": RUNNER_ID, "label": RUNNER_LABEL, "mode": "PAPER", "status": "NOT RUNNING",
-               "open": [], "present": False}
-    a = to_utc(start).isoformat()
-    if end is None:
-        rows = _rows_ro(data / "runner.sqlite", "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
-                        "ORDER BY closed_utc ASC LIMIT 5000", (a,))
-        includes_now = True
-    else:
-        b = to_utc(end).isoformat()
-        rows = _rows_ro(data / "runner.sqlite", "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
-                        "AND closed_utc < ? ORDER BY closed_utc ASC LIMIT 5000", (a, b))
-        includes_now = to_utc(start) <= now < to_utc(end)
-    opens = [{"symbol": o.get("symbol"), "pnl": o.get("pnl") or 0.0} for o in (st_.get("open") or [])] if includes_now else []
-    stats = strategy_stats(rows, opens, label=RUNNER_LABEL, strategy_id=RUNNER_ID, currency=currency)
-    stats["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
-                              "exit_reason": r.get("exit_reason"), "mode": r.get("mode") or "PAPER",
-                              "strategy": RUNNER_ID, "tactic": r.get("tactic")} for r in rows]
-    peaks = [float(r.get("peak_r") or 0) for r in rows]
-    stats["avg_peak_r"] = round(sum(peaks) / len(peaks), 2) if peaks else None
-    stats["reached_trail"] = sum(1 for r in rows if float(r.get("peak_r") or 0) >= float(st_.get("trail_r") or 3.0))
-    stats["source"] = "simulated (PAPER) - a shadow of Trend & Breakout's index trades, not money, not in Overall"
-    return stats, st_
-
-
-def paper_tab(data_dir: str | Path, db_name: str, status_name: str, strategy_id: str, label: str,
-              start: dt.datetime, end: Optional[dt.datetime], currency: str,
-              now: Optional[dt.datetime] = None, source: str = "") -> tuple[dict, dict]:
-    """A paper bot's figures from its own sqlite and status file: (stats, status)."""
-    data = Path(data_dir)
-    now = to_utc(now or utcnow())
-    try:
-        st_ = json.loads((data / status_name).read_text())
+        st_ = json.loads(path.read_text())
         age = (now - to_utc(dt.datetime.fromisoformat(st_["updated"]))).total_seconds()
         st_["present"] = True
         if age > STALE_SECONDS:
             st_["status"] = f"NOT RUNNING (last seen {age / 60:.0f} min ago)"
     except Exception:
         st_ = {"strategy_id": strategy_id, "label": label, "mode": "PAPER", "status": "NOT RUNNING", "open": [], "present": False}
+    return st_
+
+
+def _closed_rows(path: Path, start: dt.datetime, end: Optional[dt.datetime]) -> list[dict]:
     a = to_utc(start).isoformat()
     if end is None:
-        rows = _rows_ro(data / db_name, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
-                        "ORDER BY closed_utc ASC LIMIT 5000", (a,))
-        includes_now = True
-    else:
-        rows = _rows_ro(data / db_name, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
-                        "AND closed_utc < ? ORDER BY closed_utc ASC LIMIT 5000", (a, to_utc(end).isoformat()))
-        includes_now = to_utc(start) <= now < to_utc(end)
-    opens = [{"symbol": o.get("symbol"), "pnl": o.get("pnl") or 0.0} for o in (st_.get("open") or [])] if includes_now else []
+        return _rows_ro(path, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
+                              "ORDER BY closed_utc ASC LIMIT 5000", (a,))
+    return _rows_ro(path, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? "
+                          "AND closed_utc < ? ORDER BY closed_utc ASC LIMIT 5000", (a, to_utc(end).isoformat()))
+
+
+def _trade_row(r: dict, strategy_id: str) -> dict:
+    return {"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
+            "exit_reason": r.get("exit_reason"), "mode": row_mode(r), "strategy": strategy_id, "tactic": r.get("tactic"),
+            "estimated": is_estimated(r)}
+
+
+def _bot_tab(data_dir: str | Path, db_name: str, status_name: str, strategy_id: str, label: str,
+             start: dt.datetime, end: Optional[dt.datetime], currency: str,
+             now: Optional[dt.datetime] = None, source: str = "", paper_source: str = "") -> tuple[dict, dict, list]:
+    """A bot's figures from its own sqlite and status file: (stats, status, rows).
+
+    The stats cover every row of the period, LIVE and PAPER, and carry the
+    split (live_net, paper_net, live_trades, paper_trades) and the count of
+    LIVE rows that are estimates (estimated_trades, estimated_net). Under
+    "live" is the same shape for the LIVE rows alone: the part that belongs
+    in Overall."""
+    data = Path(data_dir)
+    now = to_utc(now or utcnow())
+    st_ = _read_status(data / status_name, strategy_id, label, now)
+    mode_now = str(st_.get("mode") or "PAPER").upper()
+    rows = _closed_rows(data / db_name, start, end)
+    includes_now = True if end is None else to_utc(start) <= now < to_utc(end)
+    opens = [{"symbol": o.get("symbol"), "pnl": o.get("pnl") or 0.0, "mode": str(o.get("mode") or mode_now).upper()}
+             for o in (st_.get("open") or [])] if includes_now else []
     stats = strategy_stats(rows, opens, label=label, strategy_id=strategy_id, currency=currency)
-    stats["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
-                              "exit_reason": r.get("exit_reason"), "mode": r.get("mode") or "PAPER",
-                              "strategy": strategy_id, "tactic": r.get("tactic")} for r in rows]
+    stats.update(mode_split(rows))
+    stats["mode"] = mode_now
+    stats["trades_today"] = [_trade_row(r, strategy_id) for r in rows]
     peaks = [float(r.get("peak_r") or 0) for r in rows]
     stats["avg_peak_r"] = round(sum(peaks) / len(peaks), 2) if peaks else None
-    stats["source"] = source or f"simulated (PAPER) - {label}'s own records, not money, not in Overall"
+    live_rows = [r for r in rows if row_mode(r) == "LIVE"]
+    live_opens = [o for o in opens if o["mode"] == "LIVE"]
+    live = strategy_stats(live_rows, live_opens, label=label, strategy_id=strategy_id, currency=currency)
+    live["trades_today"] = [_trade_row(r, strategy_id) for r in live_rows]
+    # in Overall when it is live now or has real trades in the period
+    live["in_overall"] = bool(live_rows or live_opens or mode_now == "LIVE")
+    est = estimated_split(live_rows)
+    live.update(est)
+    stats.update(est)
+    stats["live"] = live
+    if source:
+        stats["source"] = source
+    elif live["in_overall"]:
+        stats["source"] = (f"{label}'s own records: LIVE trades are booked from the broker's closing deals "
+                           f"(where a market charges commission the entry half is not in them; mintel.ops.reconcile "
+                           f"has the full figure) and count in Overall; PAPER trades are simulated, not money, not in Overall")
+    else:
+        stats["source"] = paper_source or f"simulated (PAPER) - {label}'s own records, not money, not in Overall"
+    if est["estimated_trades"]:
+        stats["source"] += "; " + estimated_note(est["estimated_trades"])
+    return stats, st_, rows
+
+
+def runner_tab(data_dir: str | Path, start: dt.datetime, end: Optional[dt.datetime], currency: str,
+               now: Optional[dt.datetime] = None) -> tuple[dict, dict]:
+    """The Momentum Runner's figures from its own records (runner.sqlite): (stats, status)."""
+    from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
+    stats, st_, rows = _bot_tab(data_dir, "runner.sqlite", "runner-status.json", RUNNER_ID, RUNNER_LABEL, start, end, currency,
+                                now, paper_source="simulated (PAPER) - a shadow of Trend & Breakout's index trades, "
+                                                  "not money, not in Overall")
+    stats["reached_trail"] = sum(1 for r in rows if float(r.get("peak_r") or 0) >= float(st_.get("trail_r") or 3.0))
     return stats, st_
+
+
+def paper_tab(data_dir: str | Path, db_name: str, status_name: str, strategy_id: str, label: str,
+              start: dt.datetime, end: Optional[dt.datetime], currency: str,
+              now: Optional[dt.datetime] = None, source: str = "") -> tuple[dict, dict]:
+    """A bot's figures from its own sqlite and status file: (stats, status).
+    The name is from the days every one of them was PAPER; the rows' own
+    modes decide what is money."""
+    stats, st_, _ = _bot_tab(data_dir, db_name, status_name, strategy_id, label, start, end, currency, now, source)
+    return stats, st_
+
+
+def _names(labels: list[str]) -> str:
+    """'The Momentum Runner, the Band Breaker and the Crowd Fader'."""
+    parts = [("The " if i == 0 else "the ") + str(x) for i, x in enumerate(labels)]
+    if len(parts) <= 1:
+        return "".join(parts)
+    return ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def overall_note(modes: dict, estimated: int = 0) -> str:
+    """One plain statement of what Overall contains: the bots still in PAPER
+    (their simulated results stay on their own tabs), the bots that are OFF,
+    or that every bot is live; and, when `estimated` LIVE trades were booked
+    without the broker's record, that they are estimates. `modes` maps a
+    bot's label to its mode."""
+    paper = [label for label, m in modes.items() if str(m or "PAPER").upper() == "PAPER"]
+    off = [label for label, m in modes.items() if str(m or "PAPER").upper() not in ("PAPER", "LIVE")]
+    parts = []
+    if not paper and not off:
+        parts.append("Every bot is live: Overall is every bot's broker figures added together.")
+    if paper:
+        one = len(paper) == 1
+        parts.append(f"{_names(paper)} {'is' if one else 'are'} in PAPER: {'its' if one else 'their'} simulated results "
+                     f"are on {'its own tab' if one else 'their own tabs'} only.")
+    if off:
+        parts.append(f"{_names(off)} {'is' if len(off) == 1 else 'are'} OFF.")
+    if estimated:
+        parts.append(estimated_note(int(estimated)) + ".")
+    return " ".join(parts)
 
 
 def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
@@ -195,21 +307,13 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
     rs = dict(rs_status.get("stats") or {})
     rs.setdefault("id", STRATEGY_ID); rs.setdefault("label", STRATEGY_LABEL); rs.setdefault("currency", currency)
     rs["trades_today"] = rs_status.get("trades_today", [])
-    # Overall is the ACCOUNT: money that really moved. A scalper in PAPER is
-    # simulated, so it has its own tab but is never added to the account.
+    # The scalper's status file counts the rows of the mode it runs in, so
+    # its tab is all live or all paper.
     live_rs = str(rs_status.get("mode") or "").upper() == "LIVE"
-    overall = combine([mi, rs] if live_rs else [mi])
-    overall["trades_today"] = sorted(mi["trades_today"] + (rs["trades_today"] if live_rs else []),
-                                     key=lambda t: str(t.get("closed") or ""))
-    # the money shape of the account: from every real trade's net
-    nets = [float(t.get("net") or 0.0) for t in overall["trades_today"]]
-    if nets:
-        overall.update(_money_shape(nets))
-    if mi.get("before_fees") is not None and not live_rs:
-        overall["before_fees"] = mi["before_fees"]
-    if not live_rs:
-        rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
-        overall["note"] = "The Rapid Scalper, the Momentum Runner, the Band Breaker and the Crowd Fader are in PAPER: their simulated results are on their own tabs only."
+    rs["mode"] = str(rs_status.get("mode") or "OFF").upper()
+    rs_realised = float(rs.get("realised") or 0.0)
+    rs["live_net"], rs["paper_net"] = (rs_realised, 0.0) if live_rs else (0.0, rs_realised)
+    rs["live_trades"], rs["paper_trades"] = (int(rs.get("trades") or 0), 0) if live_rs else (0, int(rs.get("trades") or 0))
     from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
     mr, mr_status = runner_tab(data_dir, day_start, None, currency, now)
     from ..bandbreaker import STRATEGY_ID as BB_ID, STRATEGY_LABEL as BB_LABEL
@@ -218,6 +322,23 @@ def build_strategies(journal, positions, day_start: dt.datetime, currency: str,
     from ..crowd import STRATEGY_ID as CF_ID, STRATEGY_LABEL as CF_LABEL
     cf, cf_status = paper_tab(data_dir, "crowd.sqlite", "crowd-status.json", CF_ID, CF_LABEL,
                               day_start, None, currency, now)
+    # Overall is the ACCOUNT: money that really moved. Trend & Breakout, the
+    # scalper when it runs LIVE, and every other bot's LIVE rows. A bot in
+    # PAPER is simulated, so it has its own tab but is never added.
+    parts = [mi] + ([rs] if live_rs else []) + [b["live"] for b in (mr, bb, cf) if b["live"]["in_overall"]]
+    overall = combine(parts)
+    overall["trades_today"] = sorted(overall["trades_today"], key=lambda t: str(t.get("closed") or ""))
+    # the money shape of the account: from every real trade's net
+    nets = [float(t.get("net") or 0.0) for t in overall["trades_today"]]
+    if nets:
+        overall.update(_money_shape(nets))
+    if mi.get("before_fees") is not None and len(parts) == 1:
+        overall["before_fees"] = mi["before_fees"]
+    if not live_rs:
+        rs["source"] = rs.get("source") or "simulated (PAPER) - not money, not in Overall"
+    overall["estimated_trades"] = sum(int(b["live"].get("estimated_trades") or 0) for b in (mr, bb, cf))
+    overall["note"] = overall_note({STRATEGY_LABEL: rs["mode"], RUNNER_LABEL: mr["mode"],
+                                    BB_LABEL: bb["mode"], CF_LABEL: cf["mode"]}, overall["estimated_trades"])
     return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb, CF_ID: cf,
             "scalper": rs_status, "runner": mr_status, "bandbreaker": bb_status, "crowd": cf_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,
@@ -313,6 +434,7 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
     mi = strategy_stats(closed, opens, label=EXISTING_STRATEGY_LABEL, strategy_id=EXISTING_STRATEGY_ID, currency=currency)
     mi["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r["net_pnl"], "closed": r["closed_utc"],
                            "tactic": r["tactic"], "strategy": EXISTING_STRATEGY_ID} for r in closed]
+    _all_live(mi)
     rs_rows = _rows_ro(data / "scalper.sqlite",
                        "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? AND closed_utc < ? "
                        "ORDER BY closed_utc ASC LIMIT 5000", (a, b))
@@ -320,14 +442,12 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
                         strategy_id=STRATEGY_ID, currency=currency, scalper=True)
     rs["trades_today"] = [{"ticket": r["ticket"], "symbol": r["symbol"], "net": r.get("net_pnl"), "closed": r["closed_utc"],
                            "exit_reason": r.get("exit_reason"), "mode": r.get("mode"), "strategy": STRATEGY_ID} for r in rs_rows]
+    rs.update(mode_split(rs_rows))
     # the account total only ever counts trades that really happened
-    live_rows = [r for r in rs_rows if str(r.get("mode") or "").upper() == "LIVE"]
+    live_rows = [r for r in rs_rows if row_mode(r) == "LIVE"]
     rs_live = strategy_stats(live_rows, [], label=STRATEGY_LABEL, strategy_id=STRATEGY_ID,
                              currency=currency, scalper=True)
-    overall = combine([mi, rs_live])
-    overall["trades_today"] = sorted(mi["trades_today"] + [t for t in rs["trades_today"]
-                                                           if str(t.get("mode") or "").upper() == "LIVE"],
-                                     key=lambda t: str(t.get("closed") or ""))
+    rs_live["trades_today"] = [t for t in rs["trades_today"] if str(t.get("mode") or "").upper() == "LIVE"]
     from ..runner import STRATEGY_ID as RUNNER_ID, STRATEGY_LABEL as RUNNER_LABEL
     mr, mr_status = runner_tab(data_dir, start, end, currency, now)
     from ..bandbreaker import STRATEGY_ID as BB_ID, STRATEGY_LABEL as BB_LABEL
@@ -336,6 +456,18 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
     from ..crowd import STRATEGY_ID as CF_ID, STRATEGY_LABEL as CF_LABEL
     cf, cf_status = paper_tab(data_dir, "crowd.sqlite", "crowd-status.json", CF_ID, CF_LABEL,
                               start, end, currency, now)
+    parts = [mi, rs_live] + [x["live"] for x in (mr, bb, cf) if x["live"]["in_overall"]]
+    overall = combine(parts)
+    overall["trades_today"] = sorted(overall["trades_today"], key=lambda t: str(t.get("closed") or ""))
+    paper_n = sum(int(x.get("paper_trades") or 0) for x in (rs, mr, bb, cf))
+    overall["note"] = (f"{paper_n} PAPER trade{'' if paper_n == 1 else 's'} in this period "
+                       f"{'is' if paper_n == 1 else 'are'} on the bots' own tabs only; Overall adds Trend & Breakout "
+                       f"and every LIVE trade of the other bots."
+                       if paper_n else
+                       "Every trade in this period was live: Overall is every bot's broker figures added together.")
+    overall["estimated_trades"] = sum(int(x["live"].get("estimated_trades") or 0) for x in (mr, bb, cf))
+    if overall["estimated_trades"]:
+        overall["note"] += " " + estimated_note(overall["estimated_trades"]) + "."
     return {"overall": overall, EXISTING_STRATEGY_ID: mi, STRATEGY_ID: rs, RUNNER_ID: mr, BB_ID: bb, CF_ID: cf,
             "scalper": read_scalper_status(data_dir, now=now), "runner": mr_status, "bandbreaker": bb_status, "crowd": cf_status,
             "labels": {"overall": "Overall", EXISTING_STRATEGY_ID: EXISTING_STRATEGY_LABEL, STRATEGY_ID: STRATEGY_LABEL,

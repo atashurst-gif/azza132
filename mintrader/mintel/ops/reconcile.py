@@ -3,10 +3,11 @@
     python -m mintel.ops.reconcile --config data/config.json --day 2026-10-02
 
 Prints exactly what the broker recorded for that day: for each magic
-number (Trend & Breakout, Rapid Scalper, anything else), the closed
-positions, the price result, the commission and the net, then the account
-total, which must equal the figure at the bottom of MetaTrader's History
-tab for the same day. Read-only; nothing is changed.
+number (Trend & Breakout, Rapid Scalper, Momentum Runner, Band Breaker,
+Crowd Fader, and anything else), the closed positions, the price result,
+the commission and the net, then the account total, which must equal the
+figure at the bottom of MetaTrader's History tab for the same day.
+Read-only; nothing is changed.
 """
 from __future__ import annotations
 
@@ -57,39 +58,71 @@ def summarise(rows: list[dict], start: dt.datetime, end: dt.datetime) -> dict:
             "price": round(sum(nets) - commission, 2), "by_position": closed}
 
 
+def bots(cfg: Config, scalper_magic: int) -> list[tuple[str, str, int]]:
+    """(key, label, magic) for every bot that places its own orders, in the
+    order the report shows them. Every magic number is a different bot; no
+    two bots ever share one."""
+    from ..runner import STRATEGY_LABEL as RUNNER_LABEL
+    from ..bandbreaker import STRATEGY_LABEL as BB_LABEL
+    from ..crowd import STRATEGY_LABEL as CF_LABEL
+    return [("mi", EXISTING_STRATEGY_LABEL, int(cfg.magic)),
+            ("rs", STRATEGY_LABEL, int(scalper_magic)),
+            ("runner", RUNNER_LABEL, int(cfg.runner.magic)),
+            ("bandbreaker", BB_LABEL, int(cfg.bandbreaker.magic)),
+            ("crowd", CF_LABEL, int(cfg.crowd.magic))]
+
+
 def reconcile(broker, cfg: Config, day: dt.date, scalper_magic: int) -> dict:
+    """The broker's day split by magic number: one entry per bot (keys "mi",
+    "rs", "runner", "bandbreaker", "crowd", listed in "bots"), "other" for
+    every closed position that carried none of the five, and "all"."""
     start, end = _day_bounds(broker, day)
     fetch = lambda magic: broker.deals_since(start, magic, False) or []     # noqa: E731
     everything = summarise(fetch(0), start, end)
-    mi = summarise(fetch(cfg.magic), start, end)
-    rs = summarise(fetch(scalper_magic), start, end)
-    known = set(mi["by_position"]) | set(rs["by_position"])
+    out: dict = {"start": start, "end": end, "all": everything, "bots": []}
+    known: set = set()
+    for key, label, magic in bots(cfg, scalper_magic):
+        s = summarise(fetch(magic), start, end)
+        s["label"] = label
+        s["magic"] = magic
+        out[key] = s
+        out["bots"].append(key)
+        known |= set(s["by_position"])
     other = {k: v for k, v in everything["by_position"].items() if k not in known}
     other_net = round(sum(v["net"] for v in other.values()), 2)
-    return {"start": start, "end": end, "all": everything, "mi": mi, "rs": rs,
-            "other": {"positions": len(other), "net": other_net,
-                      "commission": round(sum(v["commission"] for v in other.values()), 2)}}
+    out["other"] = {"positions": len(other), "net": other_net,
+                    "commission": round(sum(v["commission"] for v in other.values()), 2)}
+    return out
+
+
+def _bot_keys(res: dict) -> list[str]:
+    return list(res.get("bots") or [k for k in ("mi", "rs") if k in res])
 
 
 def render(res: dict, cfg: Config, day: dt.date, account=None) -> str:
     def row(label, s):
-        return (f"  {label:<18} positions {s['positions']:3d}  wins {s['wins']:3d}  losses {s['losses']:3d}  "
+        return (f"  {label:<34} positions {s['positions']:3d}  wins {s['wins']:3d}  losses {s['losses']:3d}  "
                 f"price {s['price']:+9.2f}  commission {s['commission']:+8.2f}  NET {s['net']:+9.2f}")
+    keys = _bot_keys(res)
+    bots_net = round(sum(res[k]["net"] for k in keys), 2)
     lines = [f"BROKER RECORD FOR {day.isoformat()}  (MetaTrader day {res['start']:%Y-%m-%d %H:%M} to "
              f"{res['end']:%Y-%m-%d %H:%M} UTC)",
-             "-" * 96,
-             row(f"{EXISTING_STRATEGY_LABEL} (magic {cfg.magic})", res["mi"]),
-             row(f"{STRATEGY_LABEL}", res["rs"]),
-             f"  {'other / manual':<18} positions {res['other']['positions']:3d}"
-             f"{'':40} commission {res['other']['commission']:+8.2f}  NET {res['other']['net']:+9.2f}",
-             "-" * 96,
-             row("ACCOUNT", res["all"]),
-             "",
-             f"  MetaTrader's History tab for this day should show Profit {res['all']['net']:+.2f} at the bottom,",
-             f"  with {res['all']['price']:+.2f} on the right (the Profit column before commission).",
-             f"  Bots added together: {res['mi']['net'] + res['rs']['net']:+.2f}; "
-             f"difference to the account: {res['all']['net'] - res['mi']['net'] - res['rs']['net']:+.2f} "
-             f"(anything here is a deal that carried neither bot's magic number)."]
+             "-" * 112]
+    for k in keys:
+        s = res[k]
+        label = s.get("label") or k
+        magic = s.get("magic")
+        lines.append(row(f"{label} (magic {magic})" if magic else label, s))
+    lines += [f"  {'other / manual':<34} positions {res['other']['positions']:3d}"
+              f"{'':40} commission {res['other']['commission']:+8.2f}  NET {res['other']['net']:+9.2f}",
+              "-" * 112,
+              row("ACCOUNT", res["all"]),
+              "",
+              f"  MetaTrader's History tab for this day should show Profit {res['all']['net']:+.2f} at the bottom,",
+              f"  with {res['all']['price']:+.2f} on the right (the Profit column before commission).",
+              f"  Bots added together: {bots_net:+.2f}; "
+              f"difference to the account: {res['all']['net'] - bots_net:+.2f} "
+              f"(anything here is a deal that carried none of the bots' magic numbers)."]
     if account is not None:
         lines.append(f"  Account now: balance {account.balance:.2f}, equity {account.equity:.2f}")
     return "\n".join(lines)
@@ -118,7 +151,9 @@ def main(argv=None) -> int:
         print(render(res, cfg, day, account))
         if args.positions:
             print("\nPOSITIONS (net after commission):")
-            for label, s in ((EXISTING_STRATEGY_LABEL, res["mi"]), (STRATEGY_LABEL, res["rs"])):
+            for k in _bot_keys(res):
+                s = res[k]
+                label = s.get("label") or k
                 for ticket, v in sorted(s["by_position"].items()):
                     print(f"  {label:<18} {ticket:<12} {v['symbol']:<8} commission {v['commission']:+6.2f}  net {v['net']:+8.2f}")
     finally:

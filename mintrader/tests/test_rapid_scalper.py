@@ -924,6 +924,44 @@ class TestReconcile:
         text = render(res, cfg, day, SimpleNamespace(balance=100.0, equity=100.0))
         assert "Profit +14.85" in text and "difference to the account: -1.48" in text
 
+    def test_every_bot_has_its_own_line_and_other_excludes_all_five(self):
+        """8 Oct: the Runner, the Band Breaker and the Crowd Fader place their
+        own orders, each under its own magic number, so the broker's day is
+        split five ways; "other" is only what carried none of them."""
+        from types import SimpleNamespace
+        from mintel.ops.reconcile import reconcile, render
+        day = dt.date(2026, 10, 8)
+        t = dt.datetime(2026, 10, 8, 14, 0, tzinfo=dt.timezone.utc)
+        cfg = Config()
+        deals = [  # position, magic, profit(net incl commission), commission, is_entry
+            (1, cfg.magic, 0.00, 0.00, True), (1, cfg.magic, 7.54, 0.00, False),
+            (2, 990411, -0.30, -0.30, True), (2, 990411, 3.09, -0.30, False),
+            (3, cfg.runner.magic, 0.00, 0.00, True), (3, cfg.runner.magic, 21.00, 0.00, False),
+            (4, cfg.bandbreaker.magic, 0.00, 0.00, True), (4, cfg.bandbreaker.magic, -9.75, 0.00, False),
+            (5, cfg.crowd.magic, -0.05, -0.05, True), (5, cfg.crowd.magic, 12.45, -0.05, False),
+            (6, 0, 0.00, 0.00, True), (6, 0, -2.00, 0.00, False),            # a hand trade
+            (7, cfg.crowd.magic, -0.05, -0.05, True),                          # still open: not counted
+        ]
+        class B:
+            clock = None
+            def deals_since(self, since, magic=0, closing_only=True):
+                return [{"position": p, "profit": pr, "commission": c, "is_entry": e, "time": t, "symbol": "X"}
+                        for p, m, pr, c, e in deals if not magic or m == magic]
+        res = reconcile(B(), cfg, day, 990411)
+        assert res["bots"] == ["mi", "rs", "runner", "bandbreaker", "crowd"]
+        assert (res["runner"]["magic"], res["bandbreaker"]["magic"], res["crowd"]["magic"]) == (990511, 990611, 990711)
+        assert res["mi"]["net"] == 7.54 and res["rs"]["net"] == 2.79
+        assert res["runner"]["net"] == 21.0 and res["runner"]["positions"] == 1
+        assert res["bandbreaker"]["net"] == -9.75 and res["bandbreaker"]["losses"] == 1
+        assert res["crowd"]["net"] == 12.4 and res["crowd"]["commission"] == -0.1 and res["crowd"]["positions"] == 1
+        assert res["other"]["positions"] == 1 and res["other"]["net"] == -2.0
+        assert res["all"]["net"] == pytest.approx(7.54 + 2.79 + 21.0 - 9.75 + 12.4 - 2.0)
+        text = render(res, cfg, day, SimpleNamespace(balance=100.0, equity=100.0))
+        for label in ("Trend & Breakout (magic 990311)", "Rapid Scalper (magic 990411)", "Momentum Runner (magic 990511)",
+                      "Band Breaker (magic 990611)", "Crowd Fader (magic 990711)"):
+            assert label in text, label
+        assert "Bots added together: +33.98" in text and "difference to the account: -2.00" in text
+
 
 
 # ======================================= 4 Oct: commission-free indices can actually trade --
@@ -1102,6 +1140,173 @@ class TestPaperIsNeverInTheAccountTotal:
         s = build_strategies(J(), [], T0 - dt.timedelta(hours=1), "GBP", tmp_path, None, now=T0)
         assert s["overall"]["net_today"] == 12.0
 
+
+
+def _bot_db(path, rows):
+    """A bot's journal with just the columns the page reads:
+    (ticket, symbol, opened_utc, closed_utc, net_pnl, mode, exit_reason, peak_r)."""
+    import sqlite3
+    con = sqlite3.connect(path)
+    con.execute("CREATE TABLE trades (ticket INTEGER PRIMARY KEY, symbol TEXT, opened_utc TEXT, closed_utc TEXT, "
+                "net_pnl REAL, mode TEXT, exit_reason TEXT, peak_r REAL)")
+    con.executemany("INSERT INTO trades VALUES (?,?,?,?,?,?,?,?)", rows)
+    con.commit()
+    con.close()
+
+
+def _bot_status(tmp_path, name, mode, when=None, open_rows=()):
+    (tmp_path / name).write_text(json.dumps({"updated": (when or T0).isoformat(), "mode": mode, "status": "WATCHING",
+                                             "open": list(open_rows)}))
+
+
+class TestEveryBotCanBeInOverall:
+    """8 Oct: the Runner, the Band Breaker and the Crowd Fader go LIVE. A
+    bot's LIVE rows are the broker's own figures and count in Overall under
+    the bot's own id; its PAPER rows never do; a row with no mode is PAPER.
+    Each tab still covers everything the bot did and says what was money."""
+
+    def _scalper_live(self, tmp_path):
+        (tmp_path / "scalper-status.json").write_text(json.dumps({
+            "updated": T0.isoformat(), "mode": "LIVE", "status": "SCANNING",
+            "stats": {"net_today": 3.0, "realised": 3.0, "trades": 1, "wins": 1, "losses": 0, "currency": "GBP"},
+            "trades_today": [{"ticket": 9, "symbol": "XAUUSD", "net": 3.0, "closed": (T0 - dt.timedelta(minutes=5)).isoformat(),
+                              "mode": "LIVE", "strategy": STRATEGY_ID}]}))
+
+    def test_a_live_row_is_added_to_overall_and_a_paper_row_is_not(self, tmp_path):
+        from mintel.ops.attribution import build_strategies
+        from mintel.runner import STRATEGY_ID as RUNNER_ID
+        from mintel.bandbreaker import STRATEGY_ID as BB_ID
+        from mintel.crowd import STRATEGY_ID as CF_ID
+        c = lambda m: (T0 - dt.timedelta(minutes=m)).isoformat()                       # noqa: E731
+        self._scalper_live(tmp_path)
+        _bot_db(tmp_path / "bandbreaker.sqlite", [(1, "US500", c(60), c(30), 12.5, "LIVE", "TRAIL_STOP", 2.0),
+                                                   (2, "US30", c(50), c(20), 40.0, "PAPER", "STOP", 0.5)])
+        _bot_db(tmp_path / "runner.sqlite", [(3, "US30", c(45), c(15), -7.0, "LIVE", "STOP", 0.2),
+                                              (4, "US500", c(44), c(14), 99.0, None, "TRAIL_STOP", 3.5)])   # no mode: PAPER
+        _bot_db(tmp_path / "crowd.sqlite", [(5, "XAUUSD", c(40), c(10), -10.0, "PAPER", "STOP", 0.0)])
+        _bot_status(tmp_path, "bandbreaker-status.json", "LIVE")
+        _bot_status(tmp_path, "runner-status.json", "LIVE")
+        _bot_status(tmp_path, "crowd-status.json", "PAPER")
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=2), "GBP", tmp_path, None, now=T0)
+        ov = s["overall"]
+        assert ov["net_today"] == pytest.approx(3.0 + 12.5 - 7.0) and ov["trades"] == 3 and ov["wins"] == 2 and ov["losses"] == 1
+        assert [(t["strategy"], t["net"], t["mode"]) for t in ov["trades_today"]] == \
+            [(BB_ID, 12.5, "LIVE"), (RUNNER_ID, -7.0, "LIVE"), (STRATEGY_ID, 3.0, "LIVE")]
+        assert {b["id"]: b["net_today"] for b in ov["by_strategy"]} == \
+            {EXISTING_STRATEGY_ID: 0.0, STRATEGY_ID: 3.0, RUNNER_ID: -7.0, BB_ID: 12.5}
+        bb, mr, cf = s[BB_ID], s[RUNNER_ID], s[CF_ID]
+        assert bb["trades"] == 2 and bb["net_today"] == 52.5 and bb["live_net"] == 12.5 and bb["paper_net"] == 40.0
+        assert bb["live_trades"] == 1 and bb["paper_trades"] == 1 and bb["mode"] == "LIVE"
+        assert mr["trades"] == 2 and mr["live_net"] == -7.0 and mr["paper_net"] == 99.0
+        assert [t["mode"] for t in mr["trades_today"]] == ["LIVE", "PAPER"]
+        assert mr["reached_trail"] == 1
+        assert cf["trades"] == 1 and cf["live_net"] == 0.0 and cf["paper_net"] == -10.0 and "not in Overall" in cf["source"]
+        assert "count in Overall" in bb["source"] and "not in Overall" in bb["source"]
+        assert s[STRATEGY_ID]["live_net"] == 3.0 and s[STRATEGY_ID]["paper_net"] == 0.0
+        assert ov["note"] == "The Crowd Fader is in PAPER: its simulated results are on its own tab only."
+
+    def test_every_bot_live_says_so(self, tmp_path):
+        from mintel.ops.attribution import build_strategies
+        from mintel.runner import STRATEGY_ID as RUNNER_ID
+        from mintel.bandbreaker import STRATEGY_ID as BB_ID
+        from mintel.crowd import STRATEGY_ID as CF_ID
+        self._scalper_live(tmp_path)
+        for name in ("bandbreaker-status.json", "runner-status.json", "crowd-status.json"):
+            _bot_status(tmp_path, name, "LIVE")
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=2), "GBP", tmp_path, None, now=T0)
+        assert s["overall"]["note"] == "Every bot is live: Overall is every bot's broker figures added together."
+        assert {b["id"] for b in s["overall"]["by_strategy"]} == {EXISTING_STRATEGY_ID, STRATEGY_ID, RUNNER_ID, BB_ID, CF_ID}
+        assert s["overall"]["net_today"] == 3.0
+
+    def test_the_note_names_every_bot_still_in_paper(self, tmp_path):
+        from mintel.ops.attribution import build_strategies, overall_note
+        (tmp_path / "scalper-status.json").write_text(json.dumps({"updated": T0.isoformat(), "mode": "PAPER", "stats": {}}))
+        _bot_status(tmp_path, "runner-status.json", "LIVE")
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=2), "GBP", tmp_path, None, now=T0)
+        assert s["overall"]["note"] == ("The Rapid Scalper, the Band Breaker and the Crowd Fader are in PAPER: "
+                                        "their simulated results are on their own tabs only.")
+        assert overall_note({"Rapid Scalper": "OFF", "Momentum Runner": "LIVE"}) == "The Rapid Scalper is OFF."
+
+    def test_a_live_bots_open_position_counts_and_a_paper_one_does_not(self, tmp_path):
+        from mintel.ops.attribution import build_strategies
+        from mintel.bandbreaker import STRATEGY_ID as BB_ID
+        (tmp_path / "scalper-status.json").write_text(json.dumps({"updated": T0.isoformat(), "mode": "PAPER", "stats": {}}))
+        _bot_status(tmp_path, "bandbreaker-status.json", "LIVE", open_rows=[{"symbol": "US500", "pnl": 4.5, "mode": "LIVE"}])
+        _bot_status(tmp_path, "crowd-status.json", "PAPER", open_rows=[{"symbol": "XAUUSD", "pnl": 80.0}])
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=2), "GBP", tmp_path, None, now=T0)
+        assert s["overall"]["unrealised"] == 4.5 and s["overall"]["open_positions"] == 1
+        assert s[BB_ID]["unrealised"] == 4.5 and s["overall"]["net_today"] == 4.5
+
+    def test_a_past_period_follows_the_same_rule(self, tmp_path):
+        from mintel.ops.attribution import build_strategies_range
+        from mintel.runner import STRATEGY_ID as RUNNER_ID
+        from mintel.crowd import STRATEGY_ID as CF_ID
+        y = T0 - dt.timedelta(days=1)
+        c = lambda m: (y - dt.timedelta(minutes=m)).isoformat()                        # noqa: E731
+        _bot_db(tmp_path / "crowd.sqlite", [(1, "XAUUSD", c(90), c(60), 15.0, "LIVE", "TARGET", 2.1),
+                                             (2, "XAGUSD", c(80), c(50), -30.0, "PAPER", "STOP", 0.0)])
+        _bot_db(tmp_path / "runner.sqlite", [(3, "US30", c(70), c(40), 25.0, "PAPER", "TRAIL_STOP", 4.0)])
+        s = build_strategies_range(tmp_path, y - dt.timedelta(hours=12), y + dt.timedelta(hours=12), "GBP",
+                                   label="Yesterday", now=T0)
+        ov = s["overall"]
+        assert ov["net_today"] == 15.0 and ov["trades"] == 1
+        assert [(t["strategy"], t["mode"]) for t in ov["trades_today"]] == [(CF_ID, "LIVE")]
+        assert CF_ID in {b["id"] for b in ov["by_strategy"]} and RUNNER_ID not in {b["id"] for b in ov["by_strategy"]}
+        assert s[CF_ID]["net_today"] == -15.0 and s[CF_ID]["live_net"] == 15.0 and s[CF_ID]["paper_net"] == -30.0
+        assert s[RUNNER_ID]["paper_net"] == 25.0 and s[RUNNER_ID]["live_net"] == 0.0
+        assert "2 PAPER trades" in ov["note"] and "LIVE" in ov["note"]
+        assert s[EXISTING_STRATEGY_ID]["live_net"] == 0.0 and s[EXISTING_STRATEGY_ID]["mode"] == "LIVE"
+
+    def test_an_estimated_live_trade_is_counted_but_flagged(self, tmp_path):
+        """Review, 8 Oct: a LIVE row the engine could not get the broker's
+        record for (exit reason ending in '?', net from the last price) is
+        still in Overall - it is the best figure there is - but is counted
+        separately and the page says so, on the bot's tab and on Overall."""
+        from mintel.ops.attribution import build_strategies, build_strategies_range
+        from mintel.bandbreaker import STRATEGY_ID as BB_ID
+        from mintel.runner import STRATEGY_ID as RUNNER_ID
+        c = lambda m: (T0 - dt.timedelta(minutes=m)).isoformat()                       # noqa: E731
+        (tmp_path / "scalper-status.json").write_text(json.dumps({"updated": T0.isoformat(), "mode": "PAPER", "stats": {}}))
+        _bot_db(tmp_path / "bandbreaker.sqlite", [(7, "US500", c(60), c(30), -8.0, "LIVE", "STOP?", 0.1),
+                                                   (8, "US30", c(50), c(20), 5.0, "LIVE", "STOP", 0.3),
+                                                   (9, "US30", c(40), c(10), -4.0, "PAPER", "STOP?", 0.0)])   # PAPER: never an estimate
+        _bot_db(tmp_path / "runner.sqlite", [(3, "US30", c(45), c(15), 2.0, "LIVE", "WINDOW_END?", 0.2)])
+        _bot_status(tmp_path, "bandbreaker-status.json", "LIVE")
+        _bot_status(tmp_path, "runner-status.json", "LIVE")
+        class J:
+            def closed_trades(self, limit=500, since=None): return []
+        s = build_strategies(J(), [], T0 - dt.timedelta(hours=2), "GBP", tmp_path, None, now=T0)
+        ov, bb, mr = s["overall"], s[BB_ID], s[RUNNER_ID]
+        assert ov["net_today"] == pytest.approx(-8.0 + 5.0 + 2.0) and ov["trades"] == 3        # still counted
+        assert ov["estimated_trades"] == 2
+        assert ("2 LIVE trades booked from the last price because the broker's record was not available: "
+                "check with mintel.ops.reconcile") in ov["note"]
+        assert bb["estimated_trades"] == 1 and bb["estimated_net"] == -8.0 and bb["live"]["estimated_trades"] == 1
+        assert "1 LIVE trade booked from the last price" in bb["source"] and "count in Overall" in bb["source"]
+        assert mr["estimated_trades"] == 1 and "1 LIVE trade booked from the last price" in mr["source"]
+        assert [(t["ticket"], t["estimated"]) for t in ov["trades_today"]] == [(7, True), (8, False), (3, True)]   # by close time
+        assert [t["estimated"] for t in bb["trades_today"]] == [True, False, False]        # the PAPER '?' is not one
+        # the tab's source no longer claims the figures are the broker's own: they are its closing deals
+        assert "closing deals" in bb["source"] and "broker's own figures" not in bb["source"]
+        # the same for a past period
+        s2 = build_strategies_range(tmp_path, T0 - dt.timedelta(hours=2), T0 + dt.timedelta(hours=1), "GBP",
+                                    label="Today", now=T0)
+        assert s2["overall"]["estimated_trades"] == 2 and "2 LIVE trades booked from the last price" in s2["overall"]["note"]
+        assert s2[BB_ID]["estimated_trades"] == 1
+        # and nothing is flagged when every LIVE row has the broker's record
+        _bot_status(tmp_path, "crowd-status.json", "LIVE")
+        _bot_db(tmp_path / "crowd.sqlite", [(5, "XAUUSD", c(40), c(10), 3.0, "LIVE", "TARGET", 1.0)])
+        s3 = build_strategies(J(), [], T0 - dt.timedelta(hours=2), "GBP", tmp_path, None, now=T0)
+        assert s3[STRATEGY_ID]["mode"] == "PAPER" and "booked from the last price" not in s3["crowd_fader"]["source"]
+        assert s3["overall"]["estimated_trades"] == 2                                          # the two above are still there
 
 
 class TestStreakRestartsAtTheReset:

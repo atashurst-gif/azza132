@@ -1,13 +1,17 @@
-"""Band Breaker: the noise band, the half-hour checks, the paper positions."""
+"""Band Breaker: the noise band, the half-hour checks, the paper positions,
+and the same engine LIVE on the simulated broker."""
 import datetime as dt
 import json
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from mintel.broker.base import Bar, Side, TF, Tick
+from mintel.botexec import MAGIC_BANDBREAKER
+from mintel.broker.base import Bar, OrderRequest, Side, TF, Tick
+from mintel.broker.sim import SimBroker
 from mintel.bandbreaker import STRATEGY_ID, STRATEGY_LABEL
 from mintel.bandbreaker.engine import BandBreaker, BandBreakerConfig, ny
+from mintel.config import Config
 
 NY = ZoneInfo("America/New_York")
 TODAY = dt.date(2026, 10, 7)                       # a Wednesday
@@ -237,3 +241,566 @@ class TestInsideTheTrader:
         tr = Trader(broker, cfg, enable_model=False)
         assert tr.bandbreaker is not None and tr.bandbreaker.cfg.markets == ("US500",)
         assert tr.bandbreaker.cfg.risk_money == 10.0
+
+
+class LiveRig:
+    """The engine in LIVE on a SimBroker. The band fixtures sit around the
+    sim's own US500 price so the broker accepts every stop, and each pass
+    moves the sim's quote to the price under test before the engine looks."""
+
+    def __init__(self, tmp_path, wrap=None, **kw):
+        self.tmp_path = tmp_path
+        self.sim = SimBroker(["US500", "EURUSD"], start=at(TODAY, 10, 29), history_bars=50)
+        self.sim.connect()
+        self.L = float(round(self.sim.tick("US500").mid))
+        self.broker = wrap(self.sim) if wrap else self.sim
+        self.kw = kw
+        self.e = self._build()
+
+    def _build(self):
+        kw = dict(self.kw)
+        kw.setdefault("markets", ("US500",))
+        kw.setdefault("mode", "LIVE")
+        gate = kw.pop("entries_allowed", None)
+        return BandBreaker(self.tmp_path, BandBreakerConfig(**kw), spec_fn=self.sim.spec, clock=lambda: at(TODAY, 10, 0),
+                           broker=self.broker, entries_allowed=gate)
+
+    def restart(self):
+        self.e.close()
+        self.e = self._build()
+        return self.e
+
+    def up(self):
+        """Today's bars: the 10:00-10:30 bar closes above the upper band (open x 1.004)."""
+        L = self.L
+        return [("09:30", L, L + 30, L - 5, L + 25), ("10:00", L + 25, L + 35, L + 20, L + 30)]
+
+    def quote(self, now, price):
+        self.sim.now = now - dt.timedelta(seconds=60)
+        self.sim.push_bar("US500", price, high=price + 0.5, low=price - 0.5)
+
+    def run(self, now, price, m30_today, m1_upto, m1_price=None):
+        self.quote(now, price)
+        bars = {TF.M30: sessions(14, level=self.L, today_path=m30_today), TF.M1: m1_flat(m1_price or price, *m1_upto)}
+        return self.e.step(now, self.sim.tick, lambda s, tf, n: bars[tf][-n:] if tf is TF.M30 else bars[tf])
+
+    def mine(self):
+        return self.sim.positions(MAGIC_BANDBREAKER)
+
+
+class TestLive:
+    def test_a_live_entry_carries_the_magic_and_the_stop_sits_at_the_broker(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        notes = rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        assert any("US500 BUY" in n and "live ticket" in n for n in notes), notes
+        mine = rig.mine()
+        assert len(mine) == 1
+        q, p = mine[0], rig.e.open["US500"]
+        assert q.ticket == p.ticket and q.magic == MAGIC_BANDBREAKER and q.comment == "BB"
+        assert q.sl == pytest.approx(p.stop) and q.tp == 0.0 and p.stop < p.entry
+        assert p.entry == pytest.approx(rig.sim.tick("US500").ask)          # the broker's fill is the entry
+        assert not rig.sim.positions(Config().magic)                         # Trend & Breakout never sees it
+        row = rig.e.db.execute("SELECT mode FROM trades WHERE ticket=?", (p.ticket,)).fetchone()
+        assert row["mode"] == "LIVE" and p.mode == "LIVE"
+        assert rig.e.checks_since(at(TODAY, 0, 0))[-1]["decision"] == f"entered buy (live, ticket {p.ticket})"
+        st = rig.e.status(at(TODAY, 10, 31))
+        assert st["mode"] == "LIVE" and st["live"] is True and st["magic"] == MAGIC_BANDBREAKER
+        assert st["executor_error"] == "" and st["refused"] == 0 and st["open"][0]["mode"] == "LIVE"
+
+    def test_a_trailed_stop_is_modified_at_the_broker_and_a_refused_move_is_retried(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        stop0 = p.stop
+        rig.sim.fault.fail_modify = True
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 45, rig.up(), (10, 31), m1_price=rig.L + 40)
+        assert any("refused" in n and "will retry" in n for n in notes), notes
+        assert p.stop == stop0 and rig.mine()[0].sl == pytest.approx(stop0)   # rolled back to what the broker holds
+        rig.sim.fault.fail_modify = False
+        rig.run(at(TODAY, 10, 32), rig.L + 45, rig.up(), (10, 32), m1_price=rig.L + 40)
+        assert p.stop == pytest.approx(rig.L + 40) and rig.mine()[0].sl == pytest.approx(rig.L + 40)
+
+    def test_an_engine_exit_closes_at_the_broker_and_the_brokers_figure_is_the_result(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        ticket = rig.e.open["US500"].ticket
+        notes = rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        assert any("FLAT_BEFORE_CLOSE" in n for n in notes) and not rig.e.open and not rig.mine()
+        deal = rig.sim.closed_deal(ticket)
+        row = rig.e.closed_since(at(TODAY, 9, 0))[0]
+        assert row["ticket"] == ticket and row["exit_reason"] == "FLAT_BEFORE_CLOSE" and row["mode"] == "LIVE"
+        assert row["net_pnl"] == pytest.approx(round(deal["pnl"], 2)) and row["net_pnl"] > 0
+        assert row["exit_price"] == pytest.approx(deal["exit_price"])
+
+    def test_a_position_the_broker_closed_is_finalised_once_from_its_deal(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        ticket = p.ticket
+        # the next bar trades through the stop: the broker's stop takes it before the engine looks
+        notes = rig.run(at(TODAY, 10, 31), p.stop - 5, rig.up(), (10, 31))
+        deal = rig.sim.closed_deal(ticket)
+        assert deal is not None and deal["reason"] == "SL"
+        assert any("closed by the broker" in n for n in notes), notes
+        assert not rig.e.open and not rig.mine()
+        rows = rig.e.closed_since(at(TODAY, 9, 0))
+        assert len(rows) == 1 and rows[0]["ticket"] == ticket and rows[0]["exit_reason"] == "STOP"
+        assert rows[0]["net_pnl"] == pytest.approx(round(deal["pnl"], 2)) and rows[0]["net_pnl"] < 0
+        assert rows[0]["exit_price"] == pytest.approx(deal["exit_price"])
+        before = dict(rows[0])
+        rig.run(at(TODAY, 10, 32), rig.L + 29, rig.up(), (10, 32))
+        assert rig.e.closed_since(at(TODAY, 9, 0)) == [before]       # finalised exactly once
+
+    def test_a_hand_close_at_the_broker_is_not_labelled_a_stop(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        ticket = rig.e.open["US500"].ticket
+        rig.sim.close(ticket)                                   # closed by hand in the terminal (the sim's deal says MANUAL)
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 29, rig.up(), (10, 31))
+        assert any("closed by the broker (MANUAL)" in n for n in notes), notes
+        row = rig.e.closed_since(at(TODAY, 9, 0))[0]
+        assert row["ticket"] == ticket and row["exit_reason"] == "MANUAL"
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(ticket)["pnl"], 2))
+        # an empty word from the broker still falls back on the only level the trade had
+        assert BandBreaker._broker_reason(rig.e._trade_from_row(dict(row)), "") == "STOP"
+        assert BandBreaker._broker_reason(rig.e._trade_from_row(dict(row)), "[sl 5162.5]") == "STOP"
+        assert BandBreaker._broker_reason(rig.e._trade_from_row(dict(row)), "[tp 5300.0]") == "TARGET"
+
+    def test_a_reversal_closes_at_the_broker_then_opens_the_other_way(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        t1 = rig.e.open["US500"].ticket
+        # the 10:30 bar closes through the lower band, but by 11:00 the price is back above the stop:
+        # the stop has not been hit, so this is the reversal path, not the stop
+        down = rig.up() + [("10:30", rig.L + 30, rig.L + 31, rig.L - 50, rig.L - 45)]
+        notes = rig.run(at(TODAY, 11, 0), rig.L - 30, down, (11, 0))
+        assert any("REVERSAL" in n for n in notes), notes
+        p = rig.e.open["US500"]
+        assert p.side is Side.SELL and p.ticket != t1
+        mine = rig.mine()
+        assert [q.ticket for q in mine] == [p.ticket] and mine[0].side is Side.SELL and mine[0].sl == pytest.approx(p.stop)
+        rows = rig.e.closed_since(at(TODAY, 9, 0))
+        assert rows[0]["ticket"] == t1 and rows[0]["exit_reason"] == "REVERSAL"
+        assert rows[0]["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(t1)["pnl"], 2))
+        assert rig.e.entries_today[("US500", TODAY.isoformat())] == 2
+
+    def test_a_refused_order_records_nothing_and_the_bot_keeps_running(self, tmp_path):
+        class Refuses:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def send(self, req):
+                raise RuntimeError("market closed")
+
+        rig = LiveRig(tmp_path, wrap=Refuses)
+        notes = rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        assert any("order refused" in n and "market closed" in n for n in notes), notes
+        assert not rig.e.open and not rig.sim.positions() and not rig.sim.order_log
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
+        checks = rig.e.checks_since(at(TODAY, 0, 0))
+        assert len(checks) == 1 and checks[0]["decision"] == "order refused: send failed: market closed"
+        assert rig.e.entries_today.get(("US500", TODAY.isoformat()), 0) == 0
+        st = rig.e.status(at(TODAY, 10, 31))
+        assert st["refused"] == 1 and "market closed" in st["executor_error"]
+        # that half hour is spent: no second attempt, and the next pass runs on as normal
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        assert len(rig.e.checks_since(at(TODAY, 0, 0))) == 1 and not any("skipped" in n for n in notes)
+        assert "band" in rig.e.notes_by_market["US500"]
+
+    def test_a_refused_close_keeps_the_position_and_tries_again(self, tmp_path):
+        class Flaky:
+            def __init__(self, inner):
+                self._inner = inner
+                self.refuse = 0
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def close(self, ticket, volume=0.0, comment=""):
+                if self.refuse > 0:
+                    self.refuse -= 1
+                    raise RuntimeError("busy")
+                return self._inner.close(ticket, volume, comment)
+
+        rig = LiveRig(tmp_path, wrap=Flaky)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        rig.broker.refuse = 1
+        notes = rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        assert any("refused" in n and "will retry" in n for n in notes), notes
+        assert rig.e.open and len(rig.mine()) == 1
+        notes = rig.run(at(TODAY, 15, 56), rig.L + 45, rig.up(), (15, 56))
+        assert any("FLAT_BEFORE_CLOSE" in n for n in notes) and not rig.e.open and not rig.mine()
+
+    def test_a_restart_keeps_a_live_position_still_at_the_broker(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        ticket = rig.e.open["US500"].ticket
+        rig.restart()
+        assert rig.e.open["US500"].ticket == ticket and rig.e.open["US500"].mode == "LIVE" and len(rig.mine()) == 1
+        rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        assert not rig.mine() and rig.e.closed_since(at(TODAY, 9, 0))[0]["net_pnl"] > 0
+
+    def test_a_restart_finalises_a_position_the_broker_closed_while_the_bot_was_down(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        ticket = p.ticket
+        rig.e.close()
+        rig.quote(at(TODAY, 10, 40), p.stop - 5)                # the stop is hit while the bot is down
+        assert rig.sim.closed_deal(ticket)["reason"] == "SL"
+        rig.restart()
+        assert not rig.e.open
+        row = rig.e.closed_since(at(TODAY, 9, 0))[0]
+        assert row["ticket"] == ticket and row["exit_reason"] == "STOP"
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(ticket)["pnl"], 2))
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 30, rig.up(), (10, 31))
+        assert any("closed by the broker" in n for n in notes), notes
+
+    def test_a_restart_closes_an_orphan_with_our_magic_and_leaves_other_bots_alone(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        t = rig.sim.tick("US500")
+        ours = rig.sim.send(OrderRequest("US500", Side.BUY, 0.1, sl=t.bid - 30.0, comment="BB", magic=MAGIC_BANDBREAKER))
+        theirs = rig.sim.send(OrderRequest("US500", Side.BUY, 0.1, sl=t.bid - 30.0, comment="MI", magic=Config().magic))
+        assert ours.ok and theirs.ok
+        rig.restart()
+        notes = rig.run(at(TODAY, 10, 30), rig.L, [("09:30", rig.L, rig.L + 2, rig.L - 2, rig.L)], (10, 30))
+        assert any("orphan closed" in n and str(ours.ticket) in n for n in notes), notes
+        assert not rig.mine() and not rig.e.open
+        assert [p.ticket for p in rig.sim.positions(Config().magic)] == [theirs.ticket]
+        rows = rig.e.closed_since(at(TODAY - dt.timedelta(days=1), 0, 0))
+        assert len(rows) == 1 and rows[0]["ticket"] == ours.ticket and rows[0]["exit_reason"] == "ORPHAN_CLOSED"
+        assert rows[0]["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(ours.ticket)["pnl"], 2))
+
+    def test_the_account_gate_blocks_a_new_entry_but_never_the_exit(self, tmp_path):
+        gate = {"open": False}
+        rig = LiveRig(tmp_path, entries_allowed=lambda: gate["open"])
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        assert not rig.e.open and not rig.sim.order_log
+        assert rig.e.notes_by_market["US500"] == "entries paused by the account gate"
+        assert "entries paused by the account gate" in rig.e.checks_since(at(TODAY, 0, 0))[-1]["decision"]
+        gate["open"] = True
+        up2 = rig.up() + [("10:30", rig.L + 30, rig.L + 40, rig.L + 29, rig.L + 38)]
+        rig.run(at(TODAY, 11, 0), rig.L + 38, up2, (11, 0))
+        assert rig.e.open["US500"].side is Side.BUY
+        gate["open"] = False                                     # managing what is open is never gated
+        notes = rig.run(at(TODAY, 15, 55), rig.L + 45, up2, (15, 55))
+        assert any("FLAT_BEFORE_CLOSE" in n for n in notes) and not rig.e.open and not rig.mine()
+
+    def test_the_gate_holds_in_paper_too(self, tmp_path):
+        e = BandBreaker(tmp_path, BandBreakerConfig(markets=("US500",)), spec_fn=lambda s: Spec(),
+                        clock=lambda: at(TODAY, 10, 0), entries_allowed=lambda: False)
+        today = [("09:30", 5000, 5030, 4995, 5025), ("10:00", 5025, 5035, 5020, 5030)]
+        TestTheTrade()._run(e, at(TODAY, 10, 30), 5030.0, today, (10, 30))
+        assert not e.open and e.notes_by_market["US500"] == "entries paused by the account gate"
+
+    def test_mode_off_sends_nothing_and_says_so(self, tmp_path):
+        rig = LiveRig(tmp_path, mode="OFF")
+        assert rig.e.executor is None
+        notes = rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        assert notes == [] and not rig.sim.order_log and not rig.e.checks_since(at(TODAY, 0, 0))
+        st = rig.e.status(at(TODAY, 10, 31))
+        assert st["mode"] == "OFF" and st["status"] == "OFF" and st["live"] is False
+
+    def test_a_live_row_is_left_alone_by_a_paper_run(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        ticket = rig.e.open["US500"].ticket
+        rig.e.close()
+        rig.kw["mode"] = "PAPER"
+        rig.restart()
+        quiet = [("09:30", rig.L, rig.L + 2, rig.L - 2, rig.L), ("10:00", rig.L, rig.L + 3, rig.L - 3, rig.L + 1)]
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 1, quiet, (10, 31))
+        assert not rig.e.open and len(rig.mine()) == 1 and rig.mine()[0].ticket == ticket   # still at the broker, untouched
+        assert rig.e.status(at(TODAY, 10, 31))["unmanaged"][0]["ticket"] == ticket
+        assert any("opened in LIVE" in n for n in notes), notes
+
+    # ---- the review's findings: accounting across faults and restarts --------
+    def test_an_orphan_on_the_same_market_never_displaces_the_managed_position(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        ours = rig.e.open["US500"].ticket
+        t = rig.sim.tick("US500")
+        stray = rig.sim.send(OrderRequest("US500", Side.BUY, 0.1, sl=t.bid - 30.0, comment="BB", magic=MAGIC_BANDBREAKER))
+        assert stray.ok and stray.ticket != ours
+        rig.restart()
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        assert any("orphan closed" in n and str(stray.ticket) in n for n in notes), notes
+        assert rig.e.open["US500"].ticket == ours                           # the legitimate position is still managed
+        assert [q.ticket for q in rig.mine()] == [ours]
+        rows = rig.e.closed_since(at(TODAY, 9, 0))
+        assert [r["ticket"] for r in rows] == [stray.ticket] and rows[0]["exit_reason"] == "ORPHAN_CLOSED"
+        assert rows[0]["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(stray.ticket)["pnl"], 2))
+        # the next check sees the position and does not open a second one
+        up2 = rig.up() + [("10:30", rig.L + 30, rig.L + 40, rig.L + 29, rig.L + 38)]
+        rig.run(at(TODAY, 11, 0), rig.L + 38, up2, (11, 0))
+        assert rig.e.checks_since(at(TODAY, 0, 0))[-1]["decision"] == "already buy"
+        assert [q.ticket for q in rig.mine()] == [ours] and rig.e.open["US500"].ticket == ours
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades WHERE closed_utc IS NULL").fetchone()[0] == 1
+
+    def test_a_second_open_row_on_one_market_is_closed_and_booked_at_restart(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        first = rig.e.open["US500"].ticket
+        # the record an earlier fault leaves behind: a second open LIVE row whose position is at the broker
+        t = rig.sim.tick("US500")
+        extra = rig.sim.send(OrderRequest("US500", Side.BUY, 0.1, sl=t.bid - 30.0, comment="BB", magic=MAGIC_BANDBREAKER))
+        rig.e.db.execute("INSERT INTO trades (ticket, symbol, side, volume, entry, initial_stop, opened_utc, stop, mode, session_date, peak_r) "
+                         "VALUES (?,?,?,?,?,?,?,?,?,?,0)",
+                         (extra.ticket, "US500", "BUY", 0.1, extra.price, t.bid - 30.0, at(TODAY, 10, 30, ).isoformat(),
+                          t.bid - 30.0, "LIVE", TODAY.isoformat()))
+        rig.e.db.commit()
+        rig.restart()
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        assert any("second open row" in n and str(extra.ticket) in n and "closed at the broker" in n for n in notes), notes
+        assert rig.e.open["US500"].ticket == first and [q.ticket for q in rig.mine()] == [first]
+        row = rig.e.db.execute("SELECT * FROM trades WHERE ticket=?", (extra.ticket,)).fetchone()
+        assert row["exit_reason"] == "DUPLICATE_CLOSED" and row["closed_utc"]
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(extra.ticket)["pnl"], 2))
+        assert rig.e.status(at(TODAY, 10, 31))["unmanaged"] == []
+
+    def test_an_order_whose_outcome_is_unknown_is_swept_within_a_minute(self, tmp_path):
+        class LosesTheReadAfterSend:
+            """The bridge times out on the positions read right after the first fill."""
+            def __init__(self, inner):
+                self._inner = inner
+                self.armed = False
+                self.faults = 1
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def send(self, req):
+                if self.faults:
+                    self.faults -= 1
+                    self.armed = True
+                return self._inner.send(req)
+
+            def positions(self, magic=None):
+                if self.armed:
+                    self.armed = False
+                    raise RuntimeError("bridge timed out")
+                return self._inner.positions(magic)
+
+        rig = LiveRig(tmp_path, wrap=LosesTheReadAfterSend)
+        notes = rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        assert any("order sent, state unknown" in n and "bridge timed out" in n for n in notes), notes
+        assert not any("skipped this pass" in n for n in notes)
+        assert not rig.e.open and len(rig.mine()) == 1                       # filled at the broker, nothing here yet
+        filled = rig.mine()[0].ticket
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
+        assert rig.e.checks_since(at(TODAY, 0, 0))[-1]["decision"] == "order sent, state unknown: bridge timed out"
+        assert rig.e.status(at(TODAY, 10, 30))["refused"] == 1
+        # the next pass sweeps the broker's list: the fill is closed and booked, never left to run unmanaged
+        notes = rig.run(at(TODAY, 10, 30, ) + dt.timedelta(seconds=2), rig.L + 31, rig.up(), (10, 30))
+        assert any("orphan closed" in n and str(filled) in n for n in notes), notes
+        assert not rig.mine() and not rig.e.open
+        row = rig.e.db.execute("SELECT * FROM trades WHERE ticket=?", (filled,)).fetchone()
+        assert row["exit_reason"] == "ORPHAN_CLOSED" and row["mode"] == "LIVE"
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(filled)["pnl"], 2))
+        assert rig.e.entries_today[("US500", TODAY.isoformat())] == 1
+        # the 11:00 check runs as normal: one position, with its row
+        up2 = rig.up() + [("10:30", rig.L + 30, rig.L + 40, rig.L + 29, rig.L + 38)]
+        rig.run(at(TODAY, 11, 0), rig.L + 38, up2, (11, 0))
+        assert [q.ticket for q in rig.mine()] == [rig.e.open["US500"].ticket] and rig.e.open["US500"].ticket != filled
+        assert rig.e.entries_today[("US500", TODAY.isoformat())] == 2
+
+    def test_a_restart_minutes_after_a_check_does_not_send_the_same_order_twice(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        first = p.ticket
+        rig.e.close()
+        rig.quote(at(TODAY, 10, 32), p.stop - 5)                # the broker's stop takes it, then Aaron restarts the bot
+        rig.restart()
+        assert rig.e.last_check["US500"] == f"{TODAY.isoformat()} 10:30"
+        notes = rig.run(at(TODAY, 10, 33), rig.L + 30, rig.up(), (10, 33))
+        assert not any("BUY" in n and "live ticket" in n for n in notes), notes
+        assert not rig.mine() and not rig.e.open and not [o for o in rig.sim.order_log if o.get("ticket") != first]
+        checks = [c for c in rig.e.checks_since(at(TODAY, 0, 0)) if c["check_ny"] == "10:30"]
+        assert len(checks) == 1 and checks[0]["decision"] == f"entered buy (live, ticket {first})"
+        # the next half hour is still taken as normal
+        up2 = rig.up() + [("10:30", rig.L + 30, rig.L + 40, rig.L + 29, rig.L + 38)]
+        rig.run(at(TODAY, 11, 0), rig.L + 38, up2, (11, 0))
+        assert rig.e.checks_since(at(TODAY, 0, 0))[-1]["check_ny"] == "11:00" and rig.e.open
+
+    def test_one_empty_positions_read_does_not_close_the_trade(self, tmp_path):
+        class Blinks:
+            def __init__(self, inner):
+                self._inner = inner
+                self.blink = 0
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def positions(self, magic=None):
+                if self.blink > 0:
+                    self.blink -= 1
+                    return []                                   # what the adapter answers when MT5 returns None
+                return self._inner.positions(magic)
+
+        rig = LiveRig(tmp_path, wrap=Blinks)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        rig.broker.blink = 1
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        assert any("not in the broker's list" in n and "kept" in n for n in notes), notes
+        assert rig.e.open["US500"] is p and len(rig.mine()) == 1
+        assert rig.e.db.execute("SELECT closed_utc FROM trades WHERE ticket=?", (p.ticket,)).fetchone()[0] is None
+        notes = rig.run(at(TODAY, 10, 32), rig.L + 32, rig.up(), (10, 32))
+        assert any("back in the broker's list" in n for n in notes), notes
+        assert p.missing_passes == 0 and rig.e.open["US500"] is p
+        rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))             # still managed: flattened on time
+        assert not rig.mine() and not rig.e.open
+        row = rig.e.closed_since(at(TODAY, 9, 0))[0]
+        assert row["exit_reason"] == "FLAT_BEFORE_CLOSE" and row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(p.ticket)["pnl"], 2))
+
+    def test_a_ticket_gone_with_no_deal_is_estimated_only_after_a_while_and_corrected_later(self, tmp_path):
+        class Hides:
+            def __init__(self, inner):
+                self._inner = inner
+                self.hide = False
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def positions(self, magic=None):
+                return [] if self.hide else self._inner.positions(magic)
+
+            def closed_deal(self, ticket):
+                return None if self.hide else self._inner.closed_deal(ticket)
+
+        rig = LiveRig(tmp_path, wrap=Hides)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        rig.broker.hide = True
+        rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        notes = rig.run(at(TODAY, 10, 31) + dt.timedelta(seconds=30), rig.L + 31, rig.up(), (10, 31))
+        assert rig.e.open["US500"] is p and not any("booked" in n for n in notes)   # two reads, 30 s: not yet
+        notes = rig.run(at(TODAY, 10, 32), rig.L + 33, rig.up(), (10, 32))
+        assert any("booked STOP?" in n and "(estimated)" in n for n in notes), notes
+        assert not rig.e.open
+        row = rig.e.closed_since(at(TODAY, 9, 0))[0]
+        assert row["ticket"] == p.ticket and row["exit_reason"] == "STOP?"
+        assert row["exit_price"] == pytest.approx(rig.sim.tick("US500").bid)       # the last mark
+        # the position was there all along: when the broker's list comes back the
+        # sweep closes it and the estimate is replaced by the broker's figure
+        rig.broker.hide = False
+        notes = rig.run(at(TODAY, 10, 33), rig.L + 34, rig.up(), (10, 33))
+        assert any("orphan closed" in n and "booked STOP?" in n and "broker's figure" in n for n in notes), notes
+        assert not rig.mine()
+        row = rig.e.db.execute("SELECT * FROM trades WHERE ticket=?", (p.ticket,)).fetchone()
+        assert row["exit_reason"] == "ORPHAN_CLOSED"
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(p.ticket)["pnl"], 2))
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 1
+
+    def test_a_stop_tightened_at_the_broker_is_never_moved_back(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        rig.run(at(TODAY, 10, 31), rig.L + 45, rig.up(), (10, 31), m1_price=rig.L + 40)
+        assert p.stop == pytest.approx(rig.L + 40)
+        by_hand = rig.L + 41.5
+        assert rig.sim.modify_stops(p.ticket, by_hand, 0.0).ok               # tightened in the terminal
+        n_mods = len(rig.sim.modify_log)
+        notes = rig.run(at(TODAY, 10, 32), rig.L + 45, rig.up(), (10, 32), m1_price=rig.L + 41)
+        assert any("better stop" in n and "adopted" in n for n in notes), notes
+        assert rig.mine()[0].sl == pytest.approx(by_hand) and p.stop == pytest.approx(by_hand)
+        assert len(rig.sim.modify_log) == n_mods                              # nothing sent against the trade
+        assert rig.e.db.execute("SELECT stop FROM trades WHERE ticket=?", (p.ticket,)).fetchone()[0] == pytest.approx(by_hand)
+        # the trail still moves it in the trade's favour
+        rig.run(at(TODAY, 10, 33), rig.L + 50, rig.up(), (10, 33), m1_price=rig.L + 43)
+        assert rig.mine()[0].sl == pytest.approx(rig.L + 43) and p.stop == pytest.approx(rig.L + 43)
+        # and a restart adopts the broker's stop too
+        assert rig.sim.modify_stops(p.ticket, rig.L + 44.5, 0.0).ok
+        rig.restart()
+        assert rig.e.open["US500"].stop == pytest.approx(rig.L + 44.5)
+
+    def test_a_live_ticket_equal_to_a_paper_ticket_never_corrupts_the_paper_row(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        coming = rig.sim._next_ticket + 1                                     # the number the broker will hand out
+        rig.e.db.execute("INSERT INTO trades (ticket, symbol, side, volume, entry, initial_stop, opened_utc, closed_utc, stop, "
+                         "exit_price, net_pnl, exit_reason, mode, session_date, peak_r) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+                         (coming, "US500", "SELL", 0.5, 5000.0, 5010.0, at(TODAY - dt.timedelta(days=1), 10, 30).isoformat(),
+                          at(TODAY - dt.timedelta(days=1), 15, 55).isoformat(), 5010.0, 4990.0, 5.0, "FLAT_BEFORE_CLOSE", "PAPER",
+                          (TODAY - dt.timedelta(days=1)).isoformat()))
+        rig.e.db.commit()
+        paper = dict(rig.e.db.execute("SELECT * FROM trades WHERE ticket=?", (coming,)).fetchone())
+        notes = rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        assert any("order refused" in n and f"ticket {coming} already on record" in n and "closed again at once" in n for n in notes), notes
+        assert not rig.e.open and not rig.mine()                               # fail closed: no position without a row of its own
+        assert rig.sim.closed_deal(coming) is not None
+        assert dict(rig.e.db.execute("SELECT * FROM trades WHERE ticket=?", (coming,)).fetchone()) == paper
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 1
+        assert rig.e.checks_since(at(TODAY, 0, 0))[-1]["decision"] == f"order refused: ticket {coming} already on record"
+        assert rig.e.status(at(TODAY, 10, 30))["refused"] == 1
+        # the sweep has nothing to do afterwards
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        assert not any("orphan" in n for n in notes) and not rig.mine()
+
+    def test_paper_tickets_never_follow_a_live_ticket(self, tmp_path):
+        rig = LiveRig(tmp_path)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        live_ticket = rig.e.open["US500"].ticket
+        rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        rig.e.close()
+        assert live_ticket < 700_000_000
+        rig.kw["mode"] = "PAPER"
+        e = rig.restart()
+        assert e.executor._next == 700_000_001                                 # the paper range, not the broker's
+        rig.e.db.execute("UPDATE trades SET mode='PAPER', ticket=700000005 WHERE ticket=?", (live_ticket,))
+        rig.e.db.commit()
+        e = rig.restart()
+        assert e.executor._next == 700_000_006
+
+    def test_an_engine_close_whose_deal_has_not_come_back_is_booked_from_the_fill(self, tmp_path):
+        class NoHistory:
+            def __init__(self, inner):
+                self._inner = inner
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def closed_deal(self, ticket):
+                return None
+
+        rig = LiveRig(tmp_path, wrap=NoHistory)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        notes = rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        assert any("closed FLAT_BEFORE_CLOSE?" in n for n in notes), notes
+        assert not rig.mine() and not rig.e.open
+        row = rig.e.closed_since(at(TODAY, 9, 0))[0]
+        deal = rig.sim.closed_deal(p.ticket)                                   # what the broker really has
+        assert row["exit_reason"] == "FLAT_BEFORE_CLOSE?" and row["exit_price"] == pytest.approx(deal["exit_price"])
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.spec("US500").money(deal["exit_price"] - p.entry, p.volume), 2))
+
+    def test_a_restart_that_cannot_read_the_broker_keeps_the_rows_and_says_so(self, tmp_path):
+        class Down:
+            def __init__(self, inner):
+                self._inner = inner
+                self.down = False
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def positions(self, magic=None):
+                if self.down:
+                    raise RuntimeError("bridge unreachable")
+                return self._inner.positions(magic)
+
+        rig = LiveRig(tmp_path, wrap=Down)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        ticket = rig.e.open["US500"].ticket
+        rig.broker.down = True
+        rig.restart()
+        assert rig.e.open["US500"].ticket == ticket
+        assert rig.e.db.execute("SELECT closed_utc FROM trades WHERE ticket=?", (ticket,)).fetchone()[0] is None
+        rig.broker.down = False
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, rig.up(), (10, 31))
+        assert any("could not read the broker's positions at start" in n and "bridge unreachable" in n for n in notes), notes
+        assert rig.e.open["US500"].ticket == ticket and len(rig.mine()) == 1
+        rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        assert not rig.mine() and rig.e.closed_since(at(TODAY, 9, 0))[0]["exit_reason"] == "FLAT_BEFORE_CLOSE"

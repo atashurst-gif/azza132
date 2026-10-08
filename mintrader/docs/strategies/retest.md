@@ -214,6 +214,41 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   morning (bounded). Also new: the Crowd Fader, the fifth bot, in PAPER
   (docs/strategies/crowd_fader.md).
 
+- 2026-10-08 (afternoon): at Aaron's instruction every bot is switched to
+  LIVE on the demo account. Trend & Breakout's rules and the measuring clock
+  are unchanged; the other four bots stop simulating and place their own
+  orders, each under its own magic number so no bot can ever see or touch
+  another's positions: Trend & Breakout 990311, Rapid Scalper 990411,
+  Momentum Runner 990511, Band Breaker 990611, Crowd Fader 990711. Every
+  order carries its protective stop at the broker (a position whose stop
+  the broker did not take is closed again at once), and for every live
+  trade the broker's own figure (profit + commission + swap) is the record.
+  On the page, Overall now adds every live bot's trades, listed by bot, as
+  the engines book them from the broker's closing deals (profit, commission
+  and swap on the deal that closed the position). One known gap, on the
+  record until the adapter is fixed: the broker charges half of a
+  commission on the entry deal, and `closed_deal` in mt5_adapter.py sums
+  the closing deals only, so on FX, gold, silver and oil a live trade of
+  the Runner, the Band Breaker or the Crowd Fader reads a few pence above
+  the account (indices carry no commission; the scalper's figures come
+  from every deal and are not affected). `python -m mintel.ops.reconcile`
+  sums every deal, splits the broker's day five ways and is the figure
+  that must match MetaTrader's History tab. A live trade the broker's
+  record could not be read for is booked at the last price with a '?' on
+  its exit reason; the page counts those separately (estimated_trades) and
+  says so on the bot's tab and on Overall. Paper history stays where it
+  was: each bot's tab keeps every row it ever made, PAPER and LIVE, and
+  says how much of its figure was money (live_net) and how much simulated
+  (paper_net); PAPER rows are never in Overall. To switch any bot back:
+  `python -m mintel.ops.modes --config ~/MarketBot/data/config.json
+  --paper crowd` (or `--off`, a bot name or `all`; `--live` the other way,
+  `--show` to look), then Stop Trading Bot and Start Trading Bot. The
+  switch reads every file before it writes any, puts scalper.json in the
+  data folder config.json names (where the scalper reads it), and refuses
+  to put a bot LIVE whose magic number is 0 or another bot's: the magic
+  number is the only thing that keeps the bots apart. The Start window
+  prints every bot's mode at the end.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

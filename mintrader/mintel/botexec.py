@@ -145,7 +145,15 @@ class LiveExecutor:
             return Fill(False, message=self.last_error)
         price = float(res.price or touch)
         # fail closed: the protective stop must be at the broker
-        pos = next((p for p in self.positions() if p.ticket == res.ticket), None)
+        try:
+            pos = next((p for p in self.positions() if p.ticket == res.ticket), None)
+        except Exception as exc:
+            # the order filled and carried its stop; the read-back failed. Report
+            # the fill (the engine must track it) and let the next pass confirm
+            # the stop from the broker's own list.
+            self.last_error = f"filled, stop not yet confirmed: {exc}"
+            return Fill(True, int(res.ticket), price, touch, float(res.filled_volume or volume),
+                        "filled (stop not yet confirmed)")
         if pos is None or not pos.sl:
             try:
                 r = self.broker.modify_stops(res.ticket, sl, tpx)
@@ -208,10 +216,31 @@ class LiveExecutor:
             except Exception:
                 d = None
             if d and d.get("pnl") is not None:
-                return d
+                return self._with_entry_commission(ticket, dict(d))
             if i + 1 < tries:
                 time.sleep(pause)
         return None
+
+    def _with_entry_commission(self, ticket: int, d: dict) -> dict:
+        """MetaTrader charges commission on the entry deal as well as the exit;
+        ``closed_deal`` sums the closing deals only. Add the entry half from the
+        deal history so the figure is the whole round trip. If the history
+        cannot be read the figure is left as it is and marked."""
+        fn = getattr(self.broker, "deals_since", None)
+        if fn is None:
+            return d
+        try:
+            when = d.get("time")
+            since = (to_utc(when) if isinstance(when, dt.datetime) else to_utc(dt.datetime.now(dt.timezone.utc))) \
+                - dt.timedelta(days=7)
+            rows = fn(since, self.magic, False) or []
+            entry = sum(float(r.get("commission") or 0.0) for r in rows
+                        if r.get("is_entry") and int(r.get("position") or 0) == int(ticket))
+            d["entry_commission"] = round(entry, 2)
+            d["pnl"] = float(d["pnl"]) + entry
+        except Exception as exc:
+            d["entry_commission_unknown"] = str(exc)[:120]
+        return d
 
 
 def make_executor(mode: str, broker=None, magic: int = 0, tag: str = "BOT", slippage_points: float = 1.0,

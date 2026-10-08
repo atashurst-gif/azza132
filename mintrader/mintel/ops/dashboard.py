@@ -290,7 +290,7 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
             return ""
     wins, losses = s.get("wins"), s.get("losses")
     rows = [("Realised", money(s.get("realised")), colour(s.get("realised"))),
-            ("Unrealised", money(s.get("unrealised")), colour(s.get("unrealised"))),
+            ("of which still open (not yet banked)", money(s.get("unrealised")), colour(s.get("unrealised"))),
             ("Before commission", money(s.get("before_fees")), ""),
             ("Commission paid (broker)",
              "-" if s.get("total_costs") is None else f"{abs(float(s['total_costs'])):.2f} {cur}", "bad"),

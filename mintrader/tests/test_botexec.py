@@ -43,13 +43,13 @@ class TestLive:
     def test_orders_carry_the_bots_magic_and_the_stop_sits_at_the_broker(self):
         b = sim(); spec = b.spec("EURUSD"); t = b.tick("EURUSD")
         x = LiveExecutor(b, MAGIC_BANDBREAKER, "BB")
-        f = x.open("EURUSD", Side.BUY, 0.1, t.bid - 0.0010, 0.0, t, spec, T0)
+        f = x.open("EURUSD", Side.BUY, 0.1, t.bid - 0.0100, 0.0, t, spec, T0)
         assert f.ok and f.ticket
         mine = x.positions()
-        assert len(mine) == 1 and mine[0].magic == MAGIC_BANDBREAKER and mine[0].sl == pytest.approx(t.bid - 0.0010)
+        assert len(mine) == 1 and mine[0].magic == MAGIC_BANDBREAKER and mine[0].sl == pytest.approx(t.bid - 0.0100)
         assert not [p for p in b.positions(Config().magic) if p.ticket == f.ticket]      # Trend & Breakout never sees it
-        assert x.modify_stop(f.ticket, t.bid - 0.0005)
-        assert x.positions()[0].sl == pytest.approx(t.bid - 0.0005)
+        assert x.modify_stop(f.ticket, t.bid - 0.0080)
+        assert x.positions()[0].sl == pytest.approx(t.bid - 0.0080)
         c = x.close(f.ticket, b.tick("EURUSD"), spec)
         assert c.ok and not x.positions()
         d = x.closed_deal(f.ticket, tries=1)
@@ -72,3 +72,40 @@ class TestFactory:
         with pytest.raises(ValueError):
             make_executor("LIVE")
         assert make_executor("LIVE", broker=sim(), magic=5, tag="T").mode == "LIVE"
+
+
+class TestTheWholeRoundTrip:
+    def test_the_entry_commission_is_added_to_the_brokers_figure(self):
+        class B:
+            def closed_deal(self, ticket):
+                return {"pnl": 10.0, "exit_price": 1.2, "volume": 0.1, "time": T0}
+            def deals_since(self, since, magic=0, closing_only=True):
+                assert magic == 7 and closing_only is False
+                return [{"position": 5, "is_entry": True, "commission": -0.35},
+                        {"position": 5, "is_entry": False, "commission": -0.35},
+                        {"position": 6, "is_entry": True, "commission": -9.0}]
+            def positions(self, magic=None): return []
+        d = LiveExecutor(B(), 7, "T").closed_deal(5, tries=1)
+        assert d["pnl"] == pytest.approx(9.65) and d["entry_commission"] == pytest.approx(-0.35)
+
+    def test_a_history_that_cannot_be_read_leaves_the_figure_and_says_so(self):
+        class B:
+            def closed_deal(self, ticket): return {"pnl": 10.0, "time": T0}
+            def deals_since(self, *a, **k): raise RuntimeError("history unavailable")
+        d = LiveExecutor(B(), 7, "T").closed_deal(5, tries=1)
+        assert d["pnl"] == 10.0 and "history unavailable" in d["entry_commission_unknown"]
+
+    def test_a_failed_read_back_after_a_fill_still_reports_the_fill(self):
+        b = sim(); spec = b.spec("EURUSD"); t = b.tick("EURUSD")
+        x = LiveExecutor(b, 9, "T")
+        real_positions = b.positions
+        calls = {"n": 0}
+        def flaky(magic=None):
+            calls["n"] += 1
+            raise RuntimeError("bridge dropped")
+        b.positions = flaky
+        f = x.open("EURUSD", Side.BUY, 0.1, t.bid - 0.0100, 0.0, t, spec, T0)
+        b.positions = real_positions
+        assert f.ok and f.ticket and "not yet confirmed" in f.message
+        assert [p for p in b.positions(9) if p.ticket == f.ticket]
+

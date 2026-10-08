@@ -1263,6 +1263,31 @@ open_dashboard() {
   open "http://127.0.0.1:$DASH_PORT" >/dev/null 2>&1 || true
 }
 
+# bot_mode BLOCK - the mode a bot is set to in config.json ("runner",
+# "bandbreaker" or "crowd" -> "mode"): LIVE, PAPER or OFF. PAPER when the
+# file or the block says nothing, which is the bots' own default. Read with
+# a JSON parser, never a pattern, so a mode inside another block cannot be
+# mistaken for this one.
+bot_mode() {
+  local block="${1:-}"
+  local py=""
+  local mode=""
+  if [[ -x "$VENV_DIR/bin/python" ]]; then
+    py="$VENV_DIR/bin/python"
+  else
+    py="$(command -v python3 2>/dev/null || true)"
+  fi
+  if [[ -n "$py" && -n "$block" && -f "$CONFIG" ]]; then
+    mode="$("$py" -c 'import json, sys
+try:
+    block = json.load(open(sys.argv[1])).get(sys.argv[2]) or {}
+    print(str(block.get("mode") or "PAPER").upper())
+except Exception:
+    print("PAPER")' "$CONFIG" "$block" 2>/dev/null || true)"
+  fi
+  printf '%s\n' "${mode:-PAPER}"
+}
+
 final_report() {
   say ""
   say "=============================================================="
@@ -1273,13 +1298,20 @@ final_report() {
   fi
   say "=============================================================="
   say ""
+  # Every bot's mode, read from the files the bots themselves read: the
+  # Rapid Scalper from data/scalper.json, the other three from config.json.
+  local rs_mode=""
   if [[ -f "$MINTEL_HOME/data/scalper.json" ]]; then
-    local rs_mode
     rs_mode="$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([A-Za-z]*\)".*/\1/p' "$MINTEL_HOME/data/scalper.json" | head -1)"
     say "  Rapid Scalper mode: ${BOLD}${rs_mode:-PAPER}${RESET}  (data/scalper.json)"
-    say "  Momentum Runner: ${BOLD}PAPER${RESET} shadow of the index trades (its own tab on the page)"
-    say "  Band Breaker:    ${BOLD}PAPER${RESET} intraday index momentum, New York session (its own tab)"
-    say "  Crowd Fader:     ${BOLD}PAPER${RESET} positioning from Coinversa, faded once the price turns (its own tab)"
+  fi
+  say "  Momentum Runner: ${BOLD}$(bot_mode runner)${RESET} rides the index trades with a 3 R trail (its own tab on the page)"
+  say "  Band Breaker:    ${BOLD}$(bot_mode bandbreaker)${RESET} intraday index momentum, New York session (its own tab)"
+  say "  Crowd Fader:     ${BOLD}$(bot_mode crowd)${RESET} positioning from Coinversa, faded once the price turns (its own tab)"
+  say "  LIVE places real orders under the bot's own magic number; PAPER simulates and is never in Overall."
+  say "  To switch any bot: $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live all"
+  say "  (or --paper / --off, then Stop Trading Bot and Start Trading Bot)"
+  if [[ -f "$MINTEL_HOME/data/scalper.json" ]]; then
     if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('coinversa_api_key') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
       say "  ${RED}No Coinversa key saved: the Crowd Fader cannot read anything.${RESET}"
       say "  Fix: $VENV_DIR/bin/python -m mintel.crowd --config $CONFIG --set-key"
