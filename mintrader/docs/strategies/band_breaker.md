@@ -10,6 +10,23 @@ LIVE on the demo account from 8 October 2026: it places its own orders
 the broker's own figure for each closed trade is its result. In PAPER it
 never places an order and its results are never added to the account.
 
+**Back in PAPER from 9 October 2026 (Aaron's instruction).** A real
+position left from LIVE is closed at the switch and booked with the
+broker's figure (`SWITCHED TO PAPER`, or `SWITCHED OFF` under OFF); one the
+broker had already closed is booked from its deal (`STOP`); a refused close
+keeps its stop at the broker and is tried again each minute, and so is the
+rest of a close that only partly filled (the row is booked once, with the
+broker's figure for the whole position). A row booked with a `?` (the
+broker's record was not there yet) takes the broker's figure when it comes,
+and loses the `?`. The bot keeps reading the broker's list once a minute
+until three reads in a row over at least a minute find nothing of its own
+left, since one empty read proves nothing. A position under any other
+bot's magic is never touched. Only the words `PAPER` and `OFF` do this: any
+other mode word (a typing slip, or `DEMO`) runs as OFF and sends nothing at
+all, and the page says the real position keeps its stop and must be closed
+by hand. The same message appears if the bot cannot reach the broker, or
+its magic is not 990611.
+
 ## Where the idea comes from
 
 Zarattini, Aziz and Barbon (2024), "Beat the Market: An Effective Intraday
@@ -81,8 +98,10 @@ not change; only where the orders go.
   flat at 15:55, outside the session) are market closes at the broker and
   take the deal's figure too. If the broker's history has not caught up
   after the executor's retries the row is booked at the fill price with a
-  `?` on the reason, so the review can see it was estimated. Running P&L
-  on the page is the broker's too.
+  `?` on the reason, so the review can see it was estimated; once a minute
+  the bot reads the broker's history again for any `?` row of the last day,
+  and when the record is there the row takes the broker's figure and loses
+  the `?`. Running P&L on the page is the broker's too.
 - **One empty read is not a close.** The adapter answers an error from
   MetaTrader with an empty list, so a ticket missing from one read, with
   no closing deal, stays open and managed (note: `not in the broker's list
@@ -114,9 +133,10 @@ not change; only where the orders go.
   the same order, twice. If two open rows share one market (the trace of an
   earlier fault) the first is managed and the second is closed at the
   broker and booked as `DUPLICATE_CLOSED`, or listed as `unmanaged` if it
-  cannot be. A row opened in the other mode (a LIVE row seen by a PAPER
-  run, or the reverse) is left exactly as it is and listed under
-  `unmanaged` on the status page: go flat before switching modes.
+  cannot be. A row opened in the other mode is never left hanging: a LIVE
+  row seen by a PAPER or OFF run is closed at the broker as above, and an
+  open PAPER row seen by a LIVE run is closed in the records at the current
+  price as `SWITCHED TO LIVE` (simulated, no money).
 - **Ticket numbers.** PAPER rows number from 700000001 on, continuing the
   paper rows only; LIVE rows carry the broker's own ticket. If the broker
   ever hands out a number already on record, the position is closed again
@@ -129,9 +149,8 @@ not change; only where the orders go.
   open position (the stop, the flat at 15:55) is never gated.
 - **Switching back.** `python -m mintel.ops.modes --config ~/MarketBot/data/config.json --paper band_breaker`
   puts it back in PAPER; `mode: "OFF"` in `config.json` stops it sending
-  anything (and managing anything: the stop at the broker still protects an
-  open position, but nobody trails it or flattens it at 15:55, so go flat
-  first).
+  any new order. Either way a real position left open is closed at the
+  restart and booked with the broker's figure (see the top of this page).
 
 ## What would have earned it real money
 

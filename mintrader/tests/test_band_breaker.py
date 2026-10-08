@@ -6,8 +6,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from mintel.botexec import MAGIC_BANDBREAKER
-from mintel.broker.base import Bar, OrderRequest, Side, TF, Tick
+from mintel.botexec import MAGIC_BANDBREAKER, MAGIC_CROWD, MAGIC_RUNNER
+from mintel.broker.base import Bar, OrderRequest, OrderResult, RetCode, Side, TF, Tick
 from mintel.broker.sim import SimBroker
 from mintel.bandbreaker import STRATEGY_ID, STRATEGY_LABEL
 from mintel.bandbreaker.engine import BandBreaker, BandBreakerConfig, ny
@@ -504,19 +504,6 @@ class TestLive:
         st = rig.e.status(at(TODAY, 10, 31))
         assert st["mode"] == "OFF" and st["status"] == "OFF" and st["live"] is False
 
-    def test_a_live_row_is_left_alone_by_a_paper_run(self, tmp_path):
-        rig = LiveRig(tmp_path)
-        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
-        ticket = rig.e.open["US500"].ticket
-        rig.e.close()
-        rig.kw["mode"] = "PAPER"
-        rig.restart()
-        quiet = [("09:30", rig.L, rig.L + 2, rig.L - 2, rig.L), ("10:00", rig.L, rig.L + 3, rig.L - 3, rig.L + 1)]
-        notes = rig.run(at(TODAY, 10, 31), rig.L + 1, quiet, (10, 31))
-        assert not rig.e.open and len(rig.mine()) == 1 and rig.mine()[0].ticket == ticket   # still at the broker, untouched
-        assert rig.e.status(at(TODAY, 10, 31))["unmanaged"][0]["ticket"] == ticket
-        assert any("opened in LIVE" in n for n in notes), notes
-
     # ---- the review's findings: accounting across faults and restarts --------
     def test_an_orphan_on_the_same_market_never_displaces_the_managed_position(self, tmp_path):
         rig = LiveRig(tmp_path)
@@ -821,3 +808,373 @@ class TestLive:
         assert rig.e.open["US500"].ticket == ticket and len(rig.mine()) == 1
         rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
         assert not rig.mine() and rig.e.closed_since(at(TODAY, 9, 0))[0]["exit_reason"] == "FLAT_BEFORE_CLOSE"
+
+
+class Switchboard:
+    """The sim broker with a count of reads and closes, and faults on demand:
+    refuse the next N closes, fail the next N reads, answer the next N reads
+    with an empty list (what the MT5 adapter answers while the terminal is not
+    connected), fill only half of the next N closes (MT5's DONE_PARTIAL, which
+    the adapter counts as a success), hide the closing deals, take a
+    commission off every deal (as the real broker's record does), or answer
+    every bot's positions whatever magic is asked for (so the engine's own
+    magic filter is what keeps it off other bots' positions)."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.closes: list[tuple[int, str]] = []
+        self.reads = 0
+        self.refuse = 0
+        self.fail_reads = 0
+        self.blank = 0
+        self.half = 0
+        self.half_quiet = False                  # the partial fill reports no volume (the adapter then assumes all of it)
+        self.commission = 0.0
+        self.no_history = False
+        self.all_magics = False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def positions(self, magic=None):
+        self.reads += 1
+        if self.fail_reads > 0:
+            self.fail_reads -= 1
+            raise RuntimeError("bridge unreachable")
+        if self.blank > 0:
+            self.blank -= 1
+            return []
+        return self._inner.positions(None if self.all_magics else magic)
+
+    def close(self, ticket, volume=0.0, comment=""):
+        self.closes.append((ticket, comment))
+        if self.refuse > 0:
+            self.refuse -= 1
+            return OrderResult(False, RetCode.MARKET_CLOSED.value, ticket=ticket, comment="market closed")
+        if self.half > 0:
+            self.half -= 1
+            pos = next(q for q in self._inner.positions() if q.ticket == ticket)
+            res = self._inner.close(ticket, round(pos.volume / 2, 2), comment)
+            if self.half_quiet:
+                res.filled_volume = 0.0
+            return res
+        return self._inner.close(ticket, volume, comment)
+
+    def closed_deal(self, ticket):
+        if self.no_history:
+            return None
+        d = self._inner.closed_deal(ticket)
+        if d is not None and self.commission:
+            d = dict(d, pnl=d["pnl"] - self.commission)
+        return d
+
+
+def row_of(e, ticket):
+    return dict(e.db.execute("SELECT * FROM trades WHERE ticket=?", (ticket,)).fetchone())
+
+
+class TestSwitchingMode:
+    """From 9 Oct the Band Breaker is back in PAPER: a real position LIVE left
+    at the broker is closed at the switch and booked with the broker's figure."""
+
+    def _live_then(self, tmp_path, mode="PAPER"):
+        rig = LiveRig(tmp_path, wrap=Switchboard)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        assert p.mode == "LIVE" and [q.ticket for q in rig.mine()] == [p.ticket]
+        rig.e.close()
+        rig.kw["mode"] = mode
+        return rig, p
+
+    @staticmethod
+    def quiet(rig):
+        return [("09:30", rig.L, rig.L + 2, rig.L - 2, rig.L), ("10:00", rig.L, rig.L + 3, rig.L - 3, rig.L + 1)]
+
+    def test_live_then_paper_closes_the_real_position_once_with_the_brokers_figure(self, tmp_path):
+        from mintel.ops.attribution import paper_tab
+        rig, p = self._live_then(tmp_path)
+        rig.quote(at(TODAY, 10, 31), rig.L + 33)                       # the price moved on while the bot restarted
+        rig.restart()
+        assert not rig.mine() and rig.broker.closes == [(p.ticket, "BB paper switch")]
+        row, deal = row_of(rig.e, p.ticket), rig.sim.closed_deal(p.ticket)
+        assert row["exit_reason"] == "SWITCHED TO PAPER" and row["mode"] == "LIVE" and row["closed_utc"]
+        assert row["net_pnl"] == pytest.approx(round(deal["pnl"], 2)) and row["exit_price"] == pytest.approx(deal["exit_price"])
+        assert row["net_pnl"] > 0 and not rig.e.open and not rig.e.leftovers
+        notes = rig.run(at(TODAY, 10, 32), rig.L + 33, self.quiet(rig), (10, 32))
+        assert any(n.startswith(f"{STRATEGY_LABEL}: closed the real position left from LIVE: US500 buy") for n in notes), notes
+        for m in (33, 34):                                               # three clean reads over two minutes (one is no proof) ...
+            rig.run(at(TODAY, 10, m), rig.L + 33, self.quiet(rig), (10, m))
+        reads = rig.broker.reads
+        rig.run(at(TODAY, 10, 35), rig.L + 33, self.quiet(rig), (10, 35))
+        rig.run(at(TODAY, 10, 36), rig.L + 33, self.quiet(rig), (10, 36))
+        assert rig.broker.closes == [(p.ticket, "BB paper switch")] and rig.broker.reads == reads   # ... then done: no second close
+        st = rig.e.status(at(TODAY, 10, 34))
+        assert st["mode"] == "PAPER" and st["live"] is False and st["unmanaged"] == [] and st["open"] == []
+        assert st["switch_notes"][-1].startswith("closed the real position left from LIVE: US500 buy")
+        assert f"{row['net_pnl']:+.2f}" in st["markets_now"]["Mode switch"]
+        # the row is money: the tab and Overall carry the broker's figure
+        rig.e._last_status = 0.0
+        rig.e.write_status(at(TODAY, 10, 34))
+        stats, _ = paper_tab(tmp_path, "bandbreaker.sqlite", "bandbreaker-status.json", STRATEGY_ID, STRATEGY_LABEL,
+                             at(TODAY, 0, 0), None, "GBP", now=at(TODAY, 10, 34))
+        assert stats["live"]["in_overall"] and stats["live_net"] == pytest.approx(row["net_pnl"]) and stats["paper_trades"] == 0
+        # the paper side carries on as normal and sends nothing
+        sent = len(rig.sim.order_log)
+        up2 = rig.up() + [("10:30", rig.L + 30, rig.L + 40, rig.L + 29, rig.L + 38)]
+        rig.run(at(TODAY, 11, 0), rig.L + 38, up2, (11, 0))
+        assert rig.e.open["US500"].mode == "PAPER" and len(rig.sim.order_log) == sent and not rig.mine()
+
+    def test_a_refused_close_keeps_the_row_open_and_is_tried_again_the_next_minute(self, tmp_path):
+        rig, p = self._live_then(tmp_path)
+        rig.broker.refuse = 2
+        rig.restart()                                                    # refused once at start
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))        # and once more on the first pass
+        assert any(f"could not close real position {p.ticket} left from LIVE (close rejected (10018))" in n
+                   and "it keeps its stop at the broker; trying again" in n for n in notes), notes
+        assert [q.ticket for q in rig.mine()] == [p.ticket] and row_of(rig.e, p.ticket)["closed_utc"] is None
+        st = rig.e.status(at(TODAY, 10, 31))
+        assert [u["ticket"] for u in st["unmanaged"]] == [p.ticket] and "trying again each minute" in st["unmanaged"][0]["note"]
+        assert st["open"][0]["ticket"] == p.ticket and st["open"][0]["mode"] == "LIVE"
+        assert "could not close real position" in st["markets_now"]["Mode switch"]
+        assert len(rig.broker.closes) == 2
+        rig.run(at(TODAY, 10, 31) + dt.timedelta(seconds=30), rig.L + 31, self.quiet(rig), (10, 31))
+        assert len(rig.broker.closes) == 2                               # at most once a minute
+        notes = rig.run(at(TODAY, 10, 32), rig.L + 32, self.quiet(rig), (10, 32))
+        assert any("closed the real position left from LIVE: US500 buy" in n for n in notes), notes
+        assert not rig.mine() and len(rig.broker.closes) == 3
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "SWITCHED TO PAPER" and row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(p.ticket)["pnl"], 2))
+        st = rig.e.status(at(TODAY, 10, 32))
+        assert st["unmanaged"] == [] and st["open"] == []
+        rig.run(at(TODAY, 10, 33), rig.L + 32, self.quiet(rig), (10, 33))
+        assert len(rig.broker.closes) == 3
+
+    def test_a_failed_read_at_the_switch_is_noted_and_tried_again_the_next_minute(self, tmp_path):
+        rig, p = self._live_then(tmp_path)
+        rig.broker.fail_reads = 1
+        rig.restart()
+        assert [q.ticket for q in rig.mine()] == [p.ticket] and rig.broker.closes == []
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))
+        assert any("could not read the broker's positions to close what LIVE left (bridge unreachable)" in n
+                   and "trying again next minute" in n for n in notes), notes
+        assert any("closed the real position left from LIVE" in n for n in notes), notes
+        assert not rig.mine() and row_of(rig.e, p.ticket)["exit_reason"] == "SWITCHED TO PAPER"
+
+    def test_a_position_the_broker_closed_while_the_bot_was_down_is_booked_from_its_deal(self, tmp_path):
+        rig, p = self._live_then(tmp_path)
+        rig.quote(at(TODAY, 10, 40), p.stop - 5)                         # the stop is hit while the bot is down
+        deal = rig.sim.closed_deal(p.ticket)
+        assert deal["reason"] == "SL"
+        rig.restart()
+        assert rig.broker.closes == []                                   # nothing to send
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "STOP" and row["net_pnl"] == pytest.approx(round(deal["pnl"], 2))
+        assert row["exit_price"] == pytest.approx(deal["exit_price"])
+        notes = rig.run(at(TODAY, 10, 41), rig.L + 1, self.quiet(rig), (10, 41))
+        assert any("closed by the broker (STOP)" in n and "(left from LIVE)" in n for n in notes), notes
+        st = rig.e.status(at(TODAY, 10, 41))
+        assert st["unmanaged"] == [] and "had already closed at the broker: booked STOP" in st["switch_notes"][-1]
+
+    def test_a_switch_close_whose_deal_has_not_come_back_is_booked_from_the_fill_with_a_question_mark(self, tmp_path):
+        rig, p = self._live_then(tmp_path)
+        rig.broker.no_history = True
+        rig.restart()
+        assert not rig.mine() and len(rig.broker.closes) == 1
+        deal = rig.sim.closed_deal(p.ticket)                             # what the broker really has
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "SWITCHED TO PAPER?" and row["exit_price"] == pytest.approx(deal["exit_price"])
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.spec("US500").money(deal["exit_price"] - p.entry, p.volume), 2))
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))
+        assert any("estimated from the fill" in n for n in notes), notes
+        rig.run(at(TODAY, 10, 32), rig.L + 31, self.quiet(rig), (10, 32))
+        assert len(rig.broker.closes) == 1 and rig.e.status(at(TODAY, 10, 32))["unmanaged"] == []
+
+    def test_an_orphan_with_our_magic_is_closed_and_other_bots_positions_are_never_touched(self, tmp_path):
+        rig = LiveRig(tmp_path, wrap=Switchboard, mode="PAPER")
+        rig.broker.all_magics = True                                     # the broker answers every bot's positions
+        t = rig.sim.tick("US500")
+        ours = rig.sim.send(OrderRequest("US500", Side.SELL, 0.1, sl=t.ask + 30.0, comment="BB", magic=MAGIC_BANDBREAKER))
+        others = {m: rig.sim.send(OrderRequest("US500", Side.BUY, 0.1, sl=t.bid - 30.0, comment="X", magic=m))
+                  for m in (Config().magic, MAGIC_RUNNER, MAGIC_CROWD, 990_911)}
+        assert ours.ok and all(r.ok for r in others.values())
+        rig.restart()
+        assert rig.broker.closes == [(ours.ticket, "BB orphan")] and not rig.mine()
+        for m, r in others.items():
+            assert [q.ticket for q in rig.sim.positions(m)] == [r.ticket]       # never touched
+        row = row_of(rig.e, ours.ticket)
+        assert row["exit_reason"] == "ORPHAN_CLOSED" and row["mode"] == "LIVE"
+        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(ours.ticket)["pnl"], 2))
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 1, self.quiet(rig), (10, 31))
+        assert any("orphan closed" in n and str(ours.ticket) in n for n in notes), notes
+        rig.run(at(TODAY, 10, 32), rig.L + 1, self.quiet(rig), (10, 32))
+        assert len(rig.broker.closes) == 1 and len(rig.sim.positions()) == 4
+
+    def test_live_then_off_closes_the_same_way(self, tmp_path):
+        rig, p = self._live_then(tmp_path, mode="OFF")
+        rig.restart()
+        assert rig.e.executor is None and rig.e.mode == "OFF"
+        assert not rig.mine() and rig.broker.closes == [(p.ticket, "BB off switch")]
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "SWITCHED OFF" and row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(p.ticket)["pnl"], 2))
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 30, rig.up(), (10, 31))
+        assert any("closed the real position left from LIVE: US500 buy" in n for n in notes), notes
+        for m in (32, 33):                                               # three clean reads over two minutes, then done
+            assert rig.run(at(TODAY, 10, m), rig.L + 30, rig.up(), (10, m)) == []
+        reads = rig.broker.reads
+        assert rig.run(at(TODAY, 10, 34), rig.L + 30, rig.up(), (10, 34)) == []
+        st = rig.e.status(at(TODAY, 10, 34))
+        assert st["status"] == "OFF" and st["unmanaged"] == [] and rig.broker.reads == reads and len(rig.broker.closes) == 1
+
+    @pytest.mark.parametrize("mode,reason", [("LIVE", "SWITCHED TO LIVE"), ("OFF", "SWITCHED OFF")])
+    def test_an_open_paper_row_is_closed_in_the_records_with_no_broker_call(self, tmp_path, mode, reason):
+        rig = LiveRig(tmp_path, wrap=Switchboard, mode="PAPER")
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        assert p.mode == "PAPER" and not rig.mine() and not rig.sim.order_log
+        rig.kw["mode"] = mode
+        rig.quote(at(TODAY, 10, 31), rig.L + 32)
+        rig.restart()
+        tick, spec = rig.sim.tick("US500"), rig.sim.spec("US500")
+        px = spec.normalise_price(tick.bid - spec.point)                 # the bid less one point of paper slippage
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == reason and row["mode"] == "PAPER" and row["exit_price"] == pytest.approx(px)
+        assert row["net_pnl"] == pytest.approx(round(spec.money(px - p.entry, p.volume), 2))
+        assert rig.broker.closes == [] and not rig.sim.order_log and not rig.e.open
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 32, self.quiet(rig), (10, 31))
+        assert any(f"ticket {p.ticket} paper position US500 buy" in n and "simulated, no money" in n for n in notes), notes
+        assert rig.e.status(at(TODAY, 10, 31))["unmanaged"] == [] and not rig.sim.order_log
+
+    # ---- the review's findings on the switch ----------------------------------
+    def test_a_switch_close_booked_with_a_question_mark_takes_the_brokers_figure_when_it_comes(self, tmp_path):
+        rig, p = self._live_then(tmp_path)
+        rig.broker.commission = 0.7                                      # the broker's record carries what the fill cannot
+        rig.broker.no_history = True
+        rig.restart()
+        est = row_of(rig.e, p.ticket)
+        assert est["exit_reason"] == "SWITCHED TO PAPER?" and not rig.mine()
+        rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))
+        assert row_of(rig.e, p.ticket)["exit_reason"] == "SWITCHED TO PAPER?"     # the record is still not there
+        rig.broker.no_history = False
+        deal = rig.broker.closed_deal(p.ticket)
+        notes = rig.run(at(TODAY, 10, 32), rig.L + 31, self.quiet(rig), (10, 32))
+        assert any(f"ticket {p.ticket}" in n and "now holds the broker's record: SWITCHED TO PAPER at" in n for n in notes), notes
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "SWITCHED TO PAPER" and row["net_pnl"] == pytest.approx(round(deal["pnl"], 2))
+        assert row["net_pnl"] == pytest.approx(est["net_pnl"] - 0.7, abs=0.011)
+        for m in (33, 34):                                               # nothing outstanding: a few clean reads, then done
+            rig.run(at(TODAY, 10, m), rig.L + 31, self.quiet(rig), (10, m))
+        reads = rig.broker.reads
+        rig.run(at(TODAY, 10, 35), rig.L + 31, self.quiet(rig), (10, 35))
+        assert rig.broker.reads == reads and len(rig.broker.closes) == 1
+
+    def test_a_stop_booked_with_a_question_mark_at_the_switch_takes_the_brokers_figure_when_it_comes(self, tmp_path):
+        rig, p = self._live_then(tmp_path)
+        rig.quote(at(TODAY, 10, 40), p.stop - 5)                         # the stop is hit while the bot is down ...
+        deal = rig.sim.closed_deal(p.ticket)
+        assert deal["reason"] == "SL"
+        rig.broker.no_history = True                                     # ... and the deal history cannot be read for a while
+        rig.restart()
+        for m in (41, 42):
+            rig.run(at(TODAY, 10, m), rig.L - 40, self.quiet(rig), (10, m))
+        est = row_of(rig.e, p.ticket)
+        assert est["exit_reason"] == "STOP?" and est["exit_price"] != pytest.approx(deal["exit_price"])   # the price of the moment
+        rig.broker.no_history = False
+        notes = rig.run(at(TODAY, 10, 43), rig.L - 40, self.quiet(rig), (10, 43))
+        assert any(f"ticket {p.ticket}" in n and "now holds the broker's record: STOP at" in n for n in notes), notes
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "STOP" and row["exit_price"] == pytest.approx(deal["exit_price"])
+        assert row["net_pnl"] == pytest.approx(round(deal["pnl"], 2)) and rig.broker.closes == []
+        assert rig.e.status(at(TODAY, 10, 43))["unmanaged"] == []
+
+    def test_a_live_close_booked_with_a_question_mark_takes_the_brokers_figure_and_keeps_its_own_reason(self, tmp_path):
+        rig = LiveRig(tmp_path, wrap=Switchboard)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        rig.broker.commission, rig.broker.no_history = 0.7, True
+        notes = rig.run(at(TODAY, 15, 55), rig.L + 45, rig.up(), (15, 55))
+        assert any("closed FLAT_BEFORE_CLOSE?" in n for n in notes), notes
+        rig.broker.no_history = False
+        deal = rig.broker.closed_deal(p.ticket)
+        assert deal["reason"] == "BB FLAT_BEFORE_CLOSE"                   # its own close: the engine's word stays
+        notes = rig.run(at(TODAY, 15, 56), rig.L + 45, rig.up(), (15, 56))
+        assert any("now holds the broker's record: FLAT_BEFORE_CLOSE at" in n for n in notes), notes
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "FLAT_BEFORE_CLOSE" and row["net_pnl"] == pytest.approx(round(deal["pnl"], 2))
+
+    @pytest.mark.parametrize("quiet", [False, True], ids=["fill-says-partial", "fill-says-nothing"])
+    def test_a_switch_close_that_only_partly_fills_closes_the_rest_and_books_the_whole(self, tmp_path, quiet):
+        rig, p = self._live_then(tmp_path)
+        rig.broker.half, rig.broker.half_quiet = 1, quiet                # MT5 answers DONE_PARTIAL as a success
+        rig.restart()
+        left = rig.mine()
+        assert [q.ticket for q in left] == [p.ticket] and 0 < left[0].volume < p.volume   # the rest is still at the broker
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))
+        assert not rig.mine() and len(rig.broker.closes) == 2, notes
+        deal = rig.sim.closed_deal(p.ticket)
+        assert deal["volume"] == pytest.approx(p.volume)                 # two closing deals: the whole position
+        row = row_of(rig.e, p.ticket)
+        assert row["exit_reason"] == "SWITCHED TO PAPER" and row["volume"] == pytest.approx(p.volume)
+        assert row["net_pnl"] == pytest.approx(round(deal["pnl"], 2)) and row["exit_price"] == pytest.approx(deal["exit_price"])
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 1
+        st = rig.e.status(at(TODAY, 10, 31))
+        assert st["unmanaged"] == [] and st["open"] == []
+        for m in (32, 33, 34):
+            rig.run(at(TODAY, 10, m), rig.L + 31, self.quiet(rig), (10, m))
+        assert len(rig.broker.closes) == 2
+
+    def test_an_orphan_hidden_by_an_empty_read_at_the_start_is_still_closed(self, tmp_path):
+        rig = LiveRig(tmp_path, wrap=Switchboard, mode="PAPER")
+        t = rig.sim.tick("US500")
+        ours = rig.sim.send(OrderRequest("US500", Side.SELL, 0.1, sl=t.ask + 30.0, comment="BB", magic=MAGIC_BANDBREAKER))
+        assert ours.ok
+        rig.broker.blank = 1                                             # the terminal is not connected yet: an empty list
+        rig.restart()
+        assert rig.broker.closes == [] and [q.ticket for q in rig.mine()] == [ours.ticket]
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 1, self.quiet(rig), (10, 31))
+        assert any("orphan closed" in n and str(ours.ticket) in n for n in notes), notes
+        assert rig.broker.closes == [(ours.ticket, "BB orphan")] and not rig.mine()
+        row = row_of(rig.e, ours.ticket)
+        assert row["exit_reason"] == "ORPHAN_CLOSED" and row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(ours.ticket)["pnl"], 2))
+        for m in (32, 33, 34):                                           # three clean reads over two minutes, then done
+            rig.run(at(TODAY, 10, m), rig.L + 1, self.quiet(rig), (10, m))
+        reads = rig.broker.reads
+        rig.run(at(TODAY, 10, 35), rig.L + 1, self.quiet(rig), (10, 35))
+        assert rig.broker.reads == reads and len(rig.broker.closes) == 1
+
+    @pytest.mark.parametrize("word", ["DEMO", "LIVE "])
+    def test_a_mode_word_it_does_not_know_sends_nothing_and_says_so(self, tmp_path, word):
+        rig, p = self._live_then(tmp_path, mode=word)
+        reads = rig.broker.reads
+        rig.restart()
+        assert rig.e.mode == "OFF" and rig.e.executor is None
+        notes = rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))
+        rig.run(at(TODAY, 10, 32), rig.L + 31, self.quiet(rig), (10, 32))
+        assert rig.broker.closes == [] and rig.broker.reads == reads and [q.ticket for q in rig.mine()] == [p.ticket]
+        assert row_of(rig.e, p.ticket)["closed_utc"] is None
+        assert any(f"ticket {p.ticket}" in n and f"the mode {word!r} is not PAPER, LIVE or OFF" in n for n in notes), notes
+        st = rig.e.status(at(TODAY, 10, 32))
+        assert [u["ticket"] for u in st["unmanaged"]] == [p.ticket] and "close it by hand" in st["unmanaged"][0]["note"]
+        assert "close it by hand" in st["markets_now"]["Mode switch"] and repr(word) in st["markets_now"]["Mode switch"]
+
+    def test_a_position_the_switch_cannot_touch_is_shown_as_close_it_by_hand(self, tmp_path):
+        from mintel.ops.dashboard import render_bandbreaker_panel
+        rig = LiveRig(tmp_path, wrap=Switchboard, magic=990_612)          # LIVE under a number that is not its own
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        p = rig.e.open["US500"]
+        rig.e.close()
+        rig.kw["mode"] = "PAPER"
+        rig.restart()
+        rig.run(at(TODAY, 10, 31), rig.L + 31, self.quiet(rig), (10, 31))
+        assert rig.broker.closes == [] and [q.ticket for q in rig.sim.positions(990_612)] == [p.ticket]   # never touched
+        st = rig.e.status(at(TODAY, 10, 31))
+        assert st["open"][0]["ticket"] == p.ticket and "close it by hand" in st["open"][0]["note"]
+        assert "being closed" not in st["open"][0]["note"] and "close it by hand" in st["markets_now"]["Mode switch"]
+        assert "close it by hand" in render_bandbreaker_panel({"strategies": {"bandbreaker": st}})
+        # and with no broker connection at all
+        rig.e.close()
+        e = BandBreaker(tmp_path, BandBreakerConfig(markets=("US500",), mode="PAPER", magic=990_612), spec_fn=rig.sim.spec,
+                        clock=lambda: at(TODAY, 10, 0), broker=None)
+        st = e.status(at(TODAY, 10, 32))
+        assert "close it by hand" in st["markets_now"]["Mode switch"] and "close it by hand" in st["open"][0]["note"]
+        assert "close it by hand" in render_bandbreaker_panel({"strategies": {"bandbreaker": st}})
+        e.close()

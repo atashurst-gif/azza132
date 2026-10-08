@@ -12,6 +12,23 @@ broker. Its results stay on its own tab and are never added to the account
 total. It needs a Coinversa API key saved on the Mac (see "Setting it up");
 without one it shows NO KEY and does nothing.
 
+**Back in PAPER from 9 October 2026 (Aaron's instruction).** A real
+position left from LIVE is closed at the switch and booked with the
+broker's figure (`SWITCHED TO PAPER`, or `SWITCHED OFF` under OFF); one the
+broker had already closed is booked from its deal (`STOP`, `TARGET`); a
+refused close keeps its stop and target at the broker and is tried again
+each minute, and so is the rest of a close that only partly filled (the row
+is booked once, with the broker's figure for the whole position); a row
+booked with a `?` still takes the broker's figure when its record comes in.
+The bot keeps reading the broker's list once a minute until three reads in
+a row over at least a minute find nothing of its own left, since one empty
+read proves nothing. A position under any other bot's magic is never
+touched. Only the words `PAPER` and `OFF` do this: any other mode word (a
+typing slip, or `DEMO`) runs as OFF and sends nothing at all, and the page
+says the real position keeps its stop and target and must be closed by
+hand. The same message appears if the bot cannot reach the broker, or its
+magic is not 990711.
+
 ## Where the data comes from
 
 Coinversa Pulse indexes every wallet on Hyperliquid, a crypto exchange
@@ -132,16 +149,19 @@ what does not:
   LIVE, so a stray position is never left until the next restart; a read
   that fails sweeps nothing and is tried again. A second open row on a
   market that already has one is settled the same way. A row opened in the
-  other mode is left alone and listed on the page as unmanaged.
+  other mode is never left hanging: a LIVE row seen by a PAPER or OFF run is
+  closed at the broker as described at the top of this page, and an open
+  PAPER row seen by a LIVE run is closed in the records at the current price
+  as `SWITCHED TO LIVE` (simulated, no money).
 - **PAPER is unchanged.** In PAPER nothing is sent: fills at the touch plus
   one point, the stop closes AT the stop and the target AT the target, a
-  buy marked on the bid and a sell on the ask. `OFF` has no executor at all
-  and does not even poll Coinversa.
+  buy marked on the bid and a sell on the ask. `OFF` has no executor, opens
+  nothing and does not even poll Coinversa; the only thing it ever sends is
+  the close of a real position left from LIVE.
 - **Switching back:** `python -m mintel.ops.modes --config ~/MarketBot/data/config.json --paper crowd`
   (or set `"mode": "PAPER"` under `"crowd"` in `config.json` and restart).
-  A LIVE position open at the moment of the switch keeps its stop and
-  target at the broker and is left alone by the paper run, which says so
-  on the page.
+  A LIVE position open at the moment of the switch is closed at the
+  restart and booked with the broker's figure, and the page says so.
 
 ## Setting it up
 

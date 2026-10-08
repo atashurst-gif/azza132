@@ -10,7 +10,21 @@ at the touch plus slippage, a stop closes AT the stop, a target AT the
 target, a buy is marked on the bid and a sell on the ask. LIVE sends the
 bot's own orders (magic 990711, comment CROWD) with the stop AND the target
 at the broker, and the broker's own record of every closed position
-(profit + commission + swap) is the figure. OFF has no executor at all.
+(profit + commission + swap) is the figure. OFF has no executor and opens
+nothing; the one thing it sends is the close of a real position LIVE left
+behind (below).
+
+Switching away from LIVE (to PAPER or OFF, asked for in those words) is a
+clean cut: a real position LIVE left at the broker under the Crowd Fader's
+own magic is closed at start-up and its row is booked with the broker's
+figure ("SWITCHED TO PAPER" or "SWITCHED OFF"); a refused close, or one
+that only partly filled, is tried again each minute, and a row booked with
+a '?' still takes the broker's figure when it comes. Any other mode word (a
+typing slip, or "DEMO") runs as OFF and sends nothing at all: a real
+position is left as it is, with its stop and target at the broker, and the
+page says to close it by hand. Switching to LIVE closes an open PAPER row in
+the records ("SWITCHED TO LIVE", simulated, no money). See _wind_down and
+_close_paper_leftover.
 """
 from __future__ import annotations
 
@@ -23,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..botexec import MAGIC_CROWD, make_executor
+from ..botexec import MAGIC_CROWD, Fill, make_executor
 from ..broker.base import Position, Side, TF, Tick
 from ..clock import to_utc, utcnow
 from . import STRATEGY_ID, STRATEGY_LABEL, TAGLINE
@@ -37,6 +51,7 @@ PAPER_FIRST_TICKET = 800_000_001                # paper tickets start here and c
 MISSING_PASSES = 3                              # a ticket absent from this many broker reads in a row ...
 MISSING_SECONDS = 60.0                          # ... over at least this long, with no closing deal, is booked as an estimate
 ESTIMATE_WINDOW_HOURS = 24.0                    # a row booked with a '?' this recently is re-read from the broker's history
+SWITCH_NOTES_KEPT = 10                          # the switch notes the status file carries
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS trades (
@@ -175,6 +190,17 @@ class CrowdFader:
         self._pending: list[str] = []               # notes from the restart, given out on the first pass
         self._sweep_due = False                     # LIVE: sweep the broker's list at once (an order's outcome is unknown)
         self._last_minute = ""                      # LIVE: the minute the orphan sweep and the '?' check last ran
+        # not LIVE (PAPER or OFF): what LIVE left at the broker is closed (see _wind_down)
+        self.leftovers: dict[int, Trade] = {}       # open LIVE rows this run cannot manage, closed at the broker
+        self.switch_notes: list[str] = []           # what the switch did, in plain words, for the status file
+        self._winder = None                         # the one-off LIVE executor that closes them
+        self._wind_minute = ""                      # the minute the wind-down last ran
+        self._wind_done = False                     # nothing left from LIVE to close, watch or correct
+        self._clean_passes = 0                      # wind-down reads in a row that found nothing to do ...
+        self._clean_since: Optional[dt.datetime] = None   # ... since this time (see _settled)
+        # what LIVE left is closed only when PAPER or OFF was asked for in those words (or the
+        # bot is turned off); any other mode word runs as OFF and sends nothing at all
+        self._switching = (not self.cfg.enabled) or str(self.cfg.mode or "PAPER").strip().upper() in ("PAPER", "OFF")
         self.last_poll: Optional[dt.datetime] = None
         self.poll_error: str = ""
         self.polls = 0
@@ -183,6 +209,7 @@ class CrowdFader:
         self._last_status = 0.0
         # paper tickets continue the sequence already on record so they never collide
         base = int(self.db.execute("SELECT COALESCE(MAX(ticket), ?) FROM trades", (PAPER_FIRST_TICKET - 1,)).fetchone()[0])
+        self._paper_first = base + 1
         if not self.cfg.enabled:
             self.executor = None
         elif executor is not None:
@@ -311,6 +338,8 @@ class CrowdFader:
              bars_fn: Callable[[str, TF, int], list]) -> list[str]:
         notes: list[str] = list(self._pending)
         self._pending.clear()
+        if not self.live:                                   # PAPER or OFF: close what LIVE left, once a minute until done
+            notes.extend(self._wind_down_safely(now))       # (nothing at all under a mode word it does not know)
         if not self.active:
             self.write_status(now)
             return notes
@@ -578,7 +607,7 @@ class CrowdFader:
             return False, ""
         return self._finalise_from_broker(p, tick, now)
 
-    def _finalise_from_broker(self, p: Trade, tick, now: dt.datetime) -> tuple[bool, str]:
+    def _finalise_from_broker(self, p: Trade, tick, now: dt.datetime, ex=None) -> tuple[bool, str]:
         """The ticket is not in the broker's list. With the broker's closing
         deal the row is closed ONCE from it, the reason the broker's own word
         (its stop, its take-profit, a close by hand, or one of this bot's own
@@ -588,13 +617,14 @@ class CrowdFader:
         position from management and let a second one open on the market.
         Only after MISSING_PASSES reads in a row over MISSING_SECONDS is it
         booked at the last mark with a '?' on the reason, and the '?' check
-        puts the broker's figure in later. Returns (gone, note)."""
+        puts the broker's figure in later. Returns (gone, note). ``ex`` is
+        the executor that reads the broker (the wind-down's when not LIVE)."""
         spec = self.spec_fn(p.symbol)
         if tick is not None:
             mark = float(tick.bid if p.side is Side.BUY else tick.ask)
         else:
             mark = float(p.last_price or p.stop or p.entry)
-        deal = self.executor.closed_deal(p.ticket)
+        deal = (ex or self.executor).closed_deal(p.ticket)
         if deal:
             exit_px = float(deal.get("exit_price") or mark)
             net = float(deal["pnl"])
@@ -625,9 +655,10 @@ class CrowdFader:
         '[sl ...]' or '[tp ...]' on the closing deal (the sim says SL or TP);
         a comment of this bot's own (CROWD TIME, CROWD WEEKEND, CROWD TARGET,
         CROWD orphan) is one of its closes finalised late; any other word is
-        a close by hand or by the broker, never a stop. Only with no word at
-        all is it the level the exit price is nearer to, or BROKER_CLOSED
-        when neither level is set."""
+        a close by hand or by the broker, never a stop. Its own switch close
+        (CROWD paper switch, CROWD off switch) keeps its own reason. Only with
+        no word at all is it the level the exit price is nearer to, or
+        BROKER_CLOSED when neither level is set."""
         h = str(hint or "").strip()
         low = h.lower()
         if low.startswith(TAG.lower()):
@@ -635,6 +666,8 @@ class CrowdFader:
             word = words[0].upper().rstrip("?") if words else ""
             if word.startswith("ORPHAN"):
                 return "ORPHAN_CLOSED"
+            if len(words) > 1 and words[1].lower().startswith("switch") and word in ("PAPER", "OFF"):
+                return "SWITCHED TO PAPER" if word == "PAPER" else "SWITCHED OFF"
             return word if word in ("TIME", "WEEKEND", "TARGET", "STOP") else "BROKER_CLOSED"
         if "sl" in low or "stop" in low:
             return "STOP"
@@ -672,33 +705,38 @@ class CrowdFader:
         if note:
             self.notes_by_market[p.symbol] = f"closed {reason} at {exit_px}: {net:+.2f}"
 
-    def _deal_figures(self, p: Trade, fill, now: dt.datetime) -> tuple[float, float, Optional[dt.datetime]]:
+    def _deal_figures(self, p: Trade, fill, now: dt.datetime, ex=None) -> tuple[float, float, Optional[dt.datetime]]:
         """After a close of our own at the broker: the deal's exit, net and
         time, or the fill price valued through the contract (time None) when
-        the deal has not come back after the executor's retries."""
+        the deal has not come back after the executor's retries. ``ex`` is the
+        executor that closed it (the wind-down's when not LIVE)."""
         spec = self.spec_fn(p.symbol)
-        deal = self.executor.closed_deal(p.ticket)
+        deal = (ex or self.executor).closed_deal(p.ticket)
         if deal:
             return float(deal.get("exit_price") or fill.price), float(deal["pnl"]), self._deal_time(deal, now)
         exit_px = float(fill.price)
         net = float(spec.money((exit_px - p.entry) * p.side.sign, p.volume)) if spec is not None else 0.0
         return exit_px, net, None
 
-    def _deal_quick(self, ticket: int) -> Optional[dict]:
+    def _deal_quick(self, ticket: int, ex=None) -> Optional[dict]:
         """The broker's closing deal with no waiting: the once-a-minute check
         of '?' rows must not hold the pass up."""
+        ex = ex or self.executor
         try:
-            return self.executor.closed_deal(ticket, tries=1)
+            return ex.closed_deal(ticket, tries=1)
         except TypeError:
-            return self.executor.closed_deal(ticket)
+            return ex.closed_deal(ticket)
         except Exception:
             return None
 
-    def _correct_estimates(self, now: dt.datetime) -> list[str]:
+    def _correct_estimates(self, now: dt.datetime, ex=None) -> list[str]:
         """Every LIVE row booked with a '?' (the broker's history had not
         caught up when it closed) is re-read from the broker, and once its
         deal is there the row takes the broker's figure and loses the '?'.
-        Runs at start and once a minute, over rows closed in the last day."""
+        Runs at start and once a minute, over rows closed in the last day:
+        in LIVE through the bot's executor, and after a switch away from
+        LIVE through the wind-down's (``ex``), so a row booked with a '?' at
+        the switch still gets the broker's figure."""
         since = (to_utc(now) - dt.timedelta(hours=ESTIMATE_WINDOW_HOURS)).isoformat()
         with self._lock:
             rows = [dict(r) for r in self.db.execute(
@@ -706,7 +744,7 @@ class CrowdFader:
                 (since,))]
         notes: list[str] = []
         for r in rows:
-            deal = self._deal_quick(int(r["ticket"]))
+            deal = self._deal_quick(int(r["ticket"]), ex)
             if not deal:
                 continue
             p = self._trade_from_row(r)
@@ -766,6 +804,16 @@ class CrowdFader:
                                      "open rows are kept and checked on the first pass")
         for r in rows:
             p = self._trade_from_row(r)
+            if not self.live and not self._switching:          # a mode word it does not know: touch nothing at all
+                self._leave_unknown_mode(p)
+                continue
+            if p.mode == "LIVE" and not self.live:             # a real position nothing here would manage: closed below
+                self.leftovers[p.ticket] = p
+                self._set_unmanaged(p, f"real position left from LIVE (this run is {self.mode}): being closed at the broker")
+                continue
+            if p.mode == "PAPER" and self.mode != "PAPER":     # a paper position this run cannot carry: closed in the records
+                self._pending.append(self._close_paper_leftover(p, now))
+                continue
             if not self.active or p.mode != self.mode:
                 self._leave_unmanaged(p, f"opened in {p.mode}, this run is {self.mode}: not managed here",
                                       f"was opened in {p.mode} and this run is {self.mode}: left as it is, close it by hand or switch back")
@@ -787,6 +835,8 @@ class CrowdFader:
             self._pending.extend(self._sweep_orphans(now, at_broker))
         if self.live:
             self._pending.extend(self._correct_estimates(now))
+        else:
+            self._pending.extend(self._wind_down_safely(now))
         for sym in self.cfg.mapping():
             row = self.db.execute("SELECT * FROM checks WHERE symbol=? ORDER BY ts_utc DESC LIMIT 1", (sym,)).fetchone()
             if row is not None:
@@ -802,6 +852,25 @@ class CrowdFader:
     def _leave_unmanaged(self, p: Trade, why: str, note: str) -> None:
         self.unmanaged.append({"ticket": p.ticket, "symbol": p.symbol, "side": p.side.value, "mode": p.mode, "note": why})
         self._pending.append(f"{STRATEGY_LABEL}: ticket {p.ticket} {p.symbol} {p.side.value} {note}")
+
+    def _leave_unknown_mode(self, p: Trade) -> None:
+        """The mode in config.json is not PAPER, LIVE or OFF (a typing slip, or
+        "DEMO"): the run counts as OFF but sends nothing, so an open row is
+        left exactly as it is and the page says so, a real one with its stop
+        and target still at the broker."""
+        word = str(self.cfg.mode)
+        if p.mode == "LIVE":
+            why = (f"real position left from LIVE; the mode {word!r} is not PAPER, LIVE or OFF, so nothing is sent: "
+                   "it keeps its stop and target at the broker, close it by hand or set the mode and restart")
+            note = (f"(left from LIVE) is not touched: the mode {word!r} is not PAPER, LIVE or OFF; it keeps its stop "
+                    "and target at the broker, close it by hand or set the mode and restart")
+            self._switch_note(f"the mode {word!r} is not PAPER, LIVE or OFF, so nothing is sent; real position {p.ticket} "
+                              f"({p.symbol} {p.side.value.lower()}) left from LIVE keeps its stop and target at the broker: "
+                              "close it by hand or set the mode and restart")
+        else:
+            why = f"paper position; the mode {word!r} is not PAPER, LIVE or OFF: left as it is (no money)"
+            note = f"(paper) is left as it is: the mode {word!r} is not PAPER, LIVE or OFF"
+        self._leave_unmanaged(p, why, note)
 
     def _settle_extra(self, p: Trade, at_broker: Optional[dict], now: dt.datetime) -> str:
         """A second open row on a market that already has one (the record of
@@ -842,17 +911,32 @@ class CrowdFader:
         row already carrying that ticket (an earlier estimate, or a row the
         engine lost track of) takes the broker's figure instead of a new row;
         a PAPER row with that number is never touched."""
+        return self._orphan(q, now, self.executor)[1]
+
+    def _orphan(self, q: Position, now: dt.datetime, ex, switch: bool = False) -> tuple[bool, str]:
+        """_close_orphan through executor ``ex``: (closed, the note). With
+        ``switch`` (this run is not LIVE) a refused close is tried again by
+        the wind-down next minute, and the note says so."""
+        now = to_utc(now)
         tick = self._broker_tick(q.symbol) or Tick(q.symbol, now, float(q.entry_price), float(q.entry_price))
         spec = self.spec_fn(q.symbol)
-        fill = self.executor.close(q.ticket, tick, spec, comment=f"{TAG} orphan")
+        try:
+            fill = ex.close(q.ticket, tick, spec, comment=f"{TAG} orphan")
+        except Exception as exc:
+            fill = Fill(False, message=f"close failed: {exc}")
         head = f"{STRATEGY_LABEL}: orphan closed - ticket {q.ticket} {q.symbol} {q.side.value} {q.volume:g} lots at the broker with no record here"
         if not fill.ok:
-            return head + f" (close refused: {fill.message}; still at the broker with its stop, close it by hand)"
+            if switch:
+                return False, (f"{STRATEGY_LABEL}: could not close real position {q.ticket} ({q.symbol} {q.side.value}, "
+                               f"this bot's magic, no record here) ({fill.message or 'no reason given'}); "
+                               "it keeps its stop at the broker; trying again")
+            return False, head + f" (close refused: {fill.message}; still at the broker with its stop, close it by hand)"
         day = now.date().isoformat()
         p = Trade(int(q.ticket), q.symbol, self.cfg.mapping().get(q.symbol, ""), q.side, float(q.volume), float(q.entry_price),
                   float(q.sl or 0.0), float(q.tp or 0.0),
                   to_utc(q.open_time) if isinstance(q.open_time, dt.datetime) else now, day,
                   stop=float(q.sl or 0.0), mode="LIVE", meta={"reason": "orphan: at the broker with no record here"})
+        reason = "ORPHAN_CLOSED"
         try:
             self._save(p, new=True)
             self.entries_today[(q.symbol, day)] = self.entries_today.get((q.symbol, day), 0) + 1
@@ -861,15 +945,253 @@ class CrowdFader:
                 row = self.db.execute("SELECT * FROM trades WHERE ticket=?", (q.ticket,)).fetchone()
             row = dict(row) if row is not None else {}
             if str(row.get("mode") or "PAPER").upper() != "LIVE":
-                exit_px, net, _ = self._deal_figures(p, fill, now)
-                return head + (f"; closed at {exit_px}: {net:+.2f}, but a PAPER row already holds ticket number {q.ticket}, "
-                               "so the figure is only in this note and in the broker's history")
+                exit_px, net, _ = self._deal_figures(p, fill, now, ex)
+                return True, head + (f"; closed at {exit_px}: {net:+.2f}, but a PAPER row already holds ticket number {q.ticket}, "
+                                     "so the figure is only in this note and in the broker's history")
             was = str(row.get("exit_reason") or "open")
             p = self._trade_from_row(row)
             head += f" (its row, booked {was}, now holds the broker's figure)"
-        exit_px, net, when = self._deal_figures(p, fill, now)
-        self._finalise(p, exit_px, net, "ORPHAN_CLOSED" if when is not None else "ORPHAN_CLOSED?", when or now, note=False)
-        return head + f"; closed at {exit_px}: {net:+.2f}"
+            if was.rstrip("?").startswith("SWITCHED"):
+                reason = was.rstrip("?")                   # the rest of a switch close that only partly filled
+        exit_px, net, when = self._deal_figures(p, fill, now, ex)
+        self._finalise(p, exit_px, net, reason if when is not None else reason + "?", when or now, note=False)
+        return True, head + f"; closed at {exit_px}: {net:+.2f}"
+
+    # ------------------------------------------------------ switching mode --
+    def _switch_reason(self) -> str:
+        return "SWITCHED TO PAPER" if self.mode == "PAPER" else "SWITCHED OFF"
+
+    def _switch_comment(self) -> str:
+        return f"{TAG} {'paper' if self.mode == 'PAPER' else 'off'} switch"
+
+    def _switch_note(self, msg: str) -> None:
+        """Keep a plain note of what the switch did for the status file (the
+        same words twice in a row are kept once)."""
+        if not self.switch_notes or self.switch_notes[-1] != msg:
+            self.switch_notes.append(msg)
+            del self.switch_notes[:-SWITCH_NOTES_KEPT]
+
+    def _set_unmanaged(self, p: Trade, why: str) -> None:
+        """List one row as unmanaged, or re-word it: one entry per ticket."""
+        self.unmanaged = [u for u in self.unmanaged if u.get("ticket") != p.ticket]
+        self.unmanaged.append({"ticket": p.ticket, "symbol": p.symbol, "side": p.side.value, "mode": p.mode, "note": why})
+
+    def _leftover_done(self, p: Trade) -> None:
+        self.leftovers.pop(p.ticket, None)
+        self.unmanaged = [u for u in self.unmanaged if u.get("ticket") != p.ticket]
+
+    def _wind_down_safely(self, now: dt.datetime) -> list[str]:
+        try:
+            return self._wind_down(now)
+        except Exception as exc:                           # never out of step() or the restart
+            return [f"{STRATEGY_LABEL}: closing what LIVE left at the broker failed this pass "
+                    f"({type(exc).__name__}: {exc}); trying again next minute"]
+
+    def _wind_down(self, now: dt.datetime) -> list[str]:
+        """This run is not LIVE (PAPER or OFF), so nothing here exits a real
+        position on time, on target or for the weekend any more. Whatever
+        LIVE left at the broker under the Crowd Fader's own magic is closed,
+        once, and booked with the broker's figure: a LIVE row still at the
+        broker is closed and booked SWITCHED TO PAPER (or SWITCHED OFF); one
+        already gone is booked from its closing deal (STOP, TARGET etc.); a
+        position with this magic and no row is closed as an orphan; a LIVE
+        row booked with a '?' takes the broker's figure once its record
+        comes in (_correct_estimates, as in LIVE). Runs at start-up and then
+        at most once a minute until it has settled (see _settled): while
+        anything is outstanding (a refused or partly filled close, a failed
+        read, a row not yet settled, a '?' row of the last day), and for a
+        few clean reads after that, since one empty read is not proof; then
+        it stops reading the broker. A position under any other magic is
+        never touched, and under a mode word this bot does not know nothing
+        runs at all."""
+        if self.live or self._wind_done or not self._switching:
+            return []
+        if self.broker is None:
+            self._wind_done = True
+            notes = []
+            for p in self.leftovers.values():
+                why = "real position left from LIVE; no broker connection here, so it keeps its stop at the broker: close it by hand"
+                self._set_unmanaged(p, why)
+                self._switch_note(f"real position {p.ticket} ({p.symbol} {p.side.value.lower()}) left from LIVE was not closed: "
+                                  "no broker connection here, so it keeps its stop at the broker: close it by hand")
+                notes.append(f"{STRATEGY_LABEL}: ticket {p.ticket} {p.symbol} {p.side.value}: {why}")
+            return notes
+        now = to_utc(now)
+        minute = now.strftime("%Y-%m-%d %H:%M")
+        if minute == self._wind_minute:
+            return []
+        self._wind_minute = minute
+        if int(self.cfg.magic or 0) != MAGIC_CROWD:
+            self._wind_done = True                        # never touch a position under another number
+            why = (f"real position left from LIVE; magic {self.cfg.magic} is not the Crowd Fader's own ({MAGIC_CROWD}), "
+                   "so nothing at the broker is touched: it keeps its stop there, close it by hand")
+            for p in self.leftovers.values():
+                self._set_unmanaged(p, why)
+            if self.leftovers:
+                self._switch_note(why)
+            return [f"{STRATEGY_LABEL}: {why}"] if self.leftovers else []
+        if self._winder is None:
+            self._winder = make_executor("LIVE", self.broker, self.cfg.magic, TAG, self.cfg.paper_slippage_points,
+                                         first_ticket=self._paper_first)
+        ex = self._winder
+        try:
+            at_broker = {q.ticket: q for q in ex.positions() if int(getattr(q, "magic", 0) or 0) == MAGIC_CROWD}
+        except Exception as exc:
+            self._settled(now, clean=False)
+            for p in self.leftovers.values():
+                self._set_unmanaged(p, f"real position left from LIVE: the broker's positions could not be read ({exc}); "
+                                       "it keeps its stop at the broker, trying again each minute")
+            msg = f"could not read the broker's positions to close what LIVE left ({exc}); trying again next minute"
+            self._switch_note(msg)
+            return [f"{STRATEGY_LABEL}: {msg}"]
+        notes: list[str] = []
+        failed = sent = False
+        handled = set(self.leftovers)
+        for p in sorted(self.leftovers.values(), key=lambda t: t.opened):
+            q = at_broker.get(p.ticket)
+            if q is not None:
+                ok, note = self._close_leftover(p, q, ex, now)
+                sent = True
+                failed = failed or not ok
+            else:
+                note = self._leftover_gone(p, ex, now)
+            if note:
+                notes.append(note)
+        for q in at_broker.values():                       # this bot's magic and no row: an orphan, closed too
+            if q.ticket in handled:
+                continue
+            ok, note = self._orphan(q, now, ex, switch=True)
+            sent = True
+            failed = failed or not ok
+            self._switch_note(note[len(STRATEGY_LABEL) + 2:])
+            notes.append(note)
+        notes.extend(self._correct_estimates(now, ex))     # a '?' row takes the broker's figure when it comes
+        if self._settled(now, clean=not at_broker and not sent and not failed and not self.leftovers):
+            self._wind_done = True
+        return notes
+
+    def _settled(self, now: dt.datetime, clean: bool) -> bool:
+        """Is the wind-down finished? Only after MISSING_PASSES reads in a row,
+        over at least MISSING_SECONDS, found nothing of this bot's at the
+        broker and had nothing to send or wait for, and no LIVE row booked
+        with a '?' is still waiting for the broker's record. One clean read is
+        not enough, as everywhere else in this engine: the MT5 adapter answers
+        a terminal that is not connected yet with an empty list, and a close
+        that only partly filled leaves the rest at the broker under the same
+        ticket; the next read finds either one and closes it."""
+        if not clean:
+            self._clean_passes, self._clean_since = 0, None
+            return False
+        now = to_utc(now)
+        self._clean_passes += 1
+        if self._clean_since is None:
+            self._clean_since = now
+        return (self._clean_passes >= MISSING_PASSES and (now - self._clean_since).total_seconds() >= MISSING_SECONDS
+                and not self._estimates_pending(now))
+
+    def _estimates_pending(self, now: dt.datetime) -> bool:
+        """A LIVE row booked with a '?' in the last day: its record may still
+        come in (or its position turn up), so the wind-down keeps going."""
+        since = (to_utc(now) - dt.timedelta(hours=ESTIMATE_WINDOW_HOURS)).isoformat()
+        with self._lock:
+            return bool(self.db.execute("SELECT COUNT(*) FROM trades WHERE mode='LIVE' AND exit_reason LIKE '%?' AND closed_utc >= ?",
+                                        (since,)).fetchone()[0])
+
+    def _close_leftover(self, p: Trade, q: Position, ex, now: dt.datetime) -> tuple[bool, str]:
+        """An open LIVE row whose position is still at the broker: closed at
+        the market and booked with the broker's figure (profit + commission +
+        swap, the entry commission included), as LIVE books its own closes.
+        Refused: the row stays open, it keeps its stop (and target) at the
+        broker, and the next minute tries again. Partly filled (MT5 answers
+        DONE_PARTIAL as a success): the row stays open too, the rest keeps
+        its stop and target at the broker and is closed next minute, and the
+        row is booked once, with the broker's figure for the whole position."""
+        p.broker_pnl = float(getattr(q, "profit", 0.0) or 0.0) + float(getattr(q, "swap", 0.0) or 0.0)
+        sl = float(getattr(q, "sl", 0.0) or 0.0)
+        if sl and (sl - p.stop) * p.side.sign > 0:
+            p.stop = sl                                    # the record keeps the broker's (better) stop; nothing is sent
+        tick = self._broker_tick(p.symbol) or Tick(p.symbol, now, float(q.entry_price), float(q.entry_price))
+        mark = float(tick.bid if p.side is Side.BUY else tick.ask)
+        if mark > 0:
+            p.last_price = mark
+            p.peak_r = max(p.peak_r, p.r_of(mark))
+        try:
+            fill = ex.close(p.ticket, tick, self.spec_fn(p.symbol), comment=self._switch_comment())
+        except Exception as exc:
+            fill = Fill(False, message=f"close failed: {exc}")
+        if not fill.ok:
+            why = fill.message or str(getattr(ex, "last_error", "") or "") or "no reason given"
+            self._set_unmanaged(p, f"real position left from LIVE: the close was refused ({why}); "
+                                   "it keeps its stop at the broker, trying again each minute")
+            msg = f"could not close real position {p.ticket} left from LIVE ({why}); it keeps its stop at the broker; trying again"
+            self._switch_note(msg)
+            return False, f"{STRATEGY_LABEL}: {msg}"
+        at_broker, got = float(getattr(q, "volume", 0.0) or 0.0), float(getattr(fill, "volume", 0.0) or 0.0)
+        if 0 < got < at_broker - 1e-9:
+            self._set_unmanaged(p, f"real position left from LIVE: {got:g} of {at_broker:g} lots closed; the rest keeps its "
+                                   "stop at the broker and is closed next minute")
+            msg = (f"closed {got:g} of {at_broker:g} lots of real position {p.ticket} left from LIVE ({p.symbol} "
+                   f"{p.side.value.lower()}); the rest keeps its stop at the broker and is closed next minute")
+            self._switch_note(msg)
+            return False, f"{STRATEGY_LABEL}: {msg}"
+        exit_px, net, when = self._deal_figures(p, fill, now, ex)
+        reason = self._switch_reason() + ("" if when is not None else "?")
+        self._finalise(p, exit_px, net, reason, when or now, note=False)
+        self._leftover_done(p)
+        msg = f"closed the real position left from LIVE: {p.symbol} {p.side.value.lower()} {p.volume:g}, {net:+.2f}"
+        if when is None:
+            msg += " (estimated from the fill; the broker's figure goes in when its record comes)"
+        self._switch_note(msg)
+        return True, f"{STRATEGY_LABEL}: {msg} (ticket {p.ticket} at {exit_px}, booked {reason})"
+
+    def _leftover_gone(self, p: Trade, ex, now: dt.datetime) -> str:
+        """An open LIVE row whose position is no longer at the broker (its stop
+        or target while the bot was down, say): booked from the broker's
+        closing deal with the reason LIVE would give, exactly as
+        _finalise_from_broker does (no deal yet: kept and read again; only
+        after a while an estimate, which the '?' check corrects later)."""
+        gone, note = self._finalise_from_broker(p, self._broker_tick(p.symbol), now, ex)
+        if not gone:
+            self._set_unmanaged(p, "real position left from LIVE: not in the broker's list and no closing deal yet; "
+                                   "checked again each minute")
+            return note
+        self._leftover_done(p)
+        with self._lock:
+            row = self.db.execute("SELECT exit_reason, net_pnl FROM trades WHERE ticket=?", (p.ticket,)).fetchone()
+        if row is not None:
+            self._switch_note(f"the real position left from LIVE, {p.symbol} {p.side.value.lower()} {p.volume:g}, had already "
+                              f"closed at the broker: booked {row['exit_reason']}, {float(row['net_pnl'] or 0.0):+.2f}")
+        return (note + " (left from LIVE)") if note else note
+
+    def _close_paper_leftover(self, p: Trade, now: dt.datetime) -> str:
+        """An open PAPER row when this run is LIVE (or OFF): the paper
+        position cannot be carried into it, so it is closed in the records as
+        a simulated exit (no money, nothing sent) at the current price less
+        the paper slippage, or at its last known price when there is none,
+        booked SWITCHED TO LIVE (or SWITCHED OFF). It never hangs unmanaged."""
+        reason = "SWITCHED TO LIVE" if self.live else "SWITCHED OFF"
+        try:
+            spec = self.spec_fn(p.symbol)
+            tick = self._broker_tick(p.symbol)
+            bid = float(getattr(tick, "bid", 0.0) or 0.0) if tick is not None else 0.0
+            ask = float(getattr(tick, "ask", 0.0) or 0.0) if tick is not None else 0.0
+            if bid > 0 and ask >= bid:
+                mark = bid if p.side is Side.BUY else ask
+                px = mark - p.side.sign * self.cfg.paper_slippage_points * float(getattr(spec, "point", 0.0) or 0.0)
+                px = spec.normalise_price(px) if spec is not None and hasattr(spec, "normalise_price") else px
+                where = f"at {px}, the current price less the paper slippage"
+            else:
+                px = float(p.last_price or p.entry)
+                where = f"at {px}, its last known price (no price now)"
+            net = float(spec.money((px - p.entry) * p.side.sign, p.volume)) if spec is not None else 0.0
+            self._finalise(p, float(px), net, reason, to_utc(now), note=False)
+        except Exception as exc:
+            self._set_unmanaged(p, f"paper position this {self.mode} run cannot carry; it could not be closed in the records ({exc})")
+            return f"{STRATEGY_LABEL}: ticket {p.ticket} {p.symbol} paper position could not be closed in the records ({exc})"
+        msg = (f"paper position {p.symbol} {p.side.value.lower()} {p.volume:g} closed in the records {where}: {net:+.2f} "
+               f"(simulated, no money; this run is {self.mode})")
+        self._switch_note(msg)
+        return f"{STRATEGY_LABEL}: ticket {p.ticket} {msg}"
 
     # --------------------------------------------------------------- status --
     def closed_since(self, since: dt.datetime) -> list[dict]:
@@ -879,17 +1201,31 @@ class CrowdFader:
                 (to_utc(since).isoformat(),))]
 
     def open_rows(self) -> list[dict]:
+        """The open positions: the ones managed here, then any real position
+        left from LIVE that is not closed yet (real money until it is), with
+        the latest word on it (being closed, or close it by hand)."""
         out = []
-        for p in self.open.values():
+        said = {u.get("ticket"): u.get("note") for u in self.unmanaged}
+        for p in list(self.open.values()) + list(self.leftovers.values()):
             spec = self.spec_fn(p.symbol)
             if p.broker_pnl is not None:
                 pnl = p.broker_pnl                              # the broker's running figure
             else:
                 pnl = float(spec.money((p.last_price - p.entry) * p.side.sign, p.volume)) if spec is not None and p.last_price else 0.0
-            out.append({"ticket": p.ticket, "symbol": p.symbol, "side": p.side.value, "entry": p.entry, "stop": p.stop,
-                        "target": p.target, "initial_stop": p.initial_stop,
-                        "r_now": round(p.r_of(p.last_price), 2) if p.last_price else 0.0,
-                        "peak_r": round(p.peak_r, 2), "pnl": round(pnl, 2), "opened": p.opened.isoformat(), "mode": p.mode})
+            row = {"ticket": p.ticket, "symbol": p.symbol, "side": p.side.value, "entry": p.entry, "stop": p.stop,
+                   "target": p.target, "initial_stop": p.initial_stop,
+                   "r_now": round(p.r_of(p.last_price), 2) if p.last_price else 0.0,
+                   "peak_r": round(p.peak_r, 2), "pnl": round(pnl, 2), "opened": p.opened.isoformat(), "mode": p.mode}
+            if p.ticket in self.leftovers:
+                row["note"] = said.get(p.ticket) or "real position left from LIVE: being closed at the broker"
+            out.append(row)
+        return out
+
+    def markets_now(self) -> dict:
+        """What each market is doing, and the latest word on the mode switch."""
+        out = dict(self.notes_by_market)
+        if self.switch_notes:
+            out["Mode switch"] = self.switch_notes[-1]
         return out
 
     def status(self, now: Optional[dt.datetime] = None) -> dict:
@@ -928,8 +1264,8 @@ class CrowdFader:
                 "last_poll": self.last_poll.isoformat() if self.last_poll else None, "polls": self.polls,
                 "poll_error": self.poll_error, "api_calls": self.client.calls if self.client is not None else 0,
                 "api_remaining": self.client.remaining if self.client is not None else None,
-                "markets_now": dict(self.notes_by_market), "reads": reads, "open": self.open_rows(),
-                "unmanaged": list(self.unmanaged),
+                "markets_now": self.markets_now(), "reads": reads, "open": self.open_rows(),
+                "unmanaged": list(self.unmanaged), "switch_notes": list(self.switch_notes),
                 "entries_today": {s: n for (s, d), n in self.entries_today.items() if d == now.date().isoformat()}}
 
     def write_status(self, now: dt.datetime, every_seconds: float = 2.0) -> None:
