@@ -44,13 +44,19 @@ def main(argv=None) -> int:
             print("No Coinversa key in secrets.json. Run with --set-key first.")
             return 1
         from .signal import summarise
+        c = CoinversaClient(key)
         try:
-            c = CoinversaClient(key)
             cohorts = c.cohort_bias(a.coin)
-            heat = c.heatmap(a.coin, 3.0, 20)
+            print(f"cohort bias: ok, {len(cohorts)} tiers")
         except CoinversaError as exc:
-            print(f"Coinversa said no: {exc}")
+            print(f"cohort bias: Coinversa said no: {exc}")
             return 2
+        heat = None
+        try:
+            heat = c.heatmap(a.coin, 3.0, 20)
+            print(f"liquidation map: ok, {len(heat.get('buckets') or [])} price buckets")
+        except CoinversaError as exc:
+            print(f"liquidation map: Coinversa said no: {exc} (the read works without it; no fuel or cluster)")
         r = summarise(a.coin.split(":")[-1], a.coin, cohorts, heat, utcnow())
         print(f"{a.coin} at {r.price}: {r.reason}")
         for t, v in r.tiers.items():

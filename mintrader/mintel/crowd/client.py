@@ -87,9 +87,10 @@ class CoinversaClient:
     # -------------------------------------------------------------- http --
     def _get(self, path: str, params: Optional[dict] = None) -> Any:
         url = self.base_url + path
-        q = {k: str(v) for k, v in (params or {}).items() if v not in (None, "")}
+        q = {k: _param(v) for k, v in (params or {}).items() if v not in (None, "")}
         if q:
             url += "?" + urllib.parse.urlencode(q)
+        where = path + (("?" + urllib.parse.urlencode(q)) if q else "")
         last: Optional[Exception] = None
         for attempt in range(2):
             req = urllib.request.Request(url, headers={"X-API-Key": self.api_key, "Accept": "application/json",
@@ -111,8 +112,17 @@ class CoinversaClient:
                 detail = ""
                 try:
                     raw = exc.read().decode("utf-8")
-                    d = json.loads(raw)
-                    detail = str(d.get("detail") or d.get("error") or d.get("title") or d.get("message") or raw)[:200]
+                    try:
+                        d = json.loads(raw)
+                        detail = str(d.get("detail") or d.get("error") or d.get("title") or d.get("message") or "")
+                        extra = d.get("errors") or d.get("issues") or d.get("fields")
+                        if extra:
+                            detail = (detail + " " + json.dumps(extra)).strip()
+                        if not detail:
+                            detail = raw
+                    except Exception:
+                        detail = raw
+                    detail = detail[:300]
                 except Exception:
                     pass
                 if exc.code == 429 and attempt == 0:
@@ -132,7 +142,7 @@ class CoinversaClient:
                     self._sleep(2.0)
                     last = CoinversaError(f"server error {exc.code}: {detail}", exc.code)
                     continue
-                raise CoinversaError(f"request failed ({exc.code}): {detail}", exc.code)
+                raise CoinversaError(f"request failed ({exc.code}) on {where}: {detail}", exc.code)
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last = CoinversaError(f"cannot reach Coinversa: {exc}")
                 if attempt == 0:
@@ -157,6 +167,16 @@ class CoinversaClient:
     def market_overview(self, dex: str = "xyz") -> dict:
         d = self._get("/pulse/market-overview", {"dex": dex})
         return d if isinstance(d, dict) else {}
+
+
+def _param(v: Any) -> str:
+    """Numbers the way a JavaScript client sends them: 3.0 is "3", not "3.0"
+    (the API validates integers strictly and answers 422 otherwise)."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, float):
+        return str(int(v)) if v == int(v) else repr(v)
+    return str(v)
 
 
 def _rows(d: Any, keys: tuple[str, ...]) -> list[dict]:

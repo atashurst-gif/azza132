@@ -111,7 +111,25 @@ class TestTheClient:
         assert len(rows) == 8 and seen[0].full_url.endswith("/api/public/v1/live/cohort-bias/xyz:GOLD")
         assert seen[0].get_header("X-api-key") == "cvsa_test" and c.remaining == 599
         c.heatmap("xyz:GOLD", 3.0, 20)
-        assert "/live/liquidation-heatmap/xyz:GOLD?" in seen[1].full_url and "range=3.0" in seen[1].full_url
+        assert "/live/liquidation-heatmap/xyz:GOLD?" in seen[1].full_url and "range=3" in seen[1].full_url
+
+    def test_numbers_go_on_the_wire_as_javascript_sends_them(self):
+        seen = []
+        def opener(req, timeout=0):
+            seen.append(req); return FakeResponse({"buckets": []})
+        c = CoinversaClient("cvsa_test", opener=opener, sleep=lambda s: None)
+        c.heatmap("xyz:GOLD", 3.0, 20)
+        assert seen[0].full_url.endswith("/live/liquidation-heatmap/xyz:GOLD?buckets=20&range=3")
+        c.heatmap("xyz:GOLD", 2.5, 12)
+        assert seen[1].full_url.endswith("?buckets=12&range=2.5")
+
+    def test_a_validation_error_names_the_request_and_the_detail(self):
+        def opener(req, timeout=0):
+            raise urllib.error.HTTPError(req.full_url, 422, "no", {}, io.BytesIO(b'{"error":"validation failed","errors":[{"path":"range","message":"must be integer"}]}'))
+        c = CoinversaClient("cvsa_test", opener=opener, sleep=lambda s: None)
+        with pytest.raises(CoinversaError) as ei:
+            c.heatmap("xyz:GOLD", 3.0, 20)
+        assert ei.value.status == 422 and "/live/liquidation-heatmap/xyz:GOLD" in str(ei.value) and "must be integer" in str(ei.value)
 
     def test_a_rate_limit_is_retried_once_and_a_bad_key_is_not(self):
         calls = []
