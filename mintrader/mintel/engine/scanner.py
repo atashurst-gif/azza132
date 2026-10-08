@@ -557,9 +557,18 @@ class Scanner:
     def state_for(self, ctx: SymbolContext, side: int) -> Optional[MarketState]:
         """Build the MarketState for one instrument and one direction."""
         regime = ctx.regime.regime if ctx.regime else rg.Regime.UNCLEAR
+        from ..contracts import infer_group
+        spec_ = ctx.spec
+        try:
+            group = infer_group(spec_.name, getattr(spec_, "base_currency", "") or "",
+                                getattr(spec_, "profit_currency", "") or "", getattr(spec_, "path", "") or "")
+        except Exception:
+            group = ""
         sig = best_signal(ctx, side, regime,
                           disabled=getattr(self.cfg.scan, "disabled_tactics", ()) or (),
-                          disabled_in=getattr(self.cfg.scan, "disabled_tactic_regimes", ()) or ())
+                          disabled_in=getattr(self.cfg.scan, "disabled_tactic_regimes", ()) or (),
+                          disabled_in_group=getattr(self.cfg.scan, "disabled_tactic_groups", ()) or (),
+                          group=group)
         if sig is None:
             return None
         ev = self.evidence_for(ctx, side)

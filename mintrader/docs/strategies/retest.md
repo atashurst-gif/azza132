@@ -183,6 +183,22 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   lines have been before. Risk per trade is NOT a flat 0.5%: STRONG setups
   have been sized at 0.65-0.9% (13-18 GBP on 2,000).
 
+- 2026-10-08 (morning, standing rules on the record to 7 Oct): version 4.
+  Markets: USDCHF negative on 5 of 6 days (-38.77) and XAUJPY on 7 of 10
+  (-14.09) go into universe.excluded_symbols. Approach by kind of market:
+  MOMENTUM_CONTINUATION on gold and silver crosses negative on the last
+  three days it traded (5, 6, 7 Oct: -7.89, -48.52, -28.62; 6 days, 3
+  negative, net -52.94) is switched off there (scan.disabled_tactic_groups,
+  groups GOLD and SILVER from contracts.infer_group); on indices (+52.71 over
+  10 days) and FX (+38.63) it stays on. The whole approach across every
+  market is negative on 5 of 11 days but net +38, so by the precedent of
+  25 Sep it is not switched off outright. Since the reset: indices +85.18
+  on 12 trades, FX -25.11 on 12, metal crosses -77.14 on 11.
+  Looked at and NOT changed: wins averaging 0.7 R against losses of 1.0 R
+  (the ladder trailing winners out early) - two days of evidence; the
+  12:30-13:45 UK cluster (-30.11 on 8 trades on the 7th, -28.53 on the
+  6th) - two days. The measuring clock is unchanged.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

@@ -462,10 +462,18 @@ def candidates_for(regime: Regime) -> tuple[Tactic, ...]:
     return tuple(t for t in TACTICS if regime in t.regimes)
 
 
+def blocked_in_group(name: str, group: str, disabled_in_group: Sequence[tuple[str, str]]) -> bool:
+    """Is this approach switched off for this kind of market (instrument group)?"""
+    g = str(group or "").upper()
+    return any(n == name and str(gr).upper() == g for n, gr in disabled_in_group)
+
+
 def best_signal(ctx: SymbolContext, side: int,
                 regime: Regime,
                 disabled: Sequence[str] = (),
-                disabled_in: Sequence[tuple[str, str]] = ()) -> Optional[TacticSignal]:
+                disabled_in: Sequence[tuple[str, str]] = (),
+                disabled_in_group: Sequence[tuple[str, str]] = (),
+                group: str = "") -> Optional[TacticSignal]:
     """Highest-quality applicable tactic for one direction.
 
     Counter-trend tactics are held to a higher bar because fading a move looks
@@ -478,6 +486,8 @@ def best_signal(ctx: SymbolContext, side: int,
             continue
         if any(n == tactic.name and r.upper() == regime.value.upper()
                for n, r in disabled_in):
+            continue
+        if blocked_in_group(tactic.name, group, disabled_in_group):
             continue
         try:
             sig = tactic.evaluate(ctx, side)
@@ -494,6 +504,8 @@ def best_signal(ctx: SymbolContext, side: int,
             continue
         if any(n == sig.name and r.upper() == regime.value.upper()
                for n, r in disabled_in):
+            continue
+        if blocked_in_group(sig.name, group, disabled_in_group):
             continue
         if tactic.counter_trend and sig.quality < 45.0:
             continue

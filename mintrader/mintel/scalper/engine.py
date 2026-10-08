@@ -61,6 +61,8 @@ class ScalperEngine:
         self.session_pnl: float = 0.0
         self.session_key: str = ""
         self.micros: dict = {}
+        self.looks: dict = {}                      # symbol -> counts of passes / with a direction / tradable, today
+        self._looks_day = None
         self.buffers: dict[str, TickBuffer] = {s: TickBuffer(s) for s in scfg.symbols}
         self.specs: dict = {}
         self.bars: dict[str, list] = {}
@@ -360,6 +362,29 @@ class ScalperEngine:
         return msg
 
     # --------------------------------------------------------------- scan --
+    def _count_look(self, sym: str, now: dt.datetime, opp: Opportunity) -> None:
+        """Keep a tally per market of every pass, the passes with a direction,
+        the tradable ones, and the first reason given when not - so a quiet
+        day can be told from a strict one."""
+        if self._looks_day != now.date():
+            self._looks_day = now.date()
+            self.looks = {}
+        c = self.looks.setdefault(sym, {"passes": 0, "with_direction": 0, "tradable": 0, "blockers": {}, "best": 0.0})
+        c["passes"] += 1
+        if opp.direction:
+            c["with_direction"] += 1
+            c["best"] = max(c["best"], float(opp.confidence or 0.0))
+            if opp.tradable:
+                c["tradable"] += 1
+            elif opp.blockers:
+                k = opp.blockers[0]
+                for tag, label in (("spread", "spread"), ("momentum", "momentum below the bar"), ("scalpable", "not scalpable"),
+                                   ("costs", "costs"), ("thin", "too thin"), ("without a pullback", "chasing")):
+                    if tag in k:
+                        k = label
+                        break
+                c["blockers"][k] = c["blockers"].get(k, 0) + 1
+
     def _loss_ladder(self) -> tuple[float, float]:
         """(size multiplier, extra bar) for the current run of losses. Never above 1x."""
         n = self.breakers.consecutive_losses
@@ -406,6 +431,7 @@ class ScalperEngine:
             opp = Opportunity(symbol=sym, direction=r.direction, confidence=r.confidence, contributions=r.contributions,
                               penalties=r.penalties, blockers=list(r.blockers), expected_move_points=r.expected_move_points,
                               features=None, setup=r.setup, scalpability=r.scalpability, threshold=threshold)
+            self._count_look(sym, now, opp)
             if r.direction:
                 opp.invalidation = structural_stop(buf, m, r.direction, self.scfg, spec.point, now)
                 opp.notes.append(f"{r.setup.replace('_', ' ').lower()}; v1s {m.v(1.0):+.2f} pts/s; accel {m.accel_ratio:+.1f}x; "
@@ -461,8 +487,10 @@ class ScalperEngine:
             if opp.direction == 0:
                 continue
             if not opp.tradable:
-                if opp.confidence >= 40:
-                    self.journal.record_rejected(opp, opp.features.spread_points if opp.features else 0.0, now, self.scfg.rejected_log_seconds)
+                if opp.confidence >= 40 or self.velocity_style:
+                    m = self.micros.get(opp.symbol)
+                    sp = opp.features.spread_points if opp.features else (m.spread_points if m is not None else 0.0)
+                    self.journal.record_rejected(opp, sp, now, self.scfg.rejected_log_seconds)
                 continue
             why = self._try_open(opp, now, ticks)
             notes.append(why)
@@ -800,6 +828,7 @@ class ScalperEngine:
             "threshold": {"now": round(self.threshold_now, 1), "why": self.threshold_why},
             "best_setup": (best.setup if best else None), "best_scalpability": (best.scalpability if best else None),
             "session_pnl": round(self.session_pnl, 2),
+            "looks_today": self.looks if self.velocity_style else None,
             "position": position, "tick_age_seconds": tick_age, "latency_ms": round(self.latency_ms, 1),
             "cycle_ms": round(getattr(self, "cycle_ms", 0.0), 1),
             "breakers": {"consecutive_losses": self.breakers.consecutive_losses,

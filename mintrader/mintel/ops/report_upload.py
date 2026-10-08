@@ -137,6 +137,11 @@ def paper_bot_json(cfg: Config, day: dt.datetime, status_name: str, db_name: str
         out["trades"] = [dict(r) for r in db.execute(
             "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? ORDER BY closed_utc",
             (to_utc(start).isoformat(),))]
+        try:
+            out["checks"] = [dict(r) for r in db.execute(
+                "SELECT * FROM checks WHERE ts_utc >= ? ORDER BY ts_utc", (to_utc(start).isoformat(),))]
+        except Exception:
+            pass                                   # not every paper bot keeps a checks table
         db.close()
     except Exception as exc:
         out["trades_unavailable"] = str(exc)

@@ -56,4 +56,4 @@ the same signal, so the sizing of both would have to be looked at together.
 
 | Day | Shadows | Wins | Net (paper) | The ladder on the same trades | Notes |
 |---|---|---|---|---|---|
-| 7 Oct (to 13:33 UK) | 4 | 0 closed, 1 open | -27.77 closed; US30 open +60.89 at +8.2 R (trail locks about +47) | -2.36 on the same four (JP225 +5.12, US30 -8.39, JP225 -9.52, US30 +10.43) | three shadows ran to the full stop where the ladder lost slightly less or won small; the fourth reached +9.4 R, nine times what the ladder kept |
+| 7 Oct | 5 | 1 | +20.14 | +1.50 on the same five (JP225 +5.12, US30 +10.43, US30 -8.39, JP225 -9.52, JP225 +3.86) | four shadows to the full stop (-10.06, -8.36, -9.35, -8.76; two of them where the ladder had kept +5.12 and +3.86), one ridden to +7.67 R (+56.67, peak +10.67 R) where the ladder kept +10.43. The shape the replay predicted |

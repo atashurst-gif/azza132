@@ -158,7 +158,10 @@ def journal_rows_for(cfg: Config, day: dt.datetime) -> list[dict]:
         from pathlib import Path
         j = Journal(Path(cfg.ops.data_dir) / "journal.sqlite")
         try:
-            return j.closed_trades(limit=2000, since=day)
+            end = (day + dt.timedelta(days=1)).isoformat()
+            # the day's rows only: run the morning after, "since the day" would
+            # also pull in the next day's first trades (8 Oct)
+            return [r for r in j.closed_trades(limit=2000, since=day) if str(r.get("closed_utc") or "") < end]
         finally:
             j.close()
     except Exception:

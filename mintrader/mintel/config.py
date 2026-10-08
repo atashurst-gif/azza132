@@ -101,8 +101,11 @@ class UniverseConfig:
     #   CHFJPY -29.86 (1/7)  EURNZD -29.37 (1/6) UK100 -23.66 (1/8)
     #   GBPJPY -19.33 (2/7)  XAUAUD -8.80 (2/7)
     # 125 trades, -219.70 together.
+    # 8 Oct, same rule on the record to 7 Oct: USDCHF negative on 5 of 6 days
+    # (-38.77), XAUJPY on 7 of 10 (-14.09).
     excluded_symbols: tuple[str, ...] = ("USDJPY", "DE40", "XAUGBP", "CHFJPY",
-                                         "EURNZD", "UK100", "GBPJPY", "XAUAUD")
+                                         "EURNZD", "UK100", "GBPJPY", "XAUAUD",
+                                         "USDCHF", "XAUJPY")
     require_full_spec: bool = True
 
 
@@ -154,6 +157,18 @@ class ScanConfig:
     # traded (17, 22, 23 Sep), 6 trades, about -13 GBP - a retest needs a
     # level that holds, and in high volatility it does not. In TREND it is
     # the main line and stays on.
+    # An approach switched off in ONE KIND OF MARKET (the instrument group
+    # from contracts.infer_group: GOLD, METAL, INDEX, FX_MAJOR, ...). 8 Oct:
+    # MOMENTUM_CONTINUATION on gold and silver crosses was negative on the
+    # last three days it traded (5, 6, 7 Oct: -7.89, -48.52, -28.62; 6 days
+    # in all, 3 negative, net -52.94), while the same approach on indices
+    # (+52.71) and FX (+38.63) is the bot's engine. Same standard as the
+    # approach-in-condition rule.
+    disabled_tactic_groups: tuple[tuple[str, str], ...] = (
+        ("MOMENTUM_CONTINUATION", "GOLD"),
+        ("MOMENTUM_CONTINUATION", "SILVER"),
+        ("MOMENTUM_CONTINUATION", "METAL"),
+    )
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),
         ("BREAKOUT_RETEST", "HIGH_VOL"),
@@ -361,7 +376,10 @@ STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, pap
 # never assumed to be zero. See docs/strategies/v2-commission-first.md.
 # Version 3 from 7 Oct: the same, plus breakout acceptance in a fast market
 # off (standing rule). The measuring clock is unchanged: still from the reset.
-STRATEGY_NAME = "Commission First (version 3)"
+# Version 4 from 8 Oct: USDCHF and XAUJPY off (market rule), momentum
+# continuation off on gold and silver crosses (the approach rule applied per
+# kind of market). The measuring clock is unchanged: still from the reset.
+STRATEGY_NAME = "Commission First (version 4)"
 
 
 @dataclass

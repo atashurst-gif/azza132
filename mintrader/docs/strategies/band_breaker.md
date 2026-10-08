@@ -62,4 +62,4 @@ call.
 
 | Day | Trades | Wins | Net (paper) | By market | Notes |
 |---|---|---|---|---|---|
-| 7 Oct | 0 | - | - | - | first day; the New York session fell after the Mac's last upload at 13:33 UK, so nothing is known |
+| 7 Oct | 0 | - | 0 | - | first day: no trade, and no record of what it saw at each half hour. From 8 Oct every check is logged (close, band, VWAP, decision) so a quiet day can be told from a bug |

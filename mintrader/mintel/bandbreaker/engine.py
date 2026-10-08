@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS trades (
     day_open REAL, prev_close REAL, peak_r REAL
 );
 CREATE INDEX IF NOT EXISTS ix_bb_closed ON trades(closed_utc);
+CREATE TABLE IF NOT EXISTS checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, ts_utc TEXT, symbol TEXT, check_ny TEXT,
+    close REAL, band_upper REAL, band_lower REAL, vwap REAL, sigma REAL, decision TEXT
+);
 """
 
 
@@ -253,32 +257,57 @@ class BandBreaker:
         m30 = bars_fn(sym, TF.M30, 4)
         closed = [b for b in m30 if ny(b.time).time() < n.time() or ny(b.time).date() < today]
         if not closed:
+            self._record_check(sym, now, hhmm, None, ub, lb, vw, sigma, "no completed half-hour bar yet")
             return notes
         close = float(closed[-1].close)
         want = Side.BUY if close > ub else (Side.SELL if close < lb else None)
-        if want is None or (pos is not None and pos.side is want):
-            return notes
         key = (sym, today.isoformat())
-        if self.entries_today.get(key, 0) >= self.cfg.max_entries_per_day:
-            self.notes_by_market[sym] += "; no more entries today"
-            return notes
-        if pos is not None:
-            notes.append(self._close(pos, bid if pos.side is Side.BUY else ask, "REVERSAL", now))
-        stop = (max(lb, vw) if vw > 0 else lb) if want is Side.BUY else (min(ub, vw) if vw > 0 else ub)
-        entry_px = ask if want is Side.BUY else bid
-        mark = bid if want is Side.BUY else ask            # the stop must clear the price we would be closed at
-        if (mark - stop) * want.sign <= 0:
-            stop = lb if want is Side.BUY else ub
-        if (mark - stop) * want.sign <= 0:
-            self.notes_by_market[sym] += "; no room for a stop"
-            return notes
-        msg = self._open(sym, want, entry_px, stop, now, today, {"band_upper": ub, "band_lower": lb, "vwap_at_entry": vw,
-                                                                    "sigma": sigma, "day_open": bands.day_open,
-                                                                    "prev_close": bands.prev_close})
-        if msg:
-            self.entries_today[key] = self.entries_today.get(key, 0) + 1
-            notes.append(msg)
+        decision = "inside the band: noise, no trade"
+        try:
+            if want is None:
+                pass
+            elif pos is not None and pos.side is want:
+                decision = f"already {want.value.lower()}"
+            elif self.entries_today.get(key, 0) >= self.cfg.max_entries_per_day:
+                decision = "signal, but no more entries today"
+                self.notes_by_market[sym] += "; no more entries today"
+            else:
+                if pos is not None:
+                    notes.append(self._close(pos, bid if pos.side is Side.BUY else ask, "REVERSAL", now))
+                stop = (max(lb, vw) if vw > 0 else lb) if want is Side.BUY else (min(ub, vw) if vw > 0 else ub)
+                entry_px = ask if want is Side.BUY else bid
+                mark = bid if want is Side.BUY else ask        # the stop must clear the price we would be closed at
+                if (mark - stop) * want.sign <= 0:
+                    stop = lb if want is Side.BUY else ub
+                if (mark - stop) * want.sign <= 0:
+                    decision = "signal, but no room for a stop"
+                    self.notes_by_market[sym] += "; no room for a stop"
+                else:
+                    ok, msg = self._open(sym, want, entry_px, stop, now, today,
+                                         {"band_upper": ub, "band_lower": lb, "vwap_at_entry": vw, "sigma": sigma,
+                                          "day_open": bands.day_open, "prev_close": bands.prev_close})
+                    decision = ("entered " + want.value.lower()) if ok else ("signal, but " + msg)
+                    if ok:
+                        self.entries_today[key] = self.entries_today.get(key, 0) + 1
+                    notes.append(msg)
+        finally:
+            self._record_check(sym, now, hhmm, close, ub, lb, vw, sigma, decision)
         return notes
+
+    def _record_check(self, sym: str, now: dt.datetime, hhmm: str, close, ub: float, lb: float,
+                      vw: float, sigma: float, decision: str) -> None:
+        try:
+            with self._lock:
+                self.db.execute("INSERT INTO checks (ts_utc, symbol, check_ny, close, band_upper, band_lower, vwap, sigma, decision) "
+                                "VALUES (?,?,?,?,?,?,?,?,?)",
+                                (to_utc(now).isoformat(), sym, hhmm, close, ub, lb, vw, sigma, decision))
+                self.db.commit()
+        except Exception:
+            pass
+
+    def checks_since(self, since: dt.datetime) -> list[dict]:
+        return [dict(r) for r in self.db.execute(
+            "SELECT * FROM checks WHERE ts_utc >= ? ORDER BY ts_utc ASC", (to_utc(since).isoformat(),))]
 
     def _latest_check(self, n: dt.datetime) -> Optional[str]:
         first = _hhmm(self.cfg.first_check)
@@ -294,26 +323,26 @@ class BandBreaker:
 
     # ------------------------------------------------------------ positions --
     def _open(self, sym: str, side: Side, touch: float, stop: float, now: dt.datetime,
-              today: dt.date, meta: dict) -> str:
+              today: dt.date, meta: dict) -> tuple[bool, str]:
         spec = self.spec_fn(sym)
         if spec is None:
-            return f"{STRATEGY_LABEL}: {sym} has no contract specification"
+            return False, f"{STRATEGY_LABEL}: {sym} has no contract specification"
         point = float(getattr(spec, "point", 0.0) or 0.0)
         price = spec.normalise_price(touch + side.sign * self.cfg.paper_slippage_points * point)
         stop = spec.normalise_price(stop)
         dist = abs(price - stop)
         per_lot = spec.money_per_lot(dist)
         if per_lot <= 0:
-            return f"{STRATEGY_LABEL}: {sym} cannot value the stop"
+            return False, f"{STRATEGY_LABEL}: {sym} cannot value the stop"
         volume = spec.normalise_volume(self.cfg.risk_money / per_lot)
         if volume < getattr(spec, "volume_min", 0.01):
-            return f"{STRATEGY_LABEL}: {sym} skipped - the smallest size would risk {per_lot * spec.volume_min:.2f}, over {self.cfg.risk_money:.0f}"
+            return False, f"{STRATEGY_LABEL}: {sym} skipped - the smallest size would risk {per_lot * spec.volume_min:.2f}, over {self.cfg.risk_money:.0f}"
         p = Paper(next(self._seq), sym, side, float(volume), float(price), float(stop), to_utc(now), today.isoformat(),
                   stop=float(stop), last_price=touch, meta=meta)
         self.open[sym] = p
         self._save(p, new=True)
-        return (f"{STRATEGY_LABEL}: {sym} {side.value} {volume:g} lots at {price} stop {stop} "
-                f"(risk {per_lot * volume:.2f}, band {meta['band_lower']:.2f}-{meta['band_upper']:.2f})")
+        return True, (f"{STRATEGY_LABEL}: {sym} {side.value} {volume:g} lots at {price} stop {stop} "
+                      f"(risk {per_lot * volume:.2f}, band {meta['band_lower']:.2f}-{meta['band_upper']:.2f})")
 
     def _close(self, p: Paper, level: float, reason: str, now: dt.datetime) -> str:
         spec = self.spec_fn(p.symbol)
@@ -376,7 +405,11 @@ class BandBreaker:
                 "rule": f"average noise of the last {self.cfg.lookback_days} sessions; checks every {self.cfg.check_minutes} min "
                         f"from {self.cfg.first_check}; at most {self.cfg.max_entries_per_day} entries a day per market; "
                         f"{self.cfg.risk_money:.0f} at the stop",
-                "markets_now": dict(self.notes_by_market), "open": self.open_rows()}
+                "markets_now": dict(self.notes_by_market), "open": self.open_rows(),
+                "bands_today": {s: {"session": b.session_date.isoformat(), "open": b.day_open, "prev_close": b.prev_close,
+                                    "sessions_used": b.sessions_used, "noise_10:00": round(b.sigma.get("10:00", 0.0), 5),
+                                    "noise_15:30": round(b.sigma.get("15:30", 0.0), 5)} for s, b in self.bands.items()},
+                "checks_today": self.checks_since(now.replace(hour=0, minute=0, second=0, microsecond=0))[-24:]}
 
     def write_status(self, now: dt.datetime, every_seconds: float = 2.0) -> None:
         t = to_utc(now).timestamp()
