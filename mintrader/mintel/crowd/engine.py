@@ -509,6 +509,8 @@ class CrowdFader:
             # a clean no: nothing recorded, this read is spent so the broker is not hammered
             self.refused[day] = self.refused.get(day, 0) + 1
             self.acted_on[sym] = r.ts.isoformat()
+            if str(fill.message).startswith("send failed"):
+                self._sweep_due = True          # the send itself failed: it may have reached the broker
             return False, f"{STRATEGY_LABEL}: {sym} order refused: {fill.message}"
         p = Trade(int(fill.ticket), sym, coin, side, float(fill.volume or volume), float(fill.price), float(stop), float(target),
                   to_utc(now), day, stop=float(stop), last_price=touch, mode=self.executor.mode,

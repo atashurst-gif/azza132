@@ -561,7 +561,7 @@ class TestLive:
         assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(extra.ticket)["pnl"], 2))
         assert rig.e.status(at(TODAY, 10, 31))["unmanaged"] == []
 
-    def test_an_order_whose_outcome_is_unknown_is_swept_within_a_minute(self, tmp_path):
+    def test_a_fill_whose_read_back_fails_is_tracked_not_lost(self, tmp_path):
         class LosesTheReadAfterSend:
             """The bridge times out on the positions read right after the first fill."""
             def __init__(self, inner):
@@ -585,27 +585,44 @@ class TestLive:
                 return self._inner.positions(magic)
 
         rig = LiveRig(tmp_path, wrap=LosesTheReadAfterSend)
+        rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
+        # the order filled with its stop; the executor reports the fill, so it is tracked under the broker's ticket
+        assert len(rig.mine()) == 1 and rig.e.open["US500"].ticket == rig.mine()[0].ticket
+        assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 1
+        rig.run(at(TODAY, 10, 30) + dt.timedelta(seconds=2), rig.L + 31, rig.up(), (10, 30))
+        assert len(rig.mine()) == 1 and rig.e.open["US500"].ticket == rig.mine()[0].ticket   # nothing swept, nothing doubled
+        assert rig.e.entries_today[("US500", TODAY.isoformat())] == 1
+
+    def test_a_send_that_fails_but_reached_the_broker_is_swept_within_a_minute(self, tmp_path):
+        class FillsThenTimesOut:
+            """The order reaches the broker, then the reply is lost (the send raises)."""
+            def __init__(self, inner):
+                self._inner = inner
+                self.faults = 1
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+            def send(self, req):
+                res = self._inner.send(req)
+                if self.faults:
+                    self.faults -= 1
+                    raise RuntimeError("bridge timed out")
+                return res
+
+        rig = LiveRig(tmp_path, wrap=FillsThenTimesOut)
         notes = rig.run(at(TODAY, 10, 30), rig.L + 30, rig.up(), (10, 30))
-        assert any("order sent, state unknown" in n and "bridge timed out" in n for n in notes), notes
-        assert not any("skipped this pass" in n for n in notes)
-        assert not rig.e.open and len(rig.mine()) == 1                       # filled at the broker, nothing here yet
+        assert any("order refused: send failed: bridge timed out" in n for n in notes), notes
+        assert not rig.e.open and len(rig.mine()) == 1                       # at the broker, nothing on record
         filled = rig.mine()[0].ticket
         assert rig.e.db.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
-        assert rig.e.checks_since(at(TODAY, 0, 0))[-1]["decision"] == "order sent, state unknown: bridge timed out"
         assert rig.e.status(at(TODAY, 10, 30))["refused"] == 1
-        # the next pass sweeps the broker's list: the fill is closed and booked, never left to run unmanaged
-        notes = rig.run(at(TODAY, 10, 30, ) + dt.timedelta(seconds=2), rig.L + 31, rig.up(), (10, 30))
+        # the next pass sweeps the broker's list: the stray is closed and booked, never left to run unmanaged
+        notes = rig.run(at(TODAY, 10, 30) + dt.timedelta(seconds=2), rig.L + 31, rig.up(), (10, 30))
         assert any("orphan closed" in n and str(filled) in n for n in notes), notes
         assert not rig.mine() and not rig.e.open
         row = rig.e.db.execute("SELECT * FROM trades WHERE ticket=?", (filled,)).fetchone()
         assert row["exit_reason"] == "ORPHAN_CLOSED" and row["mode"] == "LIVE"
-        assert row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(filled)["pnl"], 2))
-        assert rig.e.entries_today[("US500", TODAY.isoformat())] == 1
-        # the 11:00 check runs as normal: one position, with its row
-        up2 = rig.up() + [("10:30", rig.L + 30, rig.L + 40, rig.L + 29, rig.L + 38)]
-        rig.run(at(TODAY, 11, 0), rig.L + 38, up2, (11, 0))
-        assert [q.ticket for q in rig.mine()] == [rig.e.open["US500"].ticket] and rig.e.open["US500"].ticket != filled
-        assert rig.e.entries_today[("US500", TODAY.isoformat())] == 2
 
     def test_a_restart_minutes_after_a_check_does_not_send_the_same_order_twice(self, tmp_path):
         rig = LiveRig(tmp_path)

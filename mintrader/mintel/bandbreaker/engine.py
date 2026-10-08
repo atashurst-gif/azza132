@@ -463,6 +463,8 @@ class BandBreaker:
                     f"order sent, state unknown: {exc}")
         if not fill.ok:
             self.refused[day] = self.refused.get(day, 0) + 1
+            if str(fill.message).startswith("send failed"):
+                self._sweep_due = True          # the send itself failed: it may have reached the broker
             return False, f"{STRATEGY_LABEL}: {sym} order refused: {fill.message}", f"order refused: {fill.message}"
         p = Trade(int(fill.ticket), sym, side, float(fill.volume or volume), float(fill.price), float(stop), to_utc(now),
                   today.isoformat(), stop=float(stop), last_price=touch, mode=self.executor.mode, meta=meta)

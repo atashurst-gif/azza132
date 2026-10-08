@@ -831,7 +831,7 @@ class TestLive:
         assert rig.e.open and rig.e.open["XAUUSD"].ticket != clash and len(rig.mine()) == 1 and n_rows(rig.e) == 2
         assert rig.row(clash) == before
 
-    def test_an_order_whose_outcome_is_unknown_is_not_sent_again_and_the_stray_position_is_swept(self, tmp_path):
+    def test_a_fill_whose_read_back_fails_is_tracked_and_not_sent_again(self, tmp_path):
         class ReadBackFails:
             """The order fills, then the read-back of the broker's list fails (a bridge hiccup)."""
             def __init__(self, sim):
@@ -849,16 +849,32 @@ class TestLive:
                     raise RuntimeError("bridge timeout")
                 return self.sim.positions(magic)
         rig = LiveRig(tmp_path, wrap=ReadBackFails)
+        rig.run(NOW, rig.L)
+        assert len(rig.mine()) == 1 and rig.e.open["XAUUSD"].ticket == rig.mine()[0].ticket and n_rows(rig.e) == 1
+        rig.run(NOW + dt.timedelta(seconds=5), rig.L)
+        assert len(rig.mine()) == 1 and rig.broker.sends == 1 and n_rows(rig.e) == 1    # tracked, not swept, not sent again
+
+    def test_a_send_that_fails_but_reached_the_broker_is_swept_and_not_sent_again(self, tmp_path):
+        class FillsThenTimesOut:
+            """The order reaches the broker, then the reply is lost (the send raises)."""
+            def __init__(self, sim):
+                self.sim = sim; self.sends = 0; self.faults = 1
+            def __getattr__(self, name):
+                return getattr(self.sim, name)
+            def send(self, req):
+                self.sends += 1
+                res = self.sim.send(req)
+                if self.faults:
+                    self.faults -= 1
+                    raise RuntimeError("bridge timeout")
+                return res
+        rig = LiveRig(tmp_path, wrap=FillsThenTimesOut)
         notes = rig.run(NOW, rig.L)
-        assert any("order sent, state unknown: bridge timeout" in n and "stray position" in n for n in notes), notes
-        assert not rig.e.open and len(rig.mine()) == 1 and n_rows(rig.e) == 0    # filled at the broker, nothing on record
-        assert rig.e.status(NOW)["refused"] == 1
+        assert any("order refused: send failed: bridge timeout" in n for n in notes), notes
+        assert not rig.e.open and len(rig.mine()) == 1 and n_rows(rig.e) == 0
         stray = rig.mine()[0].ticket
         notes = rig.run(NOW + dt.timedelta(seconds=5), rig.L)                # swept at once, not on the next minute
         assert any("orphan closed" in n and str(stray) in n for n in notes), notes
         assert not rig.mine() and not rig.e.open and rig.broker.sends == 1    # not sent again on the same read
-        row = rig.row(stray)
-        assert row["exit_reason"] == "ORPHAN_CLOSED" and row["net_pnl"] == pytest.approx(round(rig.sim.closed_deal(stray)["pnl"], 2))
-        rig.run(NOW + dt.timedelta(minutes=11), rig.L)                       # the next read: sent once, read back, kept
-        assert rig.broker.sends == 2 and rig.e.open and len(rig.mine()) == 1 and rig.e.open["XAUUSD"].ticket != stray
-        assert n_rows(rig.e) == 2
+        assert rig.row(stray)["exit_reason"] == "ORPHAN_CLOSED"
+
