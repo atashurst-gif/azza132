@@ -891,11 +891,30 @@ if existing_path.exists():
                 cfg[key] = old[key]
 (data / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True))
 
+# The secrets file also holds the GitHub token the reports and the ten-minute
+# pulse publish with. Re-entering the settings must keep everything that is
+# already there and only replace the password that was just typed.
+# (7 Oct: answering "y" to "Change them?" dropped the token, and the Mac went
+# silent for the rest of the day while the bot itself ran fine.)
 secrets = data / "secrets.json"
-secrets.write_text(json.dumps(
-    {"account_password": os.environ.get("MINTEL_PASSWORD", ""),
-     "api_keys": {}}, indent=2))
+old_secrets = {}
+if secrets.exists():
+    try:
+        old_secrets = json.loads(secrets.read_text())
+    except Exception:
+        old_secrets = {}
+    if not isinstance(old_secrets, dict):
+        old_secrets = {}
+new_secrets = dict(old_secrets)
+typed = os.environ.get("MINTEL_PASSWORD", "")
+if typed or not new_secrets.get("account_password"):
+    new_secrets["account_password"] = typed
+new_secrets.setdefault("api_keys", {})
+secrets.write_text(json.dumps(new_secrets, indent=2))
 os.chmod(secrets, 0o600)
+if not new_secrets.get("github_token"):
+    print("NOTE: no GitHub token saved - the nightly report and the ten-minute pulse will not publish "
+          "until you run: python -m mintel.ops.report_upload --config <data>/config.json --set-token")
 
 # A shared token for the local bridge socket, so nothing else on this Mac can
 # drive the trading connection.
@@ -1257,6 +1276,10 @@ final_report() {
     say "  Rapid Scalper mode: ${BOLD}${rs_mode:-PAPER}${RESET}  (data/scalper.json)"
     say "  Momentum Runner: ${BOLD}PAPER${RESET} shadow of the index trades (its own tab on the page)"
     say "  Band Breaker:    ${BOLD}PAPER${RESET} intraday index momentum, New York session (its own tab)"
+    if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('github_token') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
+      bad "No GitHub token saved: the nightly report and the ten-minute pulse will NOT publish."
+      say "  Fix: $VENV_DIR/bin/python -m mintel.ops.report_upload --config $CONFIG --set-token"
+    fi
     say ""
   fi
   if (( ${#FAILURES[@]} )); then
