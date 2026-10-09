@@ -9,9 +9,9 @@
     "mode": "DEMO",
     "tnb_mode": "PAPER",
     "aggression": "NORMAL",
-    "open_positions": 0,
-    "equity": 1906.65,
-    "balance": 1906.65,
+    "open_positions": 1,
+    "equity": 1908.48,
+    "balance": 1906.29,
     "currency": "GBP",
     "today_pnl": 0,
     "win_rate_today": null,
@@ -82,7 +82,7 @@
       }
     ],
     "pnl_error": "",
-    "last_scan": "10:37:37 UTC",
+    "last_scan": "10:47:44 UTC",
     "last_trade": "US500 2026-10-08T17:31",
     "not_trading_because": [],
     "strategy_rules": {
@@ -93,11 +93,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 1169,
-    "uptime_minutes": 110.0
+    "cycles": 1278,
+    "uptime_minutes": 120.1
   },
   "health": {
-    "as_of": "2026-10-09T10:37:37.750573+00:00",
+    "as_of": "2026-10-09T10:47:44.618926+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "everything is healthy",
@@ -105,9 +105,9 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "43155 MB of disk space free",
+        "message": "43257 MB of disk space free",
         "detail": {
-          "free_mb": 43155.2
+          "free_mb": 43256.7
         }
       },
       {
@@ -121,9 +121,9 @@
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock agrees with the broker (within 2s)",
+        "message": "clock agrees with the broker (within 3s)",
         "detail": {
-          "skew_seconds": 1.8
+          "skew_seconds": 2.6
         }
       },
       {
@@ -151,15 +151,17 @@
       {
         "name": "MARGIN",
         "severity": "OK",
-        "message": "no margin in use",
-        "detail": {}
+        "message": "margin level 2353%",
+        "detail": {
+          "margin_level": 2352.872996300863
+        }
       },
       {
         "name": "MARKET_DATA",
         "severity": "OK",
         "message": "live prices arriving (0s old)",
         "detail": {
-          "freshest_age_seconds": 0.0,
+          "freshest_age_seconds": 0.4,
           "weekend": false
         }
       },
@@ -183,24 +185,24 @@
         "message": "3 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 13.2,
-            "ian": 3.4,
-            "rider": 1.0
+            "watchdog": 13.4,
+            "ian": 0.2,
+            "rider": 1.2
           }
         }
       },
       {
         "name": "SCAN_FRESHNESS",
         "severity": "OK",
-        "message": "markets scanned 6s ago",
+        "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 6.0
+          "age_seconds": 5.3
         }
       },
       {
         "name": "POSITION_PROTECTION",
         "severity": "OK",
-        "message": "all 0 open position(s) protected at the broker",
+        "message": "all 1 open position(s) protected at the broker",
         "detail": {}
       }
     ]
@@ -210,176 +212,119 @@
       "rank": 1,
       "symbol": "EURCHF",
       "direction": "SHORT",
-      "score": 66.18,
+      "score": 66.88,
       "tier": "NORMAL",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "EURCHF: UNCLEAR / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Execution supports it (97/100; spread 0.2 pips (0.4x normal), commission 0.6 pips). Structure supports it (80/100; range structure on M5). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Cross Market supports it (75/100; 0 related markets with a usable relationship; EUR 6 vs CHF 74). Room to the first obstacle is 3 pips, giving about 0.9 to 1 after 0.9 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.95 after costs; costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / LOW VOL",
+      "reason": "EURCHF: TREND / LOW VOL market. Best idea is sell using session expansion. Structure supports it (100/100; down structure on M5). Execution supports it (89/100; spread 0.4 pips (0.8x normal), commission 0.6 pips). Regime supports it (85/100; TREND / LOW VOL). Multi Tf supports it (81/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 3 pips, giving about 0.6 to 1 after 1.1 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.65 after costs; entry is 3.3 ATR from the level that invalidates this idea - the move has been missed.",
       "blockers": [
         "NORMAL setup - only STRONG or better is traded",
-        "reward:risk only 0.95 after costs",
-        "costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.65 after costs",
+        "entry is 3.3 ATR from the level that invalidates this idea - the move has been missed"
       ],
-      "reward_risk": 0.949
+      "reward_risk": 0.649
     },
     {
       "rank": 2,
-      "symbol": "CADCHF",
+      "symbol": "EURAUD",
       "direction": "SHORT",
-      "score": 52.81,
+      "score": 52.16,
       "tier": "NO_TRADE",
       "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / NORMAL VOL",
-      "reason": "CADCHF: TREND / NORMAL VOL market. Best idea is sell using session expansion. Structure supports it (100/100; down structure on M5). Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Regime supports it (85/100; TREND / NORMAL VOL). Execution supports it (83/100; spread 0.1 pips (1.0x normal), commission 0.6 pips). Room to the first obstacle is 0 pips, giving about 0.5 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 0.54 after costs; entry is 3.9 ATR from the level that invalidates this idea - the move has been missed.",
+      "regime": "TREND / LOW VOL",
+      "reason": "EURAUD: TREND / LOW VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Multi Tf supports it (95/100; 6 timeframes weighed, higher ones first). Regime supports it (85/100; TREND / LOW VOL). Session supports it (73/100; session: LONDON). Room to the first obstacle is 3 pips, giving about 0.8 to 1 after 1.8 pips of cost. Blocked because: reward:risk only 0.80 after costs.",
       "blockers": [
-        "reward:risk only 0.54 after costs",
-        "entry is 3.9 ATR from the level that invalidates this idea - the move has been missed"
+        "reward:risk only 0.80 after costs"
       ],
-      "reward_risk": 0.539
+      "reward_risk": 0.804
     },
     {
       "rank": 3,
-      "symbol": "EURAUD",
+      "symbol": "CADCHF",
       "direction": "SHORT",
-      "score": 44.61,
+      "score": 39.92,
       "tier": "NO_TRADE",
       "tactic": "SESSION_EXPANSION",
       "regime": "TREND / NORMAL VOL",
-      "reason": "EURAUD: TREND / NORMAL VOL market. Best idea is sell using session expansion. Execution supports it (98/100; spread 0.1 pips (0.3x normal), commission 1.0 pips). Multi Tf supports it (92/100; 6 timeframes weighed, higher ones first). Cross Market supports it (75/100; 0 related markets with a usable relationship; EUR 6 vs AUD 71). Session supports it (73/100; session: LONDON). Room to the first obstacle is 2 pips, giving about 0.8 to 1 after 1.2 pips of cost. Blocked because: reward:risk only 0.79 after costs.",
+      "reason": "CADCHF: TREND / NORMAL VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Regime supports it (85/100; TREND / NORMAL VOL). Cross Market supports it (73/100; 0 related markets with a usable relationship; CAD 18 vs CHF 76). Room to the first obstacle is 0 pips, giving about 0.5 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 0.53 after costs; entry is 3.6 ATR from the level that invalidates this idea - the move has been missed.",
       "blockers": [
-        "reward:risk only 0.79 after costs"
+        "reward:risk only 0.53 after costs",
+        "entry is 3.6 ATR from the level that invalidates this idea - the move has been missed"
       ],
-      "reward_risk": 0.786
+      "reward_risk": 0.531
     },
     {
       "rank": 4,
       "symbol": "US30",
-      "direction": "LONG",
-      "score": 44.24,
+      "direction": "SHORT",
+      "score": 35.89,
       "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_RETEST",
+      "tactic": "SESSION_EXPANSION",
       "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "US30: UNCLEAR / NORMAL VOL market. Best idea is buy using breakout retest. Execution supports it (81/100; spread 120.0 pips (1.0x normal)). Session supports it (73/100; session: LONDON). Multi Tf supports it (61/100; 6 timeframes weighed, higher ones first). Structure supports it (60/100; range structure on M5). Room to the first obstacle is 830 pips, giving about 1.2 to 1 after 150.0 pips of cost. Blocked because: reward:risk only 1.16 after costs.",
+      "reason": "US30: UNCLEAR / NORMAL VOL market. Best idea is sell using session expansion. Execution supports it (85/100; spread 120.0 pips (1.0x normal)). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; range structure on M5). Session supports it (73/100; session: LONDON). Room to the first obstacle is 650 pips, giving about 1.7 to 1 after 150.0 pips of cost. Blocked because: reward:risk only 1.71 after costs; already long here.",
       "blockers": [
-        "reward:risk only 1.16 after costs"
+        "reward:risk only 1.71 after costs",
+        "already long here"
       ],
-      "reward_risk": 1.156
+      "reward_risk": 1.707
     },
     {
       "rank": 5,
-      "symbol": "US500",
-      "direction": "LONG",
-      "score": 40.86,
+      "symbol": "XAGAUD",
+      "direction": "SHORT",
+      "score": 33.93,
       "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "US500: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Execution supports it (85/100; spread 50.0 pips (1.0x normal)). Regime supports it (85/100; SQUEEZE / LOW VOL). Structure argues against it (16/100; down structure on M5). Session supports it (73/100; session: LONDON). Room to the first obstacle is 237 pips, giving about 0.9 to 1 after 62.5 pips of cost. Blocked because: reward:risk only 0.92 after costs.",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / LOW VOL",
+      "reason": "XAGAUD: TREND / LOW VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Multi Tf supports it (80/100; 6 timeframes weighed, higher ones first). Session supports it (73/100; session: LONDON). Volatility argues against it (30/100; volatility at the 1th percentile). Room to the first obstacle is 16 pips, giving about 1.9 to 1 after 35.8 pips of cost. Blocked because: costs would be 35% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.92 after costs"
+        "costs would be 35% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.916
+      "reward_risk": 1.874
     },
     {
       "rank": 6,
-      "symbol": "AUS200",
-      "direction": "LONG",
-      "score": 35.59,
+      "symbol": "BRENT_Z6",
+      "direction": "SHORT",
+      "score": 32.75,
       "tier": "NO_TRADE",
-      "tactic": "SESSION_EXPANSION",
-      "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "AUS200: UNCLEAR / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (85/100; spread 120.0 pips (1.0x normal)). Session supports it (73/100; session: LONDON). Multi Tf supports it (61/100; 6 timeframes weighed, higher ones first). Volatility argues against it (40/100; volatility at the 25th percentile). Room to the first obstacle is 127 pips, giving about 0.8 to 1 after 150.0 pips of cost. Blocked because: reward:risk only 0.84 after costs; costs would be 20% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "BRENT_Z6: SQUEEZE / NORMAL VOL market. Best idea is sell using breakout acceptance. Regime supports it (85/100; SQUEEZE / NORMAL VOL). Execution supports it (83/100; spread 2.0 pips (1.0x normal), commission 7.9 pips). Momentum argues against it (18/100; efficiency 0.07, ADX 8). Structure supports it (80/100; range structure on M5). Room to the first obstacle is 14 pips, giving about 0.7 to 1 after 10.4 pips of cost. Blocked because: reward:risk only 0.73 after costs; costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.84 after costs",
-        "costs would be 20% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.73 after costs",
+        "costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.838
+      "reward_risk": 0.727
     },
     {
       "rank": 7,
-      "symbol": "CADJPY",
+      "symbol": "XBRUSD",
       "direction": "SHORT",
-      "score": 35.35,
+      "score": 32.42,
       "tier": "NO_TRADE",
-      "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / NORMAL VOL",
-      "reason": "CADJPY: TREND / NORMAL VOL market. Best idea is sell using session expansion. Structure supports it (90/100; down structure on M5). Execution supports it (85/100; spread 0.1 pips (1.0x normal), commission 1.2 pips). Session supports it (73/100; session: LONDON). Momentum supports it (71/100; efficiency 0.31, ADX 21). Room to the first obstacle is 0 pips, giving about 1.1 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 1.07 after costs.",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "XBRUSD: SQUEEZE / NORMAL VOL market. Best idea is sell using breakout acceptance. Regime supports it (85/100; SQUEEZE / NORMAL VOL). Execution supports it (83/100; spread 1.0 pips (1.0x normal), commission 7.9 pips). Momentum argues against it (18/100; efficiency 0.07, ADX 8). Structure supports it (80/100; range structure on M5). Room to the first obstacle is 15 pips, giving about 0.9 to 1 after 9.2 pips of cost. Blocked because: reward:risk only 0.88 after costs; costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 1.07 after costs"
+        "reward:risk only 0.88 after costs",
+        "costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 1.074
+      "reward_risk": 0.878
     },
     {
       "rank": 8,
-      "symbol": "GBPNZD",
+      "symbol": "US500",
       "direction": "LONG",
-      "score": 34.95,
+      "score": 30.51,
       "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "GBPNZD: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Execution supports it (91/100; spread 0.6 pips (0.8x normal), commission 1.3 pips). Regime supports it (85/100; SQUEEZE / LOW VOL). Structure argues against it (16/100; down structure on M5). Cross Market supports it (75/100; 0 related markets with a usable relationship; GBP 81 vs NZD 10). Room to the first obstacle is 3 pips, giving about 0.7 to 1 after 2.0 pips of cost. Blocked because: reward:risk only 0.75 after costs.",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / LOW VOL",
+      "reason": "US500: TREND / LOW VOL market. Best idea is buy using session expansion. Structure argues against it (16/100; down structure on M5). Execution supports it (84/100; spread 50.0 pips (1.0x normal)). Regime supports it (74/100; TREND / LOW VOL). Session supports it (73/100; session: LONDON). Room to the first obstacle is 30 pips, giving about 1.6 to 1 after 62.5 pips of cost. Blocked because: reward:risk only 1.62 after costs.",
       "blockers": [
-        "reward:risk only 0.75 after costs"
+        "reward:risk only 1.62 after costs"
       ],
-      "reward_risk": 0.749
-    },
-    {
-      "rank": 9,
-      "symbol": "AUDNZD",
-      "direction": "LONG",
-      "score": 33.82,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "AUDNZD: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Execution supports it (93/100; spread 0.1 pips (0.2x normal), commission 1.3 pips). Momentum supports it (86/100; efficiency 0.01, ADX 7). Regime supports it (85/100; SQUEEZE / LOW VOL). Cross Market supports it (74/100; 0 related markets with a usable relationship; AUD 71 vs NZD 10). Room to the first obstacle is 1 pips, giving about 0.7 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.69 after costs; costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.69 after costs",
-        "costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.692
-    },
-    {
-      "rank": 10,
-      "symbol": "XAUUSD",
-      "direction": "SHORT",
-      "score": 30.68,
-      "tier": "NO_TRADE",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "XAUUSD: UNCLEAR / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (80/100; range structure on M5). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Session supports it (73/100; session: LONDON). Momentum argues against it (31/100; efficiency 0.20, ADX 18). Room to the first obstacle is 66 pips, giving about 0.9 to 1 after 28.3 pips of cost. Blocked because: reward:risk only 0.88 after costs.",
-      "blockers": [
-        "reward:risk only 0.88 after costs"
-      ],
-      "reward_risk": 0.883
-    },
-    {
-      "rank": 11,
-      "symbol": "NZDCHF",
-      "direction": "LONG",
-      "score": 30.04,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "NZDCHF: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Execution supports it (89/100; spread 0.1 pips (0.5x normal), commission 0.6 pips). Momentum supports it (80/100; efficiency 0.01, ADX 11). Cross Market argues against it (25/100; 0 related markets with a usable relationship; NZD 10 vs CHF 74). Session supports it (73/100; session: LONDON). Room to the first obstacle is 0 pips, giving about 0.4 to 1 after 0.7 pips of cost. Blocked because: reward:risk only 0.41 after costs; costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.41 after costs",
-        "costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.412
-    },
-    {
-      "rank": 12,
-      "symbol": "GBPAUD",
-      "direction": "LONG",
-      "score": 24.65,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_ACCEPTANCE",
-      "regime": "SQUEEZE / LOW VOL",
-      "reason": "GBPAUD: SQUEEZE / LOW VOL market. Best idea is buy using breakout acceptance. Regime supports it (85/100; SQUEEZE / LOW VOL). Structure argues against it (16/100; down structure on M5). Session supports it (73/100; session: LONDON). Volatility argues against it (34/100; volatility at the 10th percentile). Room to the first obstacle is 2 pips, giving about 0.9 to 1 after 2.1 pips of cost. Blocked because: reward:risk only 0.85 after costs; costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.85 after costs",
-        "costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.853
+      "reward_risk": 1.622
     }
   ],
   "results": {
@@ -397,8 +342,27 @@
     "worst_trade": null,
     "trade_stories": []
   },
-  "positions": [],
+  "positions": [
+    {
+      "symbol": "US30",
+      "side": "SELL",
+      "volume": 0.4,
+      "entry": 51233.79,
+      "stop": 51251.46,
+      "profit": 1.75,
+      "flow_state": "PROVING",
+      "note": "best 0.65R, thesis 63/100"
+    }
+  ],
   "events": [
+    {
+      "id": 2277,
+      "ts_utc": "2026-10-09T10:42:20.335251+00:00",
+      "kind": "ENTRY",
+      "severity": "INFO",
+      "message": "US30 SELL 0.4 lots",
+      "detail_json": "{\"opportunity\": 72.56, \"tier\": \"STRONG\", \"tactic\": \"SESSION_EXPANSION\", \"risk_pct\": 0.4302, \"top_opportunity\": false, \"runner_feed\": false, \"explain\": \"US30: HIGH_VOL / HIGH VOL market. Best idea is sell using session expansion. Execution supports it (85/100; spread 120.0 pips (1.0x normal)). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; range structure on M5). Volatility supports it (74/100; volatility at the 86th percentile). Room to the first obstacle is 2430 pips, giving about 1.9 to 1 after 150.0 pips of cost.\", \"sizing_reasons\": [\"tier STRONG, calibrated confidence 0.60, aggression NORMAL\", \"capped at 10.00 GBP a trade\"], \"entry_timing\": \"S10 timing agrees\", \"protective_stop_confirmed\": true}"
+    },
     {
       "id": 2276,
       "ts_utc": "2026-10-09T08:47:48.361370+00:00",
@@ -590,14 +554,6 @@
       "severity": "WARNING",
       "message": "trader stopped",
       "detail_json": null
-    },
-    {
-      "id": 2252,
-      "ts_utc": "2026-10-08T14:34:37.360771+00:00",
-      "kind": "ENTRY",
-      "severity": "INFO",
-      "message": "EURUSD BUY 0.24 lots",
-      "detail_json": "{\"opportunity\": 87.1, \"tier\": \"EXCEPTIONAL\", \"tactic\": \"MOMENTUM_CONTINUATION\", \"risk_pct\": 0.4877, \"explain\": \"EURUSD: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Structure supports it (98/100; up structure on M5). Execution supports it (85/100; spread 0.1 pips (1.0x normal), commission 0.7 pips). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (80/100; volatility at the 99th percentile). Room to the first obstacle is 30 pips, giving about 2.3 to 1 after 0.9 pips of cost.\", \"sizing_reasons\": [\"tier EXCEPTIONAL, calibrated confidence 0.00, aggression NORMAL\", \"fractional Kelly (0.25 of f*=0.142 on 114 samples) caps risk at 3.56%\", \"capped at 10.00 GBP a trade\"], \"entry_timing\": \"S10 timing agrees\", \"protective_stop_confirmed\": true}"
     }
   ],
   "strategies": {
@@ -605,13 +561,13 @@
       "id": "overall",
       "label": "Overall",
       "currency": "GBP",
-      "net_today": -34.77,
+      "net_today": -33.03,
       "realised": -34.77,
-      "unrealised": 0.0,
+      "unrealised": 1.74,
       "trades": 18,
       "wins": 5,
       "losses": 13,
-      "open_positions": 0,
+      "open_positions": 2,
       "win_rate": 27.8,
       "total_costs": 17.28,
       "max_drawdown": -42.87,
@@ -619,12 +575,12 @@
         {
           "id": "momentum_rider",
           "label": "Rapid Momentum Rider",
-          "net_today": -25.41
+          "net_today": -24.82
         },
         {
           "id": "momentum_runner",
           "label": "Momentum Runner",
-          "net_today": 0
+          "net_today": 1.15
         },
         {
           "id": "crowd_fader",
@@ -849,9 +805,9 @@
       "id": "market_intelligence",
       "label": "Trend & Breakout",
       "currency": "GBP",
-      "net_today": 0,
+      "net_today": 1.75,
       "realised": 0,
-      "unrealised": 0,
+      "unrealised": 1.75,
       "trades": 0,
       "wins": 0,
       "losses": 0,
@@ -864,7 +820,7 @@
       "total_costs": null,
       "est_slippage_points": null,
       "avg_hold_seconds": null,
-      "open_positions": 0,
+      "open_positions": 1,
       "max_drawdown": 0.0,
       "by_approach": [],
       "by_market_type": [],
@@ -1102,9 +1058,9 @@
       "id": "momentum_runner",
       "label": "Momentum Runner",
       "currency": "GBP",
-      "net_today": 0,
+      "net_today": 1.15,
       "realised": 0,
-      "unrealised": 0,
+      "unrealised": 1.15,
       "trades": 0,
       "wins": 0,
       "losses": 0,
@@ -1117,7 +1073,7 @@
       "total_costs": null,
       "est_slippage_points": null,
       "avg_hold_seconds": null,
-      "open_positions": 0,
+      "open_positions": 1,
       "max_drawdown": 0.0,
       "live_net": 0,
       "paper_net": 0,
@@ -1132,9 +1088,9 @@
         "id": "momentum_runner",
         "label": "Momentum Runner",
         "currency": "GBP",
-        "net_today": 0,
+        "net_today": 1.15,
         "realised": 0,
-        "unrealised": 0,
+        "unrealised": 1.15,
         "trades": 0,
         "wins": 0,
         "losses": 0,
@@ -1147,7 +1103,7 @@
         "total_costs": null,
         "est_slippage_points": null,
         "avg_hold_seconds": null,
-        "open_positions": 0,
+        "open_positions": 1,
         "max_drawdown": 0.0,
         "trades_today": [],
         "in_overall": true,
@@ -1301,9 +1257,9 @@
       "id": "momentum_rider",
       "label": "Rapid Momentum Rider",
       "currency": "GBP",
-      "net_today": -25.41,
+      "net_today": -24.82,
       "realised": -25.41,
-      "unrealised": 0,
+      "unrealised": 0.59,
       "trades": 17,
       "wins": 5,
       "losses": 12,
@@ -1316,7 +1272,7 @@
       "total_costs": 17.28,
       "est_slippage_points": null,
       "avg_hold_seconds": 66.8,
-      "open_positions": 0,
+      "open_positions": 1,
       "max_drawdown": -33.51,
       "live_net": -25.41,
       "paper_net": 0,
@@ -1519,9 +1475,9 @@
         "id": "momentum_rider",
         "label": "Rapid Momentum Rider",
         "currency": "GBP",
-        "net_today": -25.41,
+        "net_today": -24.82,
         "realised": -25.41,
-        "unrealised": 0,
+        "unrealised": 0.59,
         "trades": 17,
         "wins": 5,
         "losses": 12,
@@ -1534,7 +1490,7 @@
         "total_costs": 17.28,
         "est_slippage_points": null,
         "avg_hold_seconds": 66.8,
-        "open_positions": 0,
+        "open_positions": 1,
         "max_drawdown": -33.51,
         "trades_today": [
           {
@@ -1794,7 +1750,7 @@
       "strategy_id": "rapid_scalper",
       "label": "Rapid Scalper",
       "tagline": "High-Velocity Session Rider (version 3): seconds-level acceleration in a scalpable market; cut failed scalps fast, protect winners, give exceptional winners room.",
-      "status": "NOT RUNNING (last seen 111 min ago)",
+      "status": "NOT RUNNING (last seen 121 min ago)",
       "mode": "PAPER",
       "build": "3635e80773",
       "updated": "2026-10-09T08:46:48.494685+00:00",
@@ -2221,7 +2177,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 6652.011641
+      "age_seconds": 7258.931849
     },
     "runner": {
       "strategy_id": "momentum_runner",
@@ -2230,14 +2186,14 @@
       "mode": "LIVE",
       "live": true,
       "magic": 990511,
-      "status": "WATCHING",
+      "status": "IN TRADE",
       "executor_error": "",
       "refused": 0,
       "skipped": 0,
-      "note": "",
+      "note": "US30 SELL 0.4 opened at 51233.3 (stop 51251.46) beside real trade 960000001",
       "orphans": [],
       "unmanaged": [],
-      "updated": "2026-10-09T10:37:37.734333+00:00",
+      "updated": "2026-10-09T10:47:44.562786+00:00",
       "trail_r": 3.0,
       "window_hours": 8.0,
       "skip_tactics": [
@@ -2250,9 +2206,25 @@
         "risk_money": 40.0
       },
       "markets": "every index market the main bot trades",
-      "open": [],
+      "open": [
+        {
+          "ticket": 1998785203,
+          "source_ticket": 960000001,
+          "symbol": "US30",
+          "side": "SELL",
+          "entry": 51233.3,
+          "stop": 51251.46,
+          "initial_stop": 51251.46,
+          "peak_r": 0.51,
+          "r_now": 0.21,
+          "pnl": 1.15,
+          "opened": "2026-10-09T10:42:20.479047+00:00",
+          "trailing": false,
+          "mode": "LIVE"
+        }
+      ],
       "present": true,
-      "age_seconds": 2.8
+      "age_seconds": 2.9
     },
     "bandbreaker": {
       "strategy_id": "band_breaker",
@@ -2264,7 +2236,7 @@
       "executor_error": "",
       "refused": 0,
       "status": "OUTSIDE SESSION",
-      "updated": "2026-10-09T10:37:37.734333+00:00",
+      "updated": "2026-10-09T10:47:44.562786+00:00",
       "markets": [
         "US500",
         "US30",
@@ -2283,7 +2255,7 @@
       "bands_today": {},
       "checks_today": [],
       "present": true,
-      "age_seconds": 2.8
+      "age_seconds": 2.9
     },
     "crowd": {
       "strategy_id": "crowd_fader",
@@ -2296,7 +2268,7 @@
       "refused": 0,
       "estimated_rows": 0,
       "status": "WATCHING",
-      "updated": "2026-10-09T10:37:37.734333+00:00",
+      "updated": "2026-10-09T10:47:44.562786+00:00",
       "key_present": true,
       "markets": [
         "XAUUSD",
@@ -2309,132 +2281,132 @@
         "XBRUSD"
       ],
       "rule": "crowd 50% net one way and the winners not with them; score 60+; entry on a 15-min close beyond the last 8; stop beyond the last 4 bars; target the nearest cluster or 2 R; out after 24 h; at most 2 a day per market; 10 at the stop (the smallest size up to 30); reads every 10 min",
-      "last_poll": "2026-10-09T10:29:47.061999+00:00",
-      "polls": 11,
+      "last_poll": "2026-10-09T10:39:59.545538+00:00",
+      "polls": 12,
       "poll_error": "",
-      "api_calls": 176,
+      "api_calls": 192,
       "api_remaining": 49,
       "markets_now": {
-        "XAUUSD": "crowd 83% long (2,389 wallets); Apex and Sharps 17% short by money; 1.8m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 54/100",
-        "XAGUSD": "crowd 81% long (1,159 wallets); Apex and Sharps 6% short by money; 86k of longs liquidate below vs 34k of shorts above; lean SHORT, score 54/100",
-        "US500": "crowd 61% long (2,333 wallets); Apex and Sharps 17% long by money; 23.9m of longs liquidate below vs 44.6m of shorts above; not stretched: nothing to fade",
-        "JP225": "too few crowd wallets to read (144 < 200)",
-        "EURUSD": "crowd 53% short (209 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.5m of shorts above; not stretched: nothing to fade",
+        "XAUUSD": "crowd 83% long (2,389 wallets); Apex and Sharps 17% short by money; 1.8m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 53/100",
+        "XAGUSD": "crowd 81% long (1,157 wallets); Apex and Sharps 6% short by money; 100k of longs liquidate below vs 36k of shorts above; lean SHORT, score 55/100",
+        "US500": "crowd 61% long (2,331 wallets); Apex and Sharps 17% long by money; 23.9m of longs liquidate below vs 42.5m of shorts above; not stretched: nothing to fade",
+        "JP225": "too few crowd wallets to read (143 < 200)",
+        "EURUSD": "crowd 53% short (210 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.5m of shorts above; not stretched: nothing to fade",
         "GBPUSD": "too few crowd wallets to read (48 < 200)",
-        "XTIUSD": "crowd 69% long (1,137 wallets); Apex and Sharps 27% short by money; 10.3m of longs liquidate below vs 157k of shorts above; not stretched: nothing to fade",
-        "XBRUSD": "crowd 54% long (1,090 wallets); Apex and Sharps 11% short by money; 2.6m of longs liquidate below vs 1.2m of shorts above; not stretched: nothing to fade"
+        "XTIUSD": "crowd 68% long (1,140 wallets); Apex and Sharps 27% short by money; 10.3m of longs liquidate below vs 157k of shorts above; not stretched: nothing to fade",
+        "XBRUSD": "crowd 54% long (1,089 wallets); Apex and Sharps 11% short by money; 2.6m of longs liquidate below vs 1.2m of shorts above; not stretched: nothing to fade"
       },
       "reads": {
         "XAUUSD": {
           "coin": "xyz:GOLD",
-          "at": "2026-10-09T10:29:47.061999+00:00",
-          "crowd_long_pct": 82.7,
+          "at": "2026-10-09T10:39:59.545538+00:00",
+          "crowd_long_pct": 82.5,
           "crowd_wallets": 2389,
           "crowd_bias": 0.65,
           "winners_bias": -0.17,
-          "fuel_below": 1795152,
-          "fuel_above": 13678425,
+          "fuel_below": 1789675,
+          "fuel_above": 13680356,
           "direction": -1,
-          "score": 53.6,
-          "reason": "crowd 83% long (2,389 wallets); Apex and Sharps 17% short by money; 1.8m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 54/100",
+          "score": 53.3,
+          "reason": "crowd 83% long (2,389 wallets); Apex and Sharps 17% short by money; 1.8m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 53/100",
           "hl_price": 4185.299999999999
         },
         "XAGUSD": {
           "coin": "xyz:SILVER",
-          "at": "2026-10-09T10:29:47.061999+00:00",
+          "at": "2026-10-09T10:39:59.545538+00:00",
           "crowd_long_pct": 81.1,
-          "crowd_wallets": 1159,
+          "crowd_wallets": 1157,
           "crowd_bias": 0.62,
           "winners_bias": -0.06,
-          "fuel_below": 85702,
-          "fuel_above": 34401,
+          "fuel_below": 100038,
+          "fuel_above": 35719,
           "direction": -1,
-          "score": 54.3,
-          "reason": "crowd 81% long (1,159 wallets); Apex and Sharps 6% short by money; 86k of longs liquidate below vs 34k of shorts above; lean SHORT, score 54/100",
-          "hl_price": 60.331
+          "score": 55.4,
+          "reason": "crowd 81% long (1,157 wallets); Apex and Sharps 6% short by money; 100k of longs liquidate below vs 36k of shorts above; lean SHORT, score 55/100",
+          "hl_price": 60.299
         },
         "US500": {
           "coin": "xyz:SP500",
-          "at": "2026-10-09T10:29:47.061999+00:00",
+          "at": "2026-10-09T10:39:59.545538+00:00",
           "crowd_long_pct": 61.3,
-          "crowd_wallets": 2333,
+          "crowd_wallets": 2331,
           "crowd_bias": 0.23,
           "winners_bias": 0.17,
-          "fuel_below": 23920502,
-          "fuel_above": 44585012,
+          "fuel_below": 23906071,
+          "fuel_above": 42535476,
           "direction": 0,
           "score": 14.2,
-          "reason": "crowd 61% long (2,333 wallets); Apex and Sharps 17% long by money; 23.9m of longs liquidate below vs 44.6m of shorts above; not stretched: nothing to fade",
-          "hl_price": 7793.6
+          "reason": "crowd 61% long (2,331 wallets); Apex and Sharps 17% long by money; 23.9m of longs liquidate below vs 42.5m of shorts above; not stretched: nothing to fade",
+          "hl_price": 7791.699999999999
         },
         "JP225": {
           "coin": "xyz:JP225",
-          "at": "2026-10-09T10:29:47.061999+00:00",
-          "crowd_long_pct": 64.6,
-          "crowd_wallets": 144,
+          "at": "2026-10-09T10:39:59.545538+00:00",
+          "crowd_long_pct": 64.3,
+          "crowd_wallets": 143,
           "crowd_bias": 0.29,
           "winners_bias": 0.23,
-          "fuel_below": 81420,
-          "fuel_above": 247166,
+          "fuel_below": 81374,
+          "fuel_above": 61662,
           "direction": 0,
           "score": 0.0,
-          "reason": "too few crowd wallets to read (144 < 200)",
-          "hl_price": 69068.0
+          "reason": "too few crowd wallets to read (143 < 200)",
+          "hl_price": 69014.0
         },
         "EURUSD": {
           "coin": "xyz:EUR",
-          "at": "2026-10-09T10:29:47.061999+00:00",
-          "crowd_long_pct": 47.4,
-          "crowd_wallets": 209,
-          "crowd_bias": -0.05,
+          "at": "2026-10-09T10:39:59.545538+00:00",
+          "crowd_long_pct": 47.1,
+          "crowd_wallets": 210,
+          "crowd_bias": -0.06,
           "winners_bias": 0.59,
-          "fuel_below": 2058514,
-          "fuel_above": 3485246,
+          "fuel_below": 2058301,
+          "fuel_above": 3466554,
           "direction": 0,
-          "score": 3.3,
-          "reason": "crowd 53% short (209 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.5m of shorts above; not stretched: nothing to fade",
-          "hl_price": 1.1218000000000001
+          "score": 3.6,
+          "reason": "crowd 53% short (210 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.5m of shorts above; not stretched: nothing to fade",
+          "hl_price": 1.1218
         },
         "GBPUSD": {
           "coin": "xyz:GBP",
-          "at": "2026-10-09T10:29:47.061999+00:00",
+          "at": "2026-10-09T10:39:59.545538+00:00",
           "crowd_long_pct": 52.1,
           "crowd_wallets": 48,
           "crowd_bias": 0.04,
           "winners_bias": -0.55,
-          "fuel_below": 269743,
-          "fuel_above": 351781,
+          "fuel_below": 269703,
+          "fuel_above": 351772,
           "direction": 0,
           "score": 0.0,
           "reason": "too few crowd wallets to read (48 < 200)",
-          "hl_price": 1.3238999999999999
+          "hl_price": 1.3239
         },
         "XTIUSD": {
           "coin": "xyz:CL",
-          "at": "2026-10-09T10:29:47.061999+00:00",
-          "crowd_long_pct": 68.6,
-          "crowd_wallets": 1137,
+          "at": "2026-10-09T10:39:59.545538+00:00",
+          "crowd_long_pct": 68.3,
+          "crowd_wallets": 1140,
           "crowd_bias": 0.37,
           "winners_bias": -0.27,
-          "fuel_below": 10298276,
-          "fuel_above": 156638,
+          "fuel_below": 10301645,
+          "fuel_above": 157127,
           "direction": 0,
-          "score": 23.3,
-          "reason": "crowd 69% long (1,137 wallets); Apex and Sharps 27% short by money; 10.3m of longs liquidate below vs 157k of shorts above; not stretched: nothing to fade",
-          "hl_price": 90.104
+          "score": 22.9,
+          "reason": "crowd 68% long (1,140 wallets); Apex and Sharps 27% short by money; 10.3m of longs liquidate below vs 157k of shorts above; not stretched: nothing to fade",
+          "hl_price": 90.151
         },
         "XBRUSD": {
           "coin": "xyz:BRENTOIL",
-          "at": "2026-10-09T10:29:47.061999+00:00",
-          "crowd_long_pct": 53.9,
-          "crowd_wallets": 1090,
+          "at": "2026-10-09T10:39:59.545538+00:00",
+          "crowd_long_pct": 54.0,
+          "crowd_wallets": 1089,
           "crowd_bias": 0.08,
           "winners_bias": -0.11,
-          "fuel_below": 2599888,
-          "fuel_above": 1174317,
+          "fuel_below": 2607804,
+          "fuel_above": 1175024,
           "direction": 0,
-          "score": 4.9,
-          "reason": "crowd 54% long (1,090 wallets); Apex and Sharps 11% short by money; 2.6m of longs liquidate below vs 1.2m of shorts above; not stretched: nothing to fade",
+          "score": 5.0,
+          "reason": "crowd 54% long (1,089 wallets); Apex and Sharps 11% short by money; 2.6m of longs liquidate below vs 1.2m of shorts above; not stretched: nothing to fade",
           "hl_price": 101.16
         }
       },
@@ -2443,7 +2415,7 @@
       "switch_notes": [],
       "entries_today": {},
       "present": true,
-      "age_seconds": 2.8
+      "age_seconds": 2.9
     },
     "rider": {
       "strategy_id": "momentum_rider",
@@ -2451,7 +2423,7 @@
       "tagline": "Finds the FX market that has just started running, gets on early with a real stop at the broker, rides it while it is strong and gets out fast when the move dies (FlowLock X).",
       "magic": 990811,
       "mode": "LIVE",
-      "updated_utc": "2026-10-09T10:37:40.000320+00:00",
+      "updated_utc": "2026-10-09T10:47:46.598922+00:00",
       "pid": 9736,
       "user_pip_value_gbp": 1.0,
       "tick_feed": "every tick",
@@ -2494,7 +2466,7 @@
             "name": "spread_valid",
             "ok": true,
             "critical": true,
-            "message": "23 of 28 markets have a valid bid/ask"
+            "message": "26 of 28 markets have a valid bid/ask"
           },
           {
             "name": "execution",
@@ -2524,71 +2496,31 @@
             "name": "disk_memory",
             "ok": true,
             "critical": true,
-            "message": "45,248 MB free on disk; 1,354 MB memory free"
+            "message": "45,355 MB free on disk; 1,380 MB memory free"
           }
         ]
       },
       "scanner": [
         {
-          "market": "EURNZD",
-          "direction": "NONE",
-          "score": 24.9,
+          "market": "CHFJPY",
+          "direction": "SHORT",
+          "score": 32.0,
           "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
+          "reason": "Slow ragged downward momentum, but costs would eat the move",
+          "family": "breakout"
         },
         {
-          "market": "AUDJPY",
-          "direction": "LONG",
-          "score": 24.2,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "market": "EURUSD",
+          "direction": "SHORT",
+          "score": 26.2,
+          "state": "ENTERED",
+          "reason": "Slow ragged downward momentum, but costs would eat the move",
           "family": "session_breakout"
         },
         {
-          "market": "NZDCAD",
+          "market": "AUDJPY",
           "direction": "NONE",
-          "score": 23.8,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
-        },
-        {
-          "market": "AUDCAD",
-          "direction": "NONE",
-          "score": 23.7,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
-        },
-        {
-          "market": "EURAUD",
-          "direction": "NONE",
-          "score": 22.1,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
-        },
-        {
-          "market": "CHFJPY",
-          "direction": "SHORT",
-          "score": 21.9,
-          "state": "WATCHING",
-          "reason": "Slow downward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "EURJPY",
-          "direction": "NONE",
-          "score": 21.9,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
-        },
-        {
-          "market": "GBPJPY",
-          "direction": "NONE",
-          "score": 21.9,
+          "score": 25.3,
           "state": "WATCHING",
           "reason": "Quiet - nothing moving",
           "family": "velocity_burst"
@@ -2596,69 +2528,53 @@
         {
           "market": "USDCHF",
           "direction": "LONG",
-          "score": 21.9,
+          "score": 25.0,
           "state": "WATCHING",
-          "reason": "Slow clean upward momentum, but costs would eat the move",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "squeeze_release"
+        },
+        {
+          "market": "GBPCHF",
+          "direction": "LONG",
+          "score": 24.8,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
           "family": "sweep"
         },
         {
           "market": "AUDUSD",
-          "direction": "LONG",
-          "score": 21.6,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "NZDJPY",
-          "direction": "LONG",
-          "score": 21.5,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "EURCHF",
           "direction": "NONE",
-          "score": 20.8,
+          "score": 23.9,
           "state": "WATCHING",
           "reason": "Quiet - nothing moving",
-          "family": "sweep"
+          "family": "velocity_burst"
+        },
+        {
+          "market": "GBPAUD",
+          "direction": "LONG",
+          "score": 21.1,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "squeeze_release"
         },
         {
           "market": "GBPNZD",
-          "direction": "NONE",
-          "score": 20.8,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
-        },
-        {
-          "market": "NZDCHF",
           "direction": "LONG",
-          "score": 20.8,
+          "score": 21.1,
           "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "reason": "Spread too wide right now",
           "family": "sweep"
         },
         {
-          "market": "USDCAD",
-          "direction": "NONE",
-          "score": 20.6,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst"
-        },
-        {
-          "market": "GBPUSD",
-          "direction": "LONG",
+          "market": "CADCHF",
+          "direction": "SHORT",
           "score": 20.2,
           "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
+          "reason": "Slow ragged downward momentum, but costs would eat the move",
+          "family": "session_breakout"
         },
         {
-          "market": "AUDNZD",
+          "market": "GBPCAD",
           "direction": "NONE",
           "score": 19.9,
           "state": "WATCHING",
@@ -2666,95 +2582,167 @@
           "family": "velocity_burst"
         },
         {
-          "market": "AUDCHF",
-          "direction": "LONG",
-          "score": 19.7,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "GBPAUD",
-          "direction": "SHORT",
+          "market": "EURGBP",
+          "direction": "NONE",
           "score": 19.4,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "CADCHF",
-          "direction": "NONE",
-          "score": 18.5,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "sweep"
-        },
-        {
-          "market": "NZDUSD",
-          "direction": "LONG",
-          "score": 17.1,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "GBPCHF",
-          "direction": "LONG",
-          "score": 16.8,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "USDJPY",
-          "direction": "SHORT",
-          "score": 16.5,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "EURCAD",
-          "direction": "LONG",
-          "score": 16.2,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
-        },
-        {
-          "market": "CADJPY",
-          "direction": "NONE",
-          "score": 14.5,
           "state": "WATCHING",
           "reason": "Quiet - nothing moving",
           "family": "velocity_burst"
         },
         {
-          "market": "EURUSD",
-          "direction": "LONG",
-          "score": 14.4,
+          "market": "EURCHF",
+          "direction": "SHORT",
+          "score": 18.9,
           "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep"
+          "reason": "Slow ragged downward momentum, but costs would eat the move",
+          "family": "session_breakout"
         },
         {
-          "market": "GBPCAD",
+          "market": "AUDCAD",
+          "direction": "LONG",
+          "score": 18.8,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "session_breakout"
+        },
+        {
+          "market": "NZDJPY",
+          "direction": "NONE",
+          "score": 18.0,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "velocity_burst"
+        },
+        {
+          "market": "AUDCHF",
+          "direction": "NONE",
+          "score": 17.1,
+          "state": "WATCHING",
+          "reason": "Quiet - nothing moving",
+          "family": "velocity_burst"
+        },
+        {
+          "market": "USDJPY",
           "direction": "SHORT",
-          "score": 13.4,
+          "score": 16.7,
           "state": "WATCHING",
           "reason": "Slow ragged downward momentum, but costs would eat the move",
           "family": "sweep"
         },
         {
-          "market": "EURGBP",
+          "market": "AUDNZD",
+          "direction": "SHORT",
+          "score": 16.6,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep"
+        },
+        {
+          "market": "NZDCHF",
+          "direction": "NONE",
+          "score": 16.3,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "velocity_burst"
+        },
+        {
+          "market": "EURCAD",
+          "direction": "NONE",
+          "score": 16.1,
+          "state": "WATCHING",
+          "reason": "Quiet - nothing moving",
+          "family": "velocity_burst"
+        },
+        {
+          "market": "CADJPY",
+          "direction": "NONE",
+          "score": 15.7,
+          "state": "WATCHING",
+          "reason": "Quiet - nothing moving",
+          "family": "velocity_burst"
+        },
+        {
+          "market": "NZDUSD",
+          "direction": "NONE",
+          "score": 15.7,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "velocity_burst"
+        },
+        {
+          "market": "NZDCAD",
+          "direction": "LONG",
+          "score": 14.5,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep"
+        },
+        {
+          "market": "GBPJPY",
+          "direction": "LONG",
+          "score": 14.2,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep"
+        },
+        {
+          "market": "EURAUD",
+          "direction": "LONG",
+          "score": 13.3,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep"
+        },
+        {
+          "market": "EURJPY",
           "direction": "LONG",
           "score": 13.1,
           "state": "WATCHING",
           "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "session_breakout"
+        },
+        {
+          "market": "EURNZD",
+          "direction": "LONG",
+          "score": 13.0,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
           "family": "sweep"
+        },
+        {
+          "market": "GBPUSD",
+          "direction": "LONG",
+          "score": 11.3,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep"
+        },
+        {
+          "market": "USDCAD",
+          "direction": "NONE",
+          "score": 10.6,
+          "state": "WATCHING",
+          "reason": "Quiet - nothing moving",
+          "family": "velocity_burst"
         }
       ],
-      "open_positions": [],
+      "open_positions": [
+        {
+          "ticket": 1998785151,
+          "market": "EURUSD",
+          "side": "SELL",
+          "volume": 0.13,
+          "entry": 1.12113,
+          "stop": 1.12127,
+          "pips": 0.6,
+          "money": 0.59,
+          "money_note": "approximate: pips x GBP per pip",
+          "flowlock_state": "PROVING",
+          "flowlock": "making progress - loss cut",
+          "decay": 0.57,
+          "opened_utc": "2026-10-09T10:42:19.592622+00:00"
+        }
+      ],
       "today": {
         "mode": "LIVE",
         "trades": 17,
@@ -2778,44 +2766,40 @@
         "GBP/JPY broke below the edge of where it had been stuck and was moving fast, so the bot sold it. But the move did not carry on - it turned back - so the bot got out quickly. It closed at -4.4 pips (-\u00a35.57)."
       ],
       "currency_strength": {
-        "NZD": {
-          "strength": 0.428,
-          "pairs": 7
-        },
-        "AUD": {
-          "strength": 0.2,
-          "pairs": 7
-        },
-        "GBP": {
-          "strength": 0.151,
+        "USD": {
+          "strength": 0.347,
           "pairs": 7
         },
         "JPY": {
-          "strength": 0.04,
+          "strength": 0.34,
           "pairs": 7
         },
-        "EUR": {
-          "strength": -0.034,
+        "GBP": {
+          "strength": 0.231,
           "pairs": 7
         },
         "CAD": {
-          "strength": -0.248,
+          "strength": 0.096,
           "pairs": 7
         },
-        "USD": {
-          "strength": -0.257,
+        "NZD": {
+          "strength": -0.198,
+          "pairs": 7
+        },
+        "EUR": {
+          "strength": -0.252,
           "pairs": 7
         },
         "CHF": {
-          "strength": -0.28,
+          "strength": -0.269,
+          "pairs": 7
+        },
+        "AUD": {
+          "strength": -0.294,
           "pairs": 7
         }
       },
       "notes": [
-        "10:00:36 Rapid Momentum Rider: CHFJPY BUY 0.21 lots at 190.57 (GBP 1.00/pip), stop 190.544 (2.8 pips) - Fast clean upward momentum - first retest of the high held and price is moving on",
-        "10:01:03 Rapid Momentum Rider: CHFJPY BUY closed (STOP) at 190.544: -2.6 pips -\u00a33.76 - CHF/JPY broke through a level, came back to touch it once, then moved away again, so the bot bought it. But the price turned round and reached the safety stop. It closed at -2.6 pips (-\u00a33.76).",
-        "10:03:02 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
-        "10:05:34 could not read the account: NotConnected: account_info returned None",
         "10:08:02 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "10:13:03 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "10:14:33 Rapid Momentum Rider: CHFJPY BUY 0.21 lots at 190.605 (GBP 1.00/pip), stop 190.575 (3.0 pips) - Fast clean upward momentum - first retest of the high held and price is moving on",
@@ -2826,11 +2810,15 @@
         "10:23:36 Rapid Momentum Rider: GBPUSD SELL 0.13 lots at 1.32351 (GBP 0.98/pip), stop 1.32377 (2.5 pips) - Fast clean downward momentum - breaking below its 20-minute range",
         "10:24:20 Rapid Momentum Rider: GBPUSD SELL closed (THESIS_DEAD) at 1.32362: -1.1 pips -\u00a31.80 - GBP/USD broke below the edge of where it had been stuck and was moving fast, so the bot sold it. But the move did not carry on - it turned back - so the bot got out quickly. It closed at -1.1 pips (-\u00a31.80).",
         "10:28:04 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
-        "10:33:05 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
+        "10:33:05 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+        "10:38:05 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+        "10:42:19 Rapid Momentum Rider: EURUSD SELL 0.13 lots at 1.12113 (GBP 0.98/pip), stop 1.12136 (2.3 pips) - Very fast clean downward momentum - breaking below its 20-minute range",
+        "10:43:05 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+        "10:43:37 EURUSD: stop 1.12136 -> 1.12127 (making progress - loss cut)"
       ],
-      "cycle_ms": 125.3,
+      "cycle_ms": 139.0,
       "present": true,
-      "age_seconds": 0.5
+      "age_seconds": 0.8
     },
     "ian": {
       "strategy_id": "financial_ian",
@@ -2839,7 +2827,7 @@
       "magic": 990911,
       "mode": "LIVE",
       "running": true,
-      "updated": "2026-10-09T10:37:38.922527+00:00",
+      "updated": "2026-10-09T10:47:46.029327+00:00",
       "status": "DATA-DEGRADED: no institutional feed is configured - no signals, no trades. See docs/ops/financial_ian_data_feed.md.",
       "data_source": "LIVE FEED",
       "data_label": "LIVE",
@@ -2904,7 +2892,7 @@
       "last_report": null,
       "ladder": null,
       "present": true,
-      "age_seconds": 1.6
+      "age_seconds": 1.4
     },
     "labels": {
       "overall": "Overall",
@@ -2921,13 +2909,13 @@
     "start": "2026-10-05T11:30:42+00:00",
     "day_start": "2026-10-08T21:00:00+00:00",
     "source": "broker",
-    "made": -93.35,
-    "trading": -93.35,
+    "made": -93.71,
+    "trading": -93.71,
     "adjustments": 0.0,
-    "today": -34.71,
-    "open": 0,
-    "balance": 1906.65,
-    "equity": 1906.65,
+    "today": -35.07,
+    "open": 2.65,
+    "balance": 1906.29,
+    "equity": 1908.94,
     "currency": "GBP",
     "start_balance": 2000.0,
     "bots": [
@@ -2949,12 +2937,12 @@
         "label": "Rapid Momentum Rider",
         "magic": 990811,
         "mode": "LIVE",
-        "made": -25.41,
-        "today": -25.41,
+        "made": -25.77,
+        "today": -25.77,
         "trades": 17,
         "today_trades": 17,
-        "open": 0.0,
-        "open_trades": 0,
+        "open": 0.59,
+        "open_trades": 1,
         "retired": false
       },
       {
@@ -2966,8 +2954,8 @@
         "today": 0.0,
         "trades": 1,
         "today_trades": 0,
-        "open": 0.0,
-        "open_trades": 0,
+        "open": 2.06,
+        "open_trades": 1,
         "retired": false
       },
       {
@@ -3031,17 +3019,44 @@
     },
     "error": "",
     "made_trades": 71,
-    "made_commission": 46.72,
+    "made_commission": 47.08,
     "today_trades": 18,
-    "today_commission": 17.34,
+    "today_commission": 17.7,
     "deals_complete": true,
     "unknown_magics": []
   },
-  "open_live": [],
-  "open_at": "2026-10-09T10:37:40.504302+00:00",
+  "open_live": [
+    {
+      "bot": "Rapid Momentum Rider",
+      "magic": 990811,
+      "ticket": 1998785151,
+      "symbol": "EURUSD",
+      "side": "SELL",
+      "volume": 0.13,
+      "entry": 1.12113,
+      "stop": 1.12127,
+      "target": 0.0,
+      "profit": 0.59,
+      "opened": "2026-10-09T10:42:19+00:00"
+    },
+    {
+      "bot": "Momentum Runner",
+      "magic": 990511,
+      "ticket": 1998785203,
+      "symbol": "US30",
+      "side": "SELL",
+      "volume": 0.4,
+      "entry": 51233.3,
+      "stop": 51251.46,
+      "target": 0.0,
+      "profit": 1.6,
+      "opened": "2026-10-09T10:42:20+00:00"
+    }
+  ],
+  "open_at": "2026-10-09T10:47:47.423532+00:00",
   "bot_lines": {
     "momentum_rider": "HEALTHY, LIVE, scanning 28 markets, GBP 1.00 per pip",
     "financial_ian": "HEALTHY, LIVE, feed NOT CONFIGURED (no signals and no trades until a data-feed key is saved)"
   },
-  "updated": "2026-10-09T10:37:40.509210+00:00"
+  "updated": "2026-10-09T10:47:47.429224+00:00"
 }
