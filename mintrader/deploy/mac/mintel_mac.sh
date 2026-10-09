@@ -1464,6 +1464,7 @@ install_desktop_icon() {
   local marker="$DATA_DIR/.desktop-icons-placed"
   if [[ -f "$marker" ]]; then
     install_new_bot_icons "$desktop"
+    install_test_ian_icon "$desktop"
     good "Desktop icons: left as you arranged them (the bot does not need them)"
     return 0
   fi
@@ -1479,6 +1480,7 @@ install_desktop_icon() {
   done
   mkdir -p "$DATA_DIR" && : > "$marker"
   install_new_bot_icons "$desktop"
+  install_test_ian_icon "$desktop"
   good "Double-click ${BOLD}Start Trading Bot${RESET} on your Desktop from now on"
 }
 
@@ -1501,6 +1503,23 @@ install_new_bot_icons() {
   done
   mkdir -p "$DATA_DIR" && : > "$marker"
   good "Rapid Momentum Rider and Financial Ian icons placed on your Desktop"
+}
+
+# Financial Ian's test on past CME data (9 Oct): its own icon, placed once.
+install_test_ian_icon() {
+  local desktop
+  local marker
+  local ian_test_icon
+  desktop="${1:-$HOME/Desktop}"
+  marker="$DATA_DIR/.desktop-icon-test-ian-placed"
+  ian_test_icon="$APP_DIR/deploy/mac/TEST-FINANCIAL-IAN.command"
+  [[ -f "$marker" ]] && return 0
+  [[ -d "$desktop" && -f "$ian_test_icon" ]] || return 0
+  cp -f "$ian_test_icon" "$desktop/TEST-FINANCIAL-IAN.command"
+  chmod +x "$desktop/TEST-FINANCIAL-IAN.command"
+  xattr -d com.apple.quarantine "$desktop/TEST-FINANCIAL-IAN.command" >/dev/null 2>&1
+  mkdir -p "$DATA_DIR" && : > "$marker"
+  good "TEST-FINANCIAL-IAN placed on your Desktop (tests Ian on past CME data; shows the price first)"
 }
 
 # ------------------------------------------------------------ start / check --

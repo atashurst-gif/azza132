@@ -19,6 +19,11 @@ Schemas:
 * ``trades`` - every execution, with the aggressor side ('B' = a buyer lifted
   the offer, 'A' = a seller hit the bid, 'N' = not given -> UNKNOWN).
 
+mbp-10 and mbo carry every trade as well (action 'T'). With the trades schema
+subscribed too (the default), each trade is taken from the trades records only
+and the copy inside the book records is skipped (:func:`book_trades_wanted`), so
+every trade is counted ONCE - live and in the past-data test alike.
+
 Prices arrive as fixed-point integers (1e-9 units); UNDEF_PRICE (2**63 - 1)
 means "no level". Timestamps are nanoseconds since the epoch: ``ts_event`` is
 the exchange's matching-engine time, ``ts_recv`` the vendor's capture time.
@@ -155,6 +160,13 @@ def _ts(v) -> Optional[dt.datetime]:
     return dt.datetime.fromtimestamp(ns // 1_000_000_000, tz=UTC) + dt.timedelta(microseconds=(ns % 1_000_000_000) // 1000)
 
 
+def book_trades_wanted(schema: str, trades_schema_too: bool) -> bool:
+    """Whether trades are taken from the book records (mbp-10 / mbo action 'T'). Not when the trades schema
+    is read as well: it carries the very same trades, and each must be counted once. The live feed and the
+    past-data test both decide it here, so they give the engine the same stream."""
+    return not (trades_schema_too and schema != "trades")
+
+
 def _kind(rec: Any) -> str:
     """mbp10 / mbo / trade / mapping / error / system / other, from the record's class or fields."""
     if isinstance(rec, dict):
@@ -194,10 +206,15 @@ class RecordMapper:
     """Pure translation of Databento records into internal events. Kept separate from the network so it
     can be tested with recorded or hand-made records (no package, no key, no internet)."""
 
-    def __init__(self, symbols: Optional[dict] = None, source: str = "databento", levels: int = 10):
+    def __init__(self, symbols: Optional[dict] = None, source: str = "databento", levels: int = 10,
+                 book_trades: bool = True):
         self.symbols: dict[int, str] = dict(symbols or {})
         self.source = source
         self.levels = levels
+        # False when the trades schema is read too: the trade inside a book record (action 'T') is then
+        # skipped - the trades record carries the same one (see book_trades_wanted)
+        self.book_trades = bool(book_trades)
+        self.book_trades_skipped = 0
         self.prev: dict[str, tuple[dict, dict]] = {}     # instrument -> (bids {price: size}, asks)
 
     def symbol(self, rec) -> str:
@@ -252,13 +269,19 @@ class RecordMapper:
         aggr = BUY if side == "B" else SELL if side == "A" else UNKNOWN
         return TradeEvent(inst, te, p, size, aggr, seq, tr, self.source)
 
+    def _book_trade(self, rec) -> list[Event]:
+        """The trade a book record carries - unless the trades schema supplies it (counted once)."""
+        if not self.book_trades:
+            self.book_trades_skipped += 1
+            return []
+        t = self._trade(rec)
+        return [t] if t is not None else []
+
     def _mbp10(self, rec) -> list[Event]:
         inst, te, tr, seq, flags = self._common(rec)
         out: list[Event] = list(self._notices(inst, te, flags))
         if _char(_get(rec, "action")) == "T":
-            t = self._trade(rec)                     # an mbp-10 trade record also carries the trade
-            if t is not None:
-                out.append(t)
+            out += self._book_trade(rec)             # an mbp-10 trade record also carries the trade
         levels = _get(rec, "levels") or []
         bids: dict[float, float] = {}
         asks: dict[float, float] = {}
@@ -315,9 +338,7 @@ class RecordMapper:
         side_c = _char(_get(rec, "side"))
         if action in ("T", "F"):
             if action == "T":                          # the trade; a fill ('F') is the resting side of the same one
-                t = self._trade(rec)
-                if t is not None:
-                    out.append(t)
+                out += self._book_trade(rec)
             return out
         cause = "snapshot" if flags & F_SNAPSHOT else ""
         if action == "R":
@@ -354,7 +375,8 @@ class DatabentoFeed(FeedAdapter):
         self.api_key = api_key if api_key is not None else read_api_key(self.data_dir)
         self.client_factory = client_factory
         self.q: "queue.Queue" = queue.Queue(maxsize=max_queue)
-        self.mapper = RecordMapper()
+        # with the trades schema subscribed too, a trade is taken from it only (never twice)
+        self.mapper = RecordMapper(book_trades=book_trades_wanted(self.schema, self.trades))
         self.client = None
         self.instruments: list[str] = []
         self.state = NOT_CONFIGURED

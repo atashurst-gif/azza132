@@ -301,7 +301,16 @@ fresh snapshot) every 5, 10, 20 ... up to 120 seconds.
 
 Run on the synthetic scenarios these only prove the pipeline works, and say
 so (**SYNTHETIC - NOT PERFORMANCE**). The first real answers come from
-recordings of the real feed.
+recordings of the real feed - or, before any live feed is paid for, from
+**real past CME data**: `python -m mintel.ian.research.historical` (the
+TEST-FINANCIAL-IAN icon) buys a few days of Databento history after showing
+the exact price, replays it through this engine with a simulated executor
+and writes a report with a plain verdict. The past records go through the
+live feed's own mapping and the same one-count rule for trades, so the
+engine sees the stream it will see live; it decides only inside the test
+hours, and the report's R figures are after every cost. See "Test on past
+data first" in
+[docs/ops/financial_ian_data_feed.md](../ops/financial_ian_data_feed.md).
 
 ## The page (`data/ian-status.json`)
 
