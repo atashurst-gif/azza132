@@ -886,8 +886,12 @@ if existing_path.exists():
     except Exception:
         old = {}
     if isinstance(old, dict):
+        # (The Rapid Momentum Rider and Financial Ian keep their own files,
+        # data/rider.json and data/ian.json, which nothing here rewrites; a
+        # "rider" or "ian" block put in config.json by hand is carried too.
+        # "tnb" is Trend & Breakout's: LIVE or PAPER and its paper settings.)
         for key in ("tracking_start_utc", "tracking_strategy", "account_reset_utc", "account_reset_balance",
-                    "runner", "bandbreaker", "crowd"):
+                    "runner", "bandbreaker", "crowd", "rider", "ian", "tnb"):
             if key in old:
                 cfg[key] = old[key]
 (data / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True))
@@ -919,6 +923,9 @@ if not new_secrets.get("github_token"):
 if not new_secrets.get("coinversa_api_key"):
     print("NOTE: no Coinversa key saved - the Crowd Fader will show NO KEY until you run: "
           "python -m mintel.crowd --config <data>/config.json --set-key")
+if not new_secrets.get("databento_api_key"):
+    print("NOTE: no Databento key saved - Financial Ian stays DATA-DEGRADED (no signals, no trades) until you "
+          "double-click INSTALL-FINANCIAL-IAN and paste one")
 
 # A shared token for the local bridge socket, so nothing else on this Mac can
 # drive the trading connection.
@@ -948,6 +955,10 @@ apply_bot_modes() {
   local marker="$DATA_DIR/.all-bots-live-2026-10-08"
   [[ -f "$marker" ]] && return 0
   [[ -f "$CONFIG" ]] || return 0
+  if lineup_done; then                       # superseded by the 9 Oct line-up: never undo it
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    return 0
+  fi
   step "Switching every bot to LIVE"
   if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --live runner bandbreaker crowd 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
     date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
@@ -960,19 +971,334 @@ apply_bot_modes() {
 }
 
 apply_scalper_paper() {
-  # 8 Oct afternoon: Aaron's instruction - the Rapid Scalper back to PAPER until
-  # it is fixed; the other four stay LIVE. Once only (marker), like the switch above.
+  # 8 Oct afternoon: Aaron's instruction was the Rapid Scalper back to PAPER.
+  # Superseded on 9 Oct: the scalper is retired (apply_rider_live switches it
+  # OFF and the watchdog no longer starts it), and the modes command refuses
+  # PAPER for it. Only the marker is kept, so the quick check of a running
+  # bot still finds it.
   local marker="$DATA_DIR/.scalper-paper-2026-10-08"
+  if [[ -f "$marker" || ! -f "$CONFIG" ]]; then return 0; fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  return 0
+}
+
+apply_rider_live() {
+  # 9 Oct: Aaron's instruction - the Rapid Momentum Rider replaces the Rapid
+  # Scalper on the demo account: the scalper is retired (scalper.json OFF;
+  # the watchdog no longer starts it) and the Rider trades LIVE at GBP 1 a
+  # pip. Once only (marker), like the switches above, so a later choice made
+  # with the modes command is never undone by a reinstall.
+  local marker="$DATA_DIR/.rider-live-2026-10-09"
   [[ -f "$marker" ]] && return 0
   [[ -f "$CONFIG" ]] || return 0
-  step "Putting the Rapid Scalper back to PAPER"
-  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --paper scalper 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
+  if lineup_done; then                       # the line-up already did this (and more): never undo it
     date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
-    CODE_CHANGED="yes"                       # the scalper reads scalper.json at start: restart it
-    good "Rapid Scalper: PAPER (practice). Trend & Breakout, Momentum Runner, Band Breaker and Crowd Fader: LIVE"
-  else
-    warn "Could not put the Rapid Scalper back to PAPER. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper scalper"
+    return 0
   fi
+  step "The Rapid Momentum Rider replaces the Rapid Scalper"
+  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper --live rider --gbp-per-pip 1.0 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    CODE_CHANGED="yes"                       # the bots read their mode at start: restart them
+    good "Rapid Scalper: retired (OFF). Rapid Momentum Rider: LIVE at GBP 1.00 a pip"
+  else
+    warn "Could not switch the Rapid Momentum Rider on. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --off scalper --live rider --gbp-per-pip 1.0"
+  fi
+  return 0
+}
+
+apply_ian_enabled() {
+  # 9 Oct: Financial Ian joins in PAPER. Without an institutional data-feed
+  # key it runs DATA-DEGRADED - no signals, no trades - and says so on its
+  # page. A LIVE choice already made is left alone. Once only (marker).
+  local marker="$DATA_DIR/.ian-enabled-2026-10-09"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  if lineup_done; then                       # the line-up set Ian already: never undo it
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    return 0
+  fi
+  step "Financial Ian"
+  if [[ "$(bot_file_mode ian)" == "LIVE" ]]; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    good "Financial Ian: LIVE (left as it is)"
+    return 0
+  fi
+  if (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --paper ian 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /'; then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    CODE_CHANGED="yes"
+    good "Financial Ian: PAPER. With no data-feed key it stays DATA-DEGRADED: no signals, no trades (INSTALL-FINANCIAL-IAN adds one)"
+  else
+    warn "Could not switch Financial Ian on. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper ian"
+  fi
+  return 0
+}
+
+LINEUP_MARKER_NAME=".lineup-2026-10-09"
+
+# lineup_done - has the 9 Oct line-up been set on this Mac? (its marker)
+lineup_done() {
+  [[ -f "$DATA_DIR/$LINEUP_MARKER_NAME" ]]
+}
+
+# rider_pip_value - the Rapid Momentum Rider's GBP per pip from
+# data/rider.json, as 1.00; empty when the file names no figure.
+rider_pip_value() {
+  [[ -x "$VENV_DIR/bin/python" && -f "$DATA_DIR/rider.json" ]] || return 0
+  "$VENV_DIR/bin/python" -c 'import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get("user_pip_value_gbp")
+    print("%.2f" % float(v) if v else "")
+except Exception:
+    print("")' "$DATA_DIR/rider.json" 2>/dev/null || true
+}
+
+# apply_lineup - 9 Oct evening, Aaron's decision. LIVE: the Momentum Runner
+# (the winner), the Rapid Momentum Rider (GBP 1.00 a pip) and Financial Ian
+# (it can only trade once a CME data feed is configured). PAPER: Trend &
+# Breakout (real prices, simulated orders; the Momentum Runner still rides
+# its index entries), the Band Breaker and the Crowd Fader. The retired
+# Rapid Scalper stays OFF. It runs after the one-time steps above, so on a
+# fresh install it has the last word; once only (marker), so a later
+# choice made with the modes command is never undone by a reinstall, and
+# once it is set the older one-time steps never run again. The Rider's
+# figure is set to GBP 1.00 only when rider.json names none (once set, the
+# figure is Aaron's).
+apply_lineup() {
+  local marker="$DATA_DIR/$LINEUP_MARKER_NAME"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  step "The bots' line-up"
+  local ok
+  ok=1
+  if [[ -n "$(rider_pip_value)" ]]; then
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper \
+        --paper tnb bandbreaker crowd --live runner rider ian 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /' || ok=0
+  else
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper \
+        --paper tnb bandbreaker crowd --live runner rider ian --gbp-per-pip 1.0 2>&1) \
+      | sed -e '/Restart the bot/d' -e 's/^/  /' || ok=0
+  fi
+  if (( ok )); then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+    CODE_CHANGED="yes"                       # the bots read their mode at start: restart them
+    good "The line-up is set:"
+    print_lineup
+  else
+    warn "Could not set the line-up. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper tnb bandbreaker crowd --live runner rider ian"
+  fi
+  return 0
+}
+
+# print_lineup - which bots are LIVE and which are PAPER, in plain English,
+# read back from the files the bots themselves read.
+print_lineup() {
+  local entry
+  local key
+  local label
+  local mode
+  local pip
+  local live=""
+  local paper=""
+  local off=""
+  pip="$(rider_pip_value)"
+  for entry in "tnb|Trend & Breakout" "runner|Momentum Runner" "rider|Rapid Momentum Rider" \
+               "bandbreaker|Band Breaker" "crowd|Crowd Fader" "ian|Financial Ian"; do
+    key="${entry%%|*}"
+    label="${entry#*|}"
+    case "$key" in
+      rider|ian) mode="$(bot_file_mode "$key")" ;;
+      tnb) mode="$(bot_mode tnb LIVE)" ;;
+      *) mode="$(bot_mode "$key")" ;;
+    esac
+    if [[ "$key" == "rider" && -n "$pip" ]]; then
+      label="$label (GBP $pip a pip)"
+    fi
+    case "$mode" in
+      LIVE) live="${live:+$live, }$label" ;;
+      PAPER) paper="${paper:+$paper, }$label" ;;
+      *) off="${off:+$off, }$label" ;;
+    esac
+  done
+  say "    LIVE  - real orders on the account: ${live:-none}"
+  say "    PAPER - real prices, simulated orders, never in the account: ${paper:-none}"
+  if [[ -n "$off" ]]; then
+    say "    OFF   - not started: $off"
+  fi
+  case "$(bot_mode runner)" in
+    LIVE) say "    The Momentum Runner rides Trend & Breakout's index entries with its own real orders." ;;
+    PAPER) say "    The Momentum Runner rides Trend & Breakout's index entries on paper." ;;
+  esac
+  say "    The Rapid Scalper stays retired (OFF)."
+  if [[ "$(bot_file_mode ian)" == "LIVE" ]]; then
+    say "    Financial Ian can only trade once a CME data feed is configured (INSTALL-FINANCIAL-IAN)."
+  fi
+}
+
+# bot_file_mode NAME - the mode in a bot's own file in the data folder
+# (data/rider.json, data/ian.json): LIVE, PAPER or OFF, PAPER when the file
+# or the mode is missing or not readable (the bots' own default).
+bot_file_mode() {
+  local name="${1:-}"
+  local py=""
+  local mode=""
+  if [[ -x "$VENV_DIR/bin/python" ]]; then
+    py="$VENV_DIR/bin/python"
+  else
+    py="$(command -v python3 2>/dev/null || true)"
+  fi
+  if [[ -n "$py" && -n "$name" && -f "$DATA_DIR/$name.json" ]]; then
+    mode="$("$py" -c 'import json, sys
+try:
+    m = str(json.load(open(sys.argv[1])).get("mode") or "").strip().upper()
+    print(m if m in ("OFF", "PAPER", "LIVE") else "PAPER")
+except Exception:
+    print("PAPER")' "$DATA_DIR/$name.json" 2>/dev/null || true)"
+  fi
+  printf '%s\n' "${mode:-PAPER}"
+}
+
+# bot_check NAME - one plain line on the Rapid Momentum Rider (rider) or
+# Financial Ian (ian), from its own status file. Exit 0: running and
+# reporting; 2: its file says OFF; 1: anything else.
+bot_check() {
+  local name="${1:-}"
+  (cd "$APP_DIR" 2>/dev/null && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --check "$name" 2>&1)
+}
+
+# wait_bot_line NAME SECONDS - wait (at most SECONDS) for the bot to report
+# in its current mode, then print its one line.
+wait_bot_line() {
+  local name="${1:-}"
+  local limit="${2:-120}"
+  local waited=0
+  local line=""
+  local code=1
+  while :; do
+    line="$(bot_check "$name")"
+    code=$?
+    if (( code == 2 )); then
+      break
+    fi
+    if (( code == 0 )) && [[ "$line" != *"restart it for"* ]]; then
+      break
+    fi
+    if (( waited >= limit )); then
+      break
+    fi
+    sleep 5
+    waited=$((waited + 5))
+  done
+  printf '%s\n' "${line:-$name: no answer yet}"
+  return "$code"
+}
+
+# restart_if_mode_changed NAME - a running bot reads its mode at start: when
+# its file now says another mode, stop that process and let the watchdog
+# start it again (within a check) in the new mode. Nothing else is touched.
+restart_if_mode_changed() {
+  local name
+  local line
+  name="${1:-}"
+  line="$(bot_check "$name")"
+  case "$line" in
+    *"restart it for"*)
+      if is_running "$name"; then
+        say "    Restarting $name so it runs in its new mode (the watchdog starts it again)."
+        kill "$(tr -d '[:space:]' < "$DATA_DIR/$name.pid")" 2>/dev/null || true
+        sleep 3
+      fi
+      ;;
+  esac
+  return 0
+}
+
+# setup_rider - the Rapid Momentum Rider LIVE in place of the Rapid Scalper.
+# GBP 1 a pip only when rider.json names no figure yet: once set, the figure
+# is Aaron's and is never changed here.
+setup_rider() {
+  step "Rapid Momentum Rider: LIVE, in place of the Rapid Scalper"
+  local has_pip
+  has_pip="$("$VENV_DIR/bin/python" -c 'import json, sys
+try:
+    print("yes" if json.load(open(sys.argv[1])).get("user_pip_value_gbp") else "")
+except Exception:
+    print("")' "$DATA_DIR/rider.json" 2>/dev/null || true)"
+  local ok
+  ok=1
+  if [[ -n "$has_pip" ]]; then
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper --live rider 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /' || ok=0
+  else
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper --live rider --gbp-per-pip 1.0 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /' || ok=0
+  fi
+  if (( ok )); then
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$DATA_DIR/.rider-live-2026-10-09"
+    good "Rapid Momentum Rider: LIVE. Rapid Scalper: retired"
+    return 0
+  fi
+  bad "The Rapid Momentum Rider could not be switched on (see the lines above)."
+  return 1
+}
+
+# setup_ian - Financial Ian on (PAPER unless it is already LIVE), with an
+# optional Databento key asked for ONCE and never shown. The databento
+# package is installed only when a key is saved.
+setup_ian() {
+  step "Financial Ian"
+  say "    Financial Ian reads the CME futures order book. That needs a data-feed key"
+  say "    (Databento: see docs/ops/financial_ian_data_feed.md). Without one it runs"
+  say "    safely in DATA-DEGRADED mode: no signals and no trades."
+  say ""
+  say "    ${BOLD}Paste your Databento API key, or just press Enter to skip.${RESET} Nothing is shown as you type."
+  (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ian --config "$CONFIG" --set-key 2>&1) | sed 's/^/    /'
+  local has_key
+  has_key="$("$VENV_DIR/bin/python" -c 'import json, sys
+try:
+    print("yes" if json.load(open(sys.argv[1])).get("databento_api_key") else "")
+except Exception:
+    print("")' "$SECRETS" 2>/dev/null || true)"
+  if [[ -n "$has_key" ]]; then
+    good "A Databento key is saved in $SECRETS (readable only by you, never in the code)"
+    chmod 600 "$SECRETS" 2>/dev/null || true
+    if "$VENV_DIR/bin/python" -c 'import databento' >/dev/null 2>&1; then
+      good "The databento package is installed"
+    else
+      run_logged "Installing the databento package" "$VENV_DIR/bin/python" -m pip install databento \
+        || warn "The databento package did not install: Financial Ian will say the feed is DOWN until it does."
+    fi
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --ian-feed databento 2>&1) \
+      | sed -e '/Restart the bot/d' -e 's/^/  /' || warn "Could not name the Databento feed in ian.json."
+  else
+    say "    No key: Financial Ian stays DATA-DEGRADED (no signals, no trades). Double-click this again any time."
+  fi
+  if [[ "$(bot_file_mode ian)" != "LIVE" ]]; then
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --paper ian 2>&1) \
+      | sed -e '/Restart the bot/d' -e 's/^/  /' || { bad "Financial Ian could not be switched on."; return 1; }
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$DATA_DIR/.ian-enabled-2026-10-09"
+  good "Financial Ian: $(bot_file_mode ian)"
+  return 0
+}
+
+# start_rider_research - the Rapid Momentum Rider's research on the last ten
+# days of the broker's REAL ticks, run in the background once a day (marker)
+# and uploaded to GitHub, so real-tick results arrive without anyone typing
+# anything. Skipped when today's summary is already there. It must never
+# starve the trading bots: it runs at the lowest priority (nice -n 19) on
+# one worker process (--workers 1), logging to logs/rider-research.log.
+start_rider_research() {
+  local today
+  today="$(date -u +%Y-%m-%d)"
+  [[ -f "$DATA_DIR/rider-research/$today/summary.json" ]] && return 0
+  [[ -f "$DATA_DIR/.rider-research-$today" ]] && return 0
+  [[ -x "$VENV_DIR/bin/python" && -f "$CONFIG" ]] || return 0
+  if [[ ! -f "$APP_DIR/mintel/rider/research.py" && ! -f "$APP_DIR/mintel/rider/research/__main__.py" ]]; then
+    return 0                                 # not in this version
+  fi
+  mkdir -p "$LOG_DIR"
+  : > "$DATA_DIR/.rider-research-$today"
+  (cd "$APP_DIR" && nohup nice -n 19 "$VENV_DIR/bin/python" -m mintel.rider.research --config "$CONFIG" --days 10 \
+      --upload --workers 1 >>"$LOG_DIR/rider-research.log" 2>&1 &)
+  good "Rapid Momentum Rider research on the last 10 days of real ticks started in the background, at the lowest priority so the bots come first (log: $LOG_DIR/rider-research.log)"
   return 0
 }
 
@@ -1137,6 +1463,7 @@ install_desktop_icon() {
   # $APP_DIR), so an update must never put them back.
   local marker="$DATA_DIR/.desktop-icons-placed"
   if [[ -f "$marker" ]]; then
+    install_new_bot_icons "$desktop"
     good "Desktop icons: left as you arranged them (the bot does not need them)"
     return 0
   fi
@@ -1151,7 +1478,29 @@ install_desktop_icon() {
     xattr -d com.apple.quarantine "$desktop/$name.command" >/dev/null 2>&1
   done
   mkdir -p "$DATA_DIR" && : > "$marker"
+  install_new_bot_icons "$desktop"
   good "Double-click ${BOLD}Start Trading Bot${RESET} on your Desktop from now on"
+}
+
+# The Rapid Momentum Rider's and Financial Ian's own icons (9 Oct), placed
+# once like the first ones, and never put back after that.
+install_new_bot_icons() {
+  local desktop
+  local marker
+  desktop="${1:-$HOME/Desktop}"
+  marker="$DATA_DIR/.desktop-icons-rider-ian-placed"
+  [[ -f "$marker" ]] && return 0
+  [[ -d "$desktop" ]] || return 0
+  local name
+  for name in "SETUP-RAPID-RIDER" "START-RAPID-RIDER" "INSTALL-FINANCIAL-IAN" "START-FINANCIAL-IAN"; do
+    local src="$APP_DIR/deploy/mac/$name.command"
+    [[ -f "$src" ]] || continue
+    cp -f "$src" "$desktop/$name.command"
+    chmod +x "$desktop/$name.command"
+    xattr -d com.apple.quarantine "$desktop/$name.command" >/dev/null 2>&1
+  done
+  mkdir -p "$DATA_DIR" && : > "$marker"
+  good "Rapid Momentum Rider and Financial Ian icons placed on your Desktop"
 }
 
 # ------------------------------------------------------------ start / check --
@@ -1210,7 +1559,7 @@ start_everything() {
     say "    A new version was installed. Restarting the bot so it runs it."
     launchctl unload "$PLIST_PATH" >/dev/null 2>&1
     local name
-    for name in watchdog trader bridge; do
+    for name in watchdog trader bridge rider ian scalper; do
       [[ -f "$DATA_DIR/$name.pid" ]] && kill "$(tr -d '[:space:]' < "$DATA_DIR/$name.pid")" 2>/dev/null
       rm -f "$DATA_DIR/$name.pid"
     done
@@ -1218,11 +1567,15 @@ start_everything() {
     pkill -f "bridge_server.py" 2>/dev/null || true
     pkill -f "mintel.run --config" 2>/dev/null || true
     pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
-  pkill -f "mintel.scalper.run --config" 2>/dev/null || true
     pkill -f "mintel.scalper.run --config" 2>/dev/null || true
+    pkill -f "mintel.rider.run --config" 2>/dev/null || true
+    pkill -f "mintel.ian.run --config" 2>/dev/null || true
     sleep 2
     launchctl load "$PLIST_PATH" >/dev/null 2>&1
   fi
+  # The Rapid Scalper is retired: its last report must not sit on disk
+  # looking like a part of the system that has stopped.
+  rm -f "$DATA_DIR/heartbeats/scalper.heartbeat.json"
   if is_running watchdog; then
     good "already running - nothing to start"
   else
@@ -1283,8 +1636,12 @@ for check in health.get("checks", []):
     if check.get("severity") != "OK":
         print(f"           {check['severity']}: {check['message']}")
 print(f"    Mode        : {status.get('mode', '?')}")
+paper = str(status.get("tnb_mode") or "").upper() == "PAPER"
+if paper:
+    print("    Trend & Breakout: PAPER - real prices, simulated orders (never in the account)")
 print(f"    Open trades : {status.get('open_positions', 0)}")
-print(f"    Today       : {status.get('today_pnl', 0)} {status.get('currency', '')}")
+print(f"    Today       : {status.get('today_pnl', 0)} {status.get('currency', '')}"
+      + (" (Trend & Breakout's practice, not money)" if paper else ""))
 print(f"    Last scan   : {status.get('last_scan', 'never')}")
 thinking = snap.get("thinking") or []
 if thinking:
@@ -1293,19 +1650,25 @@ if thinking:
         print(f"      {item['rank']}. {item['symbol']:<9}{item['direction']:<6}"
               f"{item['score']:>5.0f}  {item['tier']}")
 PYEOF
+  # the two bots that run as their own processes, one line each
+  local b
+  for b in rider ian; do
+    say "    $(bot_check "$b" | tail -1)"
+  done
 }
 
 open_dashboard() {
   open "http://127.0.0.1:$DASH_PORT" >/dev/null 2>&1 || true
 }
 
-# bot_mode BLOCK - the mode a bot is set to in config.json ("runner",
-# "bandbreaker" or "crowd" -> "mode"): LIVE, PAPER or OFF. PAPER when the
-# file or the block says nothing, which is the bots' own default. Read with
-# a JSON parser, never a pattern, so a mode inside another block cannot be
-# mistaken for this one.
+# bot_mode BLOCK [DEFAULT] - the mode a bot is set to in config.json
+# ("runner", "bandbreaker", "crowd" or "tnb" -> "mode"): LIVE, PAPER or OFF.
+# DEFAULT (PAPER, the bots' own default; LIVE for Trend & Breakout, "tnb")
+# when the file or the block says nothing. Read with a JSON parser, never a
+# pattern, so a mode inside another block cannot be mistaken for this one.
 bot_mode() {
   local block="${1:-}"
+  local fallback="${2:-PAPER}"
   local py=""
   local mode=""
   if [[ -x "$VENV_DIR/bin/python" ]]; then
@@ -1317,11 +1680,11 @@ bot_mode() {
     mode="$("$py" -c 'import json, sys
 try:
     block = json.load(open(sys.argv[1])).get(sys.argv[2]) or {}
-    print(str(block.get("mode") or "PAPER").upper())
+    print(str(block.get("mode") or sys.argv[3]).upper())
 except Exception:
-    print("PAPER")' "$CONFIG" "$block" 2>/dev/null || true)"
+    print(sys.argv[3])' "$CONFIG" "$block" "$fallback" 2>/dev/null || true)"
   fi
-  printf '%s\n' "${mode:-PAPER}"
+  printf '%s\n' "${mode:-$fallback}"
 }
 
 final_report() {
@@ -1335,19 +1698,19 @@ final_report() {
   say "=============================================================="
   say ""
   # Every bot's mode, read from the files the bots themselves read: the
-  # Rapid Scalper from data/scalper.json, the other three from config.json.
-  local rs_mode=""
-  if [[ -f "$MINTEL_HOME/data/scalper.json" ]]; then
-    rs_mode="$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\([A-Za-z]*\)".*/\1/p' "$MINTEL_HOME/data/scalper.json" | head -1)"
-    say "  Rapid Scalper mode: ${BOLD}${rs_mode:-PAPER}${RESET}  (data/scalper.json)"
-  fi
-  say "  Momentum Runner: ${BOLD}$(bot_mode runner)${RESET} rides the index trades with a 3 R trail (its own tab on the page)"
+  # Rapid Momentum Rider and Financial Ian from data/rider.json and
+  # data/ian.json, the other three from config.json.
+  say "  Trend & Breakout: ${BOLD}$(bot_mode tnb LIVE)${RESET} the main trader; on PAPER: real prices, simulated orders (its own tab)"
+  say "  Rapid Momentum Rider: ${BOLD}$(bot_file_mode rider)${RESET} rides the FX market that has just started running (data/rider.json; page /rider)"
+  say "  Momentum Runner: ${BOLD}$(bot_mode runner)${RESET} rides Trend & Breakout's index entries with a 3 R trail (its own tab on the page)"
   say "  Band Breaker:    ${BOLD}$(bot_mode bandbreaker)${RESET} intraday index momentum, New York session (its own tab)"
   say "  Crowd Fader:     ${BOLD}$(bot_mode crowd)${RESET} positioning from Coinversa, faded once the price turns (its own tab)"
+  say "  Financial Ian:   ${BOLD}$(bot_file_mode ian)${RESET} the CME futures order book, traded on the spot pair (data/ian.json; page /ian)"
+  say "  Rapid Scalper:   retired 9 Oct, replaced by the Rapid Momentum Rider (its records are kept)"
   say "  LIVE places real orders under the bot's own magic number; PAPER simulates and is never in Overall."
   say "  To switch any bot: $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live all"
-  say "  (or --paper / --off, then Stop Trading Bot and Start Trading Bot)"
-  if [[ -f "$MINTEL_HOME/data/scalper.json" ]]; then
+  say "  (or --paper / --off, then Stop Trading Bot and Start Trading Bot; Trend & Breakout by name: --paper tnb)"
+  if [[ -f "$CONFIG" ]]; then
     if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('coinversa_api_key') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
       say "  ${RED}No Coinversa key saved: the Crowd Fader cannot read anything.${RESET}"
       say "  Fix: $VENV_DIR/bin/python -m mintel.crowd --config $CONFIG --set-key"
@@ -1355,6 +1718,10 @@ final_report() {
     if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('github_token') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
       bad "No GitHub token saved: the nightly report and the ten-minute pulse will NOT publish."
       say "  Fix: $VENV_DIR/bin/python -m mintel.ops.report_upload --config $CONFIG --set-token"
+    fi
+    if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('databento_api_key') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
+      say "  No Databento key saved: Financial Ian runs DATA-DEGRADED (no signals, no trades)."
+      say "  Fix: double-click INSTALL-FINANCIAL-IAN and paste the key."
     fi
     say ""
   fi
@@ -1400,7 +1767,7 @@ stop_everything() {
   step "Stopping the bot"
   launchctl unload "$PLIST_PATH" >/dev/null 2>&1
   local name
-  for name in watchdog trader bridge; do
+  for name in watchdog trader bridge rider ian scalper; do
     local pidfile="$DATA_DIR/$name.pid"
     if [[ -f "$pidfile" ]]; then
       local pid; pid="$(tr -d '[:space:]' < "$pidfile")"
@@ -1415,6 +1782,10 @@ stop_everything() {
   pkill -f "mintel.run --config" 2>/dev/null || true
   pkill -f "mintel.ops.watchdog --config" 2>/dev/null || true
   pkill -f "mintel.scalper.run --config" 2>/dev/null || true
+  pkill -f "mintel.rider.run --config" 2>/dev/null || true
+  pkill -f "mintel.ian.run --config" 2>/dev/null || true
+  # The retired Rapid Scalper's last report goes too (see start_everything).
+  rm -f "$DATA_DIR/heartbeats/scalper.heartbeat.json"
   if [[ -f "$DATA_DIR/caffeinate.pid" ]]; then
     kill "$(cat "$DATA_DIR/caffeinate.pid")" 2>/dev/null
     rm -f "$DATA_DIR/caffeinate.pid"

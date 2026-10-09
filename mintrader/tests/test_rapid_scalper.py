@@ -458,10 +458,11 @@ class TestIsolation:
         cfg = Config(); cfg.ops.data_dir = str(tmp_path); cfg.ops.log_dir = str(tmp_path)
         ScalperConfig(mode="OFF").save(ScalperConfig.default_path(tmp_path))
         w = wd.build_default(cfg, str(tmp_path / "config.json"))
-        assert [p.name for p in w.processes] == ["trader"]
+        assert w.processes[0].name == "trader" and "scalper" not in [p.name for p in w.processes]
         ScalperConfig(mode="PAPER").save(ScalperConfig.default_path(tmp_path))
         w2 = wd.build_default(cfg, str(tmp_path / "config.json"))
-        assert [p.name for p in w2.processes] == ["trader", "scalper"]
+        # 9 Oct: the Rapid Scalper is retired (the Rapid Momentum Rider replaced it) and is never started
+        assert w2.processes[0].name == "trader" and "scalper" not in [p.name for p in w2.processes]
         assert w.processes[0].command == w2.processes[0].command, "the trader's command is identical either way"
         # and the existing strategy's code never imports the scalper
         root = Path(__file__).parent.parent / "mintel"
@@ -948,7 +949,7 @@ class TestReconcile:
                 return [{"position": p, "profit": pr, "commission": c, "is_entry": e, "time": t, "symbol": "X"}
                         for p, m, pr, c, e in deals if not magic or m == magic]
         res = reconcile(B(), cfg, day, 990411)
-        assert res["bots"] == ["mi", "rs", "runner", "bandbreaker", "crowd"]
+        assert res["bots"] == ["mi", "rider", "runner", "bandbreaker", "crowd", "ian", "rs"]
         assert (res["runner"]["magic"], res["bandbreaker"]["magic"], res["crowd"]["magic"]) == (990511, 990611, 990711)
         assert res["mi"]["net"] == 7.54 and res["rs"]["net"] == 2.79
         assert res["runner"]["net"] == 21.0 and res["runner"]["positions"] == 1
@@ -957,10 +958,43 @@ class TestReconcile:
         assert res["other"]["positions"] == 1 and res["other"]["net"] == -2.0
         assert res["all"]["net"] == pytest.approx(7.54 + 2.79 + 21.0 - 9.75 + 12.4 - 2.0)
         text = render(res, cfg, day, SimpleNamespace(balance=100.0, equity=100.0))
-        for label in ("Trend & Breakout (magic 990311)", "Rapid Scalper (magic 990411)", "Momentum Runner (magic 990511)",
+        for label in ("Trend & Breakout (magic 990311)", "Rapid Scalper, retired (magic 990411)", "Momentum Runner (magic 990511)",
                       "Band Breaker (magic 990611)", "Crowd Fader (magic 990711)"):
             assert label in text, label
         assert "Bots added together: +33.98" in text and "difference to the account: -2.00" in text
+
+    def test_the_rider_and_ian_have_their_own_lines_not_other(self, tmp_path):
+        """9 Oct: the Rapid Momentum Rider (990811) and Financial Ian
+        (990911, fixed in its code: a "magic" in ian.json is ignored by Ian
+        and so by the report) are LIVE. Their real trades land on their own
+        rows, never on "other / manual"."""
+        import json
+        from types import SimpleNamespace
+        from mintel.ops.reconcile import reconcile, render
+        day = dt.date(2026, 10, 9)
+        t = dt.datetime(2026, 10, 9, 14, 0, tzinfo=dt.timezone.utc)
+        cfg = Config()
+        cfg.ops.data_dir = str(tmp_path)
+        (tmp_path / "ian.json").write_text(json.dumps({"mode": "LIVE", "magic": 990919}))   # never the orders' number
+        deals = [  # position, magic, profit(net incl commission), commission, is_entry
+            (1, 990811, -3.50, -3.50, True), (1, 990811, 12.00, -3.50, False),
+            (2, 990911, 0.00, 0.00, True), (2, 990911, -4.25, 0.00, False),
+        ]
+        class B:
+            clock = None
+            def deals_since(self, since, magic=0, closing_only=True):
+                return [{"position": p, "profit": pr, "commission": c, "is_entry": e, "time": t, "symbol": "X"}
+                        for p, m, pr, c, e in deals if not magic or m == magic]
+        res = reconcile(B(), cfg, day, 990411)
+        assert res["rider"]["magic"] == 990811 and res["rider"]["net"] == 8.5
+        assert res["rider"]["positions"] == 1 and res["rider"]["commission"] == -7.0
+        assert res["ian"]["magic"] == 990911 and res["ian"]["net"] == -4.25
+        assert res["other"]["positions"] == 0 and res["other"]["net"] == 0.0
+        text = render(res, cfg, day, SimpleNamespace(balance=100.0, equity=100.0))
+        assert "Rapid Momentum Rider (magic 990811)" in text and "Financial Ian (magic 990911)" in text
+        assert "990919" not in text
+        assert "Rapid Scalper, retired (magic 990411)" in text
+        assert "Bots added together: +4.25" in text and "difference to the account: +0.00" in text
 
 
 

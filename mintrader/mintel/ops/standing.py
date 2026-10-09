@@ -2,7 +2,7 @@
 
 One figure the page leads with: what the account has made since the reset,
 after commission and swap, taken straight from MetaTrader's deal history for
-EVERY trade on the account (all five bots and anything placed by hand). It
+EVERY trade on the account (every bot and anything placed by hand). It
 does not depend on any bot's own records, so it cannot be fooled by one: a
 paper bot never touches the broker and so can never appear in it.
 
@@ -11,11 +11,26 @@ the reset. The page shows that sum so it can be checked against the phone.
 
 Under it, the same history split by magic number - one row per bot, plus a
 row for anything that carried no bot's number - so the rows always add up to
-the big figure.
+the big figure. The six active bots always have a row; the retired Rapid
+Scalper (magic 990411, replaced by the Rapid Momentum Rider on 9 Oct) keeps
+its row too, because its real trades are still part of the account, and
+the page shows it only while it has money to show.
+
+Trend & Breakout on PAPER (config.json "tnb" -> "mode"): its orders are
+simulated by the PaperBroker wrapper and never reach MetaTrader, so they can
+never be in these figures. Its row is still magic 990311's REAL deals (a
+position left open from LIVE, wound down to its end), which are real money
+and part of the account; its card is marked PAPER and its practice figure
+comes from its own paper record (``TnbPaperRecord``: data/tnb_paper.sqlite,
+read through ``PaperBroker(..., read_only=True)``), shown apart and never
+added. The broker read here is always the real one (``real_broker``), even
+if the trader's wrapper is handed in: the whole-account view is MetaTrader's
+own.
 """
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -24,15 +39,130 @@ from ..clock import to_utc
 
 log = logging.getLogger("mintel.standing")
 
+TNB_MAGIC = 990_311
+TNB_PAPER_DB = "tnb_paper.sqlite"
+_EPOCH = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)
+
+
+def tnb_mode(cfg=None, data_dir=None) -> str:
+    """Trend & Breakout's mode as every report must treat it: "PAPER" or
+    "LIVE". From the config's own ``tnb`` block when it carries one
+    (``getattr(getattr(cfg, "tnb", None), "mode", "LIVE")``); otherwise from
+    the "tnb" block of config.json in the data folder (where the installers
+    and the modes command keep it). LIVE - today's behaviour - unless one of
+    them says PAPER. Never raises."""
+    block = getattr(cfg, "tnb", None) if cfg is not None else None
+    if block is not None:
+        mode = block.get("mode") if isinstance(block, dict) else getattr(block, "mode", "LIVE")
+        return "PAPER" if str(mode or "").strip().upper() == "PAPER" else "LIVE"
+    d = data_dir if data_dir is not None else getattr(getattr(cfg, "ops", None), "data_dir", None)
+    if not d:
+        return "LIVE"
+    try:
+        raw = json.loads((Path(d) / "config.json").read_text())
+        b = raw.get("tnb") if isinstance(raw, dict) else None
+        mode = b.get("mode") if isinstance(b, dict) else ""
+        return "PAPER" if str(mode or "").strip().upper() == "PAPER" else "LIVE"
+    except Exception:
+        return "LIVE"
+
+
+def real_broker_of(broker):
+    """The REAL broker behind the PAPER wrapper (or ``broker`` itself)."""
+    try:
+        from ..broker.paper import real_broker
+        return real_broker(broker)
+    except Exception:
+        return broker
+
+
+class TnbPaperRecord:
+    """Trend & Breakout's PAPER record (data/tnb_paper.sqlite), read once and
+    read-only through ``PaperBroker(None, data_dir, magic, read_only=True)``:
+    it can never book a stop or send an order, and it never asks the real
+    broker for anything. Empty (no deals, no tickets) when there is no
+    record; ``error`` says why when it could not be read.
+
+    ``deals`` are in the MT5 adapter's ``deals_since`` shape (profit
+    includes commission and swap; the entry deal carries the entry half of
+    the commission). ``tickets`` is every position born on paper."""
+
+    def __init__(self, data_dir, magic: int = TNB_MAGIC):
+        self.deals: list[dict] = []
+        self.tickets: frozenset = frozenset()
+        self.error = ""
+        self.present = bool(data_dir) and (Path(data_dir) / TNB_PAPER_DB).exists()
+        if not self.present:
+            return
+        try:
+            from ..broker.paper import PaperBroker
+            view = PaperBroker(None, data_dir, magic=int(magic or TNB_MAGIC), read_only=True)
+            try:
+                rows = view.paper_deals_since(_EPOCH, closing_only=False)
+            finally:
+                view.close_db()
+        except Exception as exc:                            # a broken record is said, never guessed
+            self.error = f"the paper record could not be read: {exc}"
+            log.warning("Trend & Breakout's %s", self.error)
+            return
+        self.deals = [dict(r, time=to_utc(r["time"])) for r in rows if r.get("time") is not None]
+        self.tickets = frozenset(int(r.get("position") or 0) for r in self.deals)
+
+    def is_paper(self, ticket) -> bool:
+        try:
+            return int(ticket or 0) in self.tickets
+        except (TypeError, ValueError):
+            return False
+
+    def deals_in(self, start: dt.datetime, end: Optional[dt.datetime] = None) -> list[dict]:
+        """Every paper deal booked in [start, end)."""
+        a = to_utc(start)
+        b = to_utc(end) if end is not None else None
+        return [r for r in self.deals if r["time"] >= a and (b is None or r["time"] < b)]
+
+    def positions(self, start: Optional[dt.datetime] = None, end: Optional[dt.datetime] = None) -> list[dict]:
+        """Paper positions whose LAST closing deal fell in [start, end), each
+        with every one of its deals counted (the entry's commission too), in
+        the order they closed: {ticket, symbol, net, commission (a positive
+        cost), volume, opened, closed}. A position closed only in part counts
+        the part that is closed."""
+        by: dict[int, dict] = {}
+        for r in self.deals:
+            pos = int(r.get("position") or 0)
+            p = by.setdefault(pos, {"ticket": pos, "symbol": str(r.get("symbol") or ""), "net": 0.0,
+                                    "commission": 0.0, "volume": 0.0, "opened": None, "closed": None})
+            p["net"] += float(r.get("profit") or 0.0)
+            p["commission"] += abs(float(r.get("commission") or 0.0))
+            if r.get("is_entry"):
+                p["opened"] = r["time"] if p["opened"] is None else min(p["opened"], r["time"])
+            else:
+                p["volume"] += float(r.get("volume") or 0.0)
+                p["closed"] = r["time"] if p["closed"] is None else max(p["closed"], r["time"])
+        a = to_utc(start) if start is not None else None
+        b = to_utc(end) if end is not None else None
+        out = [dict(p, net=round(p["net"], 2), commission=round(p["commission"], 2)) for p in by.values()
+               if p["closed"] is not None and (a is None or p["closed"] >= a) and (b is None or p["closed"] < b)]
+        out.sort(key=lambda p: p["closed"])
+        return out
+
+    def net(self, start: dt.datetime, end: Optional[dt.datetime] = None) -> float:
+        """Practice money of the positions that closed in [start, end)."""
+        return round(sum(p["net"] for p in self.positions(start, end)), 2)
+
 _CACHE: dict = {"at": None, "value": None}
 
-BOTS = (  # (id, label, where its magic and mode come from)
+BOTS = (  # (id, label): the six active bots in the page's order, then the retired one
     ("market_intelligence", "Trend & Breakout"),
-    ("rapid_scalper", "Rapid Scalper"),
+    ("momentum_rider", "Rapid Momentum Rider"),
     ("momentum_runner", "Momentum Runner"),
     ("band_breaker", "Band Breaker"),
     ("crowd_fader", "Crowd Fader"),
+    ("financial_ian", "Financial Ian"),
+    ("rapid_scalper", "Rapid Scalper (retired)"),
 )
+ACTIVE_BOTS = BOTS[:6]
+RETIRED = frozenset({"rapid_scalper"})     # a known magic, shown only when it has money to show
+RIDER_MAGIC, IAN_MAGIC, SCALPER_MAGIC = 990_811, 990_911, 990_411
 
 
 def _start(cfg, now: dt.datetime) -> dt.datetime:
@@ -59,14 +189,21 @@ def _day_start(broker, now: dt.datetime) -> dt.datetime:
 
 
 def bot_modes_and_magics(cfg) -> dict[str, tuple[int, str]]:
-    """{bot id: (magic, mode)} as the running bots see them."""
-    out: dict[str, tuple[int, str]] = {"market_intelligence": (int(cfg.magic), "LIVE")}
+    """{bot id: (magic, mode)} as the running bots see them: Trend &
+    Breakout (LIVE or PAPER, ``tnb_mode``) and the three config bots from
+    config.json, the Rapid Momentum Rider and Financial Ian with their modes
+    from their own files (rider.json, ian.json) and their magic numbers
+    fixed in their code (``mintel.rider.MAGIC``, ``mintel.ian.MAGIC``: Ian's
+    engine ignores any "magic" in ian.json, so it is not read here either),
+    and the retired Rapid Scalper as RETIRED on the magic its file names."""
+    from .watchdog import own_file_mode
+    data = Path(cfg.ops.data_dir)
+    out: dict[str, tuple[int, str]] = {"market_intelligence": (int(cfg.magic), tnb_mode(cfg))}
     try:
-        from ..scalper.config import ScalperConfig
-        sc = ScalperConfig.load(Path(cfg.ops.data_dir) / "scalper.json")
-        out["rapid_scalper"] = (int(sc.magic), str(sc.mode).upper())
+        from ..rider import MAGIC as rider_magic
     except Exception:
-        out["rapid_scalper"] = (990_411, "PAPER")
+        rider_magic = RIDER_MAGIC
+    out["momentum_rider"] = (int(rider_magic), own_file_mode(data / "rider.json"))
     for bid, block, default in (("momentum_runner", "runner", 990_511), ("band_breaker", "bandbreaker", 990_611),
                                 ("crowd_fader", "crowd", 990_711)):
         b = getattr(cfg, block, None)
@@ -74,6 +211,16 @@ def bot_modes_and_magics(cfg) -> dict[str, tuple[int, str]]:
         if b is not None and not getattr(b, "enabled", True):
             mode = "OFF"
         out[bid] = (int(getattr(b, "magic", default) or default), mode)
+    try:
+        from ..ian import MAGIC as ian_magic          # hard-wired: ian.json cannot change it
+    except Exception:
+        ian_magic = IAN_MAGIC
+    out["financial_ian"] = (int(ian_magic), own_file_mode(data / "ian.json"))
+    try:
+        from ..scalper.config import ScalperConfig
+        out["rapid_scalper"] = (int(ScalperConfig.load(data / "scalper.json").magic), "RETIRED")
+    except Exception:
+        out["rapid_scalper"] = (SCALPER_MAGIC, "RETIRED")
     return out
 
 
@@ -124,6 +271,9 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     at = _CACHE["at"]
     if at is not None and cache_seconds and (now - at).total_seconds() < cache_seconds and _CACHE["value"]:
         return _CACHE["value"]
+    # MetaTrader's own view, always: never the PAPER wrapper, whose answer for
+    # Trend & Breakout's magic would add its simulated deals
+    broker = real_broker_of(broker)
     start = _start(cfg, now)
     day = max(_day_start(broker, now), start)
     reset_balance = float(getattr(cfg, "account_reset_balance", 0.0) or 0.0)
@@ -233,7 +383,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
             b = {"made": b_since, "today": b_today, "trades": b_n_since, "today_trades": b_n_today}
         out["bots"].append({"id": bid, "label": label, "magic": magic, "mode": mode, **b,
                             "open": round(open_by.get(magic, 0.0), 2) if pos_list is not None else None,
-                            "open_trades": n_open.get(magic, 0)})
+                            "open_trades": n_open.get(magic, 0), "retired": bid in RETIRED})
     # every deal since the reset, tagged with the bot that opened it, so the page
     # can work out any period from the broker's own rows (held in memory, never published)
     tagged: list[dict] = []
@@ -268,8 +418,13 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
 def practice_figures(data_dir, start: dt.datetime, now: dt.datetime, currency: str = "GBP",
                      end: Optional[dt.datetime] = None) -> dict:
     """Each bot's PAPER results from ``start`` (to ``end``, default now), from
-    its own records: practice, never money. {bot id: net}."""
+    its own records: practice, never money. {bot id: net}. Trend &
+    Breakout's is its paper record's: the positions that closed in the
+    period, every deal of each (shown on its card only while it is PAPER)."""
     out: dict = {}
+    record = TnbPaperRecord(data_dir)
+    if not record.error:
+        out["market_intelligence"] = record.net(start, end or (to_utc(now) + dt.timedelta(seconds=1)))
     try:
         from .attribution import build_strategies_range
         s = build_strategies_range(data_dir, start, end or (to_utc(now) + dt.timedelta(seconds=1)), currency, now=now)

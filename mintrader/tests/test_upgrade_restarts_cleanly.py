@@ -60,6 +60,31 @@ class TestStopAndStartMechanics:
         assert "A new version was installed" in body
         assert 'pkill -f "bridge_server.py"' in body
 
+    def test_stop_removes_the_retired_scalpers_last_heartbeat(self, tmp_path):
+        """The Rapid Scalper is retired: its last heartbeat must not stay on
+        disk looking like a part of the system that has stopped. The other
+        bots' heartbeats are left alone."""
+        home = tmp_path / "home"
+        beats = home / "data" / "heartbeats"
+        beats.mkdir(parents=True)
+        for name in ("scalper", "rider", "strategy"):
+            (beats / f"{name}.heartbeat.json").write_text("{}")
+        r = _bash("launchctl() { :; }; pkill() { :; }; sleep() { :; }; "
+                  "stop_everything", home)
+        assert r.returncode == 0, (r.stdout, r.stderr)
+        assert not (beats / "scalper.heartbeat.json").exists()
+        assert (beats / "rider.heartbeat.json").exists()
+        assert (beats / "strategy.heartbeat.json").exists()
+        start = LIB.read_text().split("start_everything() {")[1].split("\n}\n")[0]
+        assert 'rm -f "$DATA_DIR/heartbeats/scalper.heartbeat.json"' in start
+
+    def test_windows_start_and_stop_remove_it_too(self):
+        start = (ROOT / "deploy" / "START-BOT.ps1").read_text()
+        restart = start.split("if ($Restart) {")[1].split("\n}\n")[0]
+        assert 'heartbeats\\scalper.heartbeat.json' in restart
+        stop = (ROOT / "deploy" / "STOP-BOT.ps1").read_text()
+        assert 'Remove-Item (Join-Path $dataDir "heartbeats\\scalper.heartbeat.json")' in stop
+
     def test_launcher_fast_path_checks_the_code(self):
         text = (ROOT / "deploy" / "mac" / "Start Trading Bot.command").read_text()
         assert 'is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR"' in text

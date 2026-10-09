@@ -247,6 +247,49 @@ class TestHeartbeats:
         r = sup.run_checks(positions=[], last_scan=sim.now)
         assert not r.entries_allowed
 
+    def test_the_retired_scalpers_old_heartbeat_is_ignored(self, sup, sim):
+        """The Rapid Scalper is retired and no longer started, but its old
+        heartbeat file stays on disk. It must not stop Trend & Breakout
+        entering - the LIVE Momentum Runner rides those entries."""
+        old = Heartbeat(sup.heartbeat_dir, "scalper", clock=lambda: sim.now)
+        old.beat()
+        sim.advance(90)                     # 90 one-minute bars: long dead
+        Heartbeat(sup.heartbeat_dir, "watchdog", clock=lambda: sim.now).beat()
+        r = sup.run_checks(positions=[], last_scan=sim.now)
+        c = check(r, "HEARTBEATS")
+        assert r.entries_allowed, r.plain_english()
+        assert c.severity is Severity.OK, c.message
+        assert "scalper" not in c.message
+
+    @pytest.mark.parametrize("bot", ["rider", "ian"])
+    def test_a_stopped_separate_bot_warns_but_does_not_stop_trading(
+            self, sup, sim, bot):
+        """The Rider and Ian run in their own processes. One switched OFF,
+        or past the watchdog's restart limit, is a warning on the page,
+        never a reason for Trend & Breakout to stop entering."""
+        Heartbeat(sup.heartbeat_dir, bot, clock=lambda: sim.now).beat()
+        sim.advance(30)                     # 30 minutes without a report
+        Heartbeat(sup.heartbeat_dir, "watchdog", clock=lambda: sim.now).beat()
+        r = sup.run_checks(positions=[], last_scan=sim.now)
+        c = check(r, "HEARTBEATS")
+        assert r.entries_allowed, r.plain_english()
+        assert c.severity is Severity.WARN
+        assert not c.blocks_entries
+        assert bot in c.message
+
+    def test_a_stale_scalper_heartbeat_does_not_stop_the_trader(
+            self, sim, cfg):
+        """End to end: with the old scalper heartbeat on disk the trader
+        still enters (before the fix it was blocked on every cycle)."""
+        from tests.conftest import make_trader, run_cycles
+        trader = make_trader(sim, cfg)
+        hb_dir = Path(cfg.ops.data_dir) / "heartbeats"
+        Heartbeat(hb_dir, "scalper",
+                  clock=lambda: sim.now - dt.timedelta(seconds=5220)).beat()
+        results = run_cycles(trader, sim, 20)
+        assert all(r.entries_allowed for r in results), [
+            r.blocked_reasons for r in results if not r.entries_allowed][:1]
+
     def test_atomic_write_never_leaves_a_partial_file(self, workdir, sim):
         hb = Heartbeat(workdir / "hb", "w", clock=lambda: sim.now)
         for _ in range(30):

@@ -155,3 +155,136 @@ class TestInstallerWiring:
         assert '"Send Report"' in body
         icon = (root / "Send Report.command").read_text()
         assert "report_upload" in icon and "--set-token" in icon
+
+
+# ------------------------------------------------------------- 9 Oct --
+class ConflictingGitHub(FakeGitHub):
+    """The 8 Oct collision: something else writes to the branch between our
+    read and our write, so the first PUTs of a file come back 409 (or 422)
+    and the file's sha has moved on."""
+
+    def __init__(self, conflicts: dict, code=409, branch_exists=True):
+        super().__init__(branch_exists=branch_exists)
+        self.conflicts = dict(conflicts)          # path -> how many PUTs to refuse
+        self.code = code
+        self.version: dict = {}
+
+    def __call__(self, method, url, body):
+        path = url.replace(ru.API, "")
+        if method == "GET" and "/contents/" in path:
+            p = path.split("/contents/")[1].split("?")[0]
+            if p in self.files:
+                self.calls.append((method, url))
+                return 200, {"sha": f"s{p}-{self.version.get(p, 0)}",
+                             "content": base64.b64encode(self.files[p].encode()).decode()}
+        if method == "PUT" and "/contents/" in path:
+            p = path.split("/contents/")[1]
+            self.calls.append((method, url))
+            if self.conflicts.get(p, 0) > 0:
+                self.conflicts[p] -= 1
+                self.files[p] = f"written by someone else {self.conflicts[p]}\n"     # the branch moved on
+                self.version[p] = self.version.get(p, 0) + 1
+                return self.code, {"message": "reports/x does not match"}
+            if p in self.files:
+                assert body.get("sha") == f"s{p}-{self.version.get(p, 0)}", "a retry must carry the fresh sha"
+            self.files[p] = base64.b64decode(body["content"]).decode()
+            return 201, {}
+        return super().__call__(method, url, body)
+
+
+class TestTheUploadSurvivesACollision:
+    def test_a_conflict_is_retried_with_a_fresh_sha(self):
+        for code in (409, 422):
+            gh = ConflictingGitHub({"reports/latest/DATE": 2}, code=code)
+            gh.files["reports/latest/DATE"] = "2026-10-07\n"
+            waits: list = []
+            n = ru.upload({"reports/latest/DATE": "2026-10-08\n"}, "o/r", "reports", "tok", opener=gh, sleep=waits.append)
+            assert n == 1 and gh.files["reports/latest/DATE"] == "2026-10-08\n"
+            assert [m for m, _ in gh.calls].count("PUT") == 3                 # two refused, the third written
+            assert waits == [0.5, 1.0]                                      # a short, growing pause
+
+    def test_a_file_that_still_fails_does_not_stop_the_others(self):
+        gh = ConflictingGitHub({"reports/2026-10-08/status.json": 99})
+        waits: list = []
+        files = {"reports/2026-10-08/day_review.txt": "review\n", "reports/2026-10-08/status.json": "{}",
+                 "reports/2026-10-08/rider.json": "{}", "reports/latest/DATE": "2026-10-08\n"}
+        with pytest.raises(ru.UploadIncomplete) as exc:
+            ru.upload(files, "o/r", "reports", "tok", opener=gh, sleep=waits.append)
+        assert exc.value.written == 3
+        assert [p for p, _ in exc.value.failed] == ["reports/2026-10-08/status.json"]
+        assert "after 5 tries" in exc.value.failed[0][1] and "status.json" in str(exc.value)
+        for p in ("reports/2026-10-08/day_review.txt", "reports/2026-10-08/rider.json", "reports/latest/DATE"):
+            assert p in gh.files, p                                         # written after the failure too
+        assert len(waits) == 4                                               # five tries, four pauses
+        assert isinstance(exc.value, RuntimeError)                          # the pulse and potential still catch it
+
+    def test_a_refusal_that_is_not_a_conflict_is_not_retried(self):
+        gh = FakeGitHub(branch_exists=True)
+        def forbidden(method, url, body):
+            if method == "PUT":
+                gh.calls.append((method, url))
+                return 403, {"message": "Resource not accessible"}
+            return gh(method, url, body)
+        with pytest.raises(ru.UploadIncomplete, match=r"\(403\): Resource not accessible"):
+            ru.upload({"a.txt": "x"}, "o/r", "reports", "tok", opener=forbidden, sleep=lambda s: None)
+        assert [m for m, _ in gh.calls].count("PUT") == 1
+
+    def test_the_nightly_run_names_what_failed_and_exits_non_zero(self, workdir, monkeypatch, capsys):
+        import mintel.run as run_mod
+        cfg_path = workdir / "config.json"
+        cfg = Config(); cfg.ops.data_dir = str(workdir); cfg.save(cfg_path)
+        ru.store_token(str(cfg_path), "tok")
+
+        class B:
+            def connect(self): return True
+            def disconnect(self): pass
+        monkeypatch.setattr(run_mod, "build_broker", lambda c: B())
+        monkeypatch.setattr(ru, "build_bundle", lambda c, b, d: {"reports/2026-10-08/a.txt": "a",
+                                                                 "reports/2026-10-08/b.txt": "b"})
+        gh = ConflictingGitHub({"reports/2026-10-08/b.txt": 99})
+        monkeypatch.setattr(ru.GitHub, "_default_open", lambda self, m, u, b: gh(m, u, b))
+        monkeypatch.setattr(ru.time, "sleep", lambda s: None)
+        assert ru.main(["--config", str(cfg_path), "--date", "2026-10-08"]) == 1
+        out = capsys.readouterr().out
+        assert "Published 1 of 2 files" in out and "reports/2026-10-08/b.txt" in out
+        assert gh.files["reports/2026-10-08/a.txt"] == "a"
+        gh.conflicts.clear()
+        assert ru.main(["--config", str(cfg_path), "--date", "2026-10-08"]) == 0      # all through: exit 0
+        assert "Published 2 files" in capsys.readouterr().out
+
+
+class TestTheNewBotsDayFiles:
+    def _rider_db(self, workdir):
+        from mintel.rider.journal import RiderJournal
+        j = RiderJournal(workdir / "rider.sqlite")
+        j.insert_trade({"ticket": 900001, "mode": "LIVE", "symbol": "GBPJPY", "side": "BUY", "volume": 0.07,
+                        "opened_utc": "2026-09-17T09:00:00+00:00", "closed_utc": "2026-09-17T09:04:00+00:00",
+                        "realised_pips": 6.2, "net_money": 6.05, "money_source": "broker",
+                        "explanation": "GBPJPY ran up; the bot got on early and stepped off when it slowed."})
+        j.insert_trade({"ticket": 900002, "mode": "PAPER", "symbol": "EURUSD", "side": "SELL", "volume": 0.1,
+                        "opened_utc": "2026-09-16T09:00:00+00:00", "closed_utc": "2026-09-16T09:04:00+00:00",
+                        "realised_pips": -3.0, "net_money": -3.0, "money_source": "paper"})
+        j.log_event("START", "mode LIVE", now=NOW)
+        j.close()
+        (workdir / "rider-status.json").write_text(json.dumps({"mode": "LIVE", "updated_utc": NOW.isoformat()}))
+
+    def test_rider_and_ian_files_carry_the_days_trades_with_their_mode(self, workdir):
+        from mintel.ian.journal import Journal as IanJournal
+        cfg = _cfg(workdir)
+        self._rider_db(workdir)
+        IanJournal(workdir / "ian.sqlite").close()
+        (workdir / "ian-status.json").write_text(json.dumps({"mode": "PAPER", "feed": {"state": "NOT CONFIGURED"}}))
+        broker = FakeBroker(("XAUJPY",), start=NOW); broker.connect()
+        files = ru.build_bundle(cfg, broker, DAY, fetch=lambda url: "{}")
+        rider = json.loads(files["reports/2026-09-17/rider.json"])
+        assert [(t["ticket"], t["mode"], t["net_money"]) for t in rider["trades"]] == [(900001, "LIVE", 6.05)]
+        assert rider["status"]["mode"] == "LIVE" and rider["events"][0]["kind"] == "START"
+        ian = json.loads(files["reports/2026-09-17/ian.json"])
+        assert ian["trades"] == [] and ian["status"]["feed"]["state"] == "NOT CONFIGURED" and ian["signals"] == []
+        assert files["reports/latest/rider.json"] == files["reports/2026-09-17/rider.json"]
+
+    def test_no_files_no_day_file(self, workdir):
+        cfg = _cfg(workdir)
+        broker = FakeBroker(("XAUJPY",), start=NOW); broker.connect()
+        files = ru.build_bundle(cfg, broker, DAY, fetch=lambda url: "{}")
+        assert not any(k.endswith(("/rider.json", "/ian.json")) for k in files)

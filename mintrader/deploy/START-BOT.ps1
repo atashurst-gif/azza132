@@ -10,9 +10,17 @@
 
     What it does:
       * starts MetaTrader 5 if it is not running
-      * starts the watchdog if it is not running
+      * starts the watchdog if it is not running - the watchdog starts and
+        keeps alive the trader, the Rapid Momentum Rider and Financial Ian
+        (each while its own file, data\rider.json or data\ian.json, is not OFF)
       * starts the trader if it is not running
-      * prints the health summary and the dashboard address
+      * prints the health summary, one line each for the Rider and Ian, and
+        the dashboard address
+      * once a day, starts the Rider's research on the last ten days of real
+        ticks in the background (it uploads its results to GitHub)
+
+    The scheduled tasks SETUP-AND-START.ps1 registers run this at boot and
+    every five minutes, so the VPS keeps everything running on its own.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\START-BOT.ps1
@@ -26,6 +34,8 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
+. (Join-Path $PSScriptRoot "mintel_bots.ps1")
+$P = Get-MintelPaths $InstallDir
 
 $appDir     = Join-Path $InstallDir "app"
 $dataDir    = Join-Path $InstallDir "data"
@@ -62,7 +72,9 @@ if ($cfg.ops -and $cfg.ops.dashboard_port) { $dashPort = $cfg.ops.dashboard_port
 if ($Restart) {
     Say ""
     Say "Stopping the bot..."
-    foreach ($name in @("trader", "watchdog")) {
+    # The watchdog first, or it would start the others again; then everything
+    # it looks after (and a Rapid Scalper left from before it was retired).
+    foreach ($name in @("watchdog", "trader", "rider", "ian", "scalper")) {
         $pidFile = Join-Path $dataDir "$name.pid"
         if (Test-Path $pidFile) {
             $processId = (Get-Content $pidFile -Raw).Trim()
@@ -73,6 +85,9 @@ if ($Restart) {
             Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
         }
     }
+    # The retired Rapid Scalper's last report must not sit on disk looking
+    # like a part of the system that has stopped.
+    Remove-Item (Join-Path $dataDir "heartbeats\scalper.heartbeat.json") -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 }
 
@@ -145,6 +160,12 @@ if (Test-Running "trader") {
     }
 }
 
+# --------------------------------------- the Rider and Ian (own processes) ----
+Say ""
+Say "Rapid Momentum Rider and Financial Ian (started by the watchdog)"
+Write-BotLines $P
+Start-RiderResearch $P
+
 # ----------------------------------------------------------------- health ----
 Say ""
 Say "Health"
@@ -163,8 +184,11 @@ try {
     }
     Say ""
     Say "    Mode        : $($health.status.mode)"
+    $tnbPaper = ("$($health.status.tnb_mode)".ToUpper() -eq "PAPER")
+    if ($tnbPaper) { Say "    Trend & Breakout: PAPER - real prices, simulated orders (never in the account)" }
     Say "    Open trades : $($health.status.open_positions)"
-    Say "    Today       : $($health.status.today_pnl) $($health.status.currency)"
+    $todayNote = if ($tnbPaper) { " (Trend & Breakout's practice, not money)" } else { "" }
+    Say "    Today       : $($health.status.today_pnl) $($health.status.currency)$todayNote"
     Say "    Last scan   : $($health.status.last_scan)"
     if ($health.thinking) {
         Say ""
@@ -184,6 +208,8 @@ Say ""
 Say "=============================================================="
 Say "  Status page :  http://127.0.0.1:$dashPort"
 Say "  Results page:  http://127.0.0.1:$dashPort/results"
+Say "  The Rider   :  http://127.0.0.1:$dashPort/rider"
+Say "  Ian         :  http://127.0.0.1:$dashPort/ian"
 Say "=============================================================="
 Say ""
 exit 0

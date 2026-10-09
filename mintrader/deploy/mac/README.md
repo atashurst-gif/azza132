@@ -27,6 +27,78 @@ Two more icons land on your Desktop alongside it:
 - **Stop Trading Bot** — stops it. Open trades stay open and keep their stop
   loss at the broker.
 
+## The Rapid Momentum Rider and Financial Ian (9 October)
+
+Two bots run as their own processes, started and kept alive by the same
+supervisor as everything else:
+
+- **Rapid Momentum Rider** (magic 990811) replaces the **Rapid Scalper**,
+  which is retired: the supervisor no longer starts it, and its records and
+  its real trades (magic 990411) are kept, so the page still adds up. The
+  first install after 9 Oct puts the Rider on **LIVE at GBP 1 a pip**, once.
+- **Financial Ian** (magic 990911) reads the CME futures order book and
+  trades the matching spot pair. It starts in **PAPER**; the line-up below
+  puts it **LIVE**. Without a data-feed key it runs DATA-DEGRADED: no
+  signals and no trades, and its page says so.
+
+Four more icons, placed on your Desktop once:
+
+| Icon | What it does |
+|---|---|
+| **SETUP-RAPID-RIDER** | Rider on LIVE (GBP 1 a pip unless you have set a figure), Rapid Scalper OFF, then starts or checks everything and prints one line, e.g. `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets` |
+| **START-RAPID-RIDER** | Starts the bot if it is stopped, changes nothing, prints the Rider's line |
+| **INSTALL-FINANCIAL-IAN** | Asks once for a Databento API key (not shown as you type; press Enter to skip), saves it in `data/secrets.json`, installs the `databento` package only when a key is saved, switches Ian on (PAPER unless it is already LIVE, as the line-up below sets it), prints e.g. `FINANCIAL IAN - HEALTHY, LIVE, feed NOT CONFIGURED` |
+| **START-FINANCIAL-IAN** | Starts the bot if it is stopped, changes nothing, prints Ian's line |
+
+All four go through **Start Trading Bot**, so none of them can start a second
+copy of anything. Their pages: <http://127.0.0.1:8787/rider> and
+<http://127.0.0.1:8787/ian>.
+
+Switch either by hand with the modes command, then restart:
+
+```bash
+~/MarketBot/venv/bin/python -m mintel.ops.modes --config ~/MarketBot/data/config.json --show
+~/MarketBot/venv/bin/python -m mintel.ops.modes --config ~/MarketBot/data/config.json --paper rider
+~/MarketBot/venv/bin/python -m mintel.ops.modes --config ~/MarketBot/data/config.json --check ian
+```
+
+Once a day, after the bot starts, the Rider's research runs in the background
+on the last ten days of the broker's real ticks and uploads its results to
+GitHub (`~/MarketBot/logs/rider-research.log`). It runs at the lowest
+priority (`nice -n 19`) on one worker process, so it never slows the bots.
+
+## The line-up (9 October, evening)
+
+The first **Start Trading Bot** after this version sets Aaron's line-up,
+once (marker `data/.lineup-2026-10-09`), after the earlier one-time steps,
+and prints which bots are LIVE and which are PAPER:
+
+- **LIVE**: the **Momentum Runner** (the winner), the **Rapid Momentum
+  Rider** (GBP 1.00 a pip unless a figure is already set) and **Financial
+  Ian** (it can only trade once a CME data feed is configured).
+- **PAPER**: **Trend & Breakout** (real prices, simulated orders, kept in
+  `data/tnb_paper.sqlite`; the Momentum Runner still rides its index entries
+  with its own real orders), the **Band Breaker** and the **Crowd Fader**.
+- The **Rapid Scalper** stays retired (OFF).
+
+It never runs twice, and once it is set the older one-time steps never run
+again, so a choice made later with the modes command is never undone by a
+reinstall. Re-entering the settings keeps Trend & Breakout's `tnb` block.
+Trend & Breakout is switched by name (`tnb`; it is never in `all`), and
+only between LIVE and PAPER:
+
+```bash
+~/MarketBot/venv/bin/python -m mintel.ops.modes --config ~/MarketBot/data/config.json --live tnb
+~/MarketBot/venv/bin/python -m mintel.ops.modes --config ~/MarketBot/data/config.json --check tnb
+```
+
+While Trend & Breakout is on PAPER its card on the page says PAPER and shows
+its practice result in grey; it is never added to the account. A real trade
+of its own left open from LIVE is still real money and still counts.
+
+**To trade with the Mac closed, move to a Windows VPS:** see
+[docs/ops/vps.md](../../docs/ops/vps.md).
+
 ## If you already have MetaTrader 5 for Mac
 
 The installer uses it. MetaQuotes' MetaTrader 5 app carries its own Wine

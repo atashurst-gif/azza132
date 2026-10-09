@@ -30,10 +30,14 @@ nobody knew until the evening.
 - **The probe carries the token**, so the bridge log only says "bad token"
   when something really is wrong.
 - **A pulse every ten minutes**, independent of the bot (`com.mintel.pulse`
-  launchd job): one line in `data/uptime.log`, UP with equity and open
-  trades, or DOWN with the reason it could work out (trader heartbeat age,
-  watchdog state, bridge answering or not, MetaTrader connected or not,
-  terminal running or not). Published to the `reports` branch as
+  launchd job): one line in `data/uptime.log`, UP with the account's
+  equity, every real open trade on the account and the account's result
+  for the broker's day (`today`, the page's Account card figure; while
+  Trend & Breakout is on PAPER its practice result follows, labelled
+  `tnb_practice`, never added in), or DOWN with the reason it could work
+  out (trader heartbeat age, watchdog state, bridge answering or not,
+  MetaTrader connected or not, terminal running or not). Published to the
+  `reports` branch as
   `reports/live/pulse.json`, `reports/live/status.json` and
   `reports/live/uptime.log`.
 - **The nightly report counts the gaps.** `reports/<date>/uptime.log` and a
@@ -76,8 +80,13 @@ and the FX market open).
 
     cd ~/MarketBot/app && ~/MarketBot/venv/bin/python -m mintel.ops.reconcile --config ~/MarketBot/data/config.json --day 2026-10-02
 
-Prints MetaTrader's own record for that day split by magic number: Trend &
-Breakout, Rapid Scalper, and anything that carried neither (a hand trade),
-each with positions, price result, commission and net, then the account
-total. The account line must match the bottom of MetaTrader's History tab
-for the same day. Add `--positions` to list every position. Read-only.
+Prints MetaTrader's own record for that day split by magic number, one
+line per bot: Trend & Breakout (990311), the Rapid Momentum Rider (990811),
+the Momentum Runner (990511), the Band Breaker (990611), the Crowd Fader
+(990711), Financial Ian (990911) and the retired Rapid Scalper (990411),
+then anything that carried none of them (a hand trade), each with
+positions, price result, commission and net, then the account total. The
+account line must match the bottom of MetaTrader's History tab for the same
+day. Only real trades are in it: Trend & Breakout's PAPER trades never
+reach MetaTrader, so its line is only a real trade left open from LIVE.
+Add `--positions` to list every position. Read-only.

@@ -8,8 +8,18 @@
 #
 #  It is always safe to double-click. Nothing here can start a second trader:
 #  the supervisor, the trader and the bridge each refuse to run twice.
+#
+#  The Rapid Momentum Rider and Financial Ian icons run this too, with
+#  MINTEL_NO_PAUSE=1 so the window waits for Enter only once, at their end.
 
 set -uo pipefail
+
+# Wait for Enter before the window closes - unless another launcher ran this
+# one and will wait itself.
+pause_close() {
+  [[ -n "${MINTEL_NO_PAUSE:-}" ]] && return 0
+  read -r -p 'Press Enter to close. ' _ </dev/tty || true
+}
 
 # A .command window closes the moment the script exits, so an unexpected error
 # would flash past unread. This keeps the window open and shows exactly what
@@ -20,7 +30,7 @@ on_unexpected_exit() {
     printf '\n'
     printf 'Something went wrong (exit code %s, line %s).\n' "$code" "${BASH_LINENO[0]:-?}"
     printf 'Copy the last few lines above and send them to me and I will fix it.\n\n'
-    read -r -p 'Press Enter to close. ' _ </dev/tty || true
+    pause_close
   fi
 }
 trap on_unexpected_exit EXIT
@@ -57,7 +67,7 @@ SOURCE_DIR="$(find_source)" || {
   printf 'The very first time, run this from inside the folder you downloaded.\n'
   printf 'It will install itself and put a permanent icon on your Desktop, and\n'
   printf 'after that you can delete the download.\n\n'
-  read -r -p 'Press Enter to close. ' _
+  pause_close
   exit 1
 }
 
@@ -82,19 +92,22 @@ MODE="${1:-start}"
 if [[ "$MODE" == "stop" ]]; then
   stop_everything
   trap - EXIT
-  read -r -p "Press Enter to close. " _ </dev/tty
+  pause_close
   exit 0
 fi
 
 # ---- Fast path: already healthy? Then say so and stop touching things. -------
 if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
-   && [[ -f "$DATA_DIR/.all-bots-live-2026-10-08" ]] && [[ -f "$DATA_DIR/.scalper-paper-2026-10-08" ]]; then
+   && [[ -f "$DATA_DIR/.all-bots-live-2026-10-08" ]] && [[ -f "$DATA_DIR/.scalper-paper-2026-10-08" ]] \
+   && [[ -f "$DATA_DIR/.rider-live-2026-10-09" ]] && [[ -f "$DATA_DIR/.ian-enabled-2026-10-09" ]] \
+   && [[ -f "$DATA_DIR/.lineup-2026-10-09" ]]; then
   say ""
   say "  ${GREEN}It is already running.${RESET} Checking it over..."
   # Keep these cheap and idempotent, so a routine double-click stays fast.
   find_native_python >/dev/null 2>&1
   prevent_idle_sleep
   show_health
+  start_rider_research
   say ""
   say "  Status page :  http://127.0.0.1:$DASH_PORT"
   say "  Results page:  http://127.0.0.1:$DASH_PORT/results"
@@ -103,7 +116,7 @@ if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
   say "  ${DIM}This window can be closed.${RESET}"
   say ""
   trap - EXIT
-  read -r -p "Press Enter to close. " _ </dev/tty
+  pause_close
   exit 0
 fi
 
@@ -112,23 +125,27 @@ say ""
 say "  Setting things up. Anything already done is skipped."
 say "  ${DIM}The first run downloads a lot and can take 20-30 minutes.${RESET}"
 
-check_macos          || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+check_macos          || { final_report; trap - EXIT; pause_close; exit 1; }
 make_folders
 copy_program "$SOURCE_DIR"
-find_native_python   || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-make_venv            || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-ensure_wine          || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-ensure_wine_python   || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-ensure_mt5           || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
-write_config         || { final_report; trap - EXIT; read -r -p "Press Enter to close. " _ </dev/tty; exit 1; }
+find_native_python   || { final_report; trap - EXIT; pause_close; exit 1; }
+make_venv            || { final_report; trap - EXIT; pause_close; exit 1; }
+ensure_wine          || { final_report; trap - EXIT; pause_close; exit 1; }
+ensure_wine_python   || { final_report; trap - EXIT; pause_close; exit 1; }
+ensure_mt5           || { final_report; trap - EXIT; pause_close; exit 1; }
+write_config         || { final_report; trap - EXIT; pause_close; exit 1; }
 apply_bot_modes
 apply_scalper_paper
+apply_rider_live
+apply_ian_enabled
+apply_lineup
 install_launch_agent
 install_desktop_icon
 prevent_idle_sleep
 start_mt5
 start_everything
 show_health
+start_rider_research
 
 step "Checking every part of it"
 (cd "$APP_DIR" && WINEPREFIX="$WINE_PREFIX" WINEDEBUG="-all" \
@@ -140,5 +157,5 @@ open_dashboard
 say "  ${DIM}This window can be closed.${RESET}"
 say ""
 trap - EXIT
-read -r -p "Press Enter to close. " _ </dev/tty
+pause_close
 exit $STATUS

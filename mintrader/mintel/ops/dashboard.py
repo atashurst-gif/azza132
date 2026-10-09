@@ -3,10 +3,16 @@
 Deliberately built on Python's standard-library HTTP server: no web framework,
 no extra dependency, nothing else to install or break on a VPS at 3am.
 
-Three pages, all written in plain English rather than trader jargon:
+The pages, all written in plain English rather than trader jargon:
 
 * ``/``        - is it running?  Is it healthy?  What is it looking at?
 * ``/results`` - what happened today, and why each trade entered and exited.
+* ``/rider``   - the Rapid Momentum Rider: today, every trade's story, the
+  live scanner, open positions with their FlowLock X state, health checks
+  (read-only, from data/rider-status.json and data/rider.sqlite).
+* ``/ian``     - Financial Ian: feed state, top opportunity, open positions,
+  the reasoning and the order-book ladder (read-only, from
+  data/ian-status.json).
 * ``/health``  - machine-readable health, for the watchdog and for curl.
 """
 from __future__ import annotations
@@ -56,6 +62,8 @@ class DashboardState:
         self.open_live: Optional[list] = None   # every open position on the account, with its bot
         self.open_at: Optional[str] = None
         self.data_dir: str = ""
+        self.bot_lines: dict = {}        # {bot id: one plain line} for the Rider and Ian, from their status files
+        self.tnb_mode: str = ""          # Trend & Breakout's mode (LIVE or PAPER), from the config; "" = not told
         self.period_resolver: Optional[Callable[[str, str, str], dict]] = None
         self.updated: Optional[dt.datetime] = None
 
@@ -71,7 +79,7 @@ class DashboardState:
                     "thinking": self.thinking, "results": self.results,
                     "positions": self.positions, "events": self.events,
                     "strategies": self.strategies, "standing": self.standing,
-                    "open_live": self.open_live, "open_at": self.open_at,
+                    "open_live": self.open_live, "open_at": self.open_at, "bot_lines": self.bot_lines,
                     "updated": self.updated.isoformat() if self.updated else None}
 
 
@@ -228,7 +236,7 @@ details{margin-top:4px}
 summary{cursor:pointer;font-size:11px;color:#1d4ed8}
 td.nw{white-space:nowrap}
 pre{font-size:11px;white-space:pre-wrap;margin:4px 0}
-.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:10px}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px}
 @media (max-width:1100px){.cards{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:600px){.cards{grid-template-columns:1fr}}
 .hc{background:#fff;border:1px solid #e2e4e8;border-radius:12px;padding:12px 14px}
@@ -251,6 +259,13 @@ pre{font-size:11px;white-space:pre-wrap;margin:4px 0}
 .bots tr.total td{font-weight:700;border-top:2px solid #1b1c1e}
 .bots td.grey{color:#9ca3af}
 details.more>summary{font-size:13px;font-weight:600;padding:6px 0}
+.lad td{padding:1px 5px;font-variant-numeric:tabular-nums}
+.lad .bar{height:13px;border-radius:3px;display:inline-block;vertical-align:middle;min-width:1px}
+.lad .bar.ask{background:#f3c0c0}.lad .bar.bid{background:#b7e3c6}
+.lad .bar.buy{background:#86c99c}.lad .bar.sell{background:#e79a9a}
+.lad tr.mid td{background:#f8fafc;font-weight:600;border-top:2px solid #1b1c1e;border-bottom:2px solid #1b1c1e}
+.lad tr.ask td.px{color:#b91c1c}.lad tr.bid td.px{color:#0a7c35}
+.story{border-top:1px solid #eef0f3;padding:5px 0}
 @media (max-width:1150px){.grid{grid-template-columns:1fr 1fr}}
 @media (max-width:720px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}
 .st.big{grid-column:span 2}.dates{margin-left:0}}
@@ -278,6 +293,9 @@ if(!busy)location.reload();},10000);
 
 RECENT_TRADES_SHOWN = 8
 
+NAV = ('<nav><a href="/">Status</a><a href="/results">Results</a><a href="/rider">Rapid Momentum Rider</a>'
+       '<a href="/ian">Financial Ian</a><a href="/health">Health (JSON)</a></nav>')
+
 
 def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     """The strategy tabs and the selected strategy's figures, in pieces for the
@@ -286,9 +304,14 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     if not strategies:
         return {}
     labels = strategies.get("labels") or {}
-    order = [k for k in ("overall", "market_intelligence", "rapid_scalper", "momentum_runner", "band_breaker", "crowd_fader") if k in strategies]
     if selected not in strategies:
         selected = "overall"
+    # the retired Rapid Scalper keeps a tab only while it has trades in the period or is still running
+    scalper_shown = (selected == "rapid_scalper" or bool((strategies.get("rapid_scalper") or {}).get("trades"))
+                     or _is_running(strategies.get("scalper")))
+    order = [k for k in ("overall", "market_intelligence", "momentum_rider", "momentum_runner", "band_breaker",
+                         "crowd_fader", "financial_ian", "rapid_scalper")
+             if k in strategies and (k != "rapid_scalper" or scalper_shown)]
     period = strategies.get("period") or {"key": "today", "label": "Today", "from": "", "to": ""}
     pkey = period.get("key") or "today"
     pq = f"&period={html.escape(pkey)}"
@@ -423,7 +446,58 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
                f'definitive result. Each bot\'s tab shows only its own trades. {source}</p></div>')
     return {"tabs": (f'<div class="tabs">{tabs}<span class="small">&nbsp;showing {plabel} (the filter at the top)</span></div>'),
             "figures": figures, "detail": detail_html, "trades": trade_html,
-            "scalper": render_scalper_panel(snap) + render_runner_panel(snap) + render_bandbreaker_panel(snap) + render_crowd_panel(snap)}
+            "scalper": (render_rider_panel(snap) + render_runner_panel(snap) + render_bandbreaker_panel(snap)
+                        + render_crowd_panel(snap) + render_ian_panel(snap)
+                        + (render_scalper_panel(snap) if _is_running(strategies.get("scalper")) else ""))}
+
+
+def _is_running(st) -> bool:
+    """A status block that says its bot is running now (present, not stale)."""
+    if not isinstance(st, dict) or not st:
+        return False
+    return st.get("present", True) is not False and not str(st.get("status") or "").startswith("NOT RUNNING")
+
+
+def render_rider_panel(snap: dict) -> str:
+    """A short Rapid Momentum Rider box in the folded section; the full view is /rider."""
+    rd = (snap.get("strategies") or {}).get("rider") or {}
+    if not rd:
+        return ""
+    e = html.escape
+    today = rd.get("today") or {}
+    h = rd.get("health") or {}
+    status = rd.get("status") or ("RUNNING" if rd.get("present") else "NOT RUNNING")
+    body = (f'<div class="k">Status</div><div>{e(str(status))} - {e(str(h.get("summary") or ""))}</div>'
+            f'<div class="k">Mode</div><div><span class="pill">{e(str(rd.get("mode") or ""))}</span></div>'
+            f'<div class="k">Today</div><div>{e(str(today.get("trades", 0)))} trades, {e(str(today.get("won", 0)))} won, '
+            f'{e(_signed(today.get("net_pips"), " pips"))}</div>'
+            f'<div class="k">Watching</div><div>{len(rd.get("scanner") or [])} markets, '
+            f'{len(rd.get("open_positions") or [])} open</div>')
+    return (f'<div class="box"><div class="rs-title">RAPID MOMENTUM RIDER</div>'
+            f'<div class="small">{e(str(rd.get("tagline", "")))}</div><div class="kv">{body}</div>'
+            f'<div class="small"><a href="/rider">Everything it is doing, trade by trade</a></div></div>')
+
+
+def render_ian_panel(snap: dict) -> str:
+    """A short Financial Ian box in the folded section; the full view is /ian."""
+    ia = (snap.get("strategies") or {}).get("ian") or {}
+    if not ia:
+        return ""
+    e = html.escape
+    feed = ia.get("feed") or {}
+    body = (f'<div class="k">Status</div><div>{e(str(ia.get("status") or "NOT RUNNING"))}</div>'
+            f'<div class="k">Mode</div><div><span class="pill">{e(str(ia.get("mode") or ""))}</span></div>'
+            f'<div class="k">Feed</div><div>{e(str(feed.get("state") or "not started yet"))}</div>')
+    return (f'<div class="box"><div class="rs-title">FINANCIAL IAN</div>'
+            f'<div class="small">{e(str(ia.get("tagline", "")))}</div><div class="kv">{body}</div>'
+            f'<div class="small"><a href="/ian">The order book, the reasoning and the trades</a></div></div>')
+
+
+def _signed(v, suffix: str = "") -> str:
+    try:
+        return f"{float(v):+.1f}{suffix}"
+    except (TypeError, ValueError):
+        return "-"
 
 
 def render_strategies(snap: dict, selected: str = "overall") -> str:
@@ -695,17 +769,34 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
     for r in open_live:
         open_by[r.get("bot")] = open_by.get(r.get("bot"), 0.0) + float(r.get("profit") or 0.0)
     cards = ""
+    retired_notes = []
     for b in sd.get("bots") or []:
         bid, label, mode = b.get("id"), str(b.get("label")), str(b.get("mode") or "")
         live = mode == "LIVE"
         vs = (sel.get("bots") or {}).get(bid) or {}
         vt = (tot.get("bots") or {}).get(bid) or {}
+        if b.get("retired"):
+            # a retired bot: no card, one line, and only while it has money to show
+            vals = [(sel_label, vs.get("made")) if show_sel else None, ("overall", vt.get("made")),
+                    ("open now", b.get("open"))]
+            shown = [(k, v) for k, v in (x for x in vals if x) if v is not None and abs(float(v)) >= 0.005]
+            if shown:
+                retired_notes.append(f'{e(label)}: ' + ", ".join(f'{e(k.lower())} <b class="{cls(v)}">{m(v)}</b>'
+                                                                  for k, v in shown))
+            continue
         figs = (fig(sel_label, vs.get("made")) if show_sel else "") + fig("Overall", vt.get("made"))
         bits = []
         n, when = (vs.get("trades"), sel_label.lower()) if show_sel else (vt.get("trades"), "overall")
         bits.append("trades not known just now" if n is None else f'{n} trade{"" if n == 1 else "s"} {e(when)}')
         if open_by.get(label):
             bits.append(f'open now <b class="{cls(open_by[label])}">{m(round(open_by[label], 2))}</b>')
+        line = (snap.get("bot_lines") or {}).get(bid)
+        if line:
+            bits.append(e(str(line)))
+        if bid == "market_intelligence" and mode == "PAPER":
+            bits.append("real prices, simulated orders")
+        if bid == "momentum_runner":
+            bits.append("rides Trend &amp; Breakout's index entries")
         practice = ""
         if not live:
             ps, pt = p_sel.get(bid), p_tot.get(bid)
@@ -722,6 +813,9 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
             notes.append(f"{m(v)} {txt}")
     note = (f'<div class="small">Overall also includes {" and ".join(notes)}, so the cards add up to the account.</div>'
             if notes else "")
+    if retired_notes:
+        note += (f'<div class="small">{" &middot; ".join(retired_notes)} - its real trades from before it was retired '
+                 f'(9 Oct), kept here so the cards add up to the account.</div>')
     err = str(sd.get("error") or "")
     if err or not tot.get("complete", True):
         note += (f'<div class="small bad">Part of MetaTrader\'s records could not be read just now'
@@ -822,7 +916,11 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
                       f'Compare this code with the one in the latest message from the installer. ')
     src = str(st.get("pnl_source") or "")
     src_warn = ""
-    if src == "broker":
+    if str(st.get("tnb_mode") or "").upper() == "PAPER":
+        src_html = ('Trend &amp; Breakout is on PAPER: Today, Win rate today, This strategy and Open trades are '
+                    'its practice on real prices with simulated orders (and any real trade left from LIVE), never '
+                    'added to the account; Equity is the real account.')
+    elif src == "broker":
         src_html = ('Profit figures come from the broker\'s own '
                     'deal records, commission included, for this strategy\'s trades only.')
     elif st.get("pnl_error"):
@@ -912,8 +1010,7 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <noscript><meta http-equiv="refresh" content="10"></noscript><title>Trading bot status</title>
 <style>{CSS}</style></head><body><div class="wrap">
-<div class="top"><nav><a href="/">Status</a><a href="/results">Results</a>
-<a href="/health">Health (JSON)</a></nav>
+<div class="top">{NAV}
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div></div>
 {prob_html}
 {render_standing(snap, headline, strategy)}
@@ -972,14 +1069,391 @@ def render_results(results: dict) -> str:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trading results</title><style>{CSS}</style></head><body>
 <div class="wrap">
-<nav><a href="/">Status</a><a href="/results">Results</a>
-<a href="/health">Health (JSON)</a></nav>
+{NAV}
 <h1>Today ({html.escape(str(r.get('date', '')))})</h1>
 <div class="row">{tiles}</div>
 {story_block('Best trade', r.get('best_trade'))}
 {story_block('Worst trade', r.get('worst_trade'))}
 <h2>Every trade today, explained</h2>{stories}
 </div></body></html>"""
+
+
+# ------------------------------------------------- the two bots of 9 Oct --
+BOT_STALE_SECONDS = 120.0
+
+
+def _read_status_file(path) -> tuple[Optional[dict], str]:
+    """(the status file's object, why not) - never raises."""
+    from pathlib import Path
+    try:
+        p = Path(path)
+        if not p.exists():
+            return None, "missing"
+        raw = json.loads(p.read_text())
+        if not isinstance(raw, dict):
+            return None, "it does not hold a JSON object"
+        return raw, ""
+    except Exception as exc:
+        return None, f"it could not be read ({exc})"
+
+
+def _age_of(stamp, now: dt.datetime) -> Optional[float]:
+    try:
+        t = dt.datetime.fromisoformat(str(stamp))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=dt.timezone.utc)
+        return (to_utc(now) - t).total_seconds()
+    except Exception:
+        return None
+
+
+def _num(v, fmt: str = "{:g}", none: str = "-") -> str:
+    try:
+        return fmt.format(float(v))
+    except (TypeError, ValueError):
+        return none
+
+
+def _money_txt(v, ccy: str = "GBP") -> str:
+    try:
+        return _fmt_money(float(v), ccy)
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _cls_of(v) -> str:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return ""
+    return "ok" if f > 0 else ("bad" if f < 0 else "")
+
+
+def _page(title: str, body: str, refresh: bool = True) -> str:
+    meta = '<meta http-equiv="refresh" content="10">' if refresh else ""
+    return (f'<!doctype html><html><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">{meta}'
+            f'<title>{html.escape(title)}</title><style>{CSS}</style></head><body><div class="wrap">'
+            f'<div class="top">{NAV}</div>{body}'
+            f'<p class="small">This page only reads the bot\'s own files; it changes nothing. '
+            f'It refreshes itself every 10 seconds.</p></div></body></html>')
+
+
+def _own_file(data, name: str) -> dict:
+    raw, _why = _read_status_file(data / name)
+    return raw or {}
+
+
+def _rider_today_from_rows(rows: list) -> dict:
+    """TODAY from the Rider's own rows, when no status file says it."""
+    rows = [r for r in rows if not str(r.get("exit_reason") or "").startswith("SWITCHED")]
+    vals = [r.get("net_money") if r.get("net_money") is not None else r.get("realised_pips") for r in rows]
+    won = sum(1 for v in vals if (v or 0) > 0)
+    best = max(rows, key=lambda r: float(r.get("net_money") if r.get("net_money") is not None
+                                         else r.get("realised_pips") or 0.0), default=None)
+    return {"trades": len(rows), "won": won, "lost": len(rows) - won,
+            "win_rate": round(100.0 * won / len(rows), 1) if rows else None,
+            "net_pips": round(sum(float(r.get("realised_pips") or 0.0) for r in rows), 1),
+            "net_money": round(sum(float(r.get("net_money") or 0.0) for r in rows), 2) if rows else 0.0,
+            "net_money_estimated": any(r.get("money_source") == "estimate" for r in rows),
+            "money_source": "the bot's own records (all modes)",
+            "best_trade": (f"{best.get('symbol')} {float(best.get('realised_pips') or 0.0):+.1f} pips"
+                           if best is not None else None)}
+
+
+def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
+    """The Rapid Momentum Rider's own page: TODAY, every trade's story, the
+    live scanner, open positions with their FlowLock X state, and the
+    health checks. Read-only, from data/rider-status.json and
+    data/rider.sqlite. Renders (saying "not started yet") when they are
+    missing."""
+    from pathlib import Path
+    e = html.escape
+    now = to_utc(now or utcnow())
+    title = "RAPID MOMENTUM RIDER"
+    if not data_dir:
+        return _page("Rapid Momentum Rider", f'<h1>{title}</h1><div class="card">Not started yet: the status page has '
+                                             f'not been told where the bots keep their files.</div>')
+    data = Path(data_dir)
+    from .watchdog import own_file_mode
+    settings = _own_file(data, "rider.json")
+    mode_set = own_file_mode(data / "rider.json")
+    status_name = settings.get("status_file") if isinstance(settings.get("status_file"), str) else "rider-status.json"
+    db_name = settings.get("journal_file") if isinstance(settings.get("journal_file"), str) else "rider.sqlite"
+    st, why = _read_status_file(data / (status_name or "rider-status.json"))
+    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    from .attribution import _rows_ro
+    rows = _rows_ro(data / (db_name or "rider.sqlite"),
+                    "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? ORDER BY closed_utc DESC "
+                    "LIMIT 200", (day0.isoformat(),))
+    parts = [f'<h1>{title} <span class="pill {"bad" if mode_set == "LIVE" else ""}">{e(mode_set)}</span></h1>']
+    if st is None:
+        what = ("Not started yet" if why == "missing" else f"Its status file {e(why)}")
+        if mode_set == "OFF":
+            what = "OFF: data/rider.json says OFF, so it is not started"
+        parts.append(f'<div class="card"><b>{what}.</b> <span class="small">Nothing is shown rather than a guess. '
+                     f'It is set to {e(mode_set)} in data/rider.json; the watchdog starts it when that is not OFF, '
+                     f'and this page fills in once it reports.</span></div>')
+        st = {}
+    else:
+        age = _age_of(st.get("updated_utc") or st.get("updated"), now)
+        h = st.get("health") or {}
+        if age is None or age > BOT_STALE_SECONDS:
+            state = (f'<span class="pill bad">NOT RUNNING</span> last report '
+                     f'{"never" if age is None else f"{age / 60:.0f} min ago"}')
+        elif h.get("entries_allowed"):
+            state = '<span class="pill ok">HEALTHY</span>'
+        else:
+            state = '<span class="pill warn">RUNNING, NEW ENTRIES PAUSED</span>'
+        run_mode = str(st.get("mode") or mode_set)
+        restart = (f' <span class="small bad">(running {e(run_mode)}; data/rider.json says {e(mode_set)}: '
+                   f'it changes on the next restart)</span>' if run_mode != mode_set else "")
+        parts.append(f'<div class="card">{state} {e(str(h.get("summary") or ""))}{restart}'
+                     f'<div class="small">{e(str(st.get("tagline") or ""))} Exposure: '
+                     f'GBP {_num(st.get("user_pip_value_gbp"), "{:.2f}")} per pip (Aaron\'s setting). '
+                     f'Order flow: {e(str(st.get("order_flow") or "-"))}.</div></div>')
+    # ---- TODAY
+    today = st.get("today") if isinstance(st.get("today"), dict) else None
+    source = "the Rider's status file"
+    if today is None:
+        today = _rider_today_from_rows(rows)
+        source = "the Rider's own records since 00:00 UTC"
+    money_src = str(today.get("money_source") or "")
+    est = " (some estimated from the last price)" if today.get("net_money_estimated") else ""
+
+    def tile(k, v, c=""):
+        return f'<div class="tile"><div class="k">{e(k)}</div><div class="v {c}">{v}</div></div>'
+    wr = today.get("win_rate")
+    tiles = "".join([
+        tile("Trades", e(str(today.get("trades", 0)))), tile("Won", e(str(today.get("won", 0))), "ok"),
+        tile("Lost", e(str(today.get("lost", 0))), "bad"),
+        tile("Win rate", "-" if wr is None else f"{_num(wr, '{:.0f}')}%"),
+        tile("Net pips", _num(today.get("net_pips"), "{:+.1f}"), _cls_of(today.get("net_pips"))),
+        tile("Net money", _money_txt(today.get("net_money")), _cls_of(today.get("net_money"))),
+        tile("Best trade", e(str(today.get("best_trade") or "-")))])
+    parts.append(f'<div class="card"><h2>Today</h2><div class="row">{tiles}</div><div class="small">From {e(source)}; '
+                 f'money: {e(money_src or "-")}{e(est)}. The headline cards on the status page are MetaTrader\'s own '
+                 f'figures.</div></div>')
+    # ---- open positions with FlowLock X
+    opens = st.get("open_positions") or []
+    if opens:
+        body = "".join(
+            f'<tr><td><b>{e(str(o.get("market")))}</b></td><td>{e(str(o.get("side")))}</td>'
+            f'<td class="mono">{_num(o.get("volume"))}</td><td class="mono">{_num(o.get("entry"))}</td>'
+            f'<td class="mono">{_num(o.get("stop"))}</td>'
+            f'<td class="mono {_cls_of(o.get("pips"))}">{_num(o.get("pips"), "{:+.1f}")}</td>'
+            f'<td class="mono {_cls_of(o.get("money"))}">{_money_txt(o.get("money"))}</td>'
+            f'<td><b>{e(str(o.get("flowlock_state") or ""))}</b> - {e(str(o.get("flowlock") or ""))}'
+            f'<div class="small">momentum decay {_num(o.get("decay"), "{:.2f}")}</div></td></tr>' for o in opens)
+        parts.append(f'<div class="card"><h2>Open positions - {len(opens)}</h2><table><tr><th>Market</th><th>Side</th>'
+                     f'<th>Lots</th><th>Entry</th><th>Stop (only ever tightens)</th><th>Pips</th><th>Money (approx.)</th>'
+                     f'<th>FlowLock X</th></tr>{body}</table><div class="small">Money here is pips x GBP per pip, an '
+                     f'approximation; the broker\'s figure is on the status page.</div></div>')
+    else:
+        parts.append('<div class="card"><h2>Open positions</h2><div class="small">None open.</div></div>')
+    # ---- the live scanner
+    scan = [r for r in (st.get("scanner") or []) if isinstance(r, dict)]
+    if scan:
+        scan.sort(key=lambda r: -float(r.get("score") or 0.0))
+        body = "".join(
+            f'<tr><td><b>{e(str(r.get("market")))}</b></td><td>{e(str(r.get("direction")))}</td>'
+            f'<td class="mono">{_num(r.get("score"), "{:.0f}")}</td><td>{e(str(r.get("state")))}</td>'
+            f'<td class="small">{e(str(r.get("reason") or ""))}</td></tr>' for r in scan)
+        parts.append(f'<div class="card"><h2>The scanner right now - {len(scan)} markets</h2><table><tr><th>Market</th>'
+                     f'<th>Direction</th><th>Score</th><th>State</th><th>Reason</th></tr>{body}</table></div>')
+    else:
+        parts.append('<div class="card"><h2>The scanner right now</h2><div class="small">No scan reported yet.</div></div>')
+    # ---- every trade's story
+    if rows:
+        stories = "".join(
+            f'<div class="story"><b>{e(str(r.get("symbol")))}</b> {e(str(r.get("side") or ""))} '
+            f'<span class="pill">{e(str(r.get("mode") or "PAPER"))}</span> '
+            f'<span class="mono">{e(str(r.get("closed_utc") or "")[11:19])} UTC</span> '
+            f'<span class="mono {_cls_of(r.get("realised_pips"))}">{_num(r.get("realised_pips"), "{:+.1f}")} pips</span> '
+            f'<span class="mono {_cls_of(r.get("net_money"))}">{_money_txt(r.get("net_money"))}</span>'
+            f'{" (estimate)" if r.get("money_source") == "estimate" else ""}'
+            f'<div class="small">{e(str(r.get("explanation") or r.get("exit_detail") or ""))}</div></div>' for r in rows)
+        parts.append(f'<div class="card"><h2>Every trade today, explained - {len(rows)}</h2>{stories}</div>')
+    elif st.get("stories"):
+        stories = "".join(f'<div class="story small">{e(str(x))}</div>' for x in st["stories"])
+        parts.append(f'<div class="card"><h2>Recent trades, explained</h2>{stories}</div>')
+    else:
+        parts.append('<div class="card"><h2>Every trade today, explained</h2><div class="small">No trades today yet.'
+                     '</div></div>')
+    # ---- health checks
+    checks = (st.get("health") or {}).get("checks") or []
+    if checks:
+        body = "".join(
+            f'<tr><td><span class="pill {"ok" if c.get("ok") else ("bad" if c.get("critical") else "warn")}">'
+            f'{"OK" if c.get("ok") else ("FAIL" if c.get("critical") else "WARN")}</span></td>'
+            f'<td>{e(str(c.get("name") or ""))}</td><td>{e(str(c.get("message") or ""))}</td></tr>'
+            for c in checks if isinstance(c, dict))
+        parts.append(f'<div class="card"><h2>Health checks</h2><table>{body}</table></div>')
+    notes = st.get("notes") or []
+    if notes:
+        parts.append('<div class="card"><h2>What it has been doing</h2><ul class="small" style="margin:0;padding-left:16px">'
+                     + "".join(f'<li>{e(str(n))}</li>' for n in notes[::-1]) + '</ul></div>')
+    parts.append('<p class="small">LIVE money is the broker\'s figure where its deal could be read ("estimate" marks one '
+                 'booked from the last price); PAPER is practice, not money, and never in the account total.</p>')
+    return _page("Rapid Momentum Rider", "".join(parts))
+
+
+def _ladder_html(lad: dict) -> str:
+    """The order book as a ladder: asks above, bids below, resting sizes as
+    bars, the volume bought and sold at each price, and the pressure."""
+    e = html.escape
+    rows = [r for r in (lad.get("rows") or []) if isinstance(r, dict)]
+    if not rows:
+        return '<div class="small">No book yet.</div>'
+    rows.sort(key=lambda r: -float(r.get("price") or 0.0))
+    biggest = max([float(r.get("ask") or 0) for r in rows] + [float(r.get("bid") or 0) for r in rows] + [1e-9])
+    traded = max([float(r.get("bought") or 0) for r in rows] + [float(r.get("sold") or 0) for r in rows] + [1e-9])
+    best_ask = lad.get("ask")
+    best_bid = lad.get("bid")
+
+    def bar(v, cls, scale):
+        try:
+            f = float(v or 0.0)
+        except (TypeError, ValueError):
+            f = 0.0
+        if f <= 0:
+            return ""
+        return f'<span class="bar {cls}" style="width:{max(2, int(90 * f / scale))}px"></span> {f:g}'
+    pressure = str(lad.get("pressure") or "balanced")
+    arrow = "&#9650;" if pressure.startswith("buyers") else ("&#9660;" if pressure.startswith("sellers") else "&#9670;")
+    mid_row = (f'<tr class="mid"><td colspan="6">spread {_num(best_bid)} / {_num(best_ask)} - book imbalance '
+               f'{_num(lad.get("imbalance"), "{:+.2f}")} - pressure {arrow} {e(pressure)}</td></tr>')
+    out, placed = [], False
+    for r in rows:
+        try:
+            price = float(r.get("price"))
+        except (TypeError, ValueError):
+            continue
+        side = "ask" if (r.get("ask") or 0) and not (r.get("bid") or 0) else ("bid" if (r.get("bid") or 0) else "")
+        if not placed and best_ask is not None and price < float(best_ask):
+            out.append(mid_row)
+            placed = True
+        flags = ", ".join(str(f) for f in (r.get("flags") or []))
+        out.append(f'<tr class="{side}"><td class="px mono">{price:g}</td>'
+                   f'<td>{bar(r.get("ask"), "ask", biggest)}</td><td>{bar(r.get("bid"), "bid", biggest)}</td>'
+                   f'<td>{bar(r.get("bought"), "buy", traded)}</td><td>{bar(r.get("sold"), "sell", traded)}</td>'
+                   f'<td class="small">{e(flags)}</td></tr>')
+    if not placed:
+        out.append(mid_row)
+    return (f'<div class="small">{e(str(lad.get("instrument") or ""))} - {e(str(lad.get("data_class") or ""))} data '
+            f'(the CME futures book, not MetaTrader)</div>'
+            f'<table class="lad"><tr><th>Price</th><th>Offered (asks)</th><th>Bid for (bids)</th><th>Bought here</th>'
+            f'<th>Sold here</th><th>Notes</th></tr>{"".join(out)}</table>')
+
+
+def render_ian_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
+    """Financial Ian's own page, read-only from data/ian-status.json:
+    running, the feed (NOT CONFIGURED / LIVE / DEGRADED / DOWN), MetaTrader,
+    the top opportunity and its plain-English reasoning, open positions,
+    today, the last trade and the order-book ladder. Renders (saying "not
+    started yet") when the file is missing."""
+    from pathlib import Path
+    e = html.escape
+    now = to_utc(now or utcnow())
+    title = "FINANCIAL IAN"
+    if not data_dir:
+        return _page("Financial Ian", f'<h1>{title}</h1><div class="card">Not started yet: the status page has not been '
+                                      f'told where the bots keep their files.</div>')
+    data = Path(data_dir)
+    from .watchdog import own_file_mode
+    mode_set = own_file_mode(data / "ian.json")
+    st, why = _read_status_file(data / "ian-status.json")
+    parts = [f'<h1>{title} <span class="pill {"bad" if mode_set == "LIVE" else ""}">{e(mode_set)}</span></h1>']
+    if st is None:
+        what = "Not started yet" if why == "missing" else f"Its status file {e(why)}"
+        if mode_set == "OFF":
+            what = "OFF: data/ian.json says OFF, so it is not started"
+        parts.append(f'<div class="card"><b>{what}.</b> <span class="small">It is set to {e(mode_set)} in data/ian.json. '
+                     f'With no institutional data feed it runs DATA-DEGRADED: no signals, no trades, and says so here '
+                     f'once it reports.</span></div>')
+        return _page("Financial Ian", "".join(parts))
+    age = _age_of(st.get("updated") or st.get("updated_utc"), now)
+    running = age is not None and age <= BOT_STALE_SECONDS
+    feed = st.get("feed") or {}
+    fstate = str(feed.get("state") or "UNKNOWN")
+    fcls = {"LIVE": "ok", "DEGRADED": "warn", "NOT CONFIGURED": "warn", "CONNECTING": "warn"}.get(fstate, "bad")
+    mt5 = (st.get("mt5") or {}).get("connected")
+    today = st.get("today") or {}
+    wr = today.get("win_rate")
+    label = str(st.get("data_label") or "LIVE")
+
+    def tile(k, v, c=""):
+        return f'<div class="tile"><div class="k">{e(k)}</div><div class="v {c}">{v}</div></div>'
+    last = st.get("last_trade") or {}
+    last_txt = (f'{e(str(last.get("spot_symbol")))} {e(str(last.get("side")))} {_money_txt(last.get("net_pnl"))}'
+                if last else "none yet")
+    tiles = "".join([
+        tile("Running", '<span class="pill ok">YES</span>' if running else
+             f'<span class="pill bad">NO</span> {"" if age is None else f"{age / 60:.0f} min ago"}'),
+        tile("Feed", f'<span class="pill {fcls}">{e(fstate)}</span>'),
+        tile("MetaTrader", '<span class="pill ok">CONNECTED</span>' if mt5 else '<span class="pill bad">NOT CONNECTED</span>'),
+        tile("Today's profit", _money_txt(today.get("net")), _cls_of(today.get("net"))),
+        tile("Trades today", e(str(today.get("trades", 0)))),
+        tile("Win rate", "-" if wr is None else f"{_num(float(wr) * 100.0, '{:.0f}')}%"),
+        tile("Open positions", e(str(len(st.get("open_positions") or [])))),
+        tile("Last trade", last_txt)])
+    synthetic = label != "LIVE"
+    parts.append(f'<div class="card"><b>{e(str(st.get("status") or ""))}</b>'
+                 + (f' <span class="pill bad">{e(label)}</span>' if synthetic else "")
+                 + f'<div class="small">Feed: {e(str(feed.get("vendor") or "none"))} - {e(str(feed.get("reason") or ""))}'
+                 f'</div><div class="row" style="margin-top:6px">{tiles}</div>'
+                 f'<div class="small">Today\'s figures are Financial Ian\'s own records ({e(str(today.get("data_source") or "-"))}'
+                 f', {e(str(st.get("mode") or mode_set))}); PAPER is practice, not money.</div></div>')
+    top = st.get("top_opportunity") or {}
+    if top:
+        reg = top.get("regime") or {}
+        parts.append(f'<div class="card"><h2>Top opportunity</h2><b>{e(str(top.get("spot_symbol")))} '
+                     f'{e(str(top.get("spot_side") or "no side"))}</b> from {e(str(top.get("instrument") or top.get("root")))} - '
+                     f'score {_num(top.get("score"), "{:.0f}")}, {e(str(reg.get("regime") if isinstance(reg, dict) else reg))}, '
+                     f'{"tradeable" if top.get("tradeable") else "not tradeable: " + e(str(top.get("why_not") or ""))}'
+                     f'<p>{e(str(st.get("reasoning") or top.get("reasoning") or ""))}</p></div>')
+    else:
+        parts.append('<div class="card"><h2>Top opportunity</h2><div class="small">None yet: it needs the institutional '
+                     'order book to form a view.</div></div>')
+    opens = st.get("open_positions") or []
+    if opens:
+        body = "".join(
+            f'<tr><td><b>{e(str(o.get("symbol")))}</b> ({e(str(o.get("future") or ""))})</td><td>{e(str(o.get("side")))}</td>'
+            f'<td class="mono">{_num(o.get("volume"))}</td><td class="mono">{_num(o.get("entry"))}</td>'
+            f'<td class="mono">{_num(o.get("stop"))}</td><td class="mono">{_num(o.get("r_now"), "{:+.2f}")} R '
+            f'(best {_num(o.get("best_r"), "{:+.2f}")})</td>'
+            f'<td class="mono {_cls_of(o.get("pnl"))}">{_money_txt(o.get("pnl"))}</td>'
+            f'<td class="small">{e(str(o.get("trail") or ""))}<br>{e(str(o.get("reasoning") or ""))}</td></tr>'
+            for o in opens if isinstance(o, dict))
+        parts.append(f'<div class="card"><h2>Open positions - {len(opens)}</h2><table><tr><th>Market</th><th>Side</th>'
+                     f'<th>Lots</th><th>Entry</th><th>Stop (only ever tightens)</th><th>Now</th><th>Profit</th>'
+                     f'<th>Why / the stop</th></tr>{body}</table></div>')
+    else:
+        parts.append('<div class="card"><h2>Open positions</h2><div class="small">None open.</div></div>')
+    if last:
+        parts.append(f'<div class="card"><h2>Last trade</h2><b>{e(str(last.get("spot_symbol")))} {e(str(last.get("side")))}'
+                     f'</b> {_num(last.get("entry"))} to {_num(last.get("exit_price"))}, '
+                     f'<span class="{_cls_of(last.get("net_pnl"))}">{_money_txt(last.get("net_pnl"))}</span> '
+                     f'({_num(last.get("realised_r"), "{:+.2f}")} R, {e(str(last.get("mode") or ""))}, '
+                     f'{e(str(last.get("data_source") or ""))})<div class="small">{e(str(last.get("exit_explanation") or ""))}'
+                     f'</div></div>')
+    lad = st.get("ladder")
+    parts.append('<div class="card"><h2>The order book</h2>'
+                 + (_ladder_html(lad) if isinstance(lad, dict) else
+                    '<div class="small">No order book: no institutional feed is delivering data.</div>') + '</div>')
+    opps = st.get("opportunities") or {}
+    if opps:
+        body = "".join(
+            f'<tr><td><b>{e(str(k))}</b></td><td>{e(str(o.get("spot")))}</td><td>{e(str(o.get("spot_side") or "-"))}</td>'
+            f'<td class="mono">{_num(o.get("score"), "{:.0f}")}</td><td>{e(str(o.get("regime") or ""))}</td>'
+            f'<td class="small">{"tradeable" if o.get("tradeable") else e(str(o.get("why_not") or ""))}</td></tr>'
+            for k, o in sorted(opps.items()) if isinstance(o, dict))
+        parts.append(f'<div class="card"><h2>Every future it watches</h2><table><tr><th>Future</th><th>Spot</th>'
+                     f'<th>Side</th><th>Score</th><th>Regime</th><th></th></tr>{body}</table></div>')
+    parts.append('<p class="small">INSTITUTIONAL data is the CME futures order book from the configured vendor; RETAIL data '
+                 'is MetaTrader\'s spot quotes, used only for the chart, confirmation and execution, never as the book. '
+                 + ('<b>This run is not the live feed: nothing here is a result.</b>' if synthetic else '') + '</p>')
+    return _page("Financial Ian", "".join(parts))
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -1004,6 +1478,14 @@ class _Handler(BaseHTTPRequestHandler):
             snap = self.state.snapshot()
             if self.path.startswith("/results"):
                 self._send(render_results(snap.get("results") or {}))
+            elif self.path.startswith("/rider"):
+                with self.state.lock:
+                    data_dir = self.state.data_dir
+                self._send(render_rider_page(data_dir))
+            elif self.path.startswith("/ian"):
+                with self.state.lock:
+                    data_dir = self.state.data_dir
+                self._send(render_ian_page(data_dir))
             elif self.path.startswith("/health"):
                 code = 200 if (snap.get("health") or {}).get(
                     "entries_allowed", False) else 503
@@ -1048,7 +1530,12 @@ class _Handler(BaseHTTPRequestHandler):
                 if tab_period != "today" and self.state.period_resolver is not None:
                     try:
                         snap = dict(snap)
-                        snap["strategies"] = self.state.period_resolver(tab_period, tf, tt)
+                        resolver = self.state.period_resolver
+                        tnb = getattr(self.state, "tnb_mode", "") or ""
+                        if tnb and getattr(resolver, "takes_tnb_mode", False):
+                            snap["strategies"] = resolver(tab_period, tf, tt, tnb_mode=tnb)
+                        else:
+                            snap["strategies"] = resolver(tab_period, tf, tt)
                         snap["strategies"]["period"]["key"] = period
                     except Exception as exc:
                         log.warning("period %s: %s", period, exc)

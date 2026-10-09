@@ -185,6 +185,19 @@ class TestDashboardPages:
         assert "MetaTrader 5 is not connected" in html
         assert "NOT CONNECTED" in html
 
+    def test_paper_note_never_calls_the_real_equity_practice(self, journal):
+        """With Trend & Breakout on PAPER its tiles are practice - but the
+        Equity tile is the real MetaTrader account, and the note says so."""
+        snap = self._snapshot(journal)
+        snap["status"]["tnb_mode"] = "PAPER"
+        html = render_status(snap)
+        assert "Trend &amp; Breakout is on PAPER" in html
+        assert "the figures in these tiles are its practice" not in html
+        note = html.split("Trend &amp; Breakout is on PAPER")[1].split("</p>")[0]
+        for tile in ("Today", "Win rate today", "This strategy", "Open trades"):
+            assert tile in note, tile
+        assert "Equity is the real account" in note
+
     def test_live_mode_is_visually_obvious(self, journal):
         snap = self._snapshot(journal)
         snap["status"]["mode"] = "LIVE"

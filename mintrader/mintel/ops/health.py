@@ -145,6 +145,15 @@ class Heartbeat:
         return (to_utc(self.clock()) - to_utc(ts)).total_seconds()
 
 
+# The Rapid Scalper is retired (9 Oct) and no longer started; a heartbeat
+# file left on disk from before is not a component that has stopped.
+RETIRED_HEARTBEATS = frozenset({"scalper"})
+# Heartbeats whose going quiet is a warning, never a reason to stop the
+# trader entering: its own supervisor, and the separate bots (the Rapid
+# Momentum Rider and Financial Ian), each in its own process.
+NON_BLOCKING_HEARTBEATS = frozenset({"watchdog", "rider", "ian"})
+
+
 def read_all_heartbeats(directory: str | Path,
                         now: Optional[dt.datetime] = None) -> dict[str, dict]:
     out: dict[str, dict] = {}
@@ -585,7 +594,8 @@ class HealthSupervisor:
         now = to_utc(self.clock())
         beats = read_all_heartbeats(self.heartbeat_dir, now)
         external = {n: b for n, b in beats.items()
-                    if n not in self.own_heartbeats}
+                    if n not in self.own_heartbeats
+                    and n not in RETIRED_HEARTBEATS}
         # Scaled with the cycle cadence: a slow configured interval must not
         # make a perfectly healthy component look dead.
         limit = max(self.cfg.ops.heartbeat_stale_seconds,
@@ -600,8 +610,11 @@ class HealthSupervisor:
         if stale:
             names = ", ".join(f"{n} ({a:.0f}s)" for n, a in stale.items())
             # A dead watchdog is a serious warning, but it is NOT a reason to
-            # stop trading: the trader is demonstrably still working.
-            blocking = any(n != "watchdog" for n in stale)
+            # stop trading: the trader is demonstrably still working. Nor is
+            # a separate bot that has stopped (switched OFF, or past the
+            # watchdog's restart limit): Trend & Breakout does not depend on
+            # it, and the LIVE Momentum Runner rides T&B's entries.
+            blocking = any(n not in NON_BLOCKING_HEARTBEATS for n in stale)
             return Check("HEARTBEATS",
                          Severity.FAIL if blocking else Severity.WARN,
                          f"these parts of the system have stopped reporting: "

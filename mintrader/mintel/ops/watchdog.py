@@ -77,6 +77,12 @@ class ManagedProcess:
     # Optional liveness probe, used instead of a heartbeat file for services
     # that answer on a socket.  Returning None means "cannot tell".
     probe: Optional[Callable[[], Optional[bool]]] = None
+    # For a bot with its own mode file (the Rapid Momentum Rider, Financial
+    # Ian): asked on every check, so a bot switched on is started within one
+    # check, without restarting anything else. False (the file says OFF)
+    # means the watchdog neither starts nor restarts it; a copy already
+    # running is left alone (a mode change takes effect on the next start).
+    enabled: Optional[Callable[[], bool]] = None
     restarts: list[dt.datetime] = field(default_factory=list)
     last_start: Optional[dt.datetime] = None
     backoff: float = 0.0
@@ -100,6 +106,18 @@ class ManagedProcess:
         except Exception:
             return None
         return pid_alive(pid)
+
+    def is_enabled(self) -> bool:
+        """Should the watchdog look after this process right now? Always,
+        unless it has an ``enabled`` check that says no. A check that
+        cannot be read counts as yes: the bot's own start-up reads the same
+        file and exits at once when it really is OFF."""
+        if self.enabled is None:
+            return True
+        try:
+            return bool(self.enabled())
+        except Exception:
+            return True
 
     def can_restart(self, now: dt.datetime) -> bool:
         cutoff = now - dt.timedelta(hours=1)
@@ -235,6 +253,40 @@ class ManagedProcess:
                                capture_output=True, timeout=15)
             except Exception:
                 pass
+
+
+BOT_MODES = ("OFF", "PAPER", "LIVE")
+
+
+def own_file_mode(path: str | Path, default: str = "PAPER") -> str:
+    """The mode a bot's own settings file says (OFF, PAPER or LIVE), read
+    the way the Rapid Momentum Rider and Financial Ian read it: a missing or
+    broken file, or a mode that is not one of the three, is the bot's own
+    default (PAPER). Never raises."""
+    try:
+        p = Path(path)
+        if not p.exists():
+            return default
+        raw = json.loads(p.read_text())
+        mode = str(raw.get("mode") or "").strip().upper() if isinstance(raw, dict) else ""
+        return mode if mode in BOT_MODES else default
+    except Exception:
+        return default
+
+
+def rider_live_left(data_dir: str | Path) -> bool:
+    """Does data/rider.sqlite hold an open LIVE trade? Read only, the way
+    the Rider's own OFF start reads it (no file: no). True when it cannot
+    be read: a real trade may be open, and the Rider's OFF start looks for
+    itself, at the broker too."""
+    try:
+        from ..rider.config import RiderConfig
+        from ..rider.run import _open_live_rows
+        data = Path(data_dir)
+        n = _open_live_rows(data / RiderConfig.load(data / "rider.json").journal_file)
+    except Exception:
+        return True
+    return n is None or n > 0
 
 
 def pid_alive(pid: int) -> bool:
@@ -390,6 +442,8 @@ class Watchdog:
         limit = self.cfg.ops.heartbeat_stale_seconds
 
         for mp in self.processes:
+            if not mp.is_enabled():
+                continue
             reason = ""
             alive = mp.alive_by_pid()
             if alive is False:
@@ -646,6 +700,8 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
     On Windows: watch the trader and the MT5 terminal.
     On macOS and Linux: watch the trader, the Wine-side bridge, and the MT5
     terminal running under Wine.
+    Everywhere: the Rapid Momentum Rider and Financial Ian, each while its
+    own file (data/rider.json, data/ian.json) does not say OFF.
     """
     python = python or sys.executable
     project = project_dir or str(Path(__file__).resolve().parents[2])
@@ -662,23 +718,38 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
         log_file=str(Path(cfg.ops.log_dir) / "trader.out.log"),
         max_restarts_per_hour=cfg.ops.max_restarts_per_hour)]
 
-    # The Rapid Scalper: a separate process with its own heartbeat, started
-    # only when its own file (data/scalper.json) says PAPER or LIVE.
-    try:
-        from ..scalper.config import ScalperConfig
-        scfg = ScalperConfig.load(ScalperConfig.default_path(data))
-        if scfg.enabled:
-            processes.append(ManagedProcess(
-                name="scalper",
-                command=[python, "-m", "mintel.scalper.run", "--config", config_path],
-                heartbeat="scalper",
-                pid_file=str(data / "scalper.pid"),
-                cwd=project,
-                log_file=str(Path(cfg.ops.log_dir) / "scalper.out.log"),
-                grace_seconds=120.0,
-                max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
-    except Exception as exc:
-        log.warning("Rapid Scalper not scheduled: %s", exc)
+    # The Rapid Scalper is RETIRED (9 Oct): replaced by the Rapid Momentum
+    # Rider and no longer started. Its code, its records and its magic
+    # number (990411) are kept, so its real trades still count on the page.
+    #
+    # The Rapid Momentum Rider and Financial Ian: separate processes, each
+    # with its own heartbeat and pid file, looked after whenever their own
+    # file (data/rider.json, data/ian.json) says PAPER or LIVE. A missing
+    # file is the bot's own default, PAPER. The Rider is also started while
+    # its file says OFF if data/rider.sqlite still holds an open LIVE trade
+    # (a LIVE Rider stopped for a switch to OFF): its OFF start closes that
+    # trade at the broker, books it and exits 0, and is then left alone; an
+    # exit 1 (still open) is started again within the hourly limit.
+    for name, module, settings in (("rider", "mintel.rider.run", "rider.json"),
+                                   ("ian", "mintel.ian.run", "ian.json")):
+        if not (Path(project) / "mintel" / name / "run.py").exists():
+            log.warning("%s not scheduled: %s is not installed", name, module)
+            continue
+        path = data / settings
+        if name == "rider":
+            enabled = lambda p=path: own_file_mode(p) != "OFF" or rider_live_left(p.parent)   # noqa: E731
+        else:
+            enabled = lambda p=path: own_file_mode(p) != "OFF"                                 # noqa: E731
+        processes.append(ManagedProcess(
+            name=name,
+            command=[python, "-m", module, "--config", config_path],
+            heartbeat=name,
+            pid_file=str(data / f"{name}.pid"),
+            cwd=project,
+            log_file=str(Path(cfg.ops.log_dir) / f"{name}.out.log"),
+            grace_seconds=120.0,
+            enabled=enabled,
+            max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
 
     mt5_cmd: list[str] = []
     if cfg.broker_mode == "bridge":

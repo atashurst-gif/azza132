@@ -6,6 +6,15 @@ Every closed position of the bot's (its magic number) is read from the
 broker's deal history - price result, commission and swap separately - and
 joined with the journal where the journal knows the trade (tactic, regime).
 The point is to answer, in words, "what should change tomorrow?".
+
+Trend & Breakout on PAPER (config.json "tnb" -> "mode"): its orders are
+simulated and never reach the broker, so its trades are read from its own
+paper record (data/tnb_paper.sqlite, through ``PaperBroker(...,
+read_only=True)``) and reviewed apart, as PRACTICE - not money, never in
+the account. Any REAL deal of its magic (a position left open from LIVE,
+wound down to its end) is still read from the broker and is still real
+money. Every position carries its mode (LIVE or PAPER). On LIVE with no
+paper deal that day the review is exactly what it always was.
 """
 from __future__ import annotations
 
@@ -70,9 +79,12 @@ def exit_kind(reason: str, net: float) -> str:
 
 
 def review(positions: list[dict], journal_rows: Optional[list[dict]] = None,
-           currency: str = "GBP") -> str:
+           currency: str = "GBP", practice: bool = False) -> str:
+    """The review of one set of positions. ``practice``: Trend & Breakout's
+    PAPER trades (from its paper record), labelled as practice, not money."""
     if not positions:
-        return "No closed trades of the bot's on that day."
+        return ("No closed paper trades of Trend & Breakout's on that day." if practice
+                else "No closed trades of the bot's on that day.")
     ccy = currency
     n = len(positions)
     gross = sum(p["gross"] for p in positions)
@@ -83,13 +95,21 @@ def review(positions: list[dict], journal_rows: Optional[list[dict]] = None,
     durations = [p["minutes"] for p in positions if p["minutes"] is not None]
     quick = [p for p in positions if p["minutes"] is not None and p["minutes"] < 5]
     lines = []
-    lines.append("DAY REVIEW (bot trades only, from the broker's records)")
+    if practice:
+        lines.append("DAY REVIEW - PRACTICE (Trend & Breakout on PAPER: simulated orders on real prices,")
+        lines.append("from its paper record; not money, never in the account)")
+    else:
+        lines.append("DAY REVIEW (bot trades only, from the broker's records)")
     lines.append("-" * 62)
     lines.append(f"Trades          : {n}   (wins {len(wins)}, losses {len(losses)}, "
                  f"win rate {len(wins) / n * 100:.0f}%)")
     lines.append(f"Price result    : {gross:+.2f} {ccy}   (what the trades made on price)")
-    lines.append(f"Commission      : {comm:+.2f} {ccy}   (what the broker charged)")
-    lines.append(f"REAL RESULT     : {net:+.2f} {ccy}")
+    if practice:
+        lines.append(f"Commission      : {comm:+.2f} {ccy}   (what the broker would have charged)")
+        lines.append(f"PRACTICE RESULT : {net:+.2f} {ccy}   (paper money, not in the account)")
+    else:
+        lines.append(f"Commission      : {comm:+.2f} {ccy}   (what the broker charged)")
+        lines.append(f"REAL RESULT     : {net:+.2f} {ccy}")
     if wins and losses:
         avg_w = sum(p["net"] for p in wins) / len(wins)
         avg_l = sum(p["net"] for p in losses) / len(losses)
@@ -168,17 +188,45 @@ def journal_rows_for(cfg: Config, day: dt.datetime) -> list[dict]:
         return []
 
 
+TNB_PAPER_NOTE = ("Trend & Breakout is on PAPER: it decides on real prices and its orders are simulated. "
+                  "Its practice result is not money and is never in the account.")
+
+
 def build_day_review(cfg: Config, broker, day: dt.datetime) -> tuple[str, list[dict], list[dict]]:
-    """(review text, positions, journal rows) for the UTC day starting at ``day``."""
-    rows = broker.deals_since(day, cfg.magic, False) or []
-    rows = [r for r in rows if r.get("time") and r["time"] < day + dt.timedelta(days=1)]
+    """(review text, positions, journal rows) for the UTC day starting at
+    ``day``. Each position carries its ``mode``: LIVE (the broker's deals)
+    or PAPER (Trend & Breakout's paper record)."""
+    from .standing import TnbPaperRecord, real_broker_of, tnb_mode
+    end = day + dt.timedelta(days=1)
+    real = real_broker_of(broker)                    # the broker's own record, never the PAPER wrapper's
+    record = TnbPaperRecord(cfg.ops.data_dir, cfg.magic)
+    rows = real.deals_since(day, cfg.magic, False) or []
+    rows = [r for r in rows if r.get("time") and r["time"] < end and not record.is_paper(r.get("position"))]
     try:
-        currency = broker.account().currency
+        currency = real.account().currency
     except Exception:
         currency = "GBP"
-    positions = group_positions(rows)
+    positions = [dict(p, mode="LIVE") for p in group_positions(rows)]
     journal_rows = journal_rows_for(cfg, day)
-    return review(positions, journal_rows, currency), positions, journal_rows
+    paper_rows = [r for r in record.deals_in(day, end)]
+    mode = tnb_mode(cfg)
+    if mode != "PAPER" and not paper_rows and not record.error:
+        return review(positions, journal_rows, currency), positions, journal_rows
+    paper = [dict(p, mode="PAPER") for p in group_positions(paper_rows)]
+    parts = []
+    if mode == "PAPER":
+        parts += [TNB_PAPER_NOTE, "", review(paper, journal_rows, currency, practice=True), ""]
+        parts.append("REAL MONEY: positions of Trend & Breakout's left from LIVE, from the broker's records")
+        parts.append(review(positions, journal_rows, currency) if positions else
+                     "No real Trend & Breakout trade closed that day.")
+    else:
+        parts.append(review(positions, journal_rows, currency))
+        if paper_rows:
+            parts += ["", "Trend & Breakout was on PAPER for part of the day: its paper trades, apart, are not money.",
+                      review(paper, journal_rows, currency, practice=True)]
+    if record.error:
+        parts += ["", f"Trend & Breakout's {record.error}."]
+    return "\n".join(parts), positions + paper, journal_rows
 
 
 def main(argv=None) -> int:

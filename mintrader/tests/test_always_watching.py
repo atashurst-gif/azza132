@@ -239,18 +239,24 @@ def _heartbeats(strategy_age=None, watchdog_age=None, waiting=None):
 
 class TestPulse:
     def test_up_when_the_page_says_running(self, workdir):
+        """today and open are the ACCOUNT's (the page's standing and every
+        open position on it), never Trend & Breakout's own status figures."""
         cfg = _cfg(workdir)
         body = json.dumps({"status": {"bot": "RUNNING", "mt5_connected": True,
                                       "broker_connected": True, "equity": 1012.4,
-                                      "open_positions": 1, "today_pnl": 3.2,
-                                      "build": "abc"}, "health": {}})
+                                      "open_positions": 1, "today_pnl": 9.99,
+                                      "tnb_mode": "LIVE", "build": "abc"},
+                           "standing": {"today": 3.2, "start": "2026-09-24T00:00:00+00:00",
+                                        "day_start": "2026-09-24T00:00:00+00:00"},
+                           "open_live": [{"bot": "Momentum Runner"}, {"bot": "Financial Ian"}],
+                           "health": {}})
         p = pl.take_pulse(cfg, NOW, fetch=lambda url: body,
                           heartbeats=_heartbeats(5, 3), bridge=lambda: {"mt5_connected": True},
                           port_is_open=lambda: True, terminal_running=lambda: True)
         assert p["up"] is True and p["reason"] == ""
         line = pl.pulse_line(p)
         assert line.startswith("2026-09-24T10:32:00Z UP") and "equity=1012.40" in line
-        assert "today=+3.20" in line and "open=1" in line
+        assert "today=+3.20" in line and "open=2" in line and "tnb" not in line
 
     def test_down_explains_itself_from_the_outside(self, workdir):
         cfg = _cfg(workdir)

@@ -2,6 +2,7 @@
 the broker alone, and the by-bot rows that add up to it. Every finding of
 the 8 Oct check is pinned here."""
 import datetime as dt
+import json
 from types import SimpleNamespace as NS
 
 import pytest
@@ -145,7 +146,7 @@ class TestWhenTheBrokerFails:
 def _top(sd, deals=(), period="today", **kw):
     from mintel.ops.standing import period_view
     return {"sel": period_view(sd, list(deals), period, now=NOW, **kw), "tot": period_view(sd, list(deals), "total", now=NOW),
-            "p_sel": {}, "p_tot": {"rapid_scalper": -57.09}}
+            "p_sel": {}, "p_tot": {"financial_ian": -57.09}}
 
 
 class TestThePage:
@@ -165,10 +166,13 @@ class TestThePage:
         sd = dict(standing())
         deals = sd.pop("deals")
         html = render_standing({"standing": sd}, _top(sd, deals))
-        for label in ("Trend &amp; Breakout", "Rapid Scalper", "Momentum Runner", "Band Breaker", "Crowd Fader"):
+        for label in ("Trend &amp; Breakout", "Rapid Momentum Rider", "Momentum Runner", "Band Breaker", "Crowd Fader",
+                      "Financial Ian"):
             assert label in html, label
-        assert html.count('<div class="fk">Today</div>') == 6 and html.count('<div class="fk">Overall</div>') == 6
-        assert "Practice only, not real money" in html and "-£57.09" in html     # the paper scalper, in grey
+        # the account and the six active bots; the retired scalper made nothing here, so it has no line
+        assert html.count('<div class="fk">Today</div>') == 7 and html.count('<div class="fk">Overall</div>') == 7
+        assert "Rapid Scalper" not in html
+        assert "Practice only, not real money" in html and "-£57.09" in html     # paper Financial Ian, in grey
         assert "from trades placed by hand" in html                              # the +2.00 hand trade keeps the sum
 
     def test_a_page_with_no_figures_yet_still_renders(self):
@@ -317,3 +321,98 @@ class TestTheScalperLeavesNoRealTradeBehind:
         e = _engine(b, tmp_path, mode="LIVE")
         e.cycle()
         assert not [c for c in b.closed if c[0] == t and c[2] == "RS paper switch"]
+
+
+class TestTheLineUpOfNineOctober:
+    """The Rapid Momentum Rider replaces the Rapid Scalper and Financial Ian
+    joins: six cards. The retired scalper's real money (magic 990411, about
+    -8.72 since 5 Oct) still belongs to it, so the cards still add up."""
+
+    SCALPER_DEALS = DEALS + [
+        deal(11, 990411, -0.02, -0.02, True, START + dt.timedelta(hours=20)),
+        deal(11, 990411, -8.70, -0.02, False, START + dt.timedelta(hours=21)),
+        deal(12, 990811, -0.07, -0.07, True, NOW - dt.timedelta(minutes=50)),     # the Rider, live today
+        deal(12, 990811, 5.10, -0.07, False, NOW - dt.timedelta(minutes=40)),
+    ]
+
+    def _cfg(self, tmp_path, rider="LIVE", ian="PAPER"):
+        c = cfg()
+        c.ops.data_dir = str(tmp_path)
+        (tmp_path / "rider.json").write_text(json.dumps({"mode": rider, "user_pip_value_gbp": 1.0}))
+        (tmp_path / "ian.json").write_text(json.dumps({"mode": ian, "feed": {"vendor": "none"}}))
+        (tmp_path / "scalper.json").write_text(json.dumps({"mode": "OFF"}))
+        return c
+
+    def _standing(self, tmp_path, **kw):
+        trading = round(TRADING - 8.72 + 5.03, 2)
+        return account_standing(Broker(deals=self.SCALPER_DEALS, balance=2000 + trading), self._cfg(tmp_path, **kw),
+                                NOW, cache_seconds=0), trading
+
+    def test_six_bots_and_the_retired_scalper_and_the_rows_add_up(self, tmp_path):
+        sd, trading = self._standing(tmp_path)
+        assert [b["id"] for b in sd["bots"]] == ["market_intelligence", "momentum_rider", "momentum_runner",
+                                                 "band_breaker", "crowd_fader", "financial_ian", "rapid_scalper"]
+        by = {b["id"]: b for b in sd["bots"]}
+        assert by["rapid_scalper"]["made"] == -8.72 and by["rapid_scalper"]["retired"] is True
+        assert by["rapid_scalper"]["magic"] == 990411 and by["rapid_scalper"]["mode"] == "RETIRED"
+        assert by["rapid_scalper"]["label"] == "Rapid Scalper (retired)"
+        assert by["momentum_rider"]["made"] == 5.03 and by["momentum_rider"]["mode"] == "LIVE"
+        assert by["momentum_rider"]["magic"] == 990811 and by["financial_ian"]["magic"] == 990911
+        assert by["financial_ian"]["mode"] == "PAPER" and by["financial_ian"]["made"] == 0.0
+        assert sd["other"]["made"] == 2.0                                      # never the scalper's money
+        assert sd["made"] == trading
+        assert sum(b["made"] for b in sd["bots"]) + sd["other"]["made"] == pytest.approx(sd["trading"])
+
+    def test_modes_come_from_each_bots_own_file(self, tmp_path):
+        sd, _ = self._standing(tmp_path, rider="OFF", ian="LIVE")
+        by = {b["id"]: b for b in sd["bots"]}
+        assert by["momentum_rider"]["mode"] == "OFF" and by["financial_ian"]["mode"] == "LIVE"
+        (tmp_path / "ian.json").write_text("{broken")
+        from mintel.ops.standing import bot_modes_and_magics
+        c = cfg(); c.ops.data_dir = str(tmp_path)
+        assert bot_modes_and_magics(c)["financial_ian"] == (990911, "PAPER")    # Ian's own default for a broken file
+
+    def test_the_page_shows_six_cards_and_a_retired_line_only_when_it_has_money(self, tmp_path):
+        sd, _ = self._standing(tmp_path)
+        sd = dict(sd)
+        deals = sd.pop("deals")
+        top = _top(sd, deals)
+        page = render_standing({"standing": sd}, top)
+        assert page.count('<div class="hc') == 7                                # the account and six bots
+        assert page.count('<div class="fk">Overall</div>') == 7
+        assert "Rapid Scalper (retired): overall <b" in page and "-£8.72" in page
+        assert "kept here so the cards add up to the account" in page
+        assert 'class="nm">Rapid Scalper' not in page                          # a line, never a card
+        today = render_standing({"standing": sd}, {**top, "sel": top["sel"]})
+        assert "today <b" not in today.split("Rapid Scalper (retired)")[1][:80]   # nothing today: not shown as today
+        # with no scalper money at all there is no line
+        sd2 = dict(standing())
+        d2 = sd2.pop("deals")
+        assert "Rapid Scalper" not in render_standing({"standing": sd2}, _top(sd2, d2))
+
+    def test_every_period_still_adds_up_with_the_retired_bot(self, tmp_path):
+        from mintel.ops.standing import PERIOD_BUTTONS, period_view
+        sd, _ = self._standing(tmp_path)
+        sd = dict(sd)
+        deals = sd.pop("deals")
+        for key, _label in PERIOD_BUTTONS:
+            v = period_view(sd, deals, key, now=NOW)
+            assert sum(b["made"] for b in v["bots"].values()) + v["other"] == pytest.approx(v["trading"]), key
+        assert period_view(sd, deals, "total", now=NOW)["bots"]["rapid_scalper"]["made"] == -8.72
+
+    def test_open_trades_name_the_new_bots(self, tmp_path):
+        from mintel.ops.standing import open_rows
+        pos = [NS(ticket=1, symbol="EURUSD", side=Side.BUY, volume=0.1, entry_price=1.1, sl=1.09, tp=0.0, profit=1.0,
+                  swap=0.0, magic=990811, open_time=NOW),
+               NS(ticket=2, symbol="GBPUSD", side=Side.SELL, volume=0.1, entry_price=1.3, sl=1.31, tp=0.0, profit=-1.0,
+                  swap=0.0, magic=990911, open_time=NOW),
+               NS(ticket=3, symbol="USDJPY", side=Side.SELL, volume=0.1, entry_price=150.0, sl=151.0, tp=0.0, profit=0.5,
+                  swap=0.0, magic=990411, open_time=NOW)]
+        assert [r["bot"] for r in open_rows(pos, self._cfg(tmp_path))] == [
+            "Rapid Momentum Rider", "Financial Ian", "Rapid Scalper (retired)"]
+
+    def test_the_cards_are_three_across_on_a_wide_screen(self):
+        from mintel.ops.dashboard import CSS
+        assert ".cards{display:grid;grid-template-columns:repeat(3,1fr)" in CSS
+        assert "@media (max-width:1100px){.cards{grid-template-columns:repeat(2,1fr)}}" in CSS
+        assert "@media (max-width:600px){.cards{grid-template-columns:1fr}}" in CSS

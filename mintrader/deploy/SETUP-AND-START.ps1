@@ -16,13 +16,29 @@
       7.  finds or installs MetaTrader 5 and starts the terminal
       8.  copies the MQL5 helper into the terminal's folder if present
       9.  registers scheduled tasks so everything restarts after a reboot
-     10.  starts the watchdog, the trader and the dashboard
+     10.  starts the watchdog, which starts the trader (with the dashboard),
+          the Rapid Momentum Rider and Financial Ian
      11.  verifies MT5 is connected, prices are live, news works and trading
           is permitted
      12.  runs a safe smoke test (no orders are placed)
      13.  prints a final status block
 
-    After this, normal use is ONE command: .\START-BOT.ps1
+    The first time on a machine it also sets the 9 Oct line-up (once, by
+    marker files): LIVE - the Momentum Runner, the Rapid Momentum Rider (GBP
+    1 a pip, in place of the retired Rapid Scalper) and Financial Ian (it
+    trades only once a CME data feed is configured); PAPER - Trend &
+    Breakout (real prices, simulated orders; the Momentum Runner still rides
+    its index entries), the Band Breaker and the Crowd Fader. It prints
+    which bots are LIVE and which are PAPER. A later choice made with the
+    modes command is never undone by running this again.
+
+    Running it again later is safe: it keeps your settings (and every saved
+    key) unless you choose to change them, copies in the new program files
+    and restarts everything on them.
+
+    After this, normal use is ONE command: .\START-BOT.ps1 (or double-click
+    START-BOT.cmd). The scheduled tasks keep everything running after a
+    reboot, with or without anyone logged in.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\SETUP-AND-START.ps1
@@ -49,6 +65,15 @@ function Warn     { param($m) Write-Host "    [WARN] $m" -ForegroundColor Yellow
                    $script:Warnings += $m }
 function Bad      { param($m) Write-Host "    [FAIL] $m" -ForegroundColor Red
                    $script:Failures += $m }
+
+function Write-JsonFile {
+    # Windows PowerShell 5.1's "Set-Content -Encoding UTF8" starts the file
+    # with a byte-order mark, which Python's JSON reader refuses: the bot
+    # would quietly load its defaults (no account, no password) instead of
+    # these settings. Plain UTF-8, no mark.
+    param([string] $Path, [string] $Json)
+    [System.IO.File]::WriteAllText($Path, $Json, (New-Object System.Text.UTF8Encoding($false)))
+}
 
 function Ask {
     param([string] $Question, [string] $Default = "", [switch] $Secret)
@@ -151,7 +176,7 @@ Good "Install folder: $InstallDir"
 
 if ($projectSource -ne $appDir) {
     Write-Host "    copying program files..."
-    foreach ($item in @("mintel", "tests", "deploy", "pytest.ini",
+    foreach ($item in @("mintel", "tests", "deploy", "tools", "config", "docs", "pytest.ini",
                         "requirements.txt", "README.md")) {
         $src = Join-Path $projectSource $item
         if (Test-Path $src) {
@@ -287,14 +312,41 @@ if ($reconfigure -match "^[Yy]") {
             dashboard_port = 8787
         }
     }
-    $cfg | ConvertTo-Json -Depth 6 | Set-Content -Path $configPath -Encoding UTF8
-
-    $secrets = [ordered]@{
-        account_password = $password
-        api_keys         = if ($newsKey) { @{ default = $newsKey } } else { @{} }
+    # Changing the settings must never move the measuring clock or drop the
+    # other bots' blocks: carry them over from the file that is already there.
+    # (The Rapid Momentum Rider and Financial Ian keep their own files,
+    # data\rider.json and data\ian.json, which nothing here rewrites; "tnb"
+    # is Trend & Breakout's LIVE or PAPER and its paper settings.)
+    if ($existing) {
+        try {
+            $old = Get-Content $configPath -Raw | ConvertFrom-Json
+            foreach ($key in @("tracking_start_utc", "tracking_strategy", "account_reset_utc", "account_reset_balance",
+                               "runner", "bandbreaker", "crowd", "rider", "ian", "tnb", "report_repo", "report_branch")) {
+                if ($old.PSObject.Properties.Name -contains $key) { $cfg[$key] = $old.$key }
+            }
+        } catch {
+            Warn "The old settings file could not be read; its other bots' blocks were not carried over."
+        }
     }
+    Write-JsonFile $configPath ($cfg | ConvertTo-Json -Depth 10)
+
+    # The secrets file also holds the GitHub token, the Coinversa key and the
+    # Databento key: keep everything already there and replace only what was
+    # just typed.
     $secretPath = Join-Path $dataDir "secrets.json"
-    $secrets | ConvertTo-Json -Depth 4 | Set-Content -Path $secretPath -Encoding UTF8
+    $secrets = [ordered]@{}
+    if (Test-Path $secretPath) {
+        try {
+            $oldSecrets = Get-Content $secretPath -Raw | ConvertFrom-Json
+            foreach ($prop in $oldSecrets.PSObject.Properties) { $secrets[$prop.Name] = $prop.Value }
+        } catch {
+            Warn "The old secrets file could not be read; only the new password is saved."
+        }
+    }
+    if ($password -or -not $secrets.Contains("account_password")) { $secrets["account_password"] = $password }
+    if ($newsKey) { $secrets["api_keys"] = @{ default = $newsKey } }
+    elseif (-not $secrets.Contains("api_keys")) { $secrets["api_keys"] = @{} }
+    Write-JsonFile $secretPath ($secrets | ConvertTo-Json -Depth 6)
     # Lock the secrets file down to this user and administrators only.
     try {
         $acl = Get-Acl $secretPath
@@ -310,6 +362,18 @@ if ($reconfigure -match "^[Yy]") {
     }
     Good "Configuration written to $configPath"
     Good "Mode: $mode   Normal risk: $baseRisk%   Maximum risk: $maxRisk%"
+}
+
+# ------------------------------------------------- 5b. the 9 Oct line-up -----
+Step "The bots' line-up"
+. (Join-Path $appDir "deploy\mintel_bots.ps1")
+$P = Get-MintelPaths $InstallDir
+if (Test-MintelInstalled $P) {
+    [void](Invoke-LineUpOnce $P)
+    Good "The bots as they are set now:"
+    Write-LineUp $P
+} else {
+    Warn "No settings yet, so the bots' line-up was not set. Run this again."
 }
 
 # ------------------------------------------------------------- 6. MT5 --------
@@ -342,7 +406,7 @@ if ($terminal) {
     Good "Terminal: $terminal"
     $raw = Get-Content $configPath -Raw | ConvertFrom-Json
     $raw.mt5_terminal_path = $terminal
-    $raw | ConvertTo-Json -Depth 6 | Set-Content -Path $configPath -Encoding UTF8
+    Write-JsonFile $configPath ($raw | ConvertTo-Json -Depth 10)
     if (-not (Get-Process -Name "terminal64" -ErrorAction SilentlyContinue)) {
         Start-Process -FilePath $terminal
         Start-Sleep -Seconds 20
@@ -403,6 +467,27 @@ if ($NoAutoStart) {
             -Trigger $keepAlive -Settings $settings -RunLevel Highest `
             -User "SYSTEM" -Force | Out-Null
         Good "Scheduled task 'MintelKeepAlive' registered - it re-checks every 5 minutes"
+
+        # The day's record to GitHub every evening, and the ten-minute pulse
+        # (UP or DOWN, and why), as the Mac's launch agents do - so moving to
+        # the VPS loses no report. Both need the GitHub token in secrets.json.
+        $pyOnly = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries -StartWhenAvailable `
+            -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+        $reportAction = New-ScheduledTaskAction -Execute $venvPy -WorkingDirectory $appDir `
+            -Argument "-m mintel.ops.report_upload --config `"$configPath`""
+        Register-ScheduledTask -TaskName "MintelReport" -Action $reportAction `
+            -Trigger (New-ScheduledTaskTrigger -Daily -At "22:10") -Settings $pyOnly `
+            -RunLevel Highest -User "SYSTEM" -Force | Out-Null
+        Good "Scheduled task 'MintelReport' registered - the day's record goes to GitHub at 22:10 every day"
+        $pulseAction = New-ScheduledTaskAction -Execute $venvPy -WorkingDirectory $appDir `
+            -Argument "-m mintel.ops.pulse --config `"$configPath`""
+        $pulseTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+            -RepetitionInterval (New-TimeSpan -Minutes 10)
+        Register-ScheduledTask -TaskName "MintelPulse" -Action $pulseAction `
+            -Trigger $pulseTrigger -Settings $pyOnly `
+            -RunLevel Highest -User "SYSTEM" -Force | Out-Null
+        Good "Scheduled task 'MintelPulse' registered - UP or DOWN every 10 minutes, published with the reports"
     } catch {
         Bad "The scheduled tasks could not be registered: $($_.Exception.Message)"
     }
@@ -410,8 +495,10 @@ if ($NoAutoStart) {
 
 # -------------------------------------------------------- 9. start it all ----
 Step "Starting the bot"
+# -Restart: whatever was running is stopped first, so everything runs the
+# program files just copied in (an old watchdog would not know the new bots).
 & powershell -NoProfile -ExecutionPolicy Bypass -File $startScript `
-    -InstallDir $InstallDir -FromSetup
+    -InstallDir $InstallDir -FromSetup -Restart
 
 # ------------------------------------------------------------ 10. verify -----
 Step "Verifying everything"
@@ -434,11 +521,15 @@ Say "=============================================================="
 Say ""
 Say "  Status page :  http://127.0.0.1:8787"
 Say "  Results page:  http://127.0.0.1:8787/results"
+Say "  The Rider   :  http://127.0.0.1:8787/rider"
+Say "  Ian         :  http://127.0.0.1:8787/ian"
 Say "  Logs        :  $logDir"
 Say "  Data        :  $dataDir"
 Say ""
-Say "  To start or check it in future, run ONE command:"
+Say "  To start or check it in future, run ONE command (or double-click START-BOT.cmd):"
 Say "      powershell -ExecutionPolicy Bypass -File `"$startScript`""
+Say "  The Rider and Ian each have their own: START-RAPID-RIDER.cmd, START-FINANCIAL-IAN.cmd."
+Say "  A Databento key for Financial Ian: INSTALL-FINANCIAL-IAN.cmd."
 Say ""
 if ($script:Warnings.Count) {
     Say "  Warnings:" -ForegroundColor Yellow

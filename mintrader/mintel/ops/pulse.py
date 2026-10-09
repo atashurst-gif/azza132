@@ -7,7 +7,16 @@ is written even when the bot is dead.  Each run appends one line to
 ``data/uptime.log``::
 
     2026-09-24T09:30:12Z UP   equity=1012.40 open=1 today=+3.20
+    2026-10-09T09:30:12Z UP   equity=1012.40 open=3 today=+3.20 tnb=PAPER tnb_practice=+1.10
     2026-09-24T10:40:15Z DOWN trader not answering (last heartbeat 480s ago); ...
+
+``today`` is the ACCOUNT's real result for the broker's day (every bot,
+after commission: the Today figure on the page's Account card), ``open``
+every real open position on the account, ``equity`` the account's. While
+Trend & Breakout is on PAPER its practice result for the same day follows,
+labelled ``tnb_practice``: simulated, never money, never in ``today``.
+(Lines written before this change, made on 9 Oct 2026, carry Trend &
+Breakout's own day as ``today`` and only its own trades as ``open``.)
 
 and publishes the latest state to the reports branch:
 
@@ -49,6 +58,13 @@ def take_pulse(cfg: Config, now: Optional[dt.datetime] = None,
     hang on one of them).
     """
     now = to_utc(now or utcnow()).replace(microsecond=0)
+    # The nightly review reads "up" and "reason", and, on an UP pulse, the
+    # figures listed in _figures(): today_pnl, equity, open_positions.
+    #   up      - True when the trader's page says RUNNING, MetaTrader is
+    #             connected and safe mode is off; False otherwise.
+    #   reason  - when not up: why, in plain words, from whatever could be
+    #             seen (the page, heartbeats, watchdog, bridge, terminal);
+    #             "" when up.
     out: dict = {"ts_utc": now.isoformat(), "up": False, "reason": "",
                  "trader": {}, "watchdog": {}, "bridge": {}, "mt5": {},
                  "status": None}
@@ -98,11 +114,82 @@ def take_pulse(cfg: Config, now: Optional[dt.datetime] = None,
     # 4. The verdict.
     out["up"], out["reason"] = _judge(out, st, health)
     if out["up"]:
-        out["equity"] = st.get("equity")
-        out["open_positions"] = st.get("open_positions")
-        out["today_pnl"] = st.get("today_pnl")
-        out["build"] = st.get("build")
+        out.update(_figures(cfg, status, st, now))
     return out
+
+
+def _money(v) -> Optional[float]:
+    try:
+        return None if v is None else round(float(v), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def _figures(cfg: Config, status: dict, st: dict, now: dt.datetime) -> dict:
+    """The figures an UP pulse carries, each one for what it is. Read from
+    the trader's own page (/api), which reads MetaTrader: nothing here is
+    worked out from Trend & Breakout's own day, and a figure the page could
+    not give is None (written "?"), never a guess."""
+    sd = status.get("standing") if isinstance(status.get("standing"), dict) else {}
+    open_live = status.get("open_live")
+    mode = str(st.get("tnb_mode") or "").strip().upper()
+    if mode not in ("LIVE", "PAPER"):                  # an older page: the setting the trader reads
+        from .standing import tnb_mode
+        mode = tnb_mode(cfg)
+    today = _money(sd.get("today"))
+    out: dict = {
+        # today_pnl - the ACCOUNT's real result for the broker's day so far:
+        #   every bot's trades and any placed by hand, after commission and
+        #   swap, from MetaTrader's own deal history. The same figure as
+        #   "Today" on the page's Account card (mintel/ops/standing.py,
+        #   account_standing "today"). Paper never reaches it. None when the
+        #   page could not read MetaTrader's history (account_error says why).
+        "today_pnl": today,
+        # equity, balance - the account's, as the trader last read them from
+        #   MetaTrader (its page's status block). Unchanged by PAPER: the
+        #   PAPER wrapper passes the real account straight through.
+        "equity": st.get("equity"),
+        "balance": st.get("balance"),
+        # open_positions - every REAL open position on the account: every
+        #   bot's (Trend & Breakout's real ones, the Momentum Runner, the
+        #   Rapid Momentum Rider, Financial Ian, ...) and any placed by hand,
+        #   from MetaTrader. Paper trades are never in it. None when the
+        #   page could not read them.
+        "open_positions": len(open_live) if isinstance(open_live, list) else None,
+        # tnb_mode - Trend & Breakout's mode as the running trader reports
+        #   it: LIVE (its orders are real) or PAPER (simulated).
+        "tnb_mode": mode,
+        "build": st.get("build"),
+    }
+    if today is None:
+        out["account_error"] = str(sd.get("error") or "the page has no account figure from MetaTrader yet")
+    if mode == "PAPER":
+        # tnb_practice_today - Trend & Breakout's PRACTICE result for the
+        #   same broker day: its paper trades that closed today, after their
+        #   simulated commission, from its paper record (data/tnb_paper.sqlite,
+        #   read-only), the practice figure on its card. Not money, never in
+        #   today_pnl. None when it could not be read (tnb_practice_error).
+        practice, why = _tnb_practice_today(cfg, sd, now)
+        out["tnb_practice_today"] = practice
+        if why:
+            out["tnb_practice_error"] = why
+    return out
+
+
+def _tnb_practice_today(cfg: Config, sd: dict, now: dt.datetime) -> tuple[Optional[float], str]:
+    """(practice money, "") for Trend & Breakout's paper trades that closed
+    in the page's Today (the broker's day), or (None, why not)."""
+    if not sd.get("start"):
+        return None, "the page has not told the broker's day yet"
+    try:
+        from .standing import TnbPaperRecord, period_bounds
+        start, end, _label, _key = period_bounds(sd, "today", now=now)
+        record = TnbPaperRecord(cfg.ops.data_dir)          # read-only: never books or writes
+        if record.error:
+            return None, record.error
+        return record.net(start, end), ""
+    except Exception as exc:
+        return None, f"the paper record could not be read: {exc}"
 
 
 def _judge(p: dict, st: dict, health: dict) -> tuple[bool, str]:
@@ -181,10 +268,15 @@ def pulse_line(p: dict) -> str:
     ts = p["ts_utc"].replace("+00:00", "Z")
     if p["up"]:
         eq = p.get("equity")
-        pnl = p.get("today_pnl")
-        return (f"{ts} UP   equity={eq if eq is None else f'{eq:.2f}'} "
-                f"open={p.get('open_positions', '?')} "
+        pnl = p.get("today_pnl")                       # the ACCOUNT's broker day, every bot
+        n_open = p.get("open_positions")               # every real open position on the account
+        line = (f"{ts} UP   equity={eq if eq is None else f'{eq:.2f}'} "
+                f"open={'?' if n_open is None else n_open} "
                 f"today={'?' if pnl is None else f'{pnl:+.2f}'}")
+        if str(p.get("tnb_mode") or "").upper() == "PAPER":
+            pr = p.get("tnb_practice_today")           # practice, never money
+            line += f" tnb=PAPER tnb_practice={'?' if pr is None else f'{pr:+.2f}'}"
+        return line
     return f"{ts} DOWN {p['reason']}"
 
 
