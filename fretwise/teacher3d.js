@@ -184,11 +184,12 @@ export function buildGuitar() {
     }
   }
   layoutStrings(null);
-  // capo: black bar with a rubber pad just behind the capo fret
-  const capo = new THREE.Group(); const capoBar = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.064, 0.008), new THREE.MeshStandardMaterial({ color: 0x1b1b1b, metalness: 0.4, roughness: 0.35 })); capoBar.position.z = 0.016; capo.add(capoBar);
-  const capoBack = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.04), capoBar.material); capoBack.position.set(0, 0.033, -0.004); capo.add(capoBack);
+  // capo: a slim black bar with a rubber pad lying across the strings just behind the capo fret
+  const capo = new THREE.Group(); const capoMat = new THREE.MeshStandardMaterial({ color: 0x1b1b1b, metalness: 0.35, roughness: 0.4 });
+  const capoBar = new THREE.Mesh(new THREE.CapsuleGeometry(0.0034, 0.05, 6, 12), capoMat); capoBar.position.z = 0.0135; capo.add(capoBar);
+  const capoPad = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.05, 0.0025), new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.9 })); capoPad.position.z = 0.0105; capo.add(capoPad);
   capo.visible = false; group.add(capo);
-  function setCapo(n) { capo.visible = n > 0; if (n > 0) { const x = fretX(n) - 0.006; capo.position.set(x, 0, 0); capoBar.scale.y = (boardWidth(x) + 0.016) / 0.064; } }
+  function setCapo(n) { capo.visible = n > 0; if (n > 0) { const x = fretX(n) - 0.0055; capo.position.set(x, 0, 0); const w = boardWidth(x) + 0.006; capoBar.scale.set(1, w / 0.0568, 1); capoPad.scale.y = w / 0.05; } }
   // optional hint dots, hidden by default
   const hints = new THREE.Group(); group.add(hints);
   const hintMat = new THREE.MeshBasicMaterial({ color: 0x8ef0a6, transparent: true, opacity: 0.9, depthTest: false });
@@ -319,6 +320,46 @@ export function reproportionHands(root, bones, props = HAND_PROPORTIONS) {
   return report;
 }
 
+/* Copy the left hand + forearm out of the character's single skinned mesh into its own mesh that shares the skeleton,
+   with a per-vertex fade towards the elbow. */
+function extractFrettingHand(mesh, B) {
+  const g = mesh.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, bones = mesh.skeleton.bones;
+  const set = new Set(Object.entries(B).filter(([n]) => /^LeftHand|^LeftForeArm$/.test(n)).map(([, b]) => b));
+  const share = new Float32Array(si.count);
+  for (let i = 0; i < si.count; i++) { let w = 0; for (let c = 0; c < 4; c++) if (set.has(bones[si.getComponent(i, c)])) w += sw.getComponent(i, c); share[i] = w; }
+  const src = g.index ? g.index.array : Array.from({ length: si.count }, (_, i) => i); const keep = [];
+  for (let i = 0; i < src.length; i += 3) { const a = src[i], b = src[i + 1], c = src[i + 2]; if (share[a] > 0.5 && share[b] > 0.5 && share[c] > 0.5) keep.push(a, b, c); }
+  const geo = g.clone(); geo.setIndex(keep);
+  // fade: 1 on the hand, falling to 0 two-thirds of the way up the forearm (bind space)
+  const inv = (b) => mesh.skeleton.boneInverses[bones.indexOf(b)].clone().invert();
+  const wrist = new THREE.Vector3().setFromMatrixPosition(inv(B.LeftHand)), elbow = new THREE.Vector3().setFromMatrixPosition(inv(B.LeftForeArm));
+  const axis = elbow.clone().sub(wrist); const len = axis.length(); axis.normalize();
+  const pos = geo.attributes.position, fade = new Float32Array(pos.count), v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(mesh.bindMatrix); const t = v.sub(wrist).dot(axis) / len; fade[i] = 1 - smooth((t - 0.2) / 0.5); }
+  geo.setAttribute('fade', new THREE.BufferAttribute(fade, 1));
+  const mat = mesh.material.clone(); mat.transparent = true; mat.opacity = 0.82; mat.envMapIntensity = 0.5;   // slightly see-through so the strings under the fingers stay visible
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float fade;\nvarying float vFade;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFade = fade;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vFade;').replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a *= vFade;');
+  };
+  const hand = new THREE.SkinnedMesh(geo, mat); hand.name = 'frettingHand';
+  hand.position.copy(mesh.position); hand.quaternion.copy(mesh.quaternion); hand.scale.copy(mesh.scale);
+  hand.bind(mesh.skeleton, mesh.bindMatrix); hand.castShadow = true; hand.receiveShadow = true; hand.frustumCulled = false;
+  mesh.parent.add(hand);
+  return hand;
+}
+
+/* Finger colours used for the numbered fingertips and the strings they press (1 index … 4 little finger). */
+export const FINGER_COLOURS = { 0: '#f4f1e6', 1: '#4fc3f7', 2: '#7be07a', 3: '#ffb547', 4: '#f2709c' };
+function labelSprite(text, { fg = '#10151a', bg = null, ring = null, size = 0.008, bold = true } = {}) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  if (bg) { g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.fillStyle = bg; g.fill(); }
+  if (ring) { g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.lineWidth = 10; g.strokeStyle = ring; g.stroke(); }
+  g.fillStyle = fg; g.font = `${bold ? 'bold ' : ''}78px Arial, Helvetica, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 64, 70);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true })); sp.scale.setScalar(size); sp.renderOrder = 20; return sp;
+}
+
 /* ------------------------------------------------------------------ the stage ------------------------------------------------------------------ */
 export async function createTeacherStage(container, options = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: !!options.preserveDrawingBuffer, powerPreference: 'high-performance' });
@@ -329,26 +370,22 @@ export async function createTeacherStage(container, options = {}) {
   function applyQuality() { const low = quality === 'low'; renderer.setPixelRatio(low ? 0.6 : Math.min(window.devicePixelRatio || 1, 2)); renderer.shadowMap.enabled = !low; if (typeof resize === 'function') resize(); }
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.background = new THREE.Color(0x1b2420); scene.fog = new THREE.Fog(0x1b2420, 4, 9);
-  // a simple practice room: back wall, floor, rug, stool
-  const room = new THREE.Group(); scene.add(room);
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(8, 4), new THREE.MeshStandardMaterial({ color: 0x2e3b33, roughness: 0.95 })); wall.position.set(0, 2, -1.2); wall.receiveShadow = true; room.add(wall);
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 6), new THREE.MeshStandardMaterial({ color: 0x3b2c22, roughness: 0.8 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; room.add(floor);
-  const rug = new THREE.Mesh(new THREE.CircleGeometry(1.1, 48), new THREE.MeshStandardMaterial({ color: 0x5c6b52, roughness: 1 })); rug.rotation.x = -Math.PI / 2; rug.position.set(0, 0.002, 0.25); rug.receiveShadow = true; room.add(rug);
-  const stoolMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.6 });
-  const stool = new THREE.Group(); room.add(stool);
-  const seatTop = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.035, 36), stoolMat); seatTop.position.y = 0.515; stool.add(seatTop);
-  for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.52, 10), stoolMat); leg.position.set(Math.cos(a) * 0.13, 0.25, Math.sin(a) * 0.13 - 0.02); leg.rotation.set(Math.sin(a) * 0.12, 0, -Math.cos(a) * 0.12); stool.add(leg); }
-  stool.position.z = -0.02; stool.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  const key = new THREE.DirectionalLight(0xfff1dc, 2.1); key.position.set(-1.6, 3.2, 2.6); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.camera.left = -1.2; key.shadow.camera.right = 1.2; key.shadow.camera.top = 2; key.shadow.camera.bottom = -0.5; key.shadow.bias = -0.0004; scene.add(key);
-  const rim = new THREE.DirectionalLight(0xb8e8c4, 0.9); rim.position.set(2.2, 2.4, -1.5); scene.add(rim);
-  scene.add(new THREE.HemisphereLight(0xfaf3e6, 0x2a221c, 0.55));
+  // dark studio backdrop: a soft radial gradient behind the instrument (nothing else competes with the guitar)
+  scene.background = canvasTexture(1024, 576, (g, w, h) => { const gr = g.createRadialGradient(w * 0.5, h * 0.42, 40, w * 0.5, h * 0.5, w * 0.7); gr.addColorStop(0, '#34443a'); gr.addColorStop(0.55, '#1c2621'); gr.addColorStop(1, '#0d1310'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  const key = new THREE.DirectionalLight(0xfff3e2, 2.4); key.castShadow = true; key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0003; key.shadow.normalBias = 0.002; scene.add(key); scene.add(key.target);
+  Object.assign(key.shadow.camera, { left: -0.6, right: 0.6, top: 0.6, bottom: -0.6, near: 0.5, far: 4 });
+  const fill = new THREE.DirectionalLight(0xd8efe0, 0.8); scene.add(fill); scene.add(fill.target);
+  scene.add(new THREE.HemisphereLight(0xfaf3e6, 0x2a221c, 0.7));
 
   const gltf = await new GLTFLoader().loadAsync(options.modelUrl || './assets/models/teacher.glb');
   const person = gltf.scene; scene.add(person);
   person.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; if (o.material) { o.material.envMapIntensity = 0.6; } } });
   const B = {}; person.traverse(o => { if (o.isBone) B[o.name.replace(/^mixamorig:?/, '')] = o; });
   const handReport = options.originalHands ? null : reproportionHands(person, B);
+  // Only the fretting hand and forearm are shown. Triangles skinned to the left hand/forearm are copied into their own
+  // mesh (sharing the skeleton); the forearm fades out towards the elbow so there is no hard cut. The body is hidden.
+  const bodyMesh = (() => { let m = null; person.traverse(o => { if (o.isSkinnedMesh && !m) m = o; }); return m; })();
+  const handMesh = extractFrettingHand(bodyMesh, B); bodyMesh.visible = false; bodyMesh.castShadow = false;
   const restQ = {}; for (const [n, b] of Object.entries(B)) restQ[n] = b.quaternion.clone();
   person.updateMatrixWorld(true);
   // palm normals (T-pose palms face down) and finger chains
@@ -489,69 +526,49 @@ export async function createTeacherStage(container, options = {}) {
     return hp;
   }
 
-  /* --- right hand: pick grip + strum --- */
-  let pick = null, lastPickTarget = V(); const rightDebug = [];
-  function rightGrip() {
-    const R = 'Right'; const palmNow = palmLocal[R].clone().applyQuaternion(wquat(B.RightHand));
-    const curl = (f, a, b, c) => { const ch = chain(R, f); ch.forEach((bone, i) => { if (i < 3) bone.quaternion.copy(restQ[`RightHand${f}${i + 1}`]); }); B.RightHand.updateMatrixWorld(true); const P0 = wpos(ch[0]), P3 = wpos(ch[3]); const d = P3.sub(P0).normalize(); const n = palmNow.clone().sub(d.clone().multiplyScalar(palmNow.dot(d))).normalize(); const ax = new THREE.Vector3().crossVectors(d, n).normalize(); [a, b, c].forEach((ang, i) => rotateWorld(ch[i], new THREE.Quaternion().setFromAxisAngle(ax, ang))); };
-    curl('Index', 0.55, 1.15, 0.75); curl('Middle', 0.95, 1.35, 0.9); curl('Ring', 1.05, 1.4, 0.9); curl('Pinky', 1.1, 1.35, 0.85);
-    // thumb pad presses the pick against the side of the index finger
-    const idx3 = wpos(B.RightHandIndex3); const idx2 = wpos(B.RightHandIndex2); const target = idx2.clone().lerp(idx3, 0.6).add(palmNow.clone().multiplyScalar(-0.004));
-    solveFinger(chain(R, 'Thumb'), restOf(R, 'Thumb'), target, palmNow, { coupling: 0.4, maxCurl: 0.8 });
-    if (!pick) {
-      const sh = new THREE.Shape(); sh.moveTo(0, 0.016); sh.quadraticCurveTo(0.0125, 0.014, 0.011, 0.002); sh.quadraticCurveTo(0.004, -0.009, 0, -0.012); sh.quadraticCurveTo(-0.004, -0.009, -0.011, 0.002); sh.quadraticCurveTo(-0.0125, 0.014, 0, 0.016);
-      pick = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.0008, bevelEnabled: false }), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.3, emissive: 0x3a1200 })); pick.scale.setScalar(1.25); pick.castShadow = true; scene.add(pick);
-    }
-  }
-  function placePick() { // between thumb tip and index distal joint, tip pointing away from the palm (towards the strings)
-    const th = wpos(B.RightHandThumb4), i3 = wpos(B.RightHandIndex3), i4 = wpos(B.RightHandIndex4); const palmNow = palmLocal.Right.clone().applyQuaternion(wquat(B.RightHand));
-    const centre = th.clone().lerp(i3, 0.5); const tipDir = palmNow.clone().negate().add(i4.clone().sub(i3).normalize().multiplyScalar(0.6)).normalize();
-    pick.position.copy(centre); pick.quaternion.setFromUnitVectors(V(0, -1, 0), tipDir); pick.updateMatrixWorld(true);
-    return pick.localToWorld(V(0, -0.012, 0));
-  }
+  /* --- strumming: just the pick, following the timeline's strokes --- */
   const strum = { x: 0.535, restY: -0.002 };   // strum zone between the sound hole and the bridge (guitar local)
-  function solveRight(pickYLocal, pickZOffset) {
-    const R = 'Right';
-    // palm faces the top of the guitar, fingers pointing back towards the neck-side of the sound hole
-    const palmW = dirWorld(V(-0.1, -0.3, -0.95).normalize()), fwdW = dirWorld(V(-0.25, 0.9, -0.3).normalize());
-    const hl = handLocal[R]; const handQ = basisQuat(fwdW, palmW).multiply(basisQuat(hl.forward, hl.palm).invert());
-    // the arm crosses over the lower bout; elbow rests behind its upper edge
-    const elbowRest = wpos(B.RightArm).add(V(-0.35, -0.45, -0.15));   // elbow hangs down, back and out to her right, over the lower bout
-    const targetPick = toWorld(V(strum.x, pickYLocal, stringZ(strum.x) + 0.006 + pickZOffset)); lastPickTarget = targetPick;
-    // iterate: place wrist so that the pick tip lands on target (pick offset depends on the grip, which is fixed)
-    let wrist = targetPick.clone().add(V(0.02, -0.02, 0.08).applyQuaternion(G.quaternion));
-    rightDebug.length = 0;
-    for (let i = 0; i < 5; i++) {
-      twoBone(B.RightArm, B.RightForeArm, B.RightHand, wrist, elbowRest); setWorldQuat(B.RightHand, handQ); rightGrip(); const tip = placePick();
-      rightDebug.push({ wristErr: +(wpos(B.RightHand).distanceTo(wrist) * 1000).toFixed(1), tipErr: +(tip.distanceTo(targetPick) * 1000).toFixed(1), handQerr: +(wquat(B.RightHand).angleTo(handQ)).toFixed(3) });
-      wrist.add(targetPick.clone().sub(tip));
-    }
+  const pickShape = new THREE.Shape(); pickShape.moveTo(0, 0.016); pickShape.quadraticCurveTo(0.0125, 0.014, 0.011, 0.002); pickShape.quadraticCurveTo(0.004, -0.009, 0, -0.012); pickShape.quadraticCurveTo(-0.004, -0.009, -0.011, 0.002); pickShape.quadraticCurveTo(-0.0125, 0.014, 0, 0.016);
+  const pick = new THREE.Mesh(new THREE.ExtrudeGeometry(pickShape, { depth: 0.0009, bevelEnabled: true, bevelThickness: 0.0002, bevelSize: 0.0004, bevelSegments: 2 }), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.32, emissive: 0x3a1400 }));
+  pick.geometry.translate(0, 0, -0.00045); pick.castShadow = true; scene.add(pick);
+  // tip points into the strings and slightly towards the bridge; the flat face leans towards the viewer so its shape reads
+  let lastPickTarget = V();
+  function placePick(pickYLocal, pickZOffset) {
+    const tipLocal = V(strum.x, pickYLocal, stringZ(strum.x) + 0.001 + pickZOffset);
+    lastPickTarget = toWorld(tipLocal);
+    // local frame: shape Y axis = from tip back to the body of the pick; shape Z = face normal
+    const back = V(-0.66, 0, 0.75).normalize(); const faceN = V(0.75, 0, 0.66).normalize(); const side = new THREE.Vector3().crossVectors(back, faceN);
+    const m = new THREE.Matrix4().makeBasis(side, back, faceN); const qLocal = new THREE.Quaternion().setFromRotationMatrix(m);
+    pick.quaternion.copy(G.quaternion).multiply(qLocal);
+    pick.position.copy(lastPickTarget).sub(V(0, -0.012, 0).applyQuaternion(pick.quaternion));
+    pick.updateMatrixWorld(true);
   }
 
-  /* --- head: look at the fretting hand or at the camera --- */
-  let lookMode = 'neck', talk = 0, talkTarget = 0, nod = 0, portraitPending = null;
-  function solveHead(camPos, t) {
-    const facing = (lookMode === 'camera' && (camName === 'wide' || portraitPending)) || (talk > 0.5 && camName === 'wide');
-    const target = facing ? camPos.clone() : toWorld(V(fretX(Math.max(2, currentAnchor)), 0.02, 0.02));
-    for (const [bone, w] of [[B.Neck, 0.45], [B.Head, 0.55]]) {
-      const p = wpos(bone); const fwd = V(0, 0, 1).applyQuaternion(wquat(bone)); const want = target.clone().sub(p).normalize();
-      const full = new THREE.Quaternion().setFromUnitVectors(fwd, want); const part = new THREE.Quaternion().slerp(full, w * 0.85); rotateWorld(bone, part);
-    }
-    if (talk > 0.01) { const a = talk * (0.035 * Math.sin(t * 11.0) + 0.02 * Math.sin(t * 6.3)); rotateWorld(B.Head, new THREE.Quaternion().setFromAxisAngle(dirWorldHeadRight(), a)); }
-    if (nod > 0) rotateWorld(B.Head, new THREE.Quaternion().setFromAxisAngle(dirWorldHeadRight(), Math.sin(nod * Math.PI) * 0.12));
-  }
-  const dirWorldHeadRight = () => V(1, 0, 0).applyQuaternion(wquat(B.Head));
+  let talk = 0, talkTarget = 0;
   let currentAnchor = 3;
 
-  /* --- cameras (Fender Play style angles) --- */
-  const camera = new THREE.PerspectiveCamera(32, 16 / 9, 0.01, 30);
+  /* --- cameras ---
+     Audience view of the instrument, kept level: bass strings at the top, headstock on the right.
+     'fretting' frames a few frets around the hand (with a strumming inset); 'guitar' shows the whole instrument. */
+  const camera = new THREE.PerspectiveCamera(30, 16 / 9, 0.01, 30);
+  const hfov = (vfovDeg, aspect) => 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(vfovDeg) / 2) * aspect);
+  function frame3(xFrom, xTo, opts = {}) {
+    const fov = opts.fov || 30; const width = xTo - xFrom; const d = (width / 2) / Math.tan(hfov(fov, 16 / 9) / 2);
+    const centre = V((xFrom + xTo) / 2, opts.y ?? 0, 0);
+    const offset = V(opts.ox ?? 0, -(opts.bass ?? 0.32) * d, d);    // a little from the bass side so fingertips and strings read clearly
+    return { pos: toWorld(centre.clone().add(offset)), look: toWorld(centre), up: dirWorld(V(0, -1, 0)), fov };
+  }
   const CAMS = {
-    wide: () => ({ pos: V(0.1, 1.12, 1.72), look: V(0.08, 0.86, 0.12), fov: 30 }),
-    fretting: () => { const c = toWorld(V(fretX(currentAnchor + 1), 0.012, 0)); const n = dirWorld(V(0, 0, 1)); return { pos: c.clone().addScaledVector(n, 0.34).add(V(0.02, 0.06, 0.0)), look: c, fov: 34 }; },
-    strumming: () => { const c = toWorld(V(strum.x - 0.02, 0, 0)); const n = dirWorld(V(0, 0, 1)); return { pos: c.clone().addScaledVector(n, 0.42).add(V(-0.12, 0.12, 0)), look: c, fov: 36 }; },
+    // constant real-world width (~23 cm) around the hand, so the hand is the same size wherever it is on the neck
+    fretting: () => { const x0 = Math.max(-0.045, fretX(Math.max(0, currentAnchor - 1)) - 0.06); return frame3(x0, x0 + 0.235, { y: 0.012, bass: 0.42 }); },
+    guitar: () => frame3(-0.21, 0.88, { bass: 0.12, y: 0.0 }),
+    strumming: () => frame3(strum.x - 0.13, strum.x + 0.09, { bass: 0.35, ox: 0.05 }),
   };
-  let camName = 'wide', camFrom = null, camT = 1; const camNow = { pos: V(), look: V(), fov: 30 };
-  function setCamera(name, immediate) { if (!CAMS[name]) return; camFrom = immediate ? null : { pos: camNow.pos.clone(), look: camNow.look.clone(), fov: camNow.fov }; camName = name; camT = immediate ? 1 : 0; }
+  const PIP = { w: 0.26, margin: 12, top: 40 };
+  let camName = 'fretting', camFrom = null, camT = 1; const camNow = { pos: V(), look: V(), up: V(0, 1, 0), fov: 30 };
+  function setCamera(name, immediate) { if (name === 'wide') name = 'guitar'; if (!CAMS[name]) return; camFrom = immediate ? null : { pos: camNow.pos.clone(), look: camNow.look.clone(), up: camNow.up.clone(), fov: camNow.fov }; camName = name; camT = immediate ? 1 : 0; pipFrame.style.display = name === 'fretting' ? 'block' : 'none'; }
+  const pipCam = new THREE.PerspectiveCamera(30, 16 / 9, 0.01, 30);
+  const pipFrame = document.createElement('div'); pipFrame.className = 'pip-frame'; pipFrame.innerHTML = '<span>STRUMMING</span>'; container.append(pipFrame);
 
   /* --- performance driving --- */
   let perf = null, perfTime = -1, capo = 0, playing = false, clockFn = null;
@@ -588,52 +605,100 @@ export async function createTeacherStage(container, options = {}) {
     for (let n = 1; n <= 4; n++) { const a = leftFrom[n], b = leftTargets[n]; const moved = a.p.distanceTo(b.p) > 0.002; const p = a.p.clone().lerp(b.p, k); if (moved) p.z += Math.sin(Math.PI * k) * 0.012; out[n] = { ...b, p }; }
     return out;
   }
+  /* --- what the fingers are doing, made obvious ---
+     Each pressed string glows in its finger's colour from the fret to the bridge (the part that sounds); open strings that
+     are played glow white; muted strings get an × at the nut. Pressed fingertips carry their finger number. */
+  const overlay = new THREE.Group(); G.add(overlay);
+  const glowMats = {}; const glowMat = (col, op) => (glowMats[col + op] ||= new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false }));
+  const stringGlows = [];
+  for (let s = 0; s < 6; s++) {
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.0011, 0.0011, 1, 8, 1, true), glowMat('#ffffff', 0.9));
+    const halo = new THREE.Mesh(new THREE.CylinderGeometry(0.0026, 0.0026, 1, 10, 1, true), glowMat('#ffffff', 0.22));
+    core.visible = halo.visible = false; core.renderOrder = halo.renderOrder = 5; overlay.add(core, halo); stringGlows.push({ core, halo });
+  }
+  function placeSegment(mesh, a, b) { const mid = a.clone().add(b).multiplyScalar(0.5); mesh.position.copy(mid); mesh.scale.set(1, a.distanceTo(b), 1); mesh.quaternion.setFromUnitVectors(V(0, 1, 0), b.clone().sub(a).normalize()); }
+  const stringNames = ['E', 'A', 'D', 'G', 'B', 'e'];
+  const nutLabels = stringNames.map((n, s) => { const sp = labelSprite(n, { fg: '#e9f2e8', size: 0.0072 }); sp.position.set(-0.016, stringY(s, 0), stringZ(0) + 0.002); overlay.add(sp); return sp; });
+  const nutMarks = stringNames.map((n, s) => { const sp = labelSprite('×', { fg: '#ff8a80', size: 0.0072 }); sp.position.set(-0.03, stringY(s, 0), stringZ(0) + 0.002); sp.visible = false; overlay.add(sp); return sp; });
+  const fretNums = []; for (let n = 1; n <= 15; n++) { const x = (fretX(n) + fretX(n - 1)) / 2; const sp = labelSprite(String(n), { fg: '#c9d6c6', size: 0.0062, bold: false }); sp.position.set(x, boardWidth(x) / 2 + 0.0085, GUITAR.boardTop); overlay.add(sp); fretNums.push(sp); }
+  const fingerBadges = {}; for (let n = 1; n <= 4; n++) { const sp = labelSprite(String(n), { bg: FINGER_COLOURS[n], fg: '#0d1410', size: 0.0092 }); sp.visible = false; scene.add(sp); fingerBadges[n] = sp; }
+  let overlaysOn = true;
+  function updateOverlay(now) {
+    const shape = leftShape; const frets = shape ? shape.frets : null; const fingers = shape ? shape.fingers : null;
+    for (let s = 0; s < 6; s++) {
+      const gl = stringGlows[s]; const f = frets ? frets[s] : -1; const show = overlaysOn && frets && f >= 0;
+      gl.core.visible = gl.halo.visible = !!show; nutMarks[s].visible = overlaysOn && !!frets && f < 0 && frets.some(x => x >= 0);
+      if (!show) continue;
+      const phys = f > 0 ? f + capo : capo; const x0 = phys > 0 ? fretX(phys) : 0; const z0 = phys > 0 ? GUITAR.fretTop + 0.0004 : stringZ(0);
+      placeSegment(gl.core, V(x0, stringY(s, x0), z0), V(GUITAR.scale, stringY(s, GUITAR.scale), stringZ(GUITAR.scale)));
+      placeSegment(gl.halo, V(x0, stringY(s, x0), z0), V(GUITAR.scale, stringY(s, GUITAR.scale), stringZ(GUITAR.scale)));
+      const col = f > 0 ? FINGER_COLOURS[fingers[s] || 1] : FINGER_COLOURS[0]; const amp = guitar.strings[s].amp;
+      gl.core.material = glowMat(col, f > 0 ? 0.92 : 0.55); gl.halo.material = glowMat(col, Math.min(0.6, (f > 0 ? 0.22 : 0.12) + amp * 0.35));
+    }
+    for (let n = 1; n <= 4; n++) {
+      const t = leftTargets && leftTargets[n]; const b = fingerBadges[n]; b.visible = overlaysOn && !!t && t.pressed;
+      if (!b.visible) continue;
+      // badge sits just above the fingertip, towards the viewer
+      // the badge marks the exact spot where this finger presses its string (pulled along the view ray so it sits on top)
+      const contact = t.barre ? toWorld(V(t.p.x, stringY(Math.max(0, t.s) + 1.5, t.p.x), stringZ(t.p.x))) : toWorld(V(t.p.x, t.p.y, stringZ(t.p.x)));
+      b.position.copy(contact).add(camera.position.clone().sub(contact).normalize().multiplyScalar(0.012));
+    }
+    nutLabels.forEach(l => l.visible = overlaysOn); fretNums.forEach((l, i) => l.visible = overlaysOn && i + 1 > capo);
+  }
+
   const t0 = performance.now(); const clockNow = () => (performance.now() - t0) / 1000;
 
   function pluck(ev) { const st = guitar.strings[ev.string]; if (st) { st.amp = Math.min(1.2, st.amp + 0.9 * (ev.vel / 0.3)); } }
 
   /* --- frame --- */
-  function resize() { const w = container.clientWidth || 640, h = container.clientHeight || 360; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  function resize() { const w = container.clientWidth || 640, h = container.clientHeight || 360; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); const pw = Math.round(w * PIP.w), ph = Math.round(pw * 9 / 16); Object.assign(pipFrame.style, { width: pw + 'px', height: ph + 'px', left: PIP.margin + 'px', top: PIP.top + 'px' }); }
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null; if (ro) ro.observe(container); applyQuality(); resize();
   let slowFrames = 0, lastFrameAt = 0;
   let raf = null, lastT = clockNow(); const onFrameHooks = [];
   const frameStats = { n: 0, solveMs: 0, renderMs: 0 };
+  function aimCamera(cam, view, aspect) {
+    // keep the same horizontal framing on narrower screens (phones) by widening the vertical field of view
+    let vfov = view.fov; if (aspect < 16 / 9) { const h = hfov(vfov, 16 / 9); vfov = Math.min(75, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / aspect))); }
+    cam.position.copy(view.pos); cam.up.copy(view.up); cam.lookAt(view.look); if (Math.abs(cam.fov - vfov) > 0.01 || cam.aspect !== aspect) { cam.fov = vfov; cam.aspect = aspect; cam.updateProjectionMatrix(); }
+  }
+  let lightsPlaced = false;
   function frame() {
     const f0 = performance.now();
     if (lastFrameAt && quality === 'high') { slowFrames = f0 - lastFrameAt > 60 ? slowFrames + 1 : Math.max(0, slowFrames - 1); if (slowFrames > 40) { quality = 'low'; applyQuality(); } } lastFrameAt = f0;
     const now = clockNow(); const dt = Math.min(0.05, now - lastT); lastT = now;
     placeGuitar();
-    // idle breathing
-    rotateWorld(B.Spine1, new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.sin(now * 1.6) * 0.008));
+    if (!lightsPlaced) { // key light from in front of the board, a little from the bass side and the headstock, so fingers cast soft shadows onto the fretboard
+      const c = toWorld(V(0.3, 0, 0)); key.target.position.copy(c); key.position.copy(c).add(dirWorld(V(-0.25, -0.45, 1)).multiplyScalar(2));
+      fill.target.position.copy(c); fill.position.copy(c).add(dirWorld(V(0.4, 0.5, 0.8)).multiplyScalar(2)); lightsPlaced = true;
+    }
     const lt = currentLeft(now); const hpT = optimiseLeft(leftTargets); let hp = hpT;
     if (leftFrom) { const hpF = optimiseLeft(leftFrom); const k = smooth((now - leftStart) / TWEEN); hp = { ky: hpF.ky + (hpT.ky - hpF.ky) * k, kz: hpF.kz + (hpT.kz - hpF.kz) * k, pitch: hpF.pitch + (hpT.pitch - hpF.pitch) * k, slide: hpF.slide + (hpT.slide - hpF.slide) * k }; }
     solveLeft(lt, hp);
     if (clockFn) { const ct = clockFn(); playing = ct !== null && ct !== undefined; perfTime = playing ? ct : -1; }
     const pt = playing && perfTime >= 0 ? pickAt(perfTime) : { y: strum.restY, z: 0.02 + Math.sin(now * 1.3) * 0.002 };
-    solveRight(pt.y, pt.z);
-    talk += (talkTarget - talk) * Math.min(1, dt * 8); if (nod > 0) nod = Math.max(0, nod - dt * 1.6);
+    placePick(pt.y, pt.z);
+    talk += (talkTarget - talk) * Math.min(1, dt * 8);
     // camera
     camT = Math.min(1, camT + dt * 1.6); const want = CAMS[camName]();
-    if (camFrom && camT < 1) { const k = smooth(camT); camNow.pos.copy(camFrom.pos).lerp(want.pos, k); camNow.look.copy(camFrom.look).lerp(want.look, k); camNow.fov = camFrom.fov + (want.fov - camFrom.fov) * k; } else { camNow.pos.copy(want.pos); camNow.look.copy(want.look); camNow.fov = want.fov; }
-    // keep the same horizontal framing on narrower screens (phones) by widening the vertical field of view
-    const refAspect = 16 / 9; let vfov = camNow.fov; if (camera.aspect < refAspect) { const h = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(vfov) / 2) * refAspect); vfov = Math.min(70, THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / camera.aspect))); }
-    camera.position.copy(camNow.pos); camera.lookAt(camNow.look); if (Math.abs(camera.fov - vfov) > 0.01) { camera.fov = vfov; camera.updateProjectionMatrix(); }
-    solveHead(camera.position, now);
+    if (camFrom && camT < 1) { const k = smooth(camT); camNow.pos.copy(camFrom.pos).lerp(want.pos, k); camNow.look.copy(camFrom.look).lerp(want.look, k); camNow.up.copy(camFrom.up).lerp(want.up, k).normalize(); camNow.fov = camFrom.fov + (want.fov - camFrom.fov) * k; }
+    else { camNow.pos.copy(want.pos); camNow.look.copy(want.look); camNow.up.copy(want.up); camNow.fov = want.fov; }
+    aimCamera(camera, camNow, camera.aspect);
     // strings vibrate and bend to the frets they are pressed at
     for (const st of guitar.strings) { st.phase += dt * st.freq * 2 * Math.PI; st.amp *= Math.exp(-dt * 2.4); if (st.amp < 0.002) st.amp = 0; }
     guitar.layoutStrings(leftShape ? leftShape.frets.map(f => f > 0 ? f + capo : 0) : null);
+    updateOverlay(now);
     for (const h of onFrameHooks) h(now);
-    if (portraitPending) {
-      const head = wpos(B.Head); const pc = new THREE.PerspectiveCamera(24, camera.aspect, 0.01, 10); pc.position.copy(head).add(V(0.05, 0.1, 0.62)); pc.lookAt(head.x, head.y + 0.085, head.z);
-      solveHead(pc.position, now); renderer.render(scene, pc);
-      const src = renderer.domElement; const h = src.height, w = h; const c = document.createElement('canvas'); c.width = c.height = 160; c.getContext('2d').drawImage(src, (src.width - w) / 2, 0, w, h, 0, 0, 160, 160);
-      const done = portraitPending; portraitPending = null; done(c.toDataURL('image/jpeg', 0.86)); placeGuitar(); solveHead(camera.position, now);
+    const f1 = performance.now();
+    const size = renderer.getSize(new THREE.Vector2()); renderer.setScissorTest(false); renderer.setViewport(0, 0, size.x, size.y); renderer.render(scene, camera);
+    if (camName === 'fretting') { // strumming inset, top left
+      const pw = Math.round(size.x * PIP.w), ph = Math.round(pw * 9 / 16), px = PIP.margin, py = size.y - PIP.top - ph;
+      aimCamera(pipCam, CAMS.strumming(), 16 / 9); renderer.setScissorTest(true); renderer.setScissor(px, py, pw, ph); renderer.setViewport(px, py, pw, ph); renderer.render(scene, pipCam); renderer.setScissorTest(false); renderer.setViewport(0, 0, size.x, size.y);
     }
-    const f1 = performance.now(); renderer.render(scene, camera); const f2 = performance.now();
+    const f2 = performance.now();
     frameStats.n++; frameStats.solveMs = frameStats.solveMs * 0.9 + (f1 - f0) * 0.1; frameStats.renderMs = frameStats.renderMs * 0.9 + (f2 - f1) * 0.1;
     raf = requestAnimationFrame(frame);
   }
-  placeGuitar(); setShape(null, true); camNow.pos.copy(CAMS.wide().pos); camNow.look.copy(CAMS.wide().look);
+  placeGuitar(); setShape(null, true); { const v = CAMS.fretting(); camNow.pos.copy(v.pos); camNow.look.copy(v.look); camNow.up.copy(v.up); camNow.fov = v.fov; } setCamera('fretting', true);
   frame();
 
   return {
@@ -642,11 +707,16 @@ export async function createTeacherStage(container, options = {}) {
     setPerformance(p) { perf = p; buildPickPath(p); },
     setTime(t, isPlaying) { perfTime = t; playing = isPlaying; },
     setClock(fn) { clockFn = fn; },
-    setTalking(on) { talkTarget = on ? 1 : 0; lookMode = on && !playing ? 'camera' : 'neck'; },
-    look(mode) { lookMode = mode; },
-    nod() { nod = 1; },
-    portrait() { return new Promise(res => { portraitPending = res; setTimeout(() => { if (portraitPending === res) { portraitPending = null; res(null); } }, 4000); }); },
+    setTalking(on) { talkTarget = on ? 1 : 0; },
+    look() { },
+    nod() { },
+    portrait() { return Promise.resolve(null); },
+    setOverlays(on) { overlaysOn = !!on; },
+    overlaysOn: () => overlaysOn,
     cameraName: () => camName,
+    stringGlow: () => stringGlows.map(g => g.core.visible ? '#' + g.core.material.color.getHexString() : null),
+    badges: () => Object.fromEntries(Object.entries(fingerBadges).map(([n, b]) => [n, b.visible])),
+    handMesh,
     showHints(on) { if (!on || !leftShape) { guitar.showHints(null); return; } const pts = []; leftShape.frets.forEach((f, s) => { if (f > 0) pts.push(pressPoint(s, f + capo)); }); guitar.showHints(pts); },
     /* for tests: world-space distance from each fingertip to where it should press */
     fingertipErrors() {
@@ -658,9 +728,8 @@ export async function createTeacherStage(container, options = {}) {
     fingerTargets: () => { const o = {}; if (!leftTargets) return o; for (let n = 1; n <= 4; n++) { const t = leftTargets[n]; o[n] = { pressed: !!t.pressed, barre: !!t.barre, string: t.s, phys: t.phys }; } return o; },
     frameStats: () => ({ ...frameStats, quality }),
     handReport: () => handReport,
-    placement: () => lastPlacement, rightDebug: () => rightDebug,
-    debugRight: () => { const sh = wpos(B.RightArm), el = wpos(B.RightForeArm), wr = wpos(B.RightHand); return { reach: +(sh.distanceTo(el) + el.distanceTo(wr)).toFixed(3), shoulderToTarget: +sh.distanceTo(lastPickTarget).toFixed(3), wristToTarget: +wr.distanceTo(lastPickTarget).toFixed(3) }; },
-    pickWorld: () => pick ? pick.localToWorld(V(0, -0.012, 0)) : null,
+    placement: () => lastPlacement,
+    pickWorld: () => pick.localToWorld(V(0, -0.012, 0)),
     pickError: () => { if (!pick) return null; const tip = pick.localToWorld(V(0, -0.012, 0)); return +(tip.distanceTo(lastPickTarget) * 1000).toFixed(1); },
     stringWorld: (s, x = strum.x) => toWorld(V(x, stringY(s, x), stringZ(x))),
     renderer, scene, camera, bones: B, guitar, onFrame: (fn) => onFrameHooks.push(fn),

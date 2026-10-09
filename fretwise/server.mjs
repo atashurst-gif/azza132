@@ -42,13 +42,14 @@ async function initLLM() {
 }
 
 /* ---------- static files ---------- */
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary', '.mp3': 'audio/mpeg' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary', '.mp3': 'audio/mpeg', '.webp': 'image/webp' };
 const PUBLIC = new Set(['index.html', 'styles.css', 'app.js', 'music.js', 'performance.js', 'audio.js', 'tutor.js', 'teacher3d.js', 'sample_original_lesson.json']);
 function serveStatic(req, res) {
   const url = new URL(req.url, 'http://localhost');
   let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
   const okAsset = /^assets\/[\w.-]+\.(jpe?g|png|svg)$/i.test(rel)
     || /^assets\/models\/[\w.-]+\.glb$/i.test(rel)
+    || /^assets\/teacher\/[\w.-]+\.(png|jpe?g|webp)$/i.test(rel)
     || /^assets\/samples\/[\w.-]+\/[\w#.-]+\.mp3$/i.test(rel)
     || /^vendor\/three\/[\w./-]+\.js$/i.test(rel) && !rel.includes('..')
     || (process.env.FRETWISE_LAB && /^lab\/[\w.-]+\.(html|js)$/.test(rel));
@@ -160,7 +161,10 @@ function json(res, status, body) { res.writeHead(status, { 'Content-Type': 'appl
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/api/status' && req.method === 'GET') return json(res, 200, { llm: !!client, model: client ? MODEL : null, reason: client ? null : llmError });
+  if (url.pathname === '/api/status' && req.method === 'GET') {
+    const portrait = ['portrait.webp', 'portrait.png', 'portrait.jpg', 'portrait.jpeg'].find(f => fs.existsSync(path.join(here, 'assets', 'teacher', f)));
+    return json(res, 200, { llm: !!client, model: client ? MODEL : null, reason: client ? null : llmError, teacherPortrait: portrait ? `./assets/teacher/${portrait}` : null });
+  }
   if (url.pathname === '/api/chat') {
     if (req.method !== 'POST') return json(res, 405, { error: 'POST only' });
     if (!client) return json(res, 503, { error: llmError || 'AI coach not configured' });

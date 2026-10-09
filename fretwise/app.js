@@ -45,13 +45,16 @@
     const box=el('teacherStage'); let gl=null; try{ gl=document.createElement('canvas').getContext('webgl2')||document.createElement('canvas').getContext('webgl'); }catch(e){}
     if(!gl){ el('stageLoading').textContent='This browser can’t show the 3D teacher (WebGL is turned off). Lessons, audio and the finger diagram still work.'; return; }
     import('./teacher3d.js').then(m=>m.createTeacherStage(box,{modelUrl:'./assets/models/teacher.glb'})).then(s=>{
-      stage3d=s; el('stageLoading').hidden=true; s.setCapo(state.capo); s.setClock(()=>player&&player.isPlaying()?player.clock():null); s.setCamera(state.camera||'wide',true); markCamera(state.camera||'wide');
+      stage3d=s; el('stageLoading').hidden=true; s.setCapo(state.capo); s.setClock(()=>player&&player.isPlaying()?player.clock():null); if(!['fretting','guitar','strumming'].includes(state.camera)) state.camera='fretting'; s.setCamera(state.camera,true); markCamera(state.camera); s.setOverlays(state.colours!==false); el('coloursToggle').classList.toggle('active',state.colours!==false);
       stageQueue.splice(0).forEach(fn=>{ try{ fn(s); }catch(e){ console.warn(e); } });
-      window.FretwiseDebug.stage=s; s.portrait().then(url=>{ if(url){ el('avatarImg').src=url; el('avatarImg').hidden=false; el('avatar').classList.add('has-portrait'); } }).catch(()=>{});
+      window.FretwiseDebug.stage=s;
     }).catch(e=>{ console.warn(e); el('stageLoading').textContent='The 3D teacher could not load ('+e.message+'). Lessons and audio still work.'; });
   }
   function renderHand(shape,windowStart,immediate){ stageCall(s=>{ s.setShape(shape,!!immediate); if(!el('hintPanel').classList.contains('hidden')) s.showHints(true); }); }
-  function markCamera(name){ document.querySelectorAll('#cameraSwitch button').forEach(b=>b.classList.toggle('active',b.dataset.cam===name)); }
+  function markCamera(name){ document.querySelectorAll('#cameraSwitch button[data-cam]').forEach(b=>b.classList.toggle('active',b.dataset.cam===name)); }
+  function setColours(on){ state.colours=on; save(); el('coloursToggle').classList.toggle('active',on); el('coloursToggle').setAttribute('aria-pressed',String(on)); stageCall(s=>s.setOverlays(on)); }
+  /* Teacher artwork (e.g. made in ChatGPT): drop an image at assets/teacher/portrait.(webp|png|jpg) and it becomes Fret's face. */
+  function loadTeacherPortrait(url){ if(!url) return; const img=el('avatarImg'); img.onload=()=>{ img.hidden=false; el('avatar').classList.add('has-portrait'); }; img.src=url; }
   function setCamera(name){ state.camera=name; save(); markCamera(name); stageCall(s=>s.setCamera(name)); }
   let captionTimer=null;
   let captionUntil=0;
@@ -263,11 +266,12 @@
 
   /* ---------- AI coach availability ---------- */
   function setCoachMode(on,text){ llm.on=on; el('coachMode').textContent=text||(on?'AI coach connected · '+(llm.model||'server'):'Demo coach · rules-based, works offline'); el('coachStatusText').textContent=on?'AI coach connected through the local server ('+(llm.model||'model')+'). Keys stay on the server. If it becomes unreachable, the rules-based coach takes over automatically.':'Rules-based demo coach. Start node server.mjs with an API key to enable the AI coach; typed lessons always work without it.'; }
-  async function detectCoach(){ try{ const res=await fetch('/api/status',{cache:'no-store'}); if(!res.ok) throw 0; const s=await res.json(); llm.model=s.model||null; setCoachMode(!!s.llm,s.llm?undefined:'Demo coach · server running without an API key'); }catch(e){ setCoachMode(false); } }
+  async function detectCoach(){ try{ const res=await fetch('/api/status',{cache:'no-store'}); if(!res.ok) throw 0; const s=await res.json(); llm.model=s.model||null; loadTeacherPortrait(s.teacherPortrait); setCoachMode(!!s.llm,s.llm?undefined:'Demo coach · server running without an API key'); }catch(e){ setCoachMode(false); } }
 
   /* ---------- events ---------- */
   document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>goPage(button.dataset.page)));
-  document.querySelectorAll('#cameraSwitch button').forEach(b=>b.addEventListener('click',()=>setCamera(b.dataset.cam)));
+  document.querySelectorAll('#cameraSwitch button[data-cam]').forEach(b=>b.addEventListener('click',()=>setCamera(b.dataset.cam)));
+  el('coloursToggle').addEventListener('click',()=>setColours(!(state.colours!==false)));
   el('playDemo').addEventListener('click',togglePlay);
   el('stopDemo').addEventListener('click',()=>{ stopPlayback('stopped'); resumeStep=null; el('playDemo').innerHTML='▶ <span>Hear & watch</span>'; setChip(null); if(state.backing.withDemo) toggleBacking(false); });
   el('repeatDemo').addEventListener('click',()=>{ resumeStep=null; play(); });

@@ -71,7 +71,7 @@ async function handSettled(timeout = 15000) {
   return page.evaluate(() => ({ errors: window.FretwiseDebug.stage.fingertipErrors(), targets: window.FretwiseDebug.stage.fingerTargets() }));
 }
 
-await test('1 the 3D teacher is the main stage, plays from real finger positions, extra dots hidden by default', async () => {
+await test('1 the teacher\'s guitar is the main stage: fingers on the right strings, colour-coded, extra dots hidden by default', async () => {
   await page.waitForFunction(() => !!(window.FretwiseDebug && window.FretwiseDebug.stage), null, { timeout: 60000 });
   assert(await page.isVisible('#teacherStage canvas'), '3D teacher canvas not visible');
   assert(await page.$eval('#hintPanel', e => e.classList.contains('hidden')), 'hint panel visible on load');
@@ -86,7 +86,18 @@ await test('1 the 3D teacher is the main stage, plays from real finger positions
   const hands = await page.evaluate(() => window.FretwiseDebug.stage.handReport());
   for (const f of ['LeftIndex', 'LeftMiddle', 'LeftRing', 'LeftPinky']) { const [a, b, c] = hands[f].after; assert(b / a < 0.72 && c / a < 0.5, `${f} segments not human-proportioned: ${hands[f].after}`); }
   const mid = hands.LeftMiddle.after.reduce((x, y) => x + y, 0); assert(mid > 70 && mid < 85, 'middle finger length ' + mid + ' mm');
-  assert(await page.evaluate(() => window.FretwiseDebug.stage.cameraName()) === 'wide', 'default camera should show the teacher');
+  assert(await page.evaluate(() => window.FretwiseDebug.stage.cameraName()) === 'fretting', 'default camera should be the fretting-hand close-up');
+  // every pressed string glows in its finger's colour; open strings glow white; the muted low E has none; badges on fingers 1–3
+  const glow = await page.evaluate(() => window.FretwiseDebug.stage.stringGlow());
+  const C = { 1: '#4fc3f7', 2: '#7be07a', 3: '#ffb547', open: '#f4f1e6' };
+  assert(JSON.stringify(glow) === JSON.stringify([null, C.open, C[2], C[3], C[1], C.open]), 'Am string colours wrong: ' + JSON.stringify(glow));
+  const badges = await page.evaluate(() => window.FretwiseDebug.stage.badges());
+  assert(badges[1] && badges[2] && badges[3] && !badges[4], 'finger number badges wrong: ' + JSON.stringify(badges));
+  // only the fretting hand is drawn; strumming is just a pick
+  assert(await page.evaluate(() => window.FretwiseDebug.stage.handMesh.visible && !window.FretwiseDebug.stage.scene.getObjectByName('frettingHand').parent.children.some(o => o.isSkinnedMesh && o.visible && o.name !== 'frettingHand')), 'body should be hidden');
+  // the colours toggle turns the colour coding off and on
+  await page.click('#coloursToggle'); assert((await page.evaluate(() => window.FretwiseDebug.stage.overlaysOn())) === false, 'colours did not turn off');
+  await page.click('#coloursToggle'); assert((await page.evaluate(() => window.FretwiseDebug.stage.overlaysOn())) === true, 'colours did not turn back on');
   await shot('01-studio');
 });
 

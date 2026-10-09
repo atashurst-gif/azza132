@@ -1,6 +1,6 @@
 # Fretwise — AI Guitar Teacher, Prototype 0.3
 
-A local-first browser guitar tutor built for one learner (Yamaha F310, capo 3/5, working towards Sultans of Swing), continued from Prototypes 0.1 and 0.2. The main experience is a **3D guitar teacher** sitting on a stool with an F310-style guitar. She plays each exercise with real recorded guitar sound, her fretting fingers land on the actual frets and strings, and her pick crosses each string as its note sounds. When she talks to you, she looks up at you, and her words appear as subtitles. Fender Play-style camera buttons switch between the whole teacher, a fretting-hand close-up and a strumming-hand close-up.
+A local-first browser guitar tutor built for one learner (Yamaha F310, capo 3/5, working towards Sultans of Swing), continued from Prototypes 0.1–0.3. The main experience is the **teacher's guitar**, an F310-style instrument in 3D, played with real recorded guitar sound. A close-up of the fretting hand shows exactly where each finger presses: every finger carries its number, and the string it presses lights up in that finger's colour. Strumming is shown as just a pick crossing the strings, in a small inset. The camera buttons switch between the fretting-hand close-up, the whole guitar and the strumming close-up.
 
 ## Start
 
@@ -34,14 +34,14 @@ node tests/coach-mock.mjs    # 13 checks of the AI-coach path against a local mo
 **Working, and covered by tests**
 
 - **One canonical performance timeline** (`performance.js`). A lesson or section compiles to timed events: string, fret, finger, MIDI pitch (capo applied), stroke direction and technique. Web Audio, the fretting hand, the picking hand, ringing strings and step highlighting all read from that one list, scheduled on the AudioContext clock. The browser test samples the hand during playback and checks it against the timeline, and checks every scheduled note's pitch and time against the event list.
-- **3D teacher** (`teacher3d.js`, Three.js). A rigged character (Michelle, from Mixamo) sits on a stool holding a guitar built in code to F310 measurements: 634 mm scale, dreadnought body, spruce top, black teardrop pickguard, rosewood board with dot inlays, brown headstock with 3+3 chrome tuners, and a capo when you set one.
-  - **Left hand.** Solved by inverse kinematics for every step. Each finger spreads at the knuckle and bends in its own plane, with the end joint following the middle joint. For each chord, the hand's height, depth and tilt are optimised so that each pressed fingertip lands just behind its fret on its string, with the thumb behind the neck. Barres lay the first finger flat.
-  - **Realistic hands.** The character's original fingers were cartoon-long, with tip segments nearly as long as the base. At load, each finger is re-proportioned to human hand measurements (tip about 40% of the base segment, middle finger about 78 mm on a 74 mm palm), reshaping the skin with the bones. Fingers that aren't pressing a string curl loosely beside the others instead of pointing out. Fingers sharing a fret (as in an A chord) line up diagonally, the way players actually place them. Barres lie nearly flat with the tip just past the bass edge.
-  - **Measured accuracy.** Across every chord in the app at capo 0, 3 and 5, plus single notes up to fret 12, the worst fingertip is 5.6 mm from its target and the median is 2.6 mm. The browser test fails if any finger is more than 6 mm off, or if the finger proportions drift from human ratios.
-  - **Movement.** Fingers that move lift and arc to the next shape 140 ms before it sounds.
-  - **Right hand.** Holds a pick and strums down and up across the real strings. The pick's path is built from the same timeline as the audio, so it is on each string at the moment that note sounds (0.0 mm error at every note). Pressed strings bend to the fret, and plucked strings vibrate.
-- **The teacher is the tutor.** While talking she looks up at you from the wide shot (she keeps watching her hands in the close-ups), her words appear as on-stage subtitles, and the coach avatar is a portrait rendered from the same 3D model. Asking for finger help switches to the fretting-hand camera and lights up the fret positions on the 3D neck as well as the diagram.
-- **Strumming patterns** (down/up on the beat and the "and") and capo-aware sounding names.
+- **Teacher's guitar** (`teacher3d.js`, Three.js). The guitar is built in code to F310 measurements: 634 mm scale, dreadnought body, spruce top, black pickguard, rosewood board with dot inlays, 3+3 tuners and a slim capo when you set one. It sits on a dark studio background.
+  - **Fretting hand only.** The rest of the character (Michelle, from Mixamo) is hidden. Her left hand and forearm are cut out of the model and fade towards the elbow. The hand is slightly see-through, so the strings under the fingers stay visible.
+  - **Which string, which fret.** Each pressed string glows in its finger's colour from the fret to the bridge (the part that sounds): 1 blue, 2 green, 3 amber, 4 pink. Open strings that are played glow white, and strings you don't play get a × at the nut. A numbered badge sits exactly where each finger presses its string. String names (E A D G B e) sit at the nut, and physical fret numbers run along the edge. The **Colours** button turns all of this off. The on-request finger diagram still only appears when you ask.
+  - **Left hand IK.** Solved for every step: each finger spreads at the knuckle and bends in its own plane. For each chord, the hand's placement is optimised so each pressed fingertip lands just behind its fret. Fingers are re-proportioned at load to human hand measurements (tip about 40% of the base segment, middle finger about 78 mm). Idle fingers curl loosely, fingers sharing a fret line up diagonally, and barres lie nearly flat.
+  - **Measured accuracy.** Across every chord in the app at capo 0, 3 and 5, plus single notes up to fret 12, the worst fingertip is 5.6 mm from its target and the median is 2.6 mm. The browser test fails beyond 6 mm, or if the string colours or finger numbers are wrong.
+  - **Movement.** Fingers that move lift and arc to the next shape 140 ms before it sounds. The close-up keeps a constant 23 cm width and follows the hand along the neck.
+  - **Strumming is just a pick.** Its path is built from the same timeline as the audio, so it crosses each string exactly when that note sounds. It shows in an inset during the fretting close-up and full-size in the Strumming view. Plucked strings vibrate.
+- **Coach panel and captions.** Fret talks through the coach panel and on-stage subtitles. To give Fret a face (for example artwork made in ChatGPT), put `portrait.webp`, `.png` or `.jpg` in `assets/teacher/`; the app uses it automatically.
 - **Adaptive quality:** on slow machines or software renderers, the 3D stage drops resolution and shadows to keep moving smoothly.
 - **Repeat-by-section practice.** Click a step, shift-click to extend it, or use the section chips (imported lessons get automatic phrase sections). Then: "Is this the part?" playback with Earlier / Later / Yes, repeat ×1–8 or until stopped, optional 4-beat count-in, 🐢 slow motion at 60% speed, "Last 2", Back/Next, pause/resume (Space bar) and a pass counter.
 - **Tutor brain** (`tutor.js`). Teaching state machine: goal → passage → demo → your turn → observe → one correction → retry → advance. Replies are capped by your preference; in "one step" mode it sends one instruction plus at most one question. Repeated difficulty rotates through slow it down → isolate the join → offer a diagram → finger-by-finger walkthrough, offering dots only after asking you. Fret dots appear only when you ask or accept them.
@@ -55,9 +55,9 @@ node tests/coach-mock.mjs    # 13 checks of the AI-coach path against a local mo
 
 **Still illustrative or missing**
 
-- The teacher is a stylised 3D character, not a filmed human, and she wears the character's own sunglasses and headphones. She has no lip-sync (the model has no mouth controls), so talking is shown through head movement, eye contact and subtitles.
-- Her hand poses come from geometry and joint limits, not from motion capture of a real guitarist. Accurate positions don't guarantee perfect technique details such as exact wrist angle or thumb pressure.
-- The 3D teacher needs WebGL. Without it, lessons, audio and the finger diagram still work, with a notice instead of the stage.
+- The fretting hand comes from a stylised 3D character, so it is smoother and chunkier than a real hand. There is no on-screen teacher figure; the coach panel shows a mascot until you add teacher artwork.
+- Hand poses come from geometry and joint limits, not from motion capture of a real guitarist. Accurate positions don't guarantee perfect technique details such as exact wrist angle or thumb pressure.
+- The 3D guitar needs WebGL. Without it, lessons, audio and the finger diagram still work, with a notice instead of the stage.
 - The guitar has one sample layer: each note is a single recording, shaped by envelope and filter, not a multi-velocity studio library. Bends and vibrato aren't modelled. Slides are a short pitch glide, and hammer-ons and pull-offs are softer notes without the pick attack.
 - Speech recognition depends on the browser (Chrome works best); there is no server speech-to-text or text-to-speech yet.
 - Mic feedback is monophonic pitch only, with no onset or rhythm scoring, and needs field testing on a real F310 in a real room.
@@ -101,9 +101,10 @@ Importing doesn't grant any rights. Only import arrangements you wrote or have p
 | `index.html`, `styles.css` | App shell and layout |
 | `music.js` | Chord shapes, lessons, sections, capo maths, import validation |
 | `performance.js` | Canonical timeline compiler and AudioContext-clocked player |
-| `teacher3d.js` | The 3D teacher: F310 guitar model, seated pose, fretting IK, pick strumming synced to the timeline, cameras, talking |
+| `teacher3d.js` | The teacher's guitar: F310 model, fretting hand (IK, human proportions), colour-coded strings and finger numbers, pick synced to the timeline, cameras and strumming inset |
+| `assets/teacher/` | Optional teacher artwork for Fret's face (`portrait.webp/png/jpg`) |
 | `vendor/three/`, `assets/models/` | Three.js (MIT) and the rigged character |
-| `lab/` | Developer test pages for posing the 3D teacher (served only when `FRETWISE_LAB=1`) |
+| `lab/` | Developer test pages for posing the fretting hand (served only when `FRETWISE_LAB=1`) |
 | `audio.js` | Sampled guitar, bass and drums (with a synth fallback), room reverb, mixer, backing band, click, pitch detector |
 | `assets/samples/` | Bundled instrument recordings, with sources and licences in `CREDITS.md` |
 | `tutor.js` | Tutor brain: intents, teaching state machine, memory, migration, action allow-list |
