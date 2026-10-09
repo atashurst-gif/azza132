@@ -23,7 +23,7 @@ import threading
 import time
 from typing import Optional, Sequence
 
-from ..clock import UTC, ServerClock, utcnow
+from ..clock import UTC, ServerClock, to_utc, utcnow
 from ..contracts import SymbolSpec, classify_fx, infer_group
 from .base import (AccountInfo, Bar, BrokerError, CalendarEvent, NotConnected,
                    OrderRequest, OrderResult, Position, RetCode, Side, TF, Tick)
@@ -389,8 +389,8 @@ class Mt5Broker:
             if end is None:
                 rates = mt5.copy_rates_from_pos(symbol, tf_const, 0, count)
             else:
-                rates = mt5.copy_rates_from(
-                    symbol, tf_const, self._clock.utc_to_server(end), count)
+                rates = mt5.copy_rates_from(          # integer seconds: see ticks_range
+                    symbol, tf_const, self._server_epoch(end), count)
             if rates is None:
                 return []
             out = []
@@ -434,11 +434,19 @@ class Mt5Broker:
 
     def ticks_range(self, symbol: str, start: dt.datetime,
                     end: dt.datetime) -> list[Tick]:
+        # Bounds go to MetaTrader as integer seconds on the broker's clock.
+        # A datetime would be read in the machine's local time zone (under
+        # Wine on a Mac in summer: UK time), which on 9 Oct 2026 made every
+        # request return the ticks of the hour BEFORE the one asked for - the
+        # live Rider's history came back empty and the research got nothing.
+        # The window is widened by a second each side for the whole-second
+        # bounds, then every tick is kept only if it is inside [start, end].
+        lo_utc, hi_utc = to_utc(start), to_utc(end)
         with self._lock:
             mt5 = self.mt5
             arr = mt5.copy_ticks_range(symbol,
-                                       self._clock.utc_to_server(start),
-                                       self._clock.utc_to_server(end),
+                                       self._server_epoch(lo_utc) - 1,
+                                       self._server_epoch(hi_utc) + 1,
                                        mt5.COPY_TICKS_ALL)
             if arr is None:
                 return []
@@ -446,9 +454,17 @@ class Mt5Broker:
             for r in arr:
                 ts = self._clock.server_to_utc(
                     dt.datetime.utcfromtimestamp(_tick_seconds(r)))
+                if ts < lo_utc or ts > hi_utc:
+                    continue
                 out.append(Tick(symbol, ts, float(r["bid"]), float(r["ask"]),
                                 float(r["last"]), float(r["volume"])))
             return out
+
+    def _server_epoch(self, utc_ts: dt.datetime) -> int:
+        """Whole seconds since 1970 on the broker's clock, the form every
+        MetaTrader5 history call takes without applying a local time zone."""
+        import calendar
+        return int(calendar.timegm(self._clock.utc_to_server(utc_ts).timetuple()))
 
     # ----------------------------------------------------------- positions --
     def positions(self, magic: Optional[int] = None) -> list[Position]:
@@ -733,8 +749,11 @@ class Mt5Broker:
                 raise BrokerError(
                     "this MetaTrader5 build has no calendar API; "
                     "use the stored historical calendar")
+            # Aware datetimes (the broker's clock written as UTC), never naive
+            # ones the package would read in the machine's local time zone.
             values = mt5.calendar_value_history(
-                self._clock.utc_to_server(start), self._clock.utc_to_server(end))
+                self._clock.utc_to_server(start).replace(tzinfo=dt.timezone.utc),
+                self._clock.utc_to_server(end).replace(tzinfo=dt.timezone.utc))
             if values is None:
                 return []
             out: list[CalendarEvent] = []
