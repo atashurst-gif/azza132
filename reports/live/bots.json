@@ -1,5 +1,5 @@
 {
- "ts_utc": "2026-10-09T21:40:01+00:00",
+ "ts_utc": "2026-10-09T21:50:28+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
  "trader_up": true,
  "trader_reason": "",
@@ -31,11 +31,13 @@
     "count": 0,
     "source": "the paper record (tnb_paper.sqlite), read-only: simulated orders, not money"
    },
-   "health": "RUNNING: everything is healthy",
+   "health": "RUNNING: 1 problem(s) found; new trades are paused",
    "build": "218ad0c87a",
-   "last_scan": "21:39:55 UTC",
+   "last_scan": "21:48:11 UTC",
    "last_trade": "EURCAD 2026-10-09T12:44",
-   "not_trading_because": [],
+   "not_trading_because": [
+    "PROBLEM: this machine's clock is 528s out of step with the broker - session and news timing cannot be trusted"
+   ],
    "positions_on_page": [],
    "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus any real position left from LIVE; the real ones are also under open_on_account",
    "thinking": [
@@ -148,13 +150,23 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "rider-status.json",
-   "updated_utc": "2026-10-09T21:40:00.016193+00:00",
-   "report_age_seconds": 1.0,
-   "running": true,
-   "health": "RAPID MOMENTUM RIDER - RUNNING, LIVE, scanning 28 markets, GBP 1.00 per pip - new entries paused (open positions are still managed): the FX market is closed - no fresh prices",
+   "updated_utc": "2026-10-09T21:48:14.269371+00:00",
+   "report_age_seconds": 133.7,
+   "running": false,
+   "health": "RAPID MOMENTUM RIDER - NOT RUNNING, set to LIVE (last report 2 min ago)",
    "entries_allowed": false,
-   "health_summary": "new entries paused (open positions are still managed): the FX market is closed - no fresh prices",
+   "health_summary": "new entries paused (open positions are still managed): MetaTrader is not answering; connected to the broker; the FX market is closed - no fresh prices",
    "failing_checks": [
+    {
+     "name": "mt5_alive",
+     "critical": true,
+     "message": "MetaTrader is not answering"
+    },
+    {
+     "name": "broker_connected",
+     "critical": true,
+     "message": "connected to the broker"
+    },
     {
      "name": "fresh_ticks",
      "critical": true,
@@ -180,13 +192,13 @@
    "why_no_trade": {
     "window_minutes": 60,
     "covers": "the last 60 minutes",
-    "from_utc": "2026-10-09T20:41:00+00:00",
-    "to_utc": "2026-10-09T21:40:00.016193+00:00",
+    "from_utc": "2026-10-09T20:49:00+00:00",
+    "to_utc": "2026-10-09T21:48:14.269371+00:00",
     "trigger_score": 60.0,
-    "summary": "In the last 60 minutes: 3249 scans of 28 markets, 0 triggers, 0 entries. Best score 81.5 (GBPCAD SHORT at 20:55:08 UTC); the trigger score is 60. 604 near-miss scans with no entry, held back most by: spread too wide (604).",
-    "last_trade": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (6.1 h ago), LIVE, closed STOP",
+    "summary": "In the last 60 minutes: 3282 scans of 28 markets, 0 triggers, 0 entries. Best score 81.5 (GBPCAD SHORT at 20:55:08 UTC); the trigger score is 60. 471 near-miss scans with no entry, held back most by: spread too wide (471).",
+    "last_trade": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (6.3 h ago), LIVE, closed STOP",
     "last_trade_detail": {
-     "line": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (6.1 h ago), LIVE, closed STOP",
+     "line": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (6.3 h ago), LIVE, closed STOP",
      "time_utc": "2026-10-09T15:32:23.030950+00:00",
      "market": "EURNZD",
      "side": "SELL",
@@ -196,17 +208,17 @@
     },
     "last_trigger": "last trigger: none since the Rider started at 15:36:52 UTC",
     "last_trigger_detail": null,
-    "scans": 3249,
+    "scans": 3282,
     "failed_scans": 0,
     "triggers": 0,
     "entries": 0,
-    "near_miss_scans": 604,
+    "near_miss_scans": 471,
     "near_miss_means": "a scan whose score reached the trigger score, or that was READY or TRIGGER, with no entry; counted once per scan, against the first rule that held it back",
     "blocked_by": [
      {
       "gate": "spread",
       "what": "spread too wide",
-      "scans": 604
+      "scans": 471
      }
     ],
     "best": {
@@ -217,8 +229,8 @@
     },
     "ticks": {
      "markets": 28,
-     "newest_age_seconds": 2580.1,
-     "oldest_age_seconds": 2582.7,
+     "newest_age_seconds": 3074.3,
+     "oldest_age_seconds": 3077.0,
      "no_price_yet": [],
      "older_than_60s": [
       "AUDCAD",
@@ -254,8 +266,8 @@
     "markets": {
      "AUDCAD": {
       "scans": {
-       "WATCHING": 3020,
-       "BUILDING": 229
+       "WATCHING": 3068,
+       "BUILDING": 214
       },
       "best": {
        "score": 73.5,
@@ -265,13 +277,13 @@
       "blocked_by": {
        "spread": 41
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "AUDCHF": {
       "scans": {
-       "WATCHING": 3109,
-       "BUILDING": 140
+       "WATCHING": 3212,
+       "BUILDING": 70
       },
       "best": {
        "score": 65.2,
@@ -281,13 +293,13 @@
       "blocked_by": {
        "spread": 5
       },
-      "tick_age_seconds": 2580.1,
+      "tick_age_seconds": 3074.3,
       "ticks_per_minute": 0.0
      },
      "AUDJPY": {
       "scans": {
-       "WATCHING": 3186,
-       "BUILDING": 63
+       "WATCHING": 3246,
+       "BUILDING": 36
       },
       "best": {
        "score": 68.0,
@@ -297,13 +309,13 @@
       "blocked_by": {
        "spread": 9
       },
-      "tick_age_seconds": 2580.5,
+      "tick_age_seconds": 3074.7,
       "ticks_per_minute": 0.0
      },
      "AUDNZD": {
       "scans": {
-       "WATCHING": 3226,
-       "BUILDING": 23
+       "WATCHING": 3271,
+       "BUILDING": 11
       },
       "best": {
        "score": 61.9,
@@ -313,13 +325,13 @@
       "blocked_by": {
        "spread": 2
       },
-      "tick_age_seconds": 2580.3,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "AUDUSD": {
       "scans": {
-       "WATCHING": 3057,
-       "BUILDING": 192
+       "WATCHING": 3165,
+       "BUILDING": 117
       },
       "best": {
        "score": 73.1,
@@ -327,15 +339,15 @@
        "time_utc": "2026-10-09T20:56:37.778421+00:00"
       },
       "blocked_by": {
-       "spread": 41
+       "spread": 24
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "CADCHF": {
       "scans": {
-       "WATCHING": 2945,
-       "BUILDING": 304
+       "WATCHING": 3080,
+       "BUILDING": 202
       },
       "best": {
        "score": 79.4,
@@ -343,15 +355,15 @@
        "time_utc": "2026-10-09T20:51:02.261704+00:00"
       },
       "blocked_by": {
-       "spread": 93
+       "spread": 69
       },
-      "tick_age_seconds": 2580.1,
+      "tick_age_seconds": 3074.3,
       "ticks_per_minute": 0.0
      },
      "CADJPY": {
       "scans": {
-       "WATCHING": 3035,
-       "BUILDING": 214
+       "WATCHING": 3132,
+       "BUILDING": 150
       },
       "best": {
        "score": 78.3,
@@ -359,14 +371,14 @@
        "time_utc": "2026-10-09T20:54:57.278868+00:00"
       },
       "blocked_by": {
-       "spread": 39
+       "spread": 27
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "CHFJPY": {
       "scans": {
-       "WATCHING": 3183,
+       "WATCHING": 3216,
        "BUILDING": 66
       },
       "best": {
@@ -377,13 +389,13 @@
       "blocked_by": {
        "spread": 6
       },
-      "tick_age_seconds": 2580.1,
+      "tick_age_seconds": 3074.4,
       "ticks_per_minute": 0.0
      },
      "EURAUD": {
       "scans": {
-       "WATCHING": 3163,
-       "BUILDING": 86
+       "WATCHING": 3212,
+       "BUILDING": 70
       },
       "best": {
        "score": 67.2,
@@ -393,13 +405,13 @@
       "blocked_by": {
        "spread": 3
       },
-      "tick_age_seconds": 2580.5,
+      "tick_age_seconds": 3074.7,
       "ticks_per_minute": 0.0
      },
      "EURCAD": {
       "scans": {
-       "WATCHING": 3074,
-       "BUILDING": 175
+       "WATCHING": 3109,
+       "BUILDING": 173
       },
       "best": {
        "score": 71.8,
@@ -409,13 +421,13 @@
       "blocked_by": {
        "spread": 17
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "EURCHF": {
       "scans": {
-       "BUILDING": 235,
-       "WATCHING": 3014
+       "WATCHING": 3133,
+       "BUILDING": 149
       },
       "best": {
        "score": 74.8,
@@ -425,13 +437,13 @@
       "blocked_by": {
        "spread": 23
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.7,
       "ticks_per_minute": 0.0
      },
      "EURGBP": {
       "scans": {
-       "WATCHING": 3140,
-       "BUILDING": 109
+       "WATCHING": 3202,
+       "BUILDING": 80
       },
       "best": {
        "score": 66.8,
@@ -441,13 +453,13 @@
       "blocked_by": {
        "spread": 9
       },
-      "tick_age_seconds": 2580.2,
+      "tick_age_seconds": 3074.4,
       "ticks_per_minute": 0.0
      },
      "EURJPY": {
       "scans": {
-       "BUILDING": 111,
-       "WATCHING": 3138
+       "WATCHING": 3218,
+       "BUILDING": 64
       },
       "best": {
        "score": 70.9,
@@ -455,15 +467,15 @@
        "time_utc": "2026-10-09T20:56:34.754860+00:00"
       },
       "blocked_by": {
-       "spread": 6
+       "spread": 5
       },
-      "tick_age_seconds": 2580.8,
+      "tick_age_seconds": 3075.0,
       "ticks_per_minute": 0.0
      },
      "EURNZD": {
       "scans": {
-       "WATCHING": 3189,
-       "BUILDING": 60
+       "WATCHING": 3272,
+       "BUILDING": 10
       },
       "best": {
        "score": 66.2,
@@ -473,42 +485,39 @@
       "blocked_by": {
        "spread": 3
       },
-      "tick_age_seconds": 2580.5,
+      "tick_age_seconds": 3074.8,
       "ticks_per_minute": 0.0
      },
      "EURUSD": {
       "scans": {
-       "BUILDING": 122,
-       "WATCHING": 3127
+       "WATCHING": 3250,
+       "BUILDING": 32
       },
       "best": {
-       "score": 68.0,
-       "direction": "LONG",
-       "time_utc": "2026-10-09T20:46:06.576686+00:00"
+       "score": 47.6,
+       "direction": "SHORT",
+       "time_utc": "2026-10-09T20:56:35.756165+00:00"
       },
-      "blocked_by": {
-       "spread": 22
-      },
-      "tick_age_seconds": 2580.6,
+      "tick_age_seconds": 3074.8,
       "ticks_per_minute": 0.0
      },
      "GBPAUD": {
       "scans": {
-       "WATCHING": 3229,
-       "BUILDING": 20
+       "WATCHING": 3264,
+       "BUILDING": 18
       },
       "best": {
        "score": 50.9,
        "direction": "NONE",
        "time_utc": "2026-10-09T20:56:39.881359+00:00"
       },
-      "tick_age_seconds": 2580.1,
+      "tick_age_seconds": 3074.3,
       "ticks_per_minute": 0.0
      },
      "GBPCAD": {
       "scans": {
-       "WATCHING": 2944,
-       "BUILDING": 305
+       "WATCHING": 3006,
+       "BUILDING": 276
       },
       "best": {
        "score": 81.5,
@@ -518,13 +527,13 @@
       "blocked_by": {
        "spread": 71
       },
-      "tick_age_seconds": 2580.9,
+      "tick_age_seconds": 3075.1,
       "ticks_per_minute": 0.0
      },
      "GBPCHF": {
       "scans": {
-       "BUILDING": 189,
-       "WATCHING": 3060
+       "WATCHING": 3129,
+       "BUILDING": 153
       },
       "best": {
        "score": 66.6,
@@ -534,13 +543,13 @@
       "blocked_by": {
        "spread": 13
       },
-      "tick_age_seconds": 2580.1,
+      "tick_age_seconds": 3074.4,
       "ticks_per_minute": 0.0
      },
      "GBPJPY": {
       "scans": {
-       "BUILDING": 46,
-       "WATCHING": 3203
+       "WATCHING": 3251,
+       "BUILDING": 31
       },
       "best": {
        "score": 68.5,
@@ -550,12 +559,12 @@
       "blocked_by": {
        "spread": 9
       },
-      "tick_age_seconds": 2580.2,
+      "tick_age_seconds": 3074.4,
       "ticks_per_minute": 0.0
      },
      "GBPNZD": {
       "scans": {
-       "WATCHING": 3247,
+       "WATCHING": 3280,
        "BUILDING": 2
       },
       "best": {
@@ -566,13 +575,13 @@
       "blocked_by": {
        "spread": 9
       },
-      "tick_age_seconds": 2580.1,
+      "tick_age_seconds": 3074.4,
       "ticks_per_minute": 0.0
      },
      "GBPUSD": {
       "scans": {
-       "BUILDING": 149,
-       "WATCHING": 3100
+       "WATCHING": 3171,
+       "BUILDING": 111
       },
       "best": {
        "score": 76.2,
@@ -582,13 +591,13 @@
       "blocked_by": {
        "spread": 25
       },
-      "tick_age_seconds": 2580.3,
+      "tick_age_seconds": 3074.5,
       "ticks_per_minute": 0.0
      },
      "NZDCAD": {
       "scans": {
-       "WATCHING": 3120,
-       "BUILDING": 129
+       "WATCHING": 3185,
+       "BUILDING": 97
       },
       "best": {
        "score": 78.0,
@@ -596,15 +605,15 @@
        "time_utc": "2026-10-09T20:55:04.740149+00:00"
       },
       "blocked_by": {
-       "spread": 30
+       "spread": 29
       },
-      "tick_age_seconds": 2580.3,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "NZDCHF": {
       "scans": {
-       "WATCHING": 3163,
-       "BUILDING": 86
+       "WATCHING": 3231,
+       "BUILDING": 51
       },
       "best": {
        "score": 74.0,
@@ -612,15 +621,15 @@
        "time_utc": "2026-10-09T20:51:35.417730+00:00"
       },
       "blocked_by": {
-       "spread": 14
+       "spread": 9
       },
-      "tick_age_seconds": 2580.2,
+      "tick_age_seconds": 3074.4,
       "ticks_per_minute": 0.0
      },
      "NZDJPY": {
       "scans": {
-       "WATCHING": 3224,
-       "BUILDING": 25
+       "WATCHING": 3275,
+       "BUILDING": 7
       },
       "best": {
        "score": 64.2,
@@ -630,13 +639,13 @@
       "blocked_by": {
        "spread": 2
       },
-      "tick_age_seconds": 2582.1,
+      "tick_age_seconds": 3076.4,
       "ticks_per_minute": 0.0
      },
      "NZDUSD": {
       "scans": {
-       "WATCHING": 3176,
-       "BUILDING": 73
+       "WATCHING": 3257,
+       "BUILDING": 25
       },
       "best": {
        "score": 69.0,
@@ -644,31 +653,31 @@
        "time_utc": "2026-10-09T20:55:04.740149+00:00"
       },
       "blocked_by": {
-       "spread": 20
+       "spread": 5
       },
-      "tick_age_seconds": 2582.7,
+      "tick_age_seconds": 3077.0,
       "ticks_per_minute": 0.0
      },
      "USDCAD": {
       "scans": {
-       "BUILDING": 207,
-       "WATCHING": 3042
+       "WATCHING": 3198,
+       "BUILDING": 84
       },
       "best": {
-       "score": 80.0,
+       "score": 71.0,
        "direction": "SHORT",
-       "time_utc": "2026-10-09T20:45:44.025850+00:00"
+       "time_utc": "2026-10-09T20:54:53.033733+00:00"
       },
       "blocked_by": {
-       "spread": 51
+       "spread": 16
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "USDCHF": {
       "scans": {
-       "WATCHING": 3042,
-       "BUILDING": 207
+       "WATCHING": 3121,
+       "BUILDING": 161
       },
       "best": {
        "score": 72.7,
@@ -676,15 +685,15 @@
        "time_utc": "2026-10-09T20:51:03.279794+00:00"
       },
       "blocked_by": {
-       "spread": 32
+       "spread": 31
       },
-      "tick_age_seconds": 2580.4,
+      "tick_age_seconds": 3074.6,
       "ticks_per_minute": 0.0
      },
      "USDJPY": {
       "scans": {
-       "WATCHING": 3092,
-       "BUILDING": 157
+       "WATCHING": 3173,
+       "BUILDING": 109
       },
       "best": {
        "score": 67.1,
@@ -694,7 +703,7 @@
       "blocked_by": {
        "spread": 9
       },
-      "tick_age_seconds": 2582.2,
+      "tick_age_seconds": 3076.4,
       "ticks_per_minute": 0.0
      }
     },
@@ -1034,14 +1043,14 @@
     }
    ],
    "notes": [
-    "21:02:29 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
-    "21:07:29 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
     "21:12:30 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
     "21:17:31 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
     "21:22:31 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
     "21:27:32 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
     "21:32:33 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
-    "21:37:33 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
+    "21:37:33 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+    "21:42:33 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+    "21:47:34 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
    ],
    "today": {
     "result": -50.16,
@@ -1061,10 +1070,10 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-09T21:40:01.026984+00:00",
-   "report_age_seconds": -0.0,
-   "running": true,
-   "health": "WATCHING, LIVE, last report -0 s ago",
+   "updated_utc": "2026-10-09T21:48:11.333715+00:00",
+   "report_age_seconds": 136.7,
+   "running": false,
+   "health": "NOT RUNNING (last report 2 min ago); its file says LIVE",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
@@ -1088,10 +1097,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-09T21:40:01.026984+00:00",
-   "report_age_seconds": -0.0,
-   "running": true,
-   "health": "OUTSIDE SESSION, PAPER, last report -0 s ago",
+   "updated_utc": "2026-10-09T21:48:11.333715+00:00",
+   "report_age_seconds": 136.7,
+   "running": false,
+   "health": "NOT RUNNING (last report 2 min ago); its file says PAPER",
    "status": "OUTSIDE SESSION",
    "open_trades": [],
    "today": {
@@ -1117,10 +1126,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-09T21:40:01.026984+00:00",
-   "report_age_seconds": -0.0,
-   "running": true,
-   "health": "OUTSIDE HOURS (managing only), PAPER, last report -0 s ago",
+   "updated_utc": "2026-10-09T21:48:11.333715+00:00",
+   "report_age_seconds": 136.7,
+   "running": false,
+   "health": "NOT RUNNING (last report 2 min ago); its file says PAPER",
    "status": "OUTSIDE HOURS (managing only)",
    "open_trades": [],
    "today": {
@@ -1146,20 +1155,20 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-09T21:39:59.850679+00:00",
-   "report_age_seconds": 1.1,
-   "running": true,
-   "health": "FINANCIAL IAN - HEALTHY, LIVE, feed LIVE",
+   "updated_utc": "2026-10-09T21:48:13.959389+00:00",
+   "report_age_seconds": 134.0,
+   "running": false,
+   "health": "FINANCIAL IAN - NOT RUNNING, set to LIVE (last report 2 min ago)",
    "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
    "feed": {
     "state": "LIVE",
     "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 20 USDT steps, ETHUSDT in 1 USDT steps",
     "vendor": "binance",
     "synthetic": false,
-    "events": 1638710
+    "events": 1657829
    },
    "data_label": "LIVE",
-   "metatrader_connected": true,
+   "metatrader_connected": false,
    "open_trades": [],
    "own_record_today": {
     "trades": 6,
