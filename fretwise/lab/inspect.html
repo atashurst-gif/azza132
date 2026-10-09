@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#222}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script></head><body>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const renderer=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});renderer.setSize(900,900);document.body.append(renderer.domElement);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x30343a);
+scene.add(new THREE.HemisphereLight(0xffffff,0x444444,2.5));const d=new THREE.DirectionalLight(0xffffff,2);d.position.set(2,4,3);scene.add(d);
+const cam=new THREE.PerspectiveCamera(30,1,0.01,100);
+const gltf=await new GLTFLoader().loadAsync('../assets/models/teacher.glb');
+const root=gltf.scene;scene.add(root);
+root.updateMatrixWorld(true);
+const bones={};root.traverse(o=>{if(o.isBone)bones[o.name.replace(/^mixamorig:?/,'')]=o;});
+const box=new THREE.Box3().setFromObject(root);
+const info={box:[box.min.toArray(),box.max.toArray()],scale:root.scale.toArray(),children:root.children.map(c=>[c.name,c.type,c.scale.toArray(),c.rotation.toArray()]),bones:{}};
+for(const n of ['Hips','Spine','Spine2','Neck','Head','LeftShoulder','LeftArm','LeftForeArm','LeftHand','LeftHandIndex1','LeftHandIndex2','LeftHandIndex3','LeftHandIndex4','LeftHandThumb1','RightArm','RightForeArm','RightHand','LeftUpLeg','LeftLeg','LeftFoot']){const b=bones[n];if(!b)continue;const p=new THREE.Vector3();b.getWorldPosition(p);const q=new THREE.Quaternion();b.getWorldQuaternion(q);const y=new THREE.Vector3(0,1,0).applyQuaternion(q),x=new THREE.Vector3(1,0,0).applyQuaternion(q),z=new THREE.Vector3(0,0,1).applyQuaternion(q);info.bones[n]={p:p.toArray().map(v=>+v.toFixed(3)),y:y.toArray().map(v=>+v.toFixed(2)),x:x.toArray().map(v=>+v.toFixed(2)),z:z.toArray().map(v=>+v.toFixed(2)),parent:b.parent.name.replace(/^mixamorig:?/,'')};}
+window.__info=info;
+const c=box.getCenter(new THREE.Vector3());cam.position.set(c.x,c.y,c.z+ (box.max.y-box.min.y)*2.2);cam.lookAt(c);renderer.render(scene,cam);
+window.__shot=async(view)=>{const views={front:[0,0,1],side:[1,0,0]};const v=views[view];cam.position.set(c.x+v[0]*5,c.y,c.z+v[2]*5);cam.lookAt(c);renderer.render(scene,cam);};
+// close-up of the left hand
+const lh=new THREE.Vector3();bones.LeftHand.getWorldPosition(lh);window.__hand=()=>{cam.position.set(lh.x,lh.y+0.1,lh.z+0.5);cam.lookAt(lh);renderer.render(scene,cam);};
+window.__face=()=>{const h=new THREE.Vector3();bones.Head.getWorldPosition(h);cam.position.set(h.x,h.y+0.08,h.z+0.6);cam.lookAt(h.x,h.y+0.08,h.z);renderer.render(scene,cam);};
+window.__ready=true;
+</script></body></html>

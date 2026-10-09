@@ -21,7 +21,7 @@
       </nav>
       <div class="sidebar-label">OWNER TOOLS</div>
       <nav aria-label="Owner tools"><button class="nav-link" data-page="builder"><span>⌘</span> Change the app <span class="nav-owner">OWNER</span></button></nav>
-      <div class="sidebar-bottom"><div class="footer-quote">“Music should feel like a conversation, not a test.”</div><div class="version">PROTOTYPE 0.2 · LOCAL-FIRST</div></div>
+      <div class="sidebar-bottom"><div class="footer-quote">“Music should feel like a conversation, not a test.”</div><div class="version">PROTOTYPE 0.3 · LOCAL-FIRST</div></div>
     </aside>
 
     <main class="main">
@@ -33,13 +33,11 @@
           <div class="stage-col">
             <article class="panel stage-panel">
               <div class="panel-heading"><div><div class="eyebrow">YOUR TEACHER'S GUITAR</div><h2 id="exerciseTitle">Capo 5 · Chord changes</h2></div><span class="tag" id="stageTag">LIVE DEMO</span></div>
-              <div class="stage-scene"><div class="stage-aura"></div><div class="stage-topline"><span class="stage-indicator"><span class="mini-dot"></span> VIRTUAL GUITAR</span><span class="stage-chip" id="stageChip" hidden></span><span class="stage-tip" id="stageTip">Watch the fretting hand while the guitar plays</span></div>
-                <div class="guitar-demo" id="guitarDemo">
-                  <div class="guitar-wood" id="teacherNeck"><div class="string-labels"><span>e</span><span>B</span><span>G</span><span>D</span><span>A</span><span>E</span></div><div class="frets" id="teacherFrets"></div><div class="wood-grain"></div><div class="fret-numbers" id="fretNumbers"></div></div>
-                  <div class="picking-area"><div class="sound-hole"></div><div class="body-frame"><div class="body-strings" id="bodyStrings"></div><div class="pick-hand" id="pickHand" aria-label="Picking hand"><span class="pick"></span></div></div></div>
-                </div>
+              <div class="stage-scene" id="stageScene"><div class="teacher-stage" id="teacherStage" aria-label="3D guitar teacher demonstrating the current step"></div><div class="stage-loading" id="stageLoading">Your teacher is getting ready…</div><div class="stage-topline"><span class="stage-indicator"><span class="mini-dot"></span> YOUR TEACHER</span><span class="stage-chip" id="stageChip" hidden></span></div>
+                <div class="camera-switch" id="cameraSwitch" role="group" aria-label="Camera angle"><button data-cam="wide" class="active">Teacher</button><button data-cam="fretting">Fretting hand</button><button data-cam="strumming">Strumming hand</button></div>
                 <div class="count-in" id="countIn" hidden></div>
-                <div class="current-chord"><span>NOW SHOWING</span><strong id="nowChord">Am shape</strong><span id="actualChord">Sounds as Dm with capo 5</span></div>
+                <div class="stage-caption" id="stageCaption" hidden></div>
+                <div class="current-chord"><span>NOW PLAYING</span><strong id="nowChord">Am shape</strong><span id="actualChord">Sounds as Dm with capo 5</span></div>
               </div>
               <div class="play-controls">
                 <button class="main-play" id="playDemo" title="Play the teacher's guitar">▶ <span>Hear & watch</span></button>
@@ -70,7 +68,7 @@
               <p class="note" id="backingNote">Original generated practice accompaniment, not the copyrighted recording of a commercial song. Use headphones when the microphone is listening, or the band will leak into your pitch readings.</p></article>
           </div>
           <div class="coach-col">
-            <article class="panel coach-panel"><div class="coach-header"><div class="avatar" id="avatar"><div class="avatar-eye one"></div><div class="avatar-eye two"></div><div class="avatar-mouth"></div></div><div><span class="eyebrow">YOUR PERSONAL GUITAR TUTOR</span><h2>Meet Fret</h2><span class="availability"><span class="status-dot"></span> <span id="coachMode">Demo coach · rules-based, works offline</span></span></div></div>
+            <article class="panel coach-panel"><div class="coach-header"><div class="avatar" id="avatar"><img id="avatarImg" alt="Fret, your guitar teacher" hidden/><div class="avatar-eye one"></div><div class="avatar-eye two"></div><div class="avatar-mouth"></div></div><div><span class="eyebrow">YOUR PERSONAL GUITAR TUTOR</span><h2>Meet Fret</h2><span class="availability"><span class="status-dot"></span> <span id="coachMode">Demo coach · rules-based, works offline</span></span></div></div>
               <div class="conversation" id="conversation" aria-label="Chat with guitar tutor" aria-live="polite"></div>
               <div class="attempt-bar" id="attemptBar" hidden><span>How did that go?</span><div><button class="main-play small" id="attemptOk">Got it ✓</button><button class="control-btn small" id="attemptTricky">Tricky</button><button class="control-btn small" id="attemptAgain">Show me again</button></div></div>
               <div class="speaking-bar" id="speakingBar" hidden><span><span class="pulse"></span> Fret is speaking…</span><button class="text-button" id="stopSpeaking">■ Stop talking</button></div>
@@ -92,10 +90,10 @@
       <footer class="main-footer">Fretwise is an early experimental prototype. Pitch estimates and illustrative finger animations are not substitutes for an expert teacher.</footer>
     </main>
   </div>
+  <script type="importmap">{"imports":{"three":"./vendor/three/three.module.js","three/addons/":"./vendor/three/addons/"}}</script>
   <script src="./music.js"></script>
   <script src="./performance.js"></script>
   <script src="./audio.js"></script>
-  <script src="./hand.js"></script>
   <script src="./tutor.js"></script>
   <script src="./app.js"></script>
 </body>

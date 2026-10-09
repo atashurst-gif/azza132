@@ -99,8 +99,14 @@ window.FRETWISE_PERFORMANCE = (() => {
     const LOOKAHEAD=0.18, INTERVAL=30;
     const nowFn=()=>typeof requestAnimationFrame==='function'?requestAnimationFrame:(fn)=>setTimeout(()=>fn(),16);
     const cancelFn=()=>typeof cancelAnimationFrame==='function'?cancelAnimationFrame:clearTimeout;
+    function trackStep(){ // step changes are reported from the audio clock, independent of the screen's frame rate
+      const abs=ctx.currentTime-startAt; if(abs<countIn) return; const rel=abs-countIn; if(rel>=perf.duration*loopCount){ finish('complete'); return; }
+      const p=Math.min(loopCount-1,Math.floor(rel/perf.duration)); const stepObj=perf.stepAt(rel-p*perf.duration+PRE_SHIFT);
+      if(stepObj.index!==lastStep||p!==lastPass){ lastStep=stepObj.index; lastPass=p; h.onStep&&h.onStep(stepObj,p); }
+    }
     function schedule(){
       if(!playing) return;
+      trackStep(); if(!playing) return;
       const horizon=ctx.currentTime+LOOKAHEAD;
       for(;;){
         if(next>=perf.events.length){
@@ -145,6 +151,8 @@ window.FRETWISE_PERFORMANCE = (() => {
       stop(reason='stopped'){ if(!playing) return; finish(reason); audio.stopAllNotes(); },
       isPlaying:()=>playing,
       current:()=>({perf,pass,playing,endReason,loopCount,startAt,countIn}),
+      // Position in seconds inside the current pass, or null while counting in / stopped (drives the 3D teacher).
+      clock(){ if(!playing||!ctx) return null; const rel=ctx.currentTime-startAt-countIn; if(rel<0) return null; return rel-Math.floor(rel/perf.duration)*perf.duration; },
       // Position in seconds inside the current pass (used for pause/resume).
       position(){ if(!playing||!ctx) return 0; const rel=ctx.currentTime-startAt-countIn; return rel<0?0:rel-Math.floor(rel/perf.duration)*perf.duration; }
     };

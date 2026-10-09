@@ -33,40 +33,30 @@
   function clampSelection(){ const last=lastIndex(); let {from,to}=state.selection; if(!Number.isInteger(from)||from<0||from>last) from=0; if(!Number.isInteger(to)||to<from||to>last) to=last; state.selection={from,to}; state.cursor=Math.min(Math.max(state.cursor,0),last); }
 
   /* ---------- runtime ---------- */
-  let player=null, perfNow=null, evCursor=0, gCursor=0, lastPass=-1, resumeStep=null, resumeAfterTalk=false, speaking=false, recognition=null, builderRecognition=null, holdTimer=null, holdMode=false;
+  let player=null, perfNow=null, evCursor=0, lastPass=-1, resumeStep=null, resumeAfterTalk=false, speaking=false, recognition=null, builderRecognition=null, holdTimer=null, holdMode=false;
   let missed=0, lastPitchAt=0, lastSuccess='', llm={on:false,model:null};
   let attempt=null; // {expected:[{midi,label,step}], heard:[], startedAt, lastMidi}
   const brain=T.create({music:M,getContext:()=>({lesson:lesson(),lessons:lessons(),memory:state.memory,cursor:state.cursor,selection:state.selection,capo:state.capo,tempo:state.tempo,baseTempo:state.baseTempo,micOn:A.hasMic(),hintsVisible:!el('hintPanel').classList.contains('hidden'),playing:!!(player&&player.isPlaying())})});
 
-  /* ---------- stage: neck, strings, hands ---------- */
-  let shownWindow=1, hand=null;
-  function initWood(){
-    const wood=el('teacherFrets'); wood.innerHTML='';
-    for(let i=1;i<=5;i++){ const fret=document.createElement('div'); fret.className='fret-segment'; fret.dataset.fret=String(i); wood.append(fret); }
-    for(let i=0;i<6;i++){ const line=document.createElement('span'); line.className='string-line'; line.dataset.string=String(5-i); line.style.top=(((i+.5)/6)*100)+'%'; el('teacherNeck').append(line); }
-    const body=el('bodyStrings'); body.innerHTML='';
-    for(let i=0;i<6;i++){ const line=document.createElement('span'); line.className='body-string'; line.dataset.string=String(5-i); line.style.top=(((i+.5)/6)*100)+'%'; body.append(line); }
-    hand=window.FRETWISE_HAND.create(el('teacherNeck'));
-    pickTo(5,null,0);
+  /* ---------- stage: the 3D teacher (teacher3d.js) ---------- */
+  let stage3d=null; const stageQueue=[];
+  const stageCall=(fn)=>{ if(stage3d){ try{ fn(stage3d); }catch(e){ console.warn('stage',e); } } else stageQueue.push(fn); };
+  function initStage(){
+    const box=el('teacherStage'); let gl=null; try{ gl=document.createElement('canvas').getContext('webgl2')||document.createElement('canvas').getContext('webgl'); }catch(e){}
+    if(!gl){ el('stageLoading').textContent='This browser can’t show the 3D teacher (WebGL is turned off). Lessons, audio and the finger diagram still work.'; return; }
+    import('./teacher3d.js').then(m=>m.createTeacherStage(box,{modelUrl:'./assets/models/teacher.glb'})).then(s=>{
+      stage3d=s; el('stageLoading').hidden=true; s.setCapo(state.capo); s.setClock(()=>player&&player.isPlaying()?player.clock():null); s.setCamera(state.camera||'wide',true); markCamera(state.camera||'wide');
+      stageQueue.splice(0).forEach(fn=>{ try{ fn(s); }catch(e){ console.warn(e); } });
+      window.FretwiseDebug.stage=s; s.portrait().then(url=>{ if(url){ el('avatarImg').src=url; el('avatarImg').hidden=false; el('avatar').classList.add('has-portrait'); } }).catch(()=>{});
+    }).catch(e=>{ console.warn(e); el('stageLoading').textContent='The 3D teacher could not load ('+e.message+'). Lessons and audio still work.'; });
   }
-  function refreshInlayMarkers(windowStart){
-    const nums=el('fretNumbers'); nums.innerHTML='';
-    document.querySelectorAll('.fret-segment').forEach((segment,i)=>{
-      segment.querySelectorAll('.fret-marker').forEach(marker=>marker.remove());
-      const relative=windowStart+i, physical=relative+state.capo;
-      if([3,5,7,9,12,15,17].includes(physical)){ const marker=document.createElement('span'); marker.className='fret-marker'; segment.append(marker); if(physical===12){ const second=marker.cloneNode(); second.style.top='34%'; marker.style.top='66%'; segment.append(second); } }
-      const n=document.createElement('span'); n.textContent=(i===0&&relative===1&&state.capo?'capo '+state.capo+' · ':'')+'fret '+physical; if(i===0&&relative===1&&state.capo) n.className='capo'; nums.append(n);
-    });
-    el('teacherNeck').classList.toggle('has-capo',state.capo>0&&windowStart===1);
-  }
-  function renderHand(shape,windowStart,immediate){
-    if(windowStart!==shownWindow){ shownWindow=windowStart; refreshInlayMarkers(windowStart); }
-    hand.setShape(shape,windowStart,!!immediate);
-  }
-  const stringTop=(s)=>(((5-s)+.5)/6*100)+'%';
-  function ringString(s){ document.querySelectorAll('[data-string="'+s+'"]').forEach(n=>{ n.classList.remove('ringing'); void n.offsetWidth; n.classList.add('ringing'); }); }
-  function pickTo(s,stroke,dur){ const pick=el('pickHand'); pick.style.setProperty('--pick-dur',Math.max(.04,dur||.08)+'s'); pick.style.top='calc('+stringTop(s)+' - 18px)'; pick.classList.toggle('down',stroke==='D'); pick.classList.toggle('up',stroke==='U'); pick.classList.toggle('legato',!stroke); }
-  function gesture(g){ if(g.kind==='strum'){ pickTo(g.from,g.stroke,0); requestAnimationFrame(()=>pickTo(g.to,g.stroke,g.dur)); } else pickTo(g.from,g.stroke,.05); }
+  function renderHand(shape,windowStart,immediate){ stageCall(s=>{ s.setShape(shape,!!immediate); if(!el('hintPanel').classList.contains('hidden')) s.showHints(true); }); }
+  function markCamera(name){ document.querySelectorAll('#cameraSwitch button').forEach(b=>b.classList.toggle('active',b.dataset.cam===name)); }
+  function setCamera(name){ state.camera=name; save(); markCamera(name); stageCall(s=>s.setCamera(name)); }
+  let captionTimer=null;
+  let captionUntil=0;
+  function showCaption(text){ const c=el('stageCaption'); c.textContent=text; c.hidden=false; captionUntil=Date.now()+Math.max(3500,text.length*70); clearTimeout(captionTimer); captionTimer=setTimeout(hideCaption,captionUntil-Date.now()); }
+  function hideCaption(){ if(speaking||Date.now()<captionUntil-50) return; el('stageCaption').hidden=true; }
 
   /* ---------- stage: static render ---------- */
   function stepShape(i){ const l=lesson(); const perf=P.compile(l,{capo:state.capo,tempo:state.tempo,from:i,to:i}); return perf.steps[0]; }
@@ -74,8 +64,8 @@
   function stepInfo(step){ if(step.chord) return 'Sounds as '+M.chordSound(step.chord,state.capo)+(state.capo?' with capo '+state.capo:' without capo'); if(step.technique==='rest') return 'Rest'; const notes=M.stepMidis(step,state.capo); return notes.length?M.midiToName(notes[0])+' sounding · string '+(6-step.string)+' · fret '+step.fret+(state.capo?' from the capo':''):'Practice note'; }
   function renderStage(){
     clampSelection(); const l=lesson(); const i=state.cursor; const step=l.steps[i];
-    el('exerciseTitle').textContent=l.title; el('nowChord').textContent=humanShape(step); el('actualChord').textContent=stepInfo(step);
-    const s=stepShape(i); shownWindow=-1; renderHand(s.shape,s.window);
+    el('exerciseTitle').textContent=l.title; el('nowChord').textContent=stepShape(i).shape.label; el('actualChord').textContent=stepInfo(step);
+    const s=stepShape(i); renderHand(s.shape,s.window);
     renderSteps(); renderSections(); renderRange();
     if(!el('hintPanel').classList.contains('hidden')) renderHint();
     el('profileCapo').textContent=state.capo?'Fret '+state.capo:'None';
@@ -103,8 +93,8 @@
     const box=el('miniFret'); box.innerHTML=''; const names=['e','B','G','D','A','E'];
     for(let row=0;row<6;row++){ const label=document.createElement('span'); label.className='mini-cell label'; label.textContent=names[row]; box.append(label); for(let c=0;c<5;c++){ const fret=w+c; const cell=document.createElement('span'); cell.className='mini-cell'; const idx=5-row; if(frets[idx]===fret){ const dot=document.createElement('span'); dot.className='dot'; dot.textContent=fingers[idx]||'●'; cell.append(dot); } if(row===5){ cell.title='fret '+(fret+state.capo); } box.append(cell); } }
   }
-  function showHints(trigger){ el('hintPanel').classList.remove('hidden'); el('showHints').textContent='✓ Hide fret help'; renderHint(); if(trigger==='auto') tutorSay('We’ve hit a tricky spot a few times, so I’ve opened the finger-position guide. One note at a time.'); }
-  function hideHints(){ el('hintPanel').classList.add('hidden'); el('showHints').textContent='◎ Show fret help'; }
+  function showHints(trigger){ el('hintPanel').classList.remove('hidden'); el('showHints').textContent='✓ Hide fret help'; renderHint(); stageCall(s=>{ s.showHints(true); }); setCamera('fretting'); if(trigger==='auto') tutorSay('We’ve hit a tricky spot a few times, so I’ve opened the finger-position guide. One note at a time.'); }
+  function hideHints(){ el('hintPanel').classList.add('hidden'); el('showHints').textContent='◎ Show fret help'; stageCall(s=>s.showHints(false)); }
 
   /* ---------- playback (everything comes from the compiled timeline) ---------- */
   function ensurePlayer(){
@@ -112,9 +102,9 @@
     player=P.createPlayer({audio:A,
       onCountIn:(n)=>{ const c=el('countIn'); c.hidden=false; c.textContent=String(n); c.style.animation='none'; void c.offsetWidth; c.style.animation=''; },
       onStep:(step,pass)=>{ el('countIn').hidden=true; state.cursor=step.index; renderHand(step.shape,step.window); el('nowChord').textContent=step.shape.label; el('actualChord').textContent=step.sounding?'Sounds as '+step.sounding+(state.capo?' with capo '+state.capo:''):stepInfo(lesson().steps[step.index]); document.querySelectorAll('.step-card').forEach(c=>{ c.classList.toggle('playing',Number(c.dataset.index)===step.index); c.classList.toggle('active',Number(c.dataset.index)===step.index); });
-        if(pass!==lastPass){ if(lastPass>=0) brain.event('loop_done'); lastPass=pass; evCursor=0; gCursor=0; const cur=player.current(); if(cur.loopCount>1) setChip(cur.loopCount===Infinity?'LOOPING · PASS '+(pass+1):'PASS '+(pass+1)+' OF '+cur.loopCount); } },
-      onTick:(t)=>{ if(t.countingIn||!perfNow) return; const time=t.time; while(gCursor<perfNow.gestures.length&&perfNow.gestures[gCursor].t<=time){ gesture(perfNow.gestures[gCursor]); gCursor++; } while(evCursor<perfNow.events.length&&perfNow.events[evCursor].t<=time){ ringString(perfNow.events[evCursor].string); evCursor++; } },
-      onEnd:(reason)=>{ el('countIn').hidden=true; el('guitarDemo').classList.remove('is-playing'); el('playDemo').innerHTML=reason==='pause'?'▶ <span>Resume</span>':'▶ <span>Hear & watch</span>'; document.querySelectorAll('.step-card').forEach(c=>c.classList.remove('playing')); if(state.backing.withDemo&&A.backingRunning()&&reason!=='restart') toggleBacking(false); if(reason==='complete'){ setChip(null); state.cursor=state.selection.from; renderStage(); const r=brain.event('demo_end',{reason}); if(r) applyReply(r,{source:'rules'}); } else if(reason==='pause'){ setChip('PAUSED'); } else if(reason!=='restart'){ setChip(null); } }
+        if(pass!==lastPass){ if(lastPass>=0) brain.event('loop_done'); lastPass=pass; evCursor=0; const cur=player.current(); if(cur.loopCount>1) setChip(cur.loopCount===Infinity?'LOOPING · PASS '+(pass+1):'PASS '+(pass+1)+' OF '+cur.loopCount); } },
+      onTick:(t)=>{ if(t.countingIn||!perfNow){ stageCall(s=>s.setTime(-1,false)); return; } const time=t.time; stageCall(s=>s.setTime(time,true)); if(evCursor>0&&perfNow.events[evCursor-1]&&perfNow.events[evCursor-1].t>time+0.05) evCursor=0; while(evCursor<perfNow.events.length&&perfNow.events[evCursor].t<=time){ const ev=perfNow.events[evCursor]; stageCall(s=>s.pluck(ev)); evCursor++; } },
+      onEnd:(reason)=>{ el('countIn').hidden=true; stageCall(s=>s.setTime(-1,false)); el('teacherStage').classList.remove('is-playing'); el('playDemo').innerHTML=reason==='pause'?'▶ <span>Resume</span>':'▶ <span>Hear & watch</span>'; document.querySelectorAll('.step-card').forEach(c=>c.classList.remove('playing')); if(state.backing.withDemo&&A.backingRunning()&&reason!=='restart') toggleBacking(false); if(reason==='complete'){ setChip(null); state.cursor=state.selection.from; renderStage(); const r=brain.event('demo_end',{reason}); if(r) applyReply(r,{source:'rules'}); } else if(reason==='pause'){ setChip('PAUSED'); } else if(reason!=='restart'){ setChip(null); } }
     });
     return player;
   }
@@ -127,9 +117,9 @@
     if(!opts.resume){ state.selection={from,to}; clampSelection(); from=state.selection.from; to=state.selection.to; }
     else { from=Math.max(0,Math.min(from,lastIndex())); to=Math.max(from,Math.min(to,lastIndex())); }
     const loop=opts.loop!==undefined?opts.loop:state.loopCount; const countIn=opts.countIn!==undefined?opts.countIn:state.countIn;
-    perfNow=P.compile(lesson(),{capo:state.capo,tempo:state.tempo,from,to}); evCursor=0; gCursor=0; lastPass=-1; resumeStep=null;
+    perfNow=P.compile(lesson(),{capo:state.capo,tempo:state.tempo,from,to}); evCursor=0; lastPass=-1; resumeStep=null; { const pf=perfNow; stageCall(s=>{ s.setPerformance(pf); s.look('neck'); }); }
     state.stats.demos++; save(); updateStats();
-    el('playDemo').innerHTML='⏸ <span>Pause</span>'; el('guitarDemo').classList.add('is-playing'); el('guitarDemo').classList.remove('your-turn'); el('attemptBar').hidden=true; if(!opts.silent) el('confirmBar').hidden=true;
+    el('playDemo').innerHTML='⏸ <span>Pause</span>'; el('teacherStage').classList.add('is-playing'); el('teacherStage').classList.remove('your-turn'); el('attemptBar').hidden=true; if(!opts.silent) el('confirmBar').hidden=true;
     setChip(state.slow?'SLOW MOTION · '+state.tempo+' BPM':(loop>1?(loop===Infinity?'LOOPING':'PASS 1 OF '+loop):null));
     p.start(perfNow,{loop,countIn});
     if(state.backing.withDemo){ const cur=p.current(); startBacking({startAt:cur.startAt+cur.countIn}); }
@@ -146,16 +136,16 @@
 
   /* ---------- speech out ---------- */
   function speak(text){
-    if(!prefs().speak||!window.speechSynthesis) return;
+    if(!prefs().speak||!window.speechSynthesis){ stageCall(s=>{ s.setTalking(true); setTimeout(()=>s.setTalking(false),Math.min(4000,600+text.length*45)); }); return; }
     try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text.replace(/\*+/g,'').slice(0,650)); u.rate=.98; u.pitch=1.06; u.lang='en-GB';
-      u.onstart=()=>{ speaking=true; el('speakingBar').hidden=false; el('avatar').classList.add('speaking'); }; u.onend=u.onerror=()=>{ speaking=false; el('speakingBar').hidden=true; el('avatar').classList.remove('speaking'); };
+      u.onstart=()=>{ speaking=true; el('speakingBar').hidden=false; el('avatar').classList.add('speaking'); stageCall(s=>s.setTalking(true)); }; u.onend=u.onerror=()=>{ speaking=false; el('speakingBar').hidden=true; el('avatar').classList.remove('speaking'); stageCall(s=>s.setTalking(false)); setTimeout(hideCaption,1200); };
       speechSynthesis.speak(u); }catch(e){ console.warn(e); }
   }
-  function stopSpeaking(){ if(window.speechSynthesis) speechSynthesis.cancel(); speaking=false; el('speakingBar').hidden=true; el('avatar').classList.remove('speaking'); }
+  function stopSpeaking(){ if(window.speechSynthesis) speechSynthesis.cancel(); speaking=false; el('speakingBar').hidden=true; el('avatar').classList.remove('speaking'); stageCall(s=>s.setTalking(false)); }
 
   /* ---------- conversation ---------- */
   function addBubble(kind,text,record=true,cls=''){ const container=el('conversation'); const wrapper=document.createElement('div'); wrapper.className='bubble '+kind+(cls?' '+cls:''); const meta=document.createElement('div'); meta.className='bubble-meta'; meta.textContent=kind==='tutor'?'FRET · YOUR GUITAR COACH':'YOU'; wrapper.append(meta); const content=document.createElement('div'); content.textContent=text; wrapper.append(content); container.append(wrapper); container.scrollTop=container.scrollHeight; if(record){ state.messages.push({kind,text,time:new Date().toISOString()}); state.messages=state.messages.slice(-40); save(); } }
-  function tutorSay(text,cls){ addBubble('tutor',text,true,cls); speak(text); }
+  function tutorSay(text,cls){ addBubble('tutor',text,true,cls); showCaption(text); speak(text); }
   function remember(items){
     for(const r of T.sanitiseRemember(items)){ const track=state.memory[r.track]; if(r.key){ const existing=track.notes.findIndex(n=>typeof n==='object'&&n.key===r.key); const entry={text:r.text,key:r.key,at:new Date().toISOString()}; if(existing>=0) track.notes[existing]=entry; else track.notes.push(entry); } else if(!track.notes.some(n=>(typeof n==='string'?n:n.text)===r.text)) track.notes.push({text:r.text,at:new Date().toISOString()}); track.notes=track.notes.slice(-30); }
     save(); renderMemory();
@@ -172,7 +162,7 @@
       case 'page': goPage(a.id); return false;
       case 'owner_request': el('builderRequest').value=a.text||''; el('builderFlag').hidden=false; goPage('builder'); return false;
       case 'prefs': for(const k of ['explanation','pace','autoHints','speak']) if(k in a) prefs()[k]=a[k]; renderPrefs(); save(); return false;
-      case 'prompt_attempt': el('attemptBar').hidden=false; el('guitarDemo').classList.add('your-turn'); setChip('YOUR TURN','turn'); return false;
+      case 'prompt_attempt': el('attemptBar').hidden=false; el('teacherStage').classList.add('your-turn'); setChip('YOUR TURN','turn'); return false;
       case 'listen': if(a.on) beginAttemptListening(); return false;
       case 'capo': setCapo(a.fret); return false;
     }
@@ -227,7 +217,7 @@
   function renderTempo(){ el('tempoRange').value=state.tempo; el('tempoLabel').textContent=state.tempo+' BPM'+(state.slow?' · slow':''); }
   function setTempo(bpm,{user}={user:true}){ bpm=Math.max(50,Math.min(160,Math.round(bpm))); state.tempo=bpm; if(user){ state.baseTempo=bpm; state.slow=false; } renderTempo(); renderRange(); save(); if(player&&player.isPlaying()){ play({from:state.cursor,to:state.selection.to,loop:1,countIn:false,resume:true}); } }
   function setSlow(on){ state.slow=on; state.tempo=on?Math.max(50,Math.round(state.baseTempo*.6)):state.baseTempo; renderTempo(); renderRange(); save(); if(player&&player.isPlaying()){ play({from:state.cursor,to:state.selection.to,loop:1,countIn:false,resume:true}); } }
-  function setCapo(fret){ state.capo=fret; el('capoSelect').value=String(fret); save(); renderStage(); if(player&&player.isPlaying()) play({from:state.cursor,to:state.selection.to,loop:1,countIn:false,resume:true}); }
+  function setCapo(fret){ state.capo=fret; el('capoSelect').value=String(fret); save(); stageCall(s=>s.setCapo(fret)); renderStage(); if(player&&player.isPlaying()) play({from:state.cursor,to:state.selection.to,loop:1,countIn:false,resume:true}); }
   function selectLesson(id){ if(!lessons().some(l=>l.id===id)) return; stopPlayback('select'); state.lesson=id; state.cursor=0; state.selection={from:0,to:lastIndex()}; state.memory.playing.lastLesson=id; selectOptions(); save(); renderStage(); }
   function selectOptions(){ const sel=el('exerciseSelect'); sel.innerHTML=''; for(const item of lessons()){ const opt=document.createElement('option'); opt.value=item.id; opt.textContent=item.name; sel.append(opt); } sel.value=state.lesson; }
   function goPage(id){ document.querySelectorAll('.page').forEach(node=>node.classList.toggle('active',node.id==='page-'+id)); document.querySelectorAll('.nav-link').forEach(node=>node.classList.toggle('active',node.dataset.page===id)); const names={studio:'Practice studio',teacher:'Your tutor',guitar:'My guitar',progress:'My progress',builder:'Change the app'}; el('breadcrumb').textContent=names[id]||id; if(id==='progress') renderProgress(); if(location.hash!=='#'+id) history.replaceState(null,'','#'+id); }
@@ -277,6 +267,7 @@
 
   /* ---------- events ---------- */
   document.querySelectorAll('[data-page]').forEach(button=>button.addEventListener('click',()=>goPage(button.dataset.page)));
+  document.querySelectorAll('#cameraSwitch button').forEach(b=>b.addEventListener('click',()=>setCamera(b.dataset.cam)));
   el('playDemo').addEventListener('click',togglePlay);
   el('stopDemo').addEventListener('click',()=>{ stopPlayback('stopped'); resumeStep=null; el('playDemo').innerHTML='▶ <span>Hear & watch</span>'; setChip(null); if(state.backing.withDemo) toggleBacking(false); });
   el('repeatDemo').addEventListener('click',()=>{ resumeStep=null; play(); });
@@ -292,9 +283,9 @@
   el('confirmEarlier').addEventListener('click',()=>{ el('confirmBar').hidden=true; message('Earlier'); });
   el('confirmLater').addEventListener('click',()=>{ el('confirmBar').hidden=true; message('Later'); });
   el('confirmNo').addEventListener('click',()=>{ el('confirmBar').hidden=true; brain.session.awaiting='confirm_section'; message('No, that’s not the part.'); });
-  el('attemptOk').addEventListener('click',()=>{ el('attemptBar').hidden=true; el('guitarDemo').classList.remove('your-turn'); setChip(null); brain.session.awaiting='attempt_report'; message('Got it.'); });
-  el('attemptTricky').addEventListener('click',()=>{ el('attemptBar').hidden=true; el('guitarDemo').classList.remove('your-turn'); setChip(null); brain.session.awaiting='attempt_report'; message('That was tricky.'); });
-  el('attemptAgain').addEventListener('click',()=>{ el('attemptBar').hidden=true; el('guitarDemo').classList.remove('your-turn'); setChip(null); message('Show me again.'); });
+  el('attemptOk').addEventListener('click',()=>{ el('attemptBar').hidden=true; el('teacherStage').classList.remove('your-turn'); setChip(null); brain.session.awaiting='attempt_report'; message('Got it.'); });
+  el('attemptTricky').addEventListener('click',()=>{ el('attemptBar').hidden=true; el('teacherStage').classList.remove('your-turn'); setChip(null); brain.session.awaiting='attempt_report'; message('That was tricky.'); });
+  el('attemptAgain').addEventListener('click',()=>{ el('attemptBar').hidden=true; el('teacherStage').classList.remove('your-turn'); setChip(null); message('Show me again.'); });
   el('backingToggle').addEventListener('click',()=>toggleBacking());
   for(const [id,key] of [['trackDrums','drums'],['trackBass','bass'],['trackRhythm','rhythm'],['trackClick','click'],['backingWithDemo','withDemo']]) el(id).addEventListener('change',e=>{ state.backing[key]=e.target.checked; save(); });
   for(const [id,key] of [['volDrums','drums'],['volBass','bass'],['volRhythm','rhythm'],['volMaster','master']]) el(id).addEventListener('input',e=>{ state.backing.volumes[key]=Number(e.target.value)/100; try{ A.setLevel(key,state.backing.volumes[key]); }catch(err){} save(); });
@@ -336,7 +327,7 @@
   if(!state.messages.length) addBubble('tutor','Hey! I’m Fret, your guitar coach. I know you’re using a Yamaha F310 and working on chord changes and Sultans of Swing. I’ll demonstrate on my guitar first; if something’s confusing, just tell me and I’ll slow down and change how I explain it.',false);
   else if(state.migratedFrom){ addBubble('tutor','Welcome back — I’ve kept everything you taught me and sorted it into “how you play” and “how you like to be taught”. Check it on the Your tutor page.',false); delete state.migratedFrom; }
   const flag=document.createElement('div'); flag.className='builder-flag'; flag.id='builderFlag'; flag.hidden=true; flag.textContent='Classified as a software change — saved here, not as a lesson preference.'; el('builderRequest').parentNode.insertBefore(flag,el('builderRequest'));
-  initWood(); selectOptions(); el('capoSelect').value=String(state.capo); renderTempo(); renderStage(); renderPrefs(); renderMemory(); renderChanges(); updateStats(); applyVolumes(); if(state.imageData) el('guitarReference').src=state.imageData;
+  initStage(); selectOptions(); el('capoSelect').value=String(state.capo); renderTempo(); renderStage(); renderPrefs(); renderMemory(); renderChanges(); updateStats(); applyVolumes(); if(state.imageData) el('guitarReference').src=state.imageData;
   const initial=location.hash.slice(1); goPage(PAGES.includes(initial)?initial:'studio'); save(); detectCoach();
-  window.FretwiseDebug={state,lesson,play,stopPlayback,brain,player:()=>player,perf:()=>perfNow,hand:()=>hand.state(),detectPitch:A.detectPitch,message};
+  window.FretwiseDebug={state,lesson,play,stopPlayback,brain,player:()=>player,perf:()=>perfNow,detectPitch:A.detectPitch,message};
 })();

@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#111}#stage{width:1280px;height:720px;position:relative}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three/three.module.js","three/addons/":"../vendor/three/addons/"}}</script></head><body><div id="stage"></div>
+<script src="../music.js"></script><script src="../performance.js"></script>
+<script type="module">
+import { createTeacherStage, GUITAR } from '../teacher3d.js';
+window.__stringY=(s)=>GUITAR.stringY(s,0.535);
+const M=window.FRETWISE_MUSIC,P=window.FRETWISE_PERFORMANCE;
+try{
+const stage=await createTeacherStage(document.getElementById('stage'),{modelUrl:'../assets/models/teacher.glb',preserveDrawingBuffer:true});
+window.stage=stage;
+window.shape=(id,capo=0)=>{const l={id:'x',kind:'chord',steps:[{chord:id}]};const p=P.compile(l,{capo,tempo:80});stage.setCapo(capo);stage.setShape(p.steps[0].shape,true);return stage.fingertipErrors();};
+window.note=(s,f,capo=0)=>{const p=P.compile({id:'y',kind:'melody',steps:[{string:s,fret:f}]},{capo,tempo:80});stage.setCapo(capo);stage.setShape(p.steps[0].shape,true);return stage.fingertipErrors();};
+window.cam=async(n)=>{stage.setCamera(n,true);await new Promise(r=>setTimeout(r,900));};
+window.__ready=true;
+}catch(e){console.error('LAB '+e.stack);}
+</script></body></html>

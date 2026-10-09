@@ -42,12 +42,16 @@ async function initLLM() {
 }
 
 /* ---------- static files ---------- */
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
-const PUBLIC = new Set(['index.html', 'styles.css', 'app.js', 'music.js', 'performance.js', 'audio.js', 'hand.js', 'tutor.js', 'sample_original_lesson.json']);
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jpeg': 'image/jpeg', '.jpg': 'image/jpeg', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary', '.mp3': 'audio/mpeg' };
+const PUBLIC = new Set(['index.html', 'styles.css', 'app.js', 'music.js', 'performance.js', 'audio.js', 'tutor.js', 'teacher3d.js', 'sample_original_lesson.json']);
 function serveStatic(req, res) {
   const url = new URL(req.url, 'http://localhost');
   let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
-  const okAsset = /^assets\/[\w.-]+\.(jpe?g|png|svg)$/i.test(rel);
+  const okAsset = /^assets\/[\w.-]+\.(jpe?g|png|svg)$/i.test(rel)
+    || /^assets\/models\/[\w.-]+\.glb$/i.test(rel)
+    || /^assets\/samples\/[\w.-]+\/[\w#.-]+\.mp3$/i.test(rel)
+    || /^vendor\/three\/[\w./-]+\.js$/i.test(rel) && !rel.includes('..')
+    || (process.env.FRETWISE_LAB && /^lab\/[\w.-]+\.(html|js)$/.test(rel));
   if (!PUBLIC.has(rel) && !okAsset) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('Not found'); return; }
   const file = path.join(here, rel);
   fs.readFile(file, (err, data) => {

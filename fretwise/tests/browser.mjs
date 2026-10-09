@@ -17,7 +17,7 @@ if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
 const server = spawn(process.execPath, ['server.mjs'], { cwd: root, env: { ...process.env, PORT: String(PORT), ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
 await new Promise((resolve, reject) => { const t = setTimeout(() => reject(new Error('server did not start')), 8000); server.stdout.on('data', d => { if (String(d).includes('running')) { clearTimeout(t); resolve(); } }); });
 const URL_ = `http://localhost:${PORT}/`;
-const browser = await pw.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+const browser = await pw.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
 const page = await context.newPage();
 const errors = [];
@@ -65,15 +65,24 @@ await test('0 a v0.1 learning profile upgrades on first load without losing anyt
   await page.evaluate(() => localStorage.clear()); await page.reload(); await page.waitForTimeout(300);
 });
 
-await test('1 teacher guitar is primary and extra dots are hidden by default', async () => {
-  assert(await page.isVisible('#guitarDemo'), 'guitar not visible');
+/* Wait until the 3D teacher's fretting hand has settled on the current shape: every pressed fingertip within 6 mm. */
+async function handSettled(timeout = 15000) {
+  await page.waitForFunction(() => { const s = window.FretwiseDebug.stage; if (!s) return false; const e = s.fingertipErrors(); const v = Object.values(e); return v.length > 0 && v.every(x => x.mm < 6); }, null, { timeout }).catch(() => {});
+  return page.evaluate(() => ({ errors: window.FretwiseDebug.stage.fingertipErrors(), targets: window.FretwiseDebug.stage.fingerTargets() }));
+}
+
+await test('1 the 3D teacher is the main stage, plays from real finger positions, extra dots hidden by default', async () => {
+  await page.waitForFunction(() => !!(window.FretwiseDebug && window.FretwiseDebug.stage), null, { timeout: 60000 });
+  assert(await page.isVisible('#teacherStage canvas'), '3D teacher canvas not visible');
   assert(await page.$eval('#hintPanel', e => e.classList.contains('hidden')), 'hint panel visible on load');
-  await page.waitForTimeout(200);
-  const hand = await page.evaluate(() => window.FretwiseDebug.hand());
-  // Am = x02210: finger 1 on B string fret 1, finger 2 on D fret 2, finger 3 on G fret 2
-  const got = [1, 2, 3].map(n => hand[n].placed + ':' + hand[n].string + ':' + hand[n].fret).join(' ');
+  const { errors, targets } = await handSettled();
+  // Am = x02210: finger 1 on B string fret 1, finger 2 on D fret 2, finger 3 on G fret 2 (physical fret = + capo)
+  const capo = await page.evaluate(() => window.FretwiseDebug.state.capo);
+  const got = [1, 2, 3].map(n => targets[n].pressed + ':' + targets[n].string + ':' + (targets[n].phys - capo)).join(' ');
   assert(got === 'true:4:1 true:2:2 true:3:2', 'Am fingering wrong on the teacher hand: ' + got);
-  assert(!hand[4].placed, 'little finger should be relaxed for Am');
+  assert(!targets[4].pressed, 'little finger should be relaxed for Am');
+  for (const [n, e] of Object.entries(errors)) assert(e.mm < 6, `finger ${n} is ${e.mm} mm from its fret`);
+  assert(await page.evaluate(() => window.FretwiseDebug.stage.cameraName()) === 'wide', 'default camera should show the teacher');
   await shot('01-studio');
 });
 
@@ -91,7 +100,7 @@ await test('2 capo 5 chord workout: pitches +5 semitones, hand and audio from on
     for (let i = 0; i < 70; i++) {
       await new Promise(r => setTimeout(r, 170));
       const cur = D.player().current(); if (!cur.playing) break;
-      const t = A.now() - cur.startAt - cur.countIn; if (t < 0) continue;
+      const t = A.now() - cur.startAt - cur.countIn; if (t < 0 || t >= cur.perf.duration * cur.loopCount) continue;
       const time = t % cur.perf.duration;
       const expected = cur.perf.stepAt(time + P.PRE_SHIFT);
       const shown = document.getElementById('nowChord').textContent;
@@ -150,17 +159,19 @@ await test('4 F barre with limited stretch: safe sequence starting at Fmaj7, dem
   assert(plucks.length > 0, 'no demonstration audio');
   const frets = [...new Set(plucks.map(p => p.string + ':' + p.fret))].sort().join(',');
   assert(frets === '2:3,3:2,4:1,5:0', 'Fmaj7 xx3210 not played: ' + frets);
-  // check mini barre hand shape renders a barre over two strings
+  // the teacher's hand: mini barre then full F, each fingertip on its string just behind the fret
   await page.click('#stopDemo');
+  const capo = await page.evaluate(() => window.FretwiseDebug.state.capo);
   await page.click('.step-card:nth-child(3)');
-  await page.waitForTimeout(250);
-  let h = await page.evaluate(() => window.FretwiseDebug.hand());
-  assert(h[1].barre && h[1].fret === '1', 'mini barre not drawn with first finger: ' + JSON.stringify(h[1]));
-  await page.click('.step-card:nth-child(4)'); await page.waitForTimeout(250);
-  h = await page.evaluate(() => window.FretwiseDebug.hand());
-  const full = [2, 3, 4].map(n => h[n].string + ':' + h[n].fret).join(' ');
-  assert(h[1].barre && full === '3:2 1:3 2:3', 'full F 133211 fingering wrong: ' + full);
+  let h = await handSettled();
+  assert(h.targets[1].barre && h.targets[1].phys === capo + 1, 'mini barre not made with the first finger: ' + JSON.stringify(h.targets[1]));
+  await page.click('.step-card:nth-child(4)');
+  h = await handSettled();
+  const full = [2, 3, 4].map(n => h.targets[n].string + ':' + (h.targets[n].phys - capo)).join(' ');
+  assert(h.targets[1].barre && full === '3:2 1:3 2:3', 'full F 133211 fingering wrong: ' + full);
+  for (const [n, e] of Object.entries(h.errors)) assert(e.mm < 6, `full F: finger ${n} is ${e.mm} mm from its fret`);
   assert(/Bb \(full barre\)/.test(await page.textContent('#actualChord')), 'sounding name wrong: ' + await page.textContent('#actualChord'));
+  await page.click('#cameraSwitch [data-cam="fretting"]'); await page.waitForTimeout(1500);
   await shot('04-barre');
 });
 
@@ -279,11 +290,39 @@ await test('13 mobile layout keeps the guitar first and has no horizontal scroll
   await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(250);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert(overflow <= 1, 'horizontal overflow ' + overflow);
-  const guitarTop = await page.$eval('#guitarDemo', e => e.getBoundingClientRect().top);
+  const guitarTop = await page.$eval('#teacherStage', e => e.getBoundingClientRect().top);
   const chatTop = await page.$eval('#conversation', e => e.getBoundingClientRect().top);
   assert(guitarTop < chatTop, 'guitar not above chat on mobile');
   await shot('13-mobile');
   await page.setViewportSize({ width: 1440, height: 1000 });
+});
+
+await test('14 recorded guitar, bass and drum samples all load and decode, at the right pitches, and the teacher uses them', async () => {
+  const bad = [], seen = new Set();
+  const onResponse = r => { if (r.url().includes('/assets/samples/')) { seen.add(r.url()); if (r.status() >= 400) bad.push(r.status() + ' ' + r.url()); } };
+  const onFailed = r => { if (r.url().includes('/assets/samples/')) bad.push('failed ' + r.url()); };
+  page.on('response', onResponse); page.on('requestfailed', onFailed);
+  await page.reload();
+  await page.waitForFunction(() => window.FRETWISE_AUDIO.samplesReady(), null, { timeout: 20000 }).catch(() => {});
+  page.off('response', onResponse); page.off('requestfailed', onFailed);
+  const st = await page.evaluate(() => ({ ...window.FRETWISE_AUDIO.sampleStatus(), expected: window.FRETWISE_AUDIO.engine.sampleList().length }));
+  assert(bad.length === 0, 'sample requests failed (404?): ' + bad.slice(0, 5).join(', '));
+  assert(st.expected === 84 && st.loaded === st.expected && st.failed === 0 && st.ready, 'samples not all decoded: ' + JSON.stringify(st));
+  assert(seen.size === st.expected, `expected ${st.expected} sample files to be fetched, saw ${seen.size}`);
+  // each decoded recording is the pitch its file name says (catches flat/sharp naming slips)
+  const pitches = await page.evaluate(() => {
+    const A = window.FRETWISE_AUDIO, M = window.FRETWISE_MUSIC;
+    return [['guitar', 40], ['guitar', 45], ['guitar', 46], ['guitar', 50], ['guitar', 55], ['guitar', 59], ['guitar', 61], ['guitar', 64], ['guitar', 68], ['guitar', 76], ['bass', 45], ['bass', 50]].map(([set, midi]) => {
+      const b = A.sampleBuffer(midi, set), from = Math.round(b.sampleRate * 0.15), x = b.getChannelData(0).slice(from, from + 4096);
+      let peak = 0; for (const v of x) peak = Math.max(peak, Math.abs(v)); for (let i = 0; i < x.length; i++) x[i] *= 0.5 / (peak || 1);   // level-independent
+      const hit = A.detectPitch(x, b.sampleRate);
+      return { set, midi, got: hit ? Math.round(M.freqToMidi(hit.frequency)) : null };
+    });
+  });
+  const wrong = pitches.filter(p => p.got !== p.midi);
+  assert(wrong.length === 0, 'sample pitch mismatch: ' + JSON.stringify(wrong));
+  const voice = await page.evaluate(() => { const A = window.FRETWISE_AUDIO; A.ensure(); return A.pluck(57, A.now() + 0.05, 0.2, { string: 1, fret: 0, dur: 0.2, technique: 'pluck' }).fretwiseVoice; });
+  assert(voice === 'sample', 'teacher note did not use the recorded guitar: ' + voice);
 });
 
 await test('no uncaught page errors', async () => { assert(errors.length === 0, errors.join('\n')); });
