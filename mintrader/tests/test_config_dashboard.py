@@ -242,6 +242,28 @@ class TestDashboardPages:
         assert "What it learned" in html
         assert "Best trade" in html
 
+    def test_results_today_is_the_uk_day(self, journal):
+        """A trade closed at 23:30 UTC on 8 Oct is 00:30 UK on Friday 9 Oct:
+        today's on the 9th; one closed at 22:30 UTC (23:30 UK on the 8th) is
+        not. In winter 23:30 UTC is the same UK day."""
+        for ticket, closed, pnl in ((1, "2026-10-08T23:30:00+00:00", 4.0), (2, "2026-10-08T22:30:00+00:00", -9.36)):
+            journal._exec("INSERT INTO trades (ticket, symbol, side, opened_utc, closed_utc, pnl_money) VALUES (?,?,?,?,?,?)",
+                          (ticket, "EURUSD", "BUY", "2026-10-08T15:00:00+00:00", closed, pnl))
+        r = build_results(journal, "GBP", dt.datetime(2026, 10, 9, 8, 49, tzinfo=UTC))
+        assert r["date"] == "2026-10-09" and r["trades"] == 1 and r["net"] == 4.0
+        journal._exec("INSERT INTO trades (ticket, symbol, side, opened_utc, closed_utc, pnl_money) VALUES (?,?,?,?,?,?)",
+                      (3, "EURUSD", "BUY", "2026-11-30T20:00:00+00:00", "2026-11-30T23:30:00+00:00", 2.0))
+        winter = build_results(journal, "GBP", dt.datetime(2026, 12, 1, 9, 0, tzinfo=UTC))
+        assert winter["date"] == "2026-12-01" and winter["trades"] == 0          # 23:30 GMT was Monday's
+
+    def test_the_folded_today_tile_names_its_day(self, journal):
+        snap = self._snapshot(journal)
+        assert "Today (broker&#x27;s day)" in render_status(snap) or "Today (broker's day)" in render_status(snap)
+        snap["status"]["day_basis"] = "UK"
+        snap["status"]["periods"] = [{"label": "Today", "net": 1.0, "trades": 1, "win_rate": 100.0}]
+        page = render_status(snap)
+        assert "Today (UK day)" in page and "each in full on the UK day it closed" in page
+
     def test_results_page_with_no_trades_is_still_valid(self, journal):
         results = build_results(journal, "GBP", dt.datetime.now(UTC))
         assert results["trades"] == 0

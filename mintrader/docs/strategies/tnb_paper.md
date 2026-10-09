@@ -242,7 +242,7 @@ wired, and it is said there.
      `mintel/ops/report_upload.py` (the nightly report): its real deals
      from the broker, its practice from the record, each labelled.
    - `mintel/ops/pulse.py` (the ten-minute pulse): `today_pnl` is the
-     account's result for the broker's day, `open_positions` every real
+     account's result for the UK day (from 00:00 UK, each closed trade in full), `open_positions` every real
      open position on the account, and on PAPER a separate
      `tnb_practice_today` and `tnb_mode`.
    - `mintel/ops/reconcile.py` keeps the real broker alone: it checks the

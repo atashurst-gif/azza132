@@ -426,6 +426,30 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
     except Exception:
         pass
 
+    try:
+        now_ = to_utc(trader.clock())
+    except Exception:
+        now_ = utcnow()
+
+    def day_fields(figs: dict, uk: bool) -> dict:
+        """Trend & Breakout's own Today, since-start and period tiles: on UK
+        days (from the account's deal rows, the same the cards use) when
+        ``uk``; else the broker's own day from its ledger, or the journal."""
+        return {"today_pnl": (figs.get("today") or {}).get("net", results.get("net", 0.0)),
+                "win_rate_today": (figs.get("today") or {}).get("win_rate", results.get("win_rate")),
+                "today_trades": (figs.get("today") or {}).get("trades", results.get("trades", 0)),
+                "since_start_pnl": (figs.get("since_start") or {}).get("net"),
+                "since_start_trades": (figs.get("since_start") or {}).get("trades"),
+                "since_start_win_rate": (figs.get("since_start") or {}).get("win_rate"),
+                "tracking_start": figs.get("tracking_start", ledger.get("tracking_start", trader.cfg.tracking_start_utc)),
+                "pnl_source": "broker" if uk else ledger.get("source", "journal"),
+                "periods": figs.get("periods") or [],
+                "pnl_error": "" if uk else ledger.get("error", ""),
+                "day_basis": "UK" if uk else ("broker" if ledger.get("source") == "broker" else "")}
+    # the status goes up at once, as it always has; its UK-day tiles are the
+    # last push's until the account's deal rows below have been read again
+    prev_uk = getattr(state, "_uk_days", None)
+
     state.update(
         status={
             "bot": "RUNNING" if not trader.health.safe_mode else "SAFE MODE",
@@ -441,21 +465,13 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "equity": account.equity if account else 0.0,
             "balance": account.balance if account else 0.0,
             "currency": account.currency if account else "",
-            # Broker's figures when it can give them; the journal otherwise.
-            "today_pnl": (ledger.get("today") or {}).get("net", results.get("net", 0.0)),
-            "win_rate_today": (ledger.get("today") or {}).get("win_rate", results.get("win_rate")),
-            "today_trades": (ledger.get("today") or {}).get("trades", results.get("trades", 0)),
-            "since_start_pnl": (ledger.get("since_start") or {}).get("net"),
-            "since_start_trades": (ledger.get("since_start") or {}).get("trades"),
-            "since_start_win_rate": (ledger.get("since_start") or {}).get("win_rate"),
-            "tracking_start": ledger.get("tracking_start", trader.cfg.tracking_start_utc),
+            # Broker's figures when it can give them, on UK days; the
+            # journal otherwise (day_fields above)
+            **day_fields(prev_uk or ledger, bool(prev_uk)),
             "strategy": trader.cfg.tracking_strategy,
             "strategy_name": STRATEGY_NAME,
             "build": RUNNING_STAMP,
             "started": trader.started_utc.strftime("%Y-%m-%d %H:%M UTC"),
-            "pnl_source": ledger.get("source", "journal"),
-            "periods": ledger.get("periods") or [],
-            "pnl_error": ledger.get("error", ""),
             "last_scan": (trader.scanner.last_scan_utc.strftime("%H:%M:%S UTC")
                           if trader.scanner.last_scan_utc else "never"),
             "last_trade": last_trade,
@@ -485,14 +501,13 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
     # The account's standing, from the broker alone: every trade on the
     # account since the reset, after commission and swap, split by bot. The
     # page leads with it. Never fatal.
+    uk_days: Optional[dict] = None              # Trend & Breakout's own periods on UK days
     try:
-        from .ops.standing import account_standing, practice_figures
-        now_ = to_utc(trader.clock())
+        from .ops.standing import account_standing, open_rows, strategy_days, uk_day_start
         try:
             every_position = trader.broker.positions(None)
         except Exception:
             every_position = None
-        from .ops.standing import open_rows
         tickets = sorted(int(getattr(q, "ticket", 0) or 0) for q in (every_position or ()))
         changed = every_position is not None and tickets != getattr(state, "_open_tickets", None)
         if every_position is not None:
@@ -506,8 +521,29 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
         state.update(standing=standing, deals=deals, data_dir=str(trader.cfg.ops.data_dir),
                      open_live=open_rows(every_position, trader.cfg) if every_position is not None else None,
                      open_at=now_.isoformat(), tnb_mode=tnb)
+        # Trend & Breakout's own "Results by period" and Today tiles, on UK days:
+        # its positions (opened since its rules' start) from the same deal rows,
+        # and on PAPER its paper record's too (practice, as those tiles say)
+        if standing.get("today") is not None and int(trader.cfg.magic) not in (standing.get("unknown_magics") or ()):
+            try:
+                txt = str(ledger.get("tracking_start") or trader.cfg.tracking_start_utc or "")
+                since = dt.datetime.fromisoformat(txt.replace("Z", "+00:00")) if txt else uk_day_start(now_)
+                since = since if since.tzinfo else since.replace(tzinfo=UTC)
+                extra = ()
+                if tnb == "PAPER":
+                    from .ops.standing import TnbPaperRecord
+                    record = TnbPaperRecord(trader.cfg.ops.data_dir)
+                    extra = () if record.error else record.positions()
+                uk_days = strategy_days(deals, int(trader.cfg.magic), since, now_, standing.get("open_tickets"), extra)
+                uk_days["tracking_start"] = to_utc(since).isoformat()
+            except Exception as exc:
+                log.debug("UK-day figures for Trend & Breakout skipped: %s", exc)
+                uk_days = None
     except Exception as exc:
         log.debug("standing skipped: %s", exc)
+    state._uk_days = uk_days
+    if uk_days is not None or prev_uk is not None:   # the tiles on today's UK-day figures (or back to the ledger's)
+        state.update(status=dict(state.status, **day_fields(uk_days or ledger, uk_days is not None)))
     # The Rapid Momentum Rider and Financial Ian run as their own processes:
     # one plain line each for their cards, read from their own status files
     # (read-only; the practice figures come from their sqlite files through
@@ -527,12 +563,23 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
     # deals too, is not used for its tab).
     try:
         from .ops.attribution import build_strategies
+        from .ops.standing import uk_day_start
+        # the strategy tabs start where the rest of the page starts: 00:00 UK
+        # (the UK day), or the measuring start if that is later. Trend &
+        # Breakout's tab takes its broker figures for the same UK day (on LIVE;
+        # on PAPER its tab splits its own rows and uses no ledger).
+        tab_day = uk_day_start(now_)
+        try:
+            ts = str(trader.cfg.tracking_start_utc or "")
+            if ts:
+                t0 = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                tab_day = max(tab_day, to_utc(t0 if t0.tzinfo else t0.replace(tzinfo=UTC)))
+        except ValueError:
+            pass
         state.update(strategies=build_strategies(
-            # the strategy tabs start where the rest of the page starts: the
-            # broker's day, or the measuring start if that is later
-            trader.journal, positions, trader._strategy_day_start(to_utc(trader.clock())),
+            trader.journal, positions, tab_day,
             account.currency if account else "GBP", trader.cfg.ops.data_dir,
-            ledger.get("today") if ledger.get("source") == "broker" else None, tnb_mode=tnb), tnb_mode=tnb)
+            (uk_days or {}).get("today") if uk_days and tnb == "LIVE" else None, tnb_mode=tnb), tnb_mode=tnb)
     except Exception as exc:
         log.debug("attribution skipped: %s", exc)
 

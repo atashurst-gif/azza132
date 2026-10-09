@@ -246,7 +246,9 @@ class TestTheStandingAndTheCards:
         by = {b["id"]: b for b in sd["bots"]}
         mi = by["market_intelligence"]
         assert mi["mode"] == "PAPER"
-        assert (mi["made"], mi["today"], mi["trades"]) == (-6.60, -6.30, 1)   # its REAL leftover only: real money
+        # its REAL leftover only (real money): a position counts in full, both
+        # commissions, on the UK day it closed - opened on the 6th, closed today
+        assert (mi["made"], mi["today"], mi["trades"]) == (-6.60, -6.60, 1)
         assert by["momentum_runner"]["made"] == 20.0
         assert round(sum(b["made"] for b in sd["bots"]) + sd["other"]["made"], 2) == sd["trading"]
         assert not any(r["bot_magic"] == TNB and r["position"] in d.paper for r in sd["deals"])

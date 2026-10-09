@@ -8,7 +8,7 @@ Momentum Runner, the Rapid Momentum Rider and Financial Ian LIVE):
   other bots a second time - on PAPER and on LIVE alike.
 * Financial Ian's magic number is 990911 everywhere the reports look, as it
   is in Ian's own code: a "magic" in ian.json is ignored by Ian, so by them.
-* The ten-minute pulse's ``today`` is the ACCOUNT's real day (the page's
+* The ten-minute pulse's ``today`` is the ACCOUNT's real UK day (the page's
   Account card), ``open`` every real open position on the account; Trend &
   Breakout's practice figure is shown apart, labelled, only on PAPER.
 
@@ -285,6 +285,7 @@ class TestIansMagicIsIansOwn:
 # ============================================================== the pulse --
 DAY = dt.datetime(2026, 10, 7, tzinfo=UTC)                     # FakeInner's day (a Wednesday)
 NOW = dt.datetime(2026, 10, 7, 14, 0, tzinfo=UTC)
+UK_DAY = dt.datetime(2026, 10, 6, 23, 0, tzinfo=UTC)            # 00:00 UK (BST) on 7 Oct: the page's today
 LEFTOVER, RUN, RIDE, HAND = 5_000_001, 5_000_002, 5_000_003, 5_000_004
 
 
@@ -385,14 +386,22 @@ def pulse_of(acct: NS, body: str) -> dict:
 
 
 def account_day_by_hand(inner) -> float:
-    """Every real deal of the broker's day (midnight UTC on this fake),
-    summed independently of the code under test."""
-    return round(sum(float(r["profit"]) for r in inner.real_deals if r["time"] >= DAY), 2)
+    """The account's UK day, summed independently of the code under test:
+    every real position whose last exit fell since 00:00 UK (and that is not
+    still open), each in full - every deal of it, the commission charged
+    when it opened too, even if that was before midnight."""
+    open_now = {p.ticket for p in inner.real_positions}
+    last: dict = {}
+    for r in inner.real_deals:
+        if not r["is_entry"]:
+            last[r["position"]] = max(last.get(r["position"], r["time"]), r["time"])
+    keep = {p for p, t in last.items() if UK_DAY <= t < UK_DAY + dt.timedelta(days=1) and p not in open_now}
+    return round(sum(float(r["profit"]) for r in inner.real_deals if r["position"] in keep), 2)
 
 
 def paper_day_by_hand(data: Path) -> float:
-    """Trend & Breakout's paper positions whose last exit fell today, every
-    deal of each (the entry's commission too), from its own record."""
+    """Trend & Breakout's paper positions whose last exit fell today (the UK
+    day), every deal of each (the entry's commission too), from its own record."""
     view = PaperBroker(None, data, magic=TNB, read_only=True)
     try:
         rows = view.paper_deals_since(DAY - dt.timedelta(days=30), closing_only=False)
@@ -402,7 +411,7 @@ def paper_day_by_hand(data: Path) -> float:
     for r in rows:
         if not r["is_entry"]:
             last[r["position"]] = max(last.get(r["position"], r["time"]), r["time"])
-    keep = {p for p, t in last.items() if DAY <= t < DAY + dt.timedelta(days=1)}
+    keep = {p for p, t in last.items() if UK_DAY <= t < UK_DAY + dt.timedelta(days=1)}
     return round(sum(float(r["profit"]) for r in rows if r["position"] in keep), 2)
 
 
@@ -412,7 +421,9 @@ class TestThePulseFigures:
         body, page = page_body(acct)
         p = pulse_of(acct, body)
         expected = account_day_by_hand(acct.inner)
-        assert expected == round(-6.30 + 20.0 - 0.55 + 4.45 - 1.25, 2)
+        # Trend & Breakout's leftover (opened 22:00 UK on the 6th, closed today)
+        # in full, both commissions; the Runner; the Rider in full; the hand trade
+        assert expected == round((-0.30 - 6.30) + 20.0 + (-0.55 + 4.45) - 1.25, 2) == 16.05
         assert p["up"] is True and p["reason"] == ""
         assert p["today_pnl"] == expected == page["standing"]["today"]
         card = period_view(page["standing"], page["deals"], "today", now=NOW)

@@ -32,17 +32,67 @@ nobody knew until the evening.
 - **A pulse every ten minutes**, independent of the bot (`com.mintel.pulse`
   launchd job): one line in `data/uptime.log`, UP with the account's
   equity, every real open trade on the account and the account's result
-  for the broker's day (`today`, the page's Account card figure; while
-  Trend & Breakout is on PAPER its practice result follows, labelled
-  `tnb_practice`, never added in), or DOWN with the reason it could work
-  out (trader heartbeat age, watchdog state, bridge answering or not,
-  MetaTrader connected or not, terminal running or not). Published to the
-  `reports` branch as
-  `reports/live/pulse.json`, `reports/live/status.json` and
-  `reports/live/uptime.log`.
+  for the UK day (from 00:00 UK, the page's Today; not the broker's day,
+  which starts at 22:00 UK) as `today`, the page's Account card figure.
+  While Trend & Breakout is on PAPER its practice result for the same UK
+  day follows, labelled `tnb_practice`, never added in. DOWN comes with
+  the reason it could work out (trader heartbeat age, watchdog state,
+  bridge answering or not, MetaTrader connected or not, terminal running
+  or not). Published to the `reports` branch as
+  `reports/live/pulse.json`, `reports/live/status.json`,
+  `reports/live/uptime.log` and `reports/live/bots.json` (see below).
 - **The nightly report counts the gaps.** `reports/<date>/uptime.log` and a
   BOT UPTIME section in the day review: percentage up, each outage with
   start, end, length and reason. The nightly review message reports it.
+
+## Why has the Rider not traded? (9 Oct)
+The Rapid Momentum Rider keeps a "why no trade" record in its status file
+(`data/rider-status.json`, the `why_no_trade` block), covering the last hour
+and brought up to date after every scan. For each market it counts how many
+scans it spent in each state (WATCHING, BUILDING, READY, TRIGGER, or ENTERED
+while it holds a trade there), the best score it reached, which way and
+when, how old its latest price is and how many prices a minute are coming
+in. Whenever a market scored at or over the trigger score, or was READY or
+TRIGGER, and no trade was opened, the record names the first rule that held
+it back - too choppy, costs too big for the expected move (with the cost
+ratio and the expected move in pips), too little room to the next level,
+news, spread, too few price updates, the price not confirming the move, the
+cooldown or the fresh-trigger rule, one position per market or the cap on
+open positions, a failed health check, the mode, or the order step itself
+(no contract details or price, the trade could not be sized, the price
+already through the planned stop, the broker refusing the order, or an
+order sent with no answer back, which the next pass checks and which may
+yet show as open) - and counts it, per rule and per market. The last ten near misses are kept in full with their
+numbers (a run of back-to-back scans held back the same way counts as one,
+with how many scans it lasted), and two lines say when the last trade was
+opened and when the last trigger came and whether it was taken. The
+`summary` line at the top says it all in one sentence. The record only reads
+what the scan and the entry check already decided and never changes a
+decision: a test runs the same synthetic prices with and without it and gets
+the same orders, stop moves and exits. The same status file's TODAY block
+(the Rider's own page) now counts from 00:00 UK, like the status page, so a
+trade from last night after 22:00 UK is no longer in today's figures.
+
+## Every bot, every ten minutes: reports/live/bots.json
+Each ten-minute pulse also publishes `reports/live/bots.json` on the reports
+branch, next to `pulse.json`, so the bots can be read from GitHub without
+asking Aaron. It has one entry per bot: its mode (as it runs, and as its
+settings say), its health line, today's trades and result copied from the
+status page's standing block (MetaTrader's own figures, real money, for
+the page's Today: the UK day from 00:00 UK; a paper bot's practice figure
+is shown apart and never added in), and its open trades. The Rapid Momentum Rider's
+entry carries its "why no trade" block and the top ten rows of its scanner
+(market, direction, score, state, reason, cost ratio, headroom); Financial
+Ian's says what its data feed is doing and why; Trend & Breakout's lists its
+open paper trades (from its paper record, read-only) and its last few
+"thinking" rows; the Momentum Runner's lists its open rides. Every status
+file is only read: a missing, broken or stale one gives a plain "not running
+/ not readable" entry instead of stopping the pulse, and if the trader's page
+did not answer, the money figures say "not known" rather than guess. The
+file is kept under 60 KB (the least needed detail is cut first), never holds
+the account login, a key or a token, and goes up with the same upload as the
+rest of the pulse, which retries when GitHub reports a clash with another
+writer.
 
 ## If it is down anyway
 Read `reports/live/pulse.json` on the reports branch: the `reason` says

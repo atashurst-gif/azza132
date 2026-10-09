@@ -43,6 +43,11 @@ Every pass (about once a second) it:
    positions, re-entry only on a fresh trigger after a short cooldown, no
    quotas and no daily caps;
 7. writes data/rider-status.json atomically (every ~2 s) and a heartbeat.
+   The status carries "why_no_trade" (WhyNoTrade): the last hour of scans
+   per market and in total, and for every near miss (the score at the
+   trigger score, or READY or TRIGGER, with no entry) the first rule that
+   held it back. It only reads what steps 5 and 6 decided; nothing in it
+   takes part in a decision.
 
 The executor is the shared one (mintel/botexec.py): PAPER simulates
 pessimistically, LIVE sends real orders with magic 990811 and fails closed
@@ -64,7 +69,7 @@ from typing import Callable, Optional
 
 from ..botexec import Fill, LiveExecutor, make_executor
 from ..broker.base import Position, Side, TF, Tick
-from ..clock import fx_market_open, to_utc, utcnow
+from ..clock import TZ_LONDON, fx_market_open, to_utc, utcnow
 from ..contracts import FX_CURRENCIES, classify_fx
 from ..ops.health import Heartbeat
 from . import MAGIC, STRATEGY_ID, STRATEGY_LABEL, TAG, TAGLINE
@@ -75,6 +80,7 @@ from .flowlock_x import PLAIN, RUNNER, FlowState, never_widen
 from .journal import RiderJournal, to_json
 from .learning import BucketStats, Outcome
 from .pipvalue import fx_pip_size
+from .score import ENTERED, READY, TRIGGER, WATCHING
 
 log = logging.getLogger("mintel.rider")
 
@@ -87,6 +93,290 @@ FLOWLOCK_STALE_SECONDS = 10.0
 TICK_HISTORY_MAX_SECONDS = 120.0
 TICK_HISTORY_MARGIN_SECONDS = 1.0       # the history is asked a little past the latest price's time
 TICK_HISTORY_WAIT_SECONDS = 5.0         # a history behind the latest price this long: the latest price is fed
+WHY_WINDOW_MINUTES = 60                 # "why no trade": a rolling hour, kept one bucket per minute
+WHY_NEAR_MISSES = 10                    # ... and the last few near misses in full
+WHY_MERGE_SECONDS = 30.0                # ... one market held back by the same rule scan after scan is one near miss
+
+# The rules that can hold back a scan whose score reached the trigger score (or that was READY or TRIGGER) with
+# no entry, in plain words. FOR READING ONLY: nothing below takes part in a decision.
+GATE_WORDS = {
+    "warm": "warming up: not enough price history yet",
+    "spread": "spread too wide",
+    "activity": "too few price updates",
+    "chop": "too choppy",
+    "direction": "no clear direction",
+    "news": "news about to land or just out",
+    "cost": "costs too big for the expected move",
+    "headroom": "too little room to the next level",
+    "below_ready": "score under the READY score",
+    "below_trigger": "READY, but the score is under the trigger score",
+    "confirmation": "price did not confirm the move (no break of the last 20 s high or low, moving the same way)",
+    "whipsaw": "whipsaw: it was running the other way moments ago",
+    "fresh_trigger": "this wave was already taken: waiting for a fresh trigger",
+    "cooldown": "cooldown after the last signal or exit on this market",
+    "one_position": "a position is already open on this market",
+    "max_concurrent": "the cap on open positions was reached",
+    "stop": "no sensible stop could be placed",
+    "health": "a health check failed: new entries paused",
+    "mode": "the mode allows no entries",
+    # the order step (_enter), told apart by the note it returned (_order_step_rule)
+    "no_price": "no contract details or price for this market: nothing was sent",
+    "size": "the trade could not be sized: nothing was sent",
+    "through_stop": "the price was already through the planned stop",
+    "unknown": "order sent but no answer came back: the broker's list is checked next pass, so it may yet show as open",
+    "order": "the broker refused the order, or its stop",
+    "not_opened": "the order step did not open a trade (see the detail)",
+    "error": "the entry check failed",
+}
+
+
+def _order_step_rule(note: str) -> str:
+    """FOR READING ONLY: the rule for an entry intent the order step (_enter)
+    did not open, from the note it returned. Nothing decides on it."""
+    if note == "":
+        return "one_position"
+    if "trigger skipped" in note:
+        return "max_concurrent"
+    if "no contract or price" in note:
+        return "no_price"
+    if "cannot size the trade" in note:
+        return "size"
+    if "through the planned stop" in note:                 # already through it, or filled through it
+        return "through_stop"
+    if "outcome unknown" in note or "send failed" in note:  # the send itself failed: it may have filled
+        return "unknown"
+    if "order refused" in note:
+        return "order"
+    return "not_opened"
+
+
+def _hms(t: dt.datetime) -> str:
+    return to_utc(t).strftime("%H:%M:%S")
+
+
+def _ago(seconds: float) -> str:
+    s = max(0.0, float(seconds))
+    if s < 90:
+        return f"{s:.0f} s ago"
+    if s < 90 * 60:
+        return f"{s / 60:.0f} min ago"
+    return f"{s / 3600:.1f} h ago"
+
+
+class _WhyMinute:
+    """One minute of scans: per market the scans spent in each state and the
+    best score; per rule (and per market and rule) the near-miss scans it
+    held back."""
+    __slots__ = ("key", "scans", "failed", "states", "best", "blocked", "blocked_by_market", "entries", "triggers")
+
+    def __init__(self, key: int):
+        self.key = key
+        self.scans = 0
+        self.failed = 0
+        self.states: dict[str, Counter] = {}
+        self.best: dict[str, tuple[float, str, str]] = {}    # market -> (score, direction, time)
+        self.blocked: Counter = Counter()
+        self.blocked_by_market: dict[str, Counter] = {}
+        self.entries = 0
+        self.triggers = 0
+
+
+class WhyNoTrade:
+    """The Rider's "why no trade" record: a rolling window (an hour, kept as
+    one bucket per minute, so memory stays bounded however long it runs) of
+    every scan - per market the scans spent in each state and the best score
+    seen - and, for every scan whose score reached the trigger score (or that
+    was READY or TRIGGER) with no entry, the first rule that held it back,
+    counted per rule and per market, with the last few such near misses in
+    full (a run of back-to-back scans of one market held back by the same
+    rule the same way is ONE near miss, with how many scans it lasted).
+
+    Pure bookkeeping, fed by RiderEngine after each scan from what the scan,
+    the entry check and the order step already decided. It never takes part
+    in a decision."""
+
+    def __init__(self, trigger_score: float, window_minutes: int = WHY_WINDOW_MINUTES,
+                 keep: int = WHY_NEAR_MISSES, started: Optional[dt.datetime] = None):
+        self.trigger_score = float(trigger_score)
+        self.window = max(1, int(window_minutes))
+        self.minutes: deque = deque(maxlen=self.window + 1)
+        self.near: deque = deque(maxlen=max(1, int(keep)))
+        self.started = to_utc(started) if started is not None else None
+        self.last_trigger: Optional[dict] = None
+        self.last_entry: Optional[dict] = None
+        self._trigger_seen: dict[str, int] = {}
+
+    def _bucket(self, now: dt.datetime) -> _WhyMinute:
+        key = int(to_utc(now).timestamp() // 60)
+        if self.minutes and key <= self.minutes[-1].key:
+            return self.minutes[-1]                        # this minute (a clock stepping back stays in it)
+        self.minutes.append(_WhyMinute(key))
+        return self.minutes[-1]
+
+    def record(self, now: dt.datetime, samples: list[dict], failed: bool = False) -> None:
+        """One scan. Each sample: market, direction, score, shown (the state on
+        the scanner), state (the entry state), trigger_id, and either
+        entered=True or, for a near miss, gate, detail and numbers."""
+        now = to_utc(now)
+        b = self._bucket(now)
+        b.scans += 1
+        if failed:
+            b.failed += 1
+        stamp = now.isoformat()
+        for s in samples:
+            sym = str(s["market"])
+            score = float(s.get("score") or 0.0)
+            b.states.setdefault(sym, Counter())[str(s.get("shown") or WATCHING)] += 1
+            best = b.best.get(sym)
+            if best is None or score > best[0]:
+                b.best[sym] = (score, str(s.get("direction") or ""), stamp)
+            tid = int(s.get("trigger_id") or 0)
+            if tid > self._trigger_seen.get(sym, 0):
+                self._trigger_seen[sym] = tid                  # a fresh arrival in TRIGGER
+                b.triggers += 1
+                self.last_trigger = {"time_utc": stamp, "market": sym, "direction": s.get("direction"),
+                                     "score": round(score, 1), "trigger_id": tid, "taken": bool(s.get("entered")),
+                                     "held_back_by": "" if s.get("entered") else str(s.get("gate") or "")}
+            if s.get("entered"):
+                b.entries += 1
+                self.last_entry = {"time_utc": stamp, "market": sym, "direction": s.get("direction"),
+                                   "score": round(score, 1)}
+                lt = self.last_trigger
+                if lt is not None and lt["market"] == sym and lt["trigger_id"] == tid:
+                    lt["taken"], lt["held_back_by"] = True, ""
+                continue
+            gate = s.get("gate")
+            if not gate:
+                continue
+            b.blocked[gate] += 1
+            b.blocked_by_market.setdefault(sym, Counter())[gate] += 1
+            self._near_miss(now, s)
+
+    def _near_miss(self, now: dt.datetime, s: dict) -> None:
+        t = now.timestamp()
+        score = round(float(s.get("score") or 0.0), 1)
+        for e in reversed(self.near):
+            if e["market"] != s["market"]:
+                continue
+            if e["gate"] == s["gate"] and e["direction"] == s.get("direction") and t - e["_t"] <= WHY_MERGE_SECONDS:
+                e["_t"] = t
+                e["last_utc"] = now.isoformat()
+                e["scans"] += 1
+                if score > e["score"]:                     # the best scan of the run, with its own numbers
+                    e.update(score=score, detail=str(s.get("detail") or ""), numbers=dict(s.get("numbers") or {}),
+                             state=s.get("state"))
+                return
+            break
+        self.near.append({"_t": t, "time_utc": now.isoformat(), "last_utc": now.isoformat(), "market": s["market"],
+                          "direction": s.get("direction"), "score": score, "state": s.get("state"),
+                          "gate": s["gate"], "what": GATE_WORDS.get(s["gate"], s["gate"]),
+                          "detail": str(s.get("detail") or ""), "numbers": dict(s.get("numbers") or {}), "scans": 1})
+
+    def report(self, now: dt.datetime, ticks: Optional[dict] = None, last_trade: Optional[dict] = None) -> dict:
+        """The window as of ``now``. ``ticks``: {market: {tick_age_seconds,
+        ticks_per_minute}}; ``last_trade``: {line, ...} from the records."""
+        now = to_utc(now)
+        first = int(now.timestamp() // 60) - self.window + 1
+        mins = [m for m in self.minutes if m.key >= first]
+        scans = sum(m.scans for m in mins)
+        states: dict[str, Counter] = {}
+        best: dict[str, tuple[float, str, str]] = {}
+        blocked: Counter = Counter()
+        by_market: dict[str, Counter] = {}
+        for m in mins:
+            for sym, c in m.states.items():
+                states.setdefault(sym, Counter()).update(c)
+            for sym, x in m.best.items():
+                if sym not in best or x[0] > best[sym][0]:
+                    best[sym] = x
+            blocked.update(m.blocked)
+            for sym, c in m.blocked_by_market.items():
+                by_market.setdefault(sym, Counter()).update(c)
+        start = dt.datetime.fromtimestamp(first * 60, tz=dt.timezone.utc)
+        if self.started is not None and self.started > start:
+            covers = f"since the Rider started at {_hms(self.started)} UTC (under {self.window} minutes ago)"
+            lead = f"Since the Rider started at {_hms(self.started)} UTC"
+            start = self.started
+        else:
+            covers = f"the last {self.window} minutes"
+            lead = f"In the last {self.window} minutes"
+        ticks = ticks or {}
+        markets: dict[str, dict] = {}
+        for sym in sorted(set(states) | set(ticks)):
+            row: dict = {"scans": dict(states.get(sym) or {})}
+            if sym in best:
+                sc, d, when = best[sym]
+                row["best"] = {"score": round(sc, 1), "direction": d, "time_utc": when}
+            if by_market.get(sym):
+                row["blocked_by"] = dict(by_market[sym].most_common())
+            row.update(ticks.get(sym) or {})
+            markets[sym] = row
+        top = max(best.items(), key=lambda kv: (kv[1][0], kv[0]), default=None)
+        top_d = ({"market": top[0], "score": round(top[1][0], 1), "direction": top[1][1], "time_utc": top[1][2]}
+                 if top else None)
+        entries = sum(m.entries for m in mins)
+        triggers = sum(m.triggers for m in mins)
+        blocked_list = [{"gate": g, "what": GATE_WORDS.get(g, g), "scans": n}
+                        for g, n in sorted(blocked.items(), key=lambda kv: (-kv[1], kv[0]))]
+        if not scans:
+            summary = f"{lead}: no scans - the Rider is not scanning (see its health checks and notes)."
+        else:
+            summary = (f"{lead}: {scans} scans of {len(states)} markets, {triggers} trigger"
+                       f"{'' if triggers == 1 else 's'}, {entries} entr{'y' if entries == 1 else 'ies'}.")
+            if top_d is not None:
+                summary += (f" Best score {top_d['score']:.1f} ({top_d['market']} {top_d['direction']} at "
+                            f"{top_d['time_utc'][11:19]} UTC); the trigger score is {self.trigger_score:g}.")
+            # a market already in a trade is counted, but said apart: it is not a reason for "no trade"
+            held = [x for x in blocked_list if x["gate"] != "one_position"]
+            in_trade = blocked.get("one_position", 0)
+            if held:
+                words = ", ".join(f"{x['what']} ({x['scans']})" for x in held[:3])
+                summary += (f" {sum(x['scans'] for x in held)} near-miss scans with no entry, held back most by: "
+                            f"{words}.")
+            elif top_d is None or top_d["score"] < self.trigger_score:
+                summary += " No market reached the trigger score."
+            if in_trade:
+                summary += f" ({in_trade} more scans scored high on a market already in a trade.)"
+        lt = self.last_trigger
+        if lt is not None:
+            when = dt.datetime.fromisoformat(lt["time_utc"])
+            if lt["taken"]:
+                taken = "taken"
+            elif lt["held_back_by"] == "unknown":           # sent with no answer: it may have opened
+                taken = f"not known yet: {GATE_WORDS['unknown']}"
+            else:
+                taken = f"not taken: {GATE_WORDS.get(lt['held_back_by'], lt['held_back_by']) or 'no entry'}"
+            trig_line = (f"last trigger: {lt['market']} {lt['direction']} at {_hms(when)} UTC "
+                         f"({_ago((now - when).total_seconds())}), score {lt['score']:.1f}, {taken}")
+        else:
+            since = f" since the Rider started at {_hms(self.started)} UTC" if self.started is not None else ""
+            trig_line = f"last trigger: none{since}"
+        last_trade = dict(last_trade or {"line": "last trade: not known"})
+        return {
+            "window_minutes": self.window, "covers": covers, "from_utc": start.isoformat(), "to_utc": now.isoformat(),
+            "trigger_score": self.trigger_score,
+            "summary": summary,
+            "last_trade": last_trade.get("line", ""), "last_trade_detail": last_trade,
+            "last_trigger": trig_line, "last_trigger_detail": dict(lt) if lt else None,
+            "scans": scans, "failed_scans": sum(m.failed for m in mins), "triggers": triggers, "entries": entries,
+            "near_miss_scans": sum(blocked.values()),
+            "near_miss_means": ("a scan whose score reached the trigger score, or that was READY or TRIGGER, with no "
+                                "entry; counted once per scan, against the first rule that held it back"),
+            "blocked_by": blocked_list,
+            "best": top_d,
+            "ticks": _tick_summary(ticks),
+            "markets": markets,
+            "near_misses": [{k: v for k, v in e.items() if not k.startswith("_")} for e in self.near],
+        }
+
+
+def _tick_summary(ticks: dict) -> dict:
+    ages = {s: x.get("tick_age_seconds") for s, x in ticks.items()}
+    known = {s: a for s, a in ages.items() if a is not None}
+    return {"markets": len(ticks), "newest_age_seconds": min(known.values()) if known else None,
+            "oldest_age_seconds": max(known.values()) if known else None,
+            "no_price_yet": sorted(s for s, a in ages.items() if a is None),
+            "older_than_60s": sorted(s for s, a in known.items() if a > 60.0)}
 
 
 def _px(t: Tick) -> tuple[float, float]:
@@ -219,6 +509,8 @@ class RiderEngine:
         self.hb = Heartbeat(self.data_dir / "heartbeats", "rider", clock) if heartbeat else None
         self.started = to_utc(self.clock())
         self.cycle_ms = 0.0
+        # "why no trade": a record of every scan, for reading only (rider-status.json "why_no_trade")
+        self.why = WhyNoTrade(cfg.trigger_score, started=self.started)
         self._restore()
 
     # ------------------------------------------------------------ helpers --
@@ -502,19 +794,28 @@ class RiderEngine:
         t = now.timestamp()
         if t - self._t_scan >= self.cfg.scan_interval_seconds - 1e-9:
             self._t_scan = t
+            scan_failed = entry_failed = attempted = False         # for the "why no trade" record only
+            outcomes: dict[str, tuple[bool, str]] = {}            # ... what each entry intent came to
             try:
                 self.last_rows = self.core.scan(now)
             except Exception as exc:
                 self.last_rows = []
+                scan_failed = True
                 notes.append(self._note(f"scan failed: {exc}"))
             if self.executor is not None and self.entries_allowed:
+                attempted = True
                 try:
                     intents = self.core.entries(now)
                 except Exception as exc:
                     intents = []
+                    entry_failed = True
                     notes.append(self._note(f"entry check failed: {exc}"))
                 for intent in intents:
-                    notes.append(self._enter(intent, now))
+                    note = self._enter(intent, now)
+                    notes.append(note)
+                    outcomes[intent.symbol] = (any(p.symbol == intent.symbol and p.trigger_id == intent.trigger_id
+                                                   for p in self.positions.values()), note)
+            self._diagnose(now, scan_failed, attempted, entry_failed, outcomes)
             if t - self._t_snapshot >= self.cfg.scan_snapshot_seconds and self.last_rows:
                 self._t_snapshot = t
                 self.journal.record_scan(self.last_rows, now)
@@ -1479,19 +1780,157 @@ class RiderEngine:
                                 and all(c["ok"] for c in checks if c["critical"]))
         return checks
 
+    # ------------------------------------------------------ why no trade --
+    def _diagnose(self, now: dt.datetime, scan_failed: bool, attempted: bool, entry_failed: bool,
+                  outcomes: dict[str, tuple[bool, str]]) -> None:
+        """Feed this scan to the "why no trade" record. Read-only: it looks at
+        what the scan, the entry check and the order step already decided,
+        and a fault here is logged and never reaches trading."""
+        try:
+            samples = [] if scan_failed else self._why_samples(attempted, entry_failed, outcomes)
+            self.why.record(now, samples, failed=scan_failed)
+        except Exception as exc:                           # the record must never stop a pass
+            log.debug("why-no-trade record skipped: %s", exc)
+
+    def _why_samples(self, attempted: bool, entry_failed: bool, outcomes: dict[str, tuple[bool, str]]) -> list[dict]:
+        core, cfg = self.core, self.cfg
+        out: list[dict] = []
+        for row in self.last_rows:
+            sym = row.symbol
+            state = core.states.state.get(sym, WATCHING)     # the entry state (under ENTERED while a trade is open)
+            s = {"market": sym, "direction": row.direction, "score": round(float(row.score), 1), "shown": row.state,
+                 "state": state, "trigger_id": int(row.trigger_id)}
+            entered, note = outcomes.get(sym, (False, None))
+            if entered:
+                s["entered"] = True
+            elif note is not None or row.score >= cfg.trigger_score or state in (READY, TRIGGER):
+                res, view = core.last_results.get(sym), core.last_views.get(sym)
+                s["gate"], s["detail"] = self._held_back_by(row, res, view, state, attempted, entry_failed, note)
+                s["numbers"] = self._gate_numbers(res, view)
+            out.append(s)
+        return out
+
+    def _held_back_by(self, row: ScanRow, res, view, state: str, attempted: bool, entry_failed: bool,
+                      note: Optional[str]) -> tuple[str, str]:
+        """(rule, plain words) for a near miss: the FIRST rule that held this
+        market back on this scan, in the order the decisions apply them (the
+        scan's gates, the entry state, the entry check's own rules, then the
+        health checks and the order). Read-only."""
+        cfg, sym = self.cfg, row.symbol
+        if note is not None:                               # an entry intent the order step did not open
+            rule = _order_step_rule(note)
+            return rule, (note or GATE_WORDS[rule])
+        if row.state == ENTERED or sym in self.core.open:
+            return "one_position", GATE_WORDS["one_position"]
+        if state == TRIGGER:
+            if not attempted:
+                if self.mode not in ("PAPER", "LIVE") or self.executor is None:
+                    return "mode", f"the Rider is {self.mode}: it opens nothing"
+                failing = [str(c.get("message")) for c in self.health if c.get("critical") and not c.get("ok")]
+                return "health", "new entries paused: " + ("; ".join(failing) or "a health check failed")
+            if entry_failed:
+                return "error", "the entry check failed (see the notes)"
+            return self.core.why_not.get(sym) or ("error", "in TRIGGER but no entry was tried")
+        if res is None or view is None:
+            return "warm", GATE_WORDS["warm"]
+        if state == READY:
+            whip = self.core.states.note.get(sym, "")
+            if whip.startswith("Whipsaw"):
+                return "whipsaw", whip
+            if res.score >= cfg.trigger_score and not res.confirmed:
+                return "confirmation", res.confirm_why or "the price has not confirmed the move yet"
+            return "below_trigger", f"score {res.score:.1f}, under the trigger score {cfg.trigger_score:g}"
+        g = res.gates or {}
+        pip = float(getattr(view, "pip", 0.0) or 0.0) or 1.0
+        if not g.get("warm", False):
+            return "warm", GATE_WORDS["warm"]
+        if not g.get("spread", True):
+            return "spread", (f"spread {view.ticks.spread / pip:.1f} pips, over the "
+                              f"{cfg.max_spread_atr * view.atr / pip:.1f}-pip limit ({cfg.max_spread_atr:g} ATR)")
+        if not g.get("activity", True):
+            return "activity", (f"{view.ticks.tick_rate60:.0f} price updates a minute, under the "
+                                f"{cfg.min_ticks_per_minute:g} needed")
+        if res.chop >= cfg.max_chop:
+            return "chop", f"chop {res.chop:.2f}, at or over the {cfg.max_chop:g} limit"
+        if res.side == 0 or not g.get("direction", True):
+            return "direction", GATE_WORDS["direction"]
+        if not g.get("news", True):
+            fam = (res.families or {}).get("news")
+            return "news", str(getattr(fam, "phrase", "") or GATE_WORDS["news"])
+        if not g.get("cost", True):
+            ratio = res.cost_ratio
+            what = "no room for the move" if ratio == float("inf") else f"{ratio:.0%} of it"
+            return "cost", (f"costs {res.cost_price / pip:.1f} pips against an expected move of "
+                            f"{res.expected_move / pip:.1f} pips ({what}; the limit is {cfg.max_cost_ratio:.0%})")
+        if not g.get("headroom", True):
+            return "headroom", f"{res.headroom_atr:.2f} ATR of room to the next level, under {cfg.min_headroom_atr:g}"
+        return "below_ready", f"score {res.score:.1f} with the READY score at {cfg.ready_score:g}"
+
+    @staticmethod
+    def _gate_numbers(res, view) -> dict:
+        """The numbers each rule is judged on, for one market on one scan."""
+        if res is None or view is None or not getattr(view, "ok", False):
+            return {}
+        pip = float(view.pip or 0.0) or 1.0
+        ratio = res.cost_ratio
+        return {"cost_ratio": None if ratio == float("inf") else round(float(ratio), 3),
+                "cost_pips": round(res.cost_price / pip, 2), "expected_move_pips": round(res.expected_move / pip, 1),
+                "headroom_atr": round(min(float(res.headroom_atr), 99.0), 2), "chop": round(float(res.chop), 2),
+                "spread_pips": round(view.ticks.spread / pip, 2), "atr_pips": round(view.atr / pip, 2),
+                "ticks_per_minute": round(float(view.ticks.tick_rate60), 1), "confirmed": bool(res.confirmed)}
+
+    def _tick_freshness(self, now: dt.datetime) -> dict:
+        """Per market: how old its latest price is, and how many prices a
+        minute have been coming in (as the last scan saw them)."""
+        out: dict = {}
+        for sym in self.universe:
+            tk = self.latest.get(sym)
+            v = self.core.last_views.get(sym)
+            ok = v is not None and getattr(v.ticks, "ok", False)
+            out[sym] = {"tick_age_seconds": round((now - to_utc(tk.time)).total_seconds(), 1) if tk is not None else None,
+                        "ticks_per_minute": round(float(v.ticks.tick_rate60), 1) if ok else None}
+        return out
+
+    def _last_trade(self, now: dt.datetime) -> dict:
+        """The trade opened last, from the records (so it survives a restart)."""
+        try:
+            rows = list(self.journal.open_rows()) + list(self.journal.recent_closed(10))
+        except Exception as exc:
+            return {"line": f"last trade: the records could not be read ({exc})"}
+        rows = [r for r in rows if r.get("opened_utc")]
+        if not rows:
+            return {"line": "last trade: none on record"}
+        r = max(rows, key=lambda x: str(x["opened_utc"]))
+        try:
+            when = to_utc(dt.datetime.fromisoformat(str(r["opened_utc"])))
+            ago = f" ({_ago((now - when).total_seconds())})"
+            at = f"{_hms(when)} UTC on {when.date().isoformat()}"
+        except Exception:
+            ago, at = "", str(r["opened_utc"])
+        end = "still open" if not r.get("closed_utc") else f"closed {r.get('exit_reason') or ''}".strip()
+        return {"line": f"last trade: {r.get('symbol')} {r.get('side')} opened {at}{ago}, {r.get('mode')}, {end}",
+                "time_utc": r["opened_utc"], "market": r.get("symbol"), "side": r.get("side"), "mode": r.get("mode"),
+                "ticket": r.get("ticket"), "closed_utc": r.get("closed_utc")}
+
+    def why_no_trade(self, now: dt.datetime) -> dict:
+        """The "why no trade" block of the status file. Never raises."""
+        try:
+            return self.why.report(now, self._tick_freshness(now), self._last_trade(now))
+        except Exception as exc:
+            return {"unavailable": f"could not be worked out: {exc}"}
+
     # --------------------------------------------------------------- status --
     def day_start(self, now: dt.datetime) -> dt.datetime:
-        day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        clk = getattr(self.broker, "clock", None)
-        if clk is not None and hasattr(clk, "day_start_utc"):
-            try:
-                day = to_utc(clk.day_start_utc(now))
-            except Exception:
-                pass
-        return day
+        """00:00 UK today (Europe/London, BST or GMT), in UTC: the status
+        page's Today (Aaron, 9 Oct: just today's trades - never last night's
+        after 22:00 UK, when the broker's day starts). Only the status's
+        TODAY block reads it; no decision does."""
+        local = to_utc(now).astimezone(TZ_LONDON)
+        return dt.datetime(local.year, local.month, local.day, tzinfo=TZ_LONDON).astimezone(dt.timezone.utc)
 
     def today(self, now: dt.datetime) -> dict:
-        rows = [r for r in self.journal.closed_since(self.day_start(now), self.mode)
+        start = self.day_start(now)
+        rows = [r for r in self.journal.closed_since(start, self.mode)
                 if not str(r.get("exit_reason") or "").startswith("SWITCHED")]
         money = [float(r["net_money"]) for r in rows if r.get("net_money") is not None]
         won = sum(1 for r in rows if (r.get("net_money") if r.get("net_money") is not None else r.get("realised_pips") or 0) > 0)
@@ -1505,7 +1944,8 @@ class RiderEngine:
                 best = (v, r)
         estimated = any(r.get("money_source") == "estimate" for r in rows)
         return {
-            "mode": self.mode, "trades": len(rows), "won": won, "lost": lost,
+            "mode": self.mode, "from_utc": start.isoformat(), "day": "the UK day, from 00:00 UK",
+            "trades": len(rows), "won": won, "lost": lost,
             "win_rate": round(100.0 * won / len(rows), 1) if rows else None,
             "net_pips": round(sum(float(r.get("realised_pips") or 0.0) for r in rows), 1),
             "net_money": round(sum(money), 2) if rows else 0.0,
@@ -1542,6 +1982,8 @@ class RiderEngine:
             "order_flow": "not available on retail MetaTrader FX - never faked" if not ORDER_FLOW_AVAILABLE else "available",
             "health": {"entries_allowed": self.entries_allowed, "summary": summary, "checks": self.health},
             "scanner": [r.to_dict() for r in self.last_rows],
+            # why no trade: the last hour of scans, per market and in total, and what held each near miss back
+            "why_no_trade": self.why_no_trade(now),
             "open_positions": positions,
             "today": self.today(now),
             "stories": stories,

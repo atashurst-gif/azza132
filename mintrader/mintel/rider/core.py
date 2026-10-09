@@ -97,8 +97,11 @@ class ScanRow:
     chop: float = 0.0
 
     def to_dict(self) -> dict:
+        # cost_ratio and headroom_atr are for reading only (rider-status.json, the pulse's bots.json)
         return {"market": self.symbol, "direction": self.direction, "score": round(self.score, 1),
-                "state": self.state, "reason": self.reason, "family": self.family}
+                "state": self.state, "reason": self.reason, "family": self.family,
+                "cost_ratio": round(min(float(self.cost_ratio), 99.0), 3),
+                "headroom_atr": round(min(float(self.headroom_atr), 99.0), 2)}
 
 
 @dataclass
@@ -197,6 +200,10 @@ class RiderCore:
         self.strength = StrengthMap()
         self.order_flow_available = ORDER_FLOW_AVAILABLE        # family 17: none on retail MT5 FX
         self.notes: list[str] = []
+        # FOR READING ONLY (the engine's "why no trade" record): written by entries(), never read by any
+        # decision. For each market in TRIGGER that the last entries() call did not turn into an intent:
+        # (rule, plain words).
+        self.why_not: dict[str, tuple[str, str]] = {}
 
     # ------------------------------------------------------------ set-up --
     def _sym(self, symbol: str) -> _Sym:
@@ -389,16 +396,21 @@ class RiderCore:
             self.scan(now)
         out: list[EntryIntent] = []
         self.notes = []
+        # why_not is FOR READING ONLY (the engine's "why no trade" record): written here, never read here
+        self.why_not = why_not = {}
         for row in self.last_rows:
             if row.state != TRIGGER:
                 continue
             sym = row.symbol
             if sym in self.open:
+                why_not[sym] = self._skip_rule(sym, row, t)
                 continue
             if self.spent_trigger.get(sym, 0) >= row.trigger_id:
+                why_not[sym] = self._skip_rule(sym, row, t)
                 continue                                          # this wave was already taken: wait for a fresh trigger
             last = max(self.last_signal.get(sym, -1e18), self.last_exit.get(sym, -1e18))
             if t - last < self.cfg.cooldown_seconds:
+                why_not[sym] = self._skip_rule(sym, row, t)
                 continue
             if len(self.open) + len(out) >= self.cfg.max_concurrent_positions:
                 self.notes.append(f"{sym}: trigger skipped - {self.cfg.max_concurrent_positions} positions already open")
@@ -406,11 +418,41 @@ class RiderCore:
             intent, why = self._intent(sym, row, now)
             if intent is None:
                 self.notes.append(f"{sym}: {why}")
+                why_not[sym] = ("stop", why)
                 continue
             self.spent_trigger[sym] = row.trigger_id
             self.last_signal[sym] = t
             out.append(intent)
+        try:
+            taken = {i.symbol for i in out}
+            for row in self.last_rows:                            # the triggers left after the cap stopped the loop
+                if row.state == TRIGGER and row.symbol not in why_not and row.symbol not in taken:
+                    why_not[row.symbol] = self._skip_rule(row.symbol, row, t) or (
+                        "max_concurrent", f"{len(self.open) + len(out)} positions open or being opened - the cap is "
+                                          f"{self.cfg.max_concurrent_positions}")
+        except Exception:                                         # the record never costs a decision
+            pass
         return out
+
+    def _skip_rule(self, sym: str, row: ScanRow, t: float) -> Optional[tuple[str, str]]:
+        """FOR READING ONLY: which of entries()' own rules - one position per
+        market, a fresh trigger, the cooldown - holds back a market in
+        TRIGGER, in the order entries() applies them, or None. It changes
+        nothing, no decision asks it, and it never raises."""
+        try:
+            if sym in self.open:
+                return "one_position", "a position is already open on this market"
+            if self.spent_trigger.get(sym, 0) >= row.trigger_id:
+                return "fresh_trigger", (f"this wave (trigger {row.trigger_id}) was already taken - waiting for a "
+                                         f"fresh trigger")
+            last = max(self.last_signal.get(sym, -1e18), self.last_exit.get(sym, -1e18))
+            if t - last < self.cfg.cooldown_seconds:
+                return "cooldown", (f"{self.cfg.cooldown_seconds - (t - last):.0f} s of the "
+                                    f"{self.cfg.cooldown_seconds:g} s cooldown left after the last signal or exit on "
+                                    f"this market")
+            return None
+        except Exception as exc:
+            return "error", f"could not be worked out ({exc})"
 
     def initial_stop(self, v: MarketView, d: int, entry: float) -> tuple[Optional[float], str]:
         """The broker-side stop at entry: just beyond the last micro swing

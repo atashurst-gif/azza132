@@ -258,6 +258,29 @@ class TestPulse:
         assert line.startswith("2026-09-24T10:32:00Z UP") and "equity=1012.40" in line
         assert "today=+3.20" in line and "open=2" in line and "tnb" not in line
 
+    def test_today_is_called_the_uk_day_never_the_brokers_day(self, workdir):
+        """9 Oct: the page's Today is the UK day (from 00:00 UK), so a trade
+        from 23:00 UK last night is not in it. The pulse's own words, its
+        notes and the guide say so; none calls it the broker's day (from
+        22:00 UK)."""
+        cfg = _cfg(workdir)
+        body = json.dumps({"status": {"bot": "RUNNING", "mt5_connected": True, "broker_connected": True,
+                                      "tnb_mode": "PAPER"},
+                           "standing": {"today": 1.5}, "open_live": [], "health": {}})
+        p = pl.take_pulse(cfg, NOW, fetch=lambda url: body, heartbeats=_heartbeats(5, 3),
+                          bridge=lambda: {"mt5_connected": True}, port_is_open=lambda: True,
+                          terminal_running=lambda: True)
+        assert p["today_pnl"] == 1.5 and p["tnb_practice_today"] is None
+        assert p["tnb_practice_error"] == "the page has not given its start date yet"
+        guide = (Path(__file__).resolve().parents[1] / "docs" / "ops" / "always-watching.md").read_text()
+        for text in (pl.__doc__, guide):
+            flat = " ".join(text.split())
+            assert "result for the UK day (from 00:00 UK, the page's Today; not the broker's day" in flat
+            assert "result for the broker's day" not in flat
+        import inspect
+        src = inspect.getsource(pl)
+        assert "broker's day so far" not in src and "same broker day" not in src and "ACCOUNT's broker day" not in src
+
     def test_down_explains_itself_from_the_outside(self, workdir):
         cfg = _cfg(workdir)
         (workdir / "watchdog.log").write_text(
@@ -315,6 +338,27 @@ class TestPulse:
         assert json.loads(files["reports/live/status.json"]) == {"a": 1}
         assert "status" not in json.loads(files["reports/live/pulse.json"])
         assert files["reports/live/uptime.log"].count("\n") == 3
+        # bots.json rides along when the pulse built it (tests/test_live_diagnostics.py)
+        with_bots = pl.pulse_files({"ts_utc": "x", "up": False, "reason": "r", "status": None},
+                                   pl.uptime_lines(cfg), bots='{"bots": []}\n')
+        assert set(with_bots) == set(files) | {"reports/live/bots.json"}
+        assert with_bots["reports/live/bots.json"] == '{"bots": []}\n'
+
+    def test_bots_json_is_written_even_when_the_trader_is_down(self, workdir):
+        cfg = _cfg(workdir)
+        (workdir / "rider.json").write_text(json.dumps({"mode": "LIVE"}))
+        (workdir / "rider-status.json").write_text(json.dumps({"mode": "LIVE", "updated_utc": NOW.isoformat(),
+                                                               "health": {"entries_allowed": True}, "scanner": []}))
+
+        def dead(url):
+            raise OSError("connection refused")
+        p = pl.take_pulse(cfg, NOW, fetch=dead, heartbeats=_heartbeats(900, 4), bridge=lambda: None,
+                          port_is_open=lambda: False, terminal_running=lambda: True)
+        rep = json.loads(pl.bots_json(cfg, p, NOW))
+        assert rep["trader_up"] is False and "trader not answering" in rep["trader_reason"]
+        rider = [b for b in rep["bots"] if b["id"] == "momentum_rider"][0]
+        assert rider["running"] is True and rider["mode"] == "LIVE" and "HEALTHY, LIVE" in rider["health"]
+        assert "unavailable" in rider["today"]                       # the account's figures need the page
 
     def test_summary_sums_the_gaps(self):
         lines = ["2026-09-24T09:00:00Z UP   equity=1.00 open=0 today=+0.00",

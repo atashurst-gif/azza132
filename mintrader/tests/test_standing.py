@@ -105,8 +105,31 @@ class TestTheFigure:
         assert sum(b["open"] for b in sd["bots"]) + sd["other"]["open"] == pytest.approx(sd["open"])
         assert sd["other"]["open"] == 0.0                          # open money is never a leftover
 
-    def test_today_starts_at_the_brokers_day(self):
-        assert standing()["today"] == round(8.28 - 9.36 + 2.0 + 4.0, 2)
+    def test_today_is_the_uk_day(self):
+        sd = standing()
+        assert sd["today"] == round(8.28 - 9.36 + 2.0 + 4.0, 2)
+        assert sd["day_start"] == "2026-10-07T23:00:00+00:00" and sd["day_basis"] == "UK"   # 00:00 BST on 8 Oct
+
+    def test_last_nights_trade_is_yesterday_and_a_trade_opened_last_night_counts_today_in_full(self):
+        """9 Oct: a short stopped at 22:30 UTC on the 8th (23:30 UK, inside the
+        broker's 9 Oct) is yesterday's; a Rider trade opened at 23:50 UK on the
+        8th and closed this morning is today's, with both halves of its commission."""
+        now = dt.datetime(2026, 10, 9, 9, 0, tzinfo=UTC)
+        rows = [deal(20, 990711, -0.06, -0.06, True, dt.datetime(2026, 10, 8, 15, 0, tzinfo=UTC)),
+                deal(20, 990711, -9.30, -0.06, False, dt.datetime(2026, 10, 8, 22, 30, tzinfo=UTC)),
+                deal(21, 990811, -0.05, -0.05, True, dt.datetime(2026, 10, 8, 22, 50, tzinfo=UTC)),
+                deal(21, 990811, 3.05, -0.05, False, dt.datetime(2026, 10, 9, 8, 0, tzinfo=UTC))]
+        b = Broker(deals=rows, balance=2000 - 9.36 + 3.00)
+        b.positions = lambda magic=None: []
+        sd = account_standing(b, cfg(), now, cache_seconds=0)
+        by = {r["id"]: r for r in sd["bots"]}
+        assert sd["today"] == 3.00 and sd["today_trades"] == 1 and sd["today_commission"] == 0.10
+        assert by["crowd_fader"]["today"] == 0.0 and by["crowd_fader"]["made"] == -9.36
+        assert by["momentum_rider"]["today"] == 3.00
+        from mintel.ops.standing import period_view
+        deals = sd["deals"]
+        assert period_view(sd, deals, "yesterday", now=now)["bots"]["crowd_fader"]["made"] == -9.36
+        assert period_view(sd, deals, "today", now=now)["made"] == 3.00 == sd["today"]
 
     def test_one_read_of_the_history_when_the_bridge_says_the_magic(self):
         b = Broker()

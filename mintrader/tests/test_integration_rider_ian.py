@@ -241,7 +241,7 @@ class TestTheRiderPage:
         _rider_files(tmp_path)
         (tmp_path / "rider-status.json").unlink()
         page = render_rider_page(str(tmp_path), NOW)
-        assert "the Rider&#x27;s own records since 00:00 UTC" in page
+        assert "the Rider&#x27;s own records since 00:00 UK" in page          # the UK day, as every page
         assert '<div class="k">Trades</div><div class="v ">2</div>' in page and "+£3.30" in page
 
 

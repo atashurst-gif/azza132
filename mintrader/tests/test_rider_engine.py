@@ -245,10 +245,36 @@ class TestLiveEntryAndManagement:
         assert names == {"mt5_alive", "broker_connected", "algo_trading", "fresh_ticks", "symbols", "spread_valid",
                          "execution", "positions_reconciled", "flowlock_alive", "database_writable", "disk_memory"}
         row = st["scanner"][0]
-        assert set(row) >= {"market", "direction", "score", "state", "reason"}
+        assert set(row) >= {"market", "direction", "score", "state", "reason", "cost_ratio", "headroom_atr"}
         assert set(st["today"]) >= {"trades", "won", "lost", "win_rate", "net_pips", "net_money", "best_trade"}
         assert st["today"]["trades"] >= 1 and st["stories"]
         assert "never faked" in st["order_flow"]
+        # why no trade (tests/test_live_diagnostics.py): the last hour of scans, the last trade and trigger
+        why = st["why_no_trade"]
+        assert why["scans"] > 0 and why["entries"] >= 1 and why["summary"]
+        assert why["last_trade"].startswith("last trade: EURUSD") and why["last_trigger"].startswith("last trigger: ")
+        assert why["markets"]["EURUSD"]["tick_age_seconds"] is not None
+
+
+def test_today_is_the_uk_day_not_the_brokers(tmp_path):
+    """Aaron, 9 Oct: "I don't want last night 11pm trade showing, just
+    today's". The broker's day starts at 22:00 UK in summer; TODAY on the
+    Rider's status starts at 00:00 UK (23:00 UTC in BST, 00:00 UTC in GMT)."""
+    ticks, _pivot = wave_path()
+    now = dt.datetime(2026, 10, 9, 9, 30, tzinfo=UTC)
+    eng, broker, clock = make(tmp_path, {"EURUSD": ticks}, now)
+    for ticket, closed, money in ((1, "2026-10-08T22:00:00+00:00", -5.0),      # 23:00 UK last night
+                                  (2, "2026-10-08T23:30:00+00:00", 2.5),       # 00:30 UK today
+                                  (3, "2026-10-09T08:50:00+00:00", 1.25)):
+        eng.journal.insert_trade({"ticket": ticket, "mode": "LIVE", "symbol": "EURUSD", "side": "BUY",
+                                  "opened_utc": closed, "closed_utc": closed, "net_money": money,
+                                  "realised_pips": money, "money_source": "broker", "exit_reason": "STOP"})
+    t = eng.today(now)
+    assert t["from_utc"] == "2026-10-08T23:00:00+00:00"
+    assert t["trades"] == 2 and t["net_money"] == pytest.approx(3.75)
+    assert eng.status(now)["today"]["trades"] == 2
+    assert eng.day_start(dt.datetime(2026, 12, 9, 9, 30, tzinfo=UTC)).isoformat() == "2026-12-09T00:00:00+00:00"
+    assert eng.day_start(dt.datetime(2026, 10, 8, 23, 10, tzinfo=UTC)).isoformat() == "2026-10-08T23:00:00+00:00"
 
 
 def test_restart_restores_the_position_and_manages_it(tmp_path):

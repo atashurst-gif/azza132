@@ -14,6 +14,13 @@ The pages, all written in plain English rather than trader jargon:
   the reasoning and the order-book ladder (read-only, from
   data/ian-status.json).
 * ``/health``  - machine-readable health, for the watchdog and for curl.
+
+Every period on these pages is a UK calendar day (Europe/London, midnight
+to midnight): a trade counts, in full, on the UK day it closed (see
+mintel/ops/standing.py). Under the period buttons a row of bot buttons
+(``?bot=<id>``) shows one bot alone: its card, its trades closed in the
+period, its open trades and its own live view, reusing the renderers of
+the folded "Each bot in detail" section.
 """
 from __future__ import annotations
 
@@ -23,9 +30,11 @@ import json
 import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Callable, Optional
 
 from ..clock import TZ_LONDON, to_utc, utcnow
+from .standing import UK_DAYS_NOTE, uk_date, uk_day_start
 
 log = logging.getLogger("mintel.dashboard")
 
@@ -65,7 +74,14 @@ class DashboardState:
         self.bot_lines: dict = {}        # {bot id: one plain line} for the Rider and Ian, from their status files
         self.tnb_mode: str = ""          # Trend & Breakout's mode (LIVE or PAPER), from the config; "" = not told
         self.period_resolver: Optional[Callable[[str, str, str], dict]] = None
+        self.clock: Optional[Callable[[], dt.datetime]] = None   # "now" for the pages (tests set it); UTC now otherwise
         self.updated: Optional[dt.datetime] = None
+
+    def now(self) -> dt.datetime:
+        try:
+            return to_utc(self.clock()) if self.clock is not None else utcnow()
+        except Exception:
+            return utcnow()
 
     def update(self, **kwargs) -> None:
         with self.lock:
@@ -85,9 +101,10 @@ class DashboardState:
 
 def build_results(journal, account_currency: str = "GBP",
                   now: Optional[dt.datetime] = None) -> dict:
-    """Today's results in plain language, plus a per-trade story."""
+    """Today's results in plain language, plus a per-trade story. Today is
+    the UK day (from 00:00 UK), like every period on the pages."""
     now = to_utc(now or utcnow())
-    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = uk_day_start(now)
     trades = journal.closed_trades(limit=400, since=start)
     wins = [t for t in trades if (t.get("pnl_money") or 0) > 0]
     losses = [t for t in trades if (t.get("pnl_money") or 0) < 0]
@@ -124,7 +141,7 @@ def build_results(journal, account_currency: str = "GBP",
         }
 
     return {
-        "date": start.date().isoformat(),
+        "date": uk_date(now).isoformat(),
         "currency": account_currency,
         "trades": len(trades), "wins": len(wins), "losses": len(losses),
         "win_rate": round(len(wins) / len(trades) * 100, 1) if trades else None,
@@ -266,6 +283,16 @@ details.more>summary{font-size:13px;font-weight:600;padding:6px 0}
 .lad tr.mid td{background:#f8fafc;font-weight:600;border-top:2px solid #1b1c1e;border-bottom:2px solid #1b1c1e}
 .lad tr.ask td.px{color:#b91c1c}.lad tr.bid td.px{color:#0a7c35}
 .story{border-top:1px solid #eef0f3;padding:5px 0}
+.botbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:-2px 0 8px}
+.botbar .tab{padding:4px 10px;font-size:12px}
+.botbar .days{font-size:11px;color:#6b7280;margin-left:6px}
+.why{font-size:11px;color:#6b7280;margin-top:4px}
+.cards.one{grid-template-columns:minmax(0,640px)}
+.scroll{overflow-x:auto}
+.trades td,.trades th{font-size:12px;padding:3px 6px}
+.trades tr.practice td{color:#9ca3af}
+.trades td.money{font-weight:700;color:#1b1c1e;white-space:nowrap}
+.trades tr.practice td.money{color:#9ca3af;font-weight:500}
 @media (max-width:1150px){.grid{grid-template-columns:1fr 1fr}}
 @media (max-width:720px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}
 .st.big{grid-column:span 2}.dates{margin-left:0}}
@@ -284,6 +311,8 @@ try{localStorage.setItem(k,JSON.stringify(o))}catch(e){}});});})();
 
 # Refreshes the page every 10 seconds, except while a date is being picked
 # for the Custom filter (a plain meta refresh would wipe it half-entered).
+# location.reload() reloads this very address, query and all, so the chosen
+# bot (?bot=), period and dates stay chosen.
 REFRESH_JS = """<script>
 setInterval(function(){
 var busy=false;document.querySelectorAll('form.dates input[type=date]').forEach(function(i){
@@ -317,6 +346,8 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
     pq = f"&period={html.escape(pkey)}"
     if pkey == "custom":
         pq += f"&from={html.escape(str(period.get('from') or ''))}&to={html.escape(str(period.get('to') or ''))}"
+    if _bot_choice(snap.get("bot_selected")) != "all":                 # the chosen bot stays chosen
+        pq += f"&bot={html.escape(str(snap['bot_selected']))}"
     tabs = "".join(
         f'<a class="tab{" on" if k == selected else ""}" href="/?strategy={k}{pq}">{html.escape(labels.get(k, k))}</a>'
         for k in order)
@@ -433,14 +464,18 @@ def _strategy_parts(snap: dict, selected: str = "overall") -> dict:
                            + '</div>')
 
     src_txt = html.escape(str(period.get("source") or "the bots' own records"))
-    p_start = html.escape(str(period.get("start") or "")[:10])
-    p_end = html.escape(str(period.get("end") or "")[:10])
+    p_start = html.escape(_uk(period.get("start") or "", "%d %b %Y"))
+    try:                                                   # the last UK day in the period (its end is the next midnight)
+        p_end = html.escape(_uk((dt.datetime.fromisoformat(str(period.get("end"))) - dt.timedelta(seconds=1)).isoformat(),
+                                "%d %b %Y"))
+    except Exception:
+        p_end = ""
     own = s.get("source")
     if s.get("note"):
         own = (str(own) + ". " if own else "") + str(s["note"])
     source = ((f"Figures on this tab come from {html.escape(str(own))}." if own else "Today's figures are the broker's own.")
               if pkey == "today" else
-              f"Figures for {plabel} come from {src_txt}, {p_start} to {p_end} (UTC, end exclusive).")
+              f"Figures for {plabel} come from {src_txt}, {p_start} to {p_end} (UK days, both included).")
     figures = (f'<div class="box"><div class="stats">{stats}</div>'
                f'<p class="small" style="margin:6px 0 0">Overall is every strategy added together - the account\'s '
                f'definitive result. Each bot\'s tab shows only its own trades. {source}</p></div>')
@@ -467,10 +502,17 @@ def render_rider_panel(snap: dict) -> str:
     today = rd.get("today") or {}
     h = rd.get("health") or {}
     status = rd.get("status") or ("RUNNING" if rd.get("present") else "NOT RUNNING")
+    broker_day = (snap.get("bot_today") or {}).get("momentum_rider")
+    if isinstance(broker_day, dict) and broker_day.get("trades") is not None:
+        # MetaTrader's figures for the UK day: the same as its card
+        today_txt = (f'{e(str(broker_day.get("trades")))} trades, {e(str(broker_day.get("wins")))} won, '
+                     f'{e(_money_txt(broker_day.get("made")))} (MetaTrader, since 00:00 UK)')
+    else:
+        today_txt = (f'{e(str(today.get("trades", 0)))} trades, {e(str(today.get("won", 0)))} won, '
+                     f'{e(_signed(today.get("net_pips"), " pips"))}')
     body = (f'<div class="k">Status</div><div>{e(str(status))} - {e(str(h.get("summary") or ""))}</div>'
             f'<div class="k">Mode</div><div><span class="pill">{e(str(rd.get("mode") or ""))}</span></div>'
-            f'<div class="k">Today</div><div>{e(str(today.get("trades", 0)))} trades, {e(str(today.get("won", 0)))} won, '
-            f'{e(_signed(today.get("net_pips"), " pips"))}</div>'
+            f'<div class="k">Today</div><div>{today_txt}</div>'
             f'<div class="k">Watching</div><div>{len(rd.get("scanner") or [])} markets, '
             f'{len(rd.get("open_positions") or [])} open</div>')
     return (f'<div class="box"><div class="rs-title">RAPID MOMENTUM RIDER</div>'
@@ -666,17 +708,49 @@ def _uk(ts: str, fmt: str = "%a %d %b %H:%M") -> str:
         return ""
 
 
-def render_period_bar(view: Optional[dict], strategy: str = "overall") -> str:
-    """The filter at the top: the same eight choices every time."""
+BOT_IDS = ("market_intelligence", "momentum_rider", "momentum_runner", "band_breaker", "crowd_fader",
+           "financial_ian", "rapid_scalper")
+
+
+def _bot_choice(bot) -> str:
+    """The bot a ``?bot=`` names, or "all" (anything else is "all")."""
+    return bot if bot in BOT_IDS else "all"
+
+
+def _keep(view: Optional[dict], bot: str = "all", strategy: str = "overall", period: bool = True) -> str:
+    """The query that keeps the chosen period (and its dates), bot and folded tab."""
+    v = view or {}
+    key = str(v.get("key") or "today")
+    q = []
+    if period:
+        q.append(f"period={html.escape(key)}")
+        if key == "custom":
+            q.append(f"from={html.escape(str(v.get('from') or ''))}")
+            q.append(f"to={html.escape(str(v.get('to') or ''))}")
+    if bot and bot != "all":
+        q.append(f"bot={html.escape(bot)}")
+    if strategy and strategy != "overall":
+        q.append(f"strategy={html.escape(strategy)}")
+    return "&".join(q)
+
+
+def render_period_bar(view: Optional[dict], strategy: str = "overall", bot: str = "all") -> str:
+    """The filter at the top: the same eight choices every time. The chosen
+    bot (``?bot=``) and folded tab stay chosen."""
     from .standing import PERIOD_BUTTONS
+    bot = _bot_choice(bot)
     key = (view or {}).get("key") or "today"
-    q = f"&strategy={html.escape(strategy)}" if strategy and strategy != "overall" else ""
+    rest = _keep(None, bot, strategy, period=False)
+    q = f"&{rest}" if rest else ""
     btns = "".join(f'<a class="tab p{" on" if k == key else ""}" href="/?period={k}{q}">{html.escape(lbl)}</a>'
                    for k, lbl in PERIOD_BUTTONS)
     f_val = html.escape(str((view or {}).get("from") or ""))
     t_val = html.escape(str((view or {}).get("to") or ""))
+    hidden = ((f'<input type="hidden" name="strategy" value="{html.escape(strategy)}">'
+               if strategy and strategy != "overall" else "")
+              + (f'<input type="hidden" name="bot" value="{html.escape(bot)}">' if bot != "all" else ""))
     custom = (f'<form class="dates" style="margin-left:6px" method="get" action="/"><input type="hidden" name="period" value="custom">'
-              + (f'<input type="hidden" name="strategy" value="{html.escape(strategy)}">' if q else "")
+              + hidden
               + f'<span class="tab p{" on" if key == "custom" else ""}" style="cursor:default">Custom</span>'
               f'<label>From <input type="date" name="from" value="{f_val}"></label> '
               f'<label>To <input type="date" name="to" value="{t_val}"></label> '
@@ -684,22 +758,51 @@ def render_period_bar(view: Optional[dict], strategy: str = "overall") -> str:
     return f'<div class="tabs">{btns}{custom}</div>'
 
 
-def render_open_trades(snap: dict) -> str:
-    """Every open position on the account right now, with the bot that holds it."""
+def render_bot_bar(view: Optional[dict], bot: str = "all", strategy: str = "overall",
+                   retired_money: bool = False) -> str:
+    """The bot buttons, right under the period buttons and always there: All
+    bots (the account and every card) or one bot alone, keeping the chosen
+    period. The retired Rapid Scalper has a button only while it has real
+    money in the period. Says once that days are UK days."""
+    from .standing import BOTS
+    bot = _bot_choice(bot)
+    labels = dict(BOTS)
+    order = ["all", "market_intelligence", "momentum_rider", "momentum_runner", "band_breaker", "crowd_fader",
+             "financial_ian"] + (["rapid_scalper"] if retired_money or bot == "rapid_scalper" else [])
+    btns = []
+    for k in order:
+        q = _keep(view, k, strategy)
+        # "&#38;" is the same "&" as "&amp;": the button reads "Trend & Breakout", and the first
+        # "Trend &amp; Breakout" on the page is still its card's name
+
+        name = "All bots" if k == "all" else html.escape(labels.get(k, k)).replace("&amp;", "&#38;")
+        btns.append(f'<a class="tab{" on" if k == bot else ""}" href="/?{q}">{name}</a>')
+    return (f'<div class="botbar">{"".join(btns)}<span class="days">{html.escape(UK_DAYS_NOTE)}.</span></div>')
+
+
+def render_open_trades(snap: dict, magic: Optional[int] = None, title: str = "Open trades right now") -> str:
+    """Every open position on the account right now, with the bot that holds
+    it (or one bot's, ``magic``). Open trades count in no period until they
+    close; the commission already charged on them is said under the table."""
     rows = snap.get("open_live")
     e = html.escape
     cur = str((snap.get("standing") or {}).get("currency") or "GBP")
     when = _uk(snap.get("open_at") or "", "%H:%M:%S")
+    title = e(title)
     if rows is None:
-        return ('<div class="card"><h2>Open trades right now</h2><div class="small bad">The open positions could not '
+        return (f'<div class="card"><h2>{title}</h2><div class="small bad">The open positions could not '
                 'be read from MetaTrader just now; this box fills again on its own.</div></div>')
+    if magic is not None:
+        rows = [r for r in rows if int(r.get("magic") or 0) == int(magic)]
     if not rows:
-        return (f'<div class="card"><h2>Open trades right now</h2><div class="small">No open trades right now '
+        return (f'<div class="card"><h2>{title}</h2><div class="small">No open trades right now '
                 f'(checked {e(when)} UK).</div></div>')
     total = round(sum(float(r.get("profit") or 0.0) for r in rows), 2)
+    charged = snap.get("open_charged") or {}
+    booked = round(sum(float(charged.get(int(r.get("ticket") or 0), 0.0)) for r in rows), 2)
 
     def px(v):
-        return "-" if not v else f"{float(v):g}"
+        return "-" if not v else f"{float(v):.10g}"
     body = "".join(
         f'<tr><td><b>{e(str(r.get("bot")))}</b></td><td><b>{e(str(r.get("symbol")))}</b></td>'
         f'<td>{e(str(r.get("side")))}</td><td class="mono">{float(r.get("volume") or 0):g}</td>'
@@ -708,21 +811,104 @@ def render_open_trades(snap: dict) -> str:
         f'<td class="mono">{px(r.get("target"))}</td>'
         f'<td class="mono {"ok" if float(r.get("profit") or 0) > 0 else ("bad" if float(r.get("profit") or 0) < 0 else "")}">'
         f'<b>{_fmt_money(float(r.get("profit") or 0.0), cur)}</b></td></tr>' for r in rows)
-    return (f'<div class="card"><h2>Open trades right now - {len(rows)} open, '
+    fee_note = ""
+    if abs(booked) >= 0.005:
+        what = (f"{_fmt_money(abs(booked), cur).lstrip('+')} has already been taken from" if booked < 0
+                else f"{_fmt_money(booked, cur)} has already been added to")
+        fee_note = (f'<div class="small">{what} the balance for these open trades (the commission charged when they '
+                    f'opened, and any part already closed); it counts in their result on the UK day they close.</div>')
+    return (f'<div class="card"><h2>{title} - {len(rows)} open, '
             f'<span class="{"ok" if total > 0 else ("bad" if total < 0 else "")}">{_fmt_money(total, cur)}</span> '
             f'not banked yet</h2><table class="bots"><tr><th>Bot</th><th>Market</th><th>Side</th><th>Lots</th>'
             f'<th>Opened (UK)</th><th>Entry</th><th>Stop</th><th>Target</th><th>Profit now</th></tr>{body}</table>'
             f'<div class="small">Live from MetaTrader (profit includes swap), updated {e(when)} UK; the page refreshes '
-            f'every 10 seconds.</div></div>')
+            f'every 10 seconds. Open trades count in no period until they close.</div>{fee_note}</div>')
 
 
-def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "overall") -> str:
-    """The filter, then clean headline cards: the account, and one card per
-    bot, each with the chosen period (Today unless another is picked) and
-    Overall. Every figure is MetaTrader's own record, after commission.
-    Then the open trades. Display only."""
+DEFAULT_MAGICS = {"market_intelligence": 990_311, "momentum_rider": 990_811, "momentum_runner": 990_511,
+                  "band_breaker": 990_611, "crowd_fader": 990_711, "financial_ian": 990_911, "rapid_scalper": 990_411}
+
+
+def _cls(v) -> str:
+    if v is None or abs(float(v)) < 0.005:
+        return ""
+    return "ok" if float(v) > 0 else "bad"
+
+
+def _open_of(open_live, magic, label) -> tuple[float, int]:
+    """(open profit, open trades) of one bot, from the account's open positions."""
+    money, n = 0.0, 0
+    for r in open_live or ():
+        mine = (int(r.get("magic") or 0) == int(magic or 0)) if "magic" in r else (r.get("bot") == label)
+        if mine:
+            money += float(r.get("profit") or 0.0)
+            n += 1
+    return round(money, 2), n
+
+
+def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dict, cur: str,
+              alone: bool = False) -> str:
+    """One bot's card: its mode, the chosen period and Overall (MetaTrader's
+    figures, after commission), its trades, what it has open, and - in grey,
+    never added - its practice. ``alone``: the card at the top of its own view."""
+    e = html.escape
+    bid, label, mode = b.get("id"), str(b.get("label")), str(b.get("mode") or "")
+    live = mode == "LIVE"
+    show_sel = sel.get("key") != "total"
+    sel_label = str(sel.get("label") or "Today")
+    vs = (sel.get("bots") or {}).get(bid) or {}
+    vt = (tot.get("bots") or {}).get(bid) or {}
+
+    def m(v):
+        return "-" if v is None else _fmt_money(float(v), cur)
+
+    def fig(lbl, v):
+        return f'<div><div class="fk">{e(lbl)}</div><div class="fv {_cls(v)}">{m(v)}</div></div>'
+    figs = (fig(sel_label, vs.get("made")) if show_sel else "") + fig("Overall", vt.get("made"))
+    bits = []
+    v = vs if show_sel else vt
+    n, when = v.get("trades"), (sel_label.lower() if show_sel else "overall")
+    if n is None:
+        bits.append("trades not known just now")
+    else:
+        won = f' ({v.get("wins")} won, {v.get("losses")} lost)' if n and v.get("wins") is not None else ""
+        bits.append(f'{n} trade{"" if n == 1 else "s"} {e(when)}{won}')
+    money, n_open = _open_of(snap.get("open_live"), b.get("magic"), label)
+    if snap.get("open_live") is None and alone:
+        bits.append("open trades not readable just now")
+    elif n_open:
+        bits.append(f'open now <b class="{_cls(money)}">{m(money)}</b>'
+                    + (f' ({n_open} open)' if alone else ""))
+    elif alone:
+        bits.append("nothing open now")
+    line = (snap.get("bot_lines") or {}).get(bid)
+    if line:
+        bits.append(e(str(line)))
+    if bid == "market_intelligence" and mode == "PAPER":
+        bits.append("real prices, simulated orders")
+    if bid == "momentum_runner":
+        bits.append("rides Trend &amp; Breakout's index entries")
+    practice = ""
+    ps, pt = p_sel.get(bid), p_tot.get(bid)
+    if not live or (show_sel and ps is not None and abs(float(ps)) >= 0.005):
+        practice = (f'<div class="pr">Practice only, not real money: '
+                    + (f'{e(sel_label.lower())} {m(ps)} &middot; ' if show_sel and ps is not None else "")
+                    + f'overall {m(pt)}</div>')
+    pill = f'<span class="pill {"ok" if live else ""}">{e(mode)}</span>'
+    return (f'<div class="hc{"" if live else " paper"}"><div class="nm">{e(label)} {pill}</div>'
+            f'<div class="figs">{figs}</div><div class="ft">{" &middot; ".join(bits)}</div>{practice}</div>')
+
+
+def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "overall", bot: str = "all") -> str:
+    """The filter (the period buttons, then the bot buttons), then clean
+    headline cards: the account, and one card per bot, each with the chosen
+    period (Today unless another is picked; UK days) and Overall. Every
+    figure is MetaTrader's own record, after commission. Then the open
+    trades. With a bot chosen (``bot``), that bot alone instead: see
+    ``render_bot_view``. Display only."""
     sd = snap.get("standing") or {}
     top = top or {}
+    bot = _bot_choice(bot)
     sel, tot = top.get("sel"), top.get("tot")
     p_sel, p_tot = top.get("p_sel") or {}, top.get("p_tot") or {}
     e = html.escape
@@ -730,22 +916,26 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
 
     def m(v):
         return "-" if v is None else _fmt_money(float(v), cur)
-
-    def cls(v):
-        if v is None or abs(float(v)) < 0.005:
-            return ""
-        return "ok" if float(v) > 0 else "bad"
+    cls = _cls
     try:
         began = dt.datetime.fromisoformat(str(sd.get("start"))).astimezone(TZ_LONDON).strftime("%a %d %b")
     except Exception:
         began = ""
-    bar = render_period_bar(sel or {"key": "today"}, strategy)
+    shown_period = sel or top.get("period") or {"key": "today"}
+    scalper_money = (((sel or {}).get("bots") or {}).get("rapid_scalper") or {}).get("made")
+    bar = (render_period_bar(shown_period, strategy, bot)
+           + render_bot_bar(shown_period, bot, strategy,
+                            retired_money=scalper_money is not None and abs(float(scalper_money)) >= 0.005))
     if not sel or not tot or tot.get("made") is None:
         why = e(str(sd.get("error") or "the page has not heard from MetaTrader yet"))
-        return (bar + f'<div class="cards"><div class="hc acct bad"><div><div class="nm">Account</div>'
-                f'<div class="fv">-</div><div class="ft">MetaTrader\'s records could not be read just now ({why}). '
-                f'No figure is shown rather than a wrong one; it comes back on its own.</div></div></div></div>'
-                + render_open_trades(snap))
+        missing = (f'<div class="cards"><div class="hc acct bad"><div><div class="nm">Account</div>'
+                   f'<div class="fv">-</div><div class="ft">MetaTrader\'s records could not be read just now ({why}). '
+                   f'No figure is shown rather than a wrong one; it comes back on its own.</div></div></div></div>')
+        if bot != "all":
+            return bar + missing + render_bot_view(snap, top, bot)
+        return bar + missing + render_open_trades(snap)
+    if bot != "all":
+        return bar + render_bot_view(snap, top, bot)
     show_sel = sel.get("key") != "total"
     sel_label = str(sel.get("label") or "Today")
     open_live = snap.get("open_live") or []
@@ -762,17 +952,14 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
         foot.append(f"Balance {m(bal).lstrip('+')} - started with {m(start_bal).lstrip('+')}" + (f" on {e(began)}" if began else ""))
     if open_live:
         foot.append(f'open trades now <b class="{cls(opened)}">{m(opened)}</b> (not banked yet)')
+    why_line = f'<div class="why">{e(str(sel["why"]))}</div>' if show_sel and sel.get("why") else ""
     acct = (f'<div class="hc acct"><div><div class="nm">Account - all bots, after commission</div>'
-            f'<div class="figs">{acct_figs}</div><div class="ft">{" &middot; ".join(foot)}</div></div></div>')
+            f'<div class="figs">{acct_figs}</div><div class="ft">{" &middot; ".join(foot)}</div>{why_line}</div></div>')
     # one card per bot
-    open_by: dict = {}
-    for r in open_live:
-        open_by[r.get("bot")] = open_by.get(r.get("bot"), 0.0) + float(r.get("profit") or 0.0)
     cards = ""
     retired_notes = []
     for b in sd.get("bots") or []:
-        bid, label, mode = b.get("id"), str(b.get("label")), str(b.get("mode") or "")
-        live = mode == "LIVE"
+        bid, label = b.get("id"), str(b.get("label"))
         vs = (sel.get("bots") or {}).get(bid) or {}
         vt = (tot.get("bots") or {}).get(bid) or {}
         if b.get("retired"):
@@ -784,28 +971,7 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
                 retired_notes.append(f'{e(label)}: ' + ", ".join(f'{e(k.lower())} <b class="{cls(v)}">{m(v)}</b>'
                                                                   for k, v in shown))
             continue
-        figs = (fig(sel_label, vs.get("made")) if show_sel else "") + fig("Overall", vt.get("made"))
-        bits = []
-        n, when = (vs.get("trades"), sel_label.lower()) if show_sel else (vt.get("trades"), "overall")
-        bits.append("trades not known just now" if n is None else f'{n} trade{"" if n == 1 else "s"} {e(when)}')
-        if open_by.get(label):
-            bits.append(f'open now <b class="{cls(open_by[label])}">{m(round(open_by[label], 2))}</b>')
-        line = (snap.get("bot_lines") or {}).get(bid)
-        if line:
-            bits.append(e(str(line)))
-        if bid == "market_intelligence" and mode == "PAPER":
-            bits.append("real prices, simulated orders")
-        if bid == "momentum_runner":
-            bits.append("rides Trend &amp; Breakout's index entries")
-        practice = ""
-        if not live:
-            ps, pt = p_sel.get(bid), p_tot.get(bid)
-            practice = (f'<div class="pr">Practice only, not real money: '
-                        + (f'{e(sel_label.lower())} {m(ps)} &middot; ' if show_sel and ps is not None else "")
-                        + f'overall {m(pt)}</div>')
-        pill = f'<span class="pill {"ok" if live else ""}">{e(mode)}</span>'
-        cards += (f'<div class="hc{"" if live else " paper"}"><div class="nm">{e(label)} {pill}</div>'
-                  f'<div class="figs">{figs}</div><div class="ft">{" &middot; ".join(bits)}</div>{practice}</div>')
+        cards += _bot_card(snap, b, sel, tot, p_sel, p_tot, cur)
     notes = []
     for v, txt in ((tot.get("other"), "from trades placed by hand"),
                    (tot.get("adjustments"), "from other changes to the balance (broker charges or corrections)")):
@@ -820,12 +986,180 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
     if err or not tot.get("complete", True):
         note += (f'<div class="small bad">Part of MetaTrader\'s records could not be read just now'
                  f'{" (" + e(err) + ")" if err else ""}; a card showing "-" fills in again on its own.</div>')
-    note += ('<div class="small">Every figure is MetaTrader\'s own record of the trades, after commission. '
+    note += ('<div class="small">Every figure is MetaTrader\'s own record of the trades, after commission. Each trade '
+             'counts once, in full (the commission charged when it opened too), on the day it closed, for the bot that '
+             'opened it; a trade still open counts when it closes. Overall is what the balance has made since it '
+             'started. '
              'A bot in PAPER places no real orders; its practice result is shown in grey and never counted.</div>')
     return bar + f'<div class="cards">{acct}{cards}</div>' + note + render_open_trades(snap)
 
 
-def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict] = None) -> str:
+def _in_period(view: dict) -> str:
+    """How a period reads in a sentence: "today", "this week", "in 01 Oct 2026 to 05 Oct 2026"."""
+    key, label = str(view.get("key") or "today"), str(view.get("label") or "Today")
+    if key == "custom":
+        return ("from " + label) if " to " in label else ("on " + label)
+    if key == "total":
+        return "in total"
+    return label.lower() if key in ("today", "yesterday") or label.lower().startswith("this") else "in the " + label.lower()
+
+
+def render_bot_trades(rows: list, view: dict, label: str, cur: str = "GBP") -> str:
+    """One bot's trades that closed in the period, newest first: LIVE money
+    in black (MetaTrader's figure for the whole position, after both halves
+    of the commission), practice in grey and labelled practice."""
+    e = html.escape
+    when = _in_period(view)
+    if not rows:
+        return (f'<div class="card"><h2>{e(label)} - trades closed {e(when)}</h2>'
+                f'<div class="small">None closed {e(when)}.</div></div>')
+    fmt = "%H:%M:%S" if view.get("key") in ("today", "yesterday") else "%a %d %b %H:%M"
+
+    def num(v):
+        try:
+            return f"{float(v):.10g}" if v not in (None, "") and float(v) else "-"
+        except (TypeError, ValueError):
+            return "-"
+
+    def row(r):
+        practice = r.get("mode") != "LIVE"
+        closed = r.get("closed")
+        t = _uk(closed.isoformat(), fmt) if isinstance(closed, dt.datetime) else "-"
+        net = r.get("net")
+        money = "-" if net is None else _fmt_money(float(net), cur)
+        tag = ' <span class="pill">practice</span>' if practice else ""
+        return (f'<tr class="{"practice" if practice else "live"}"><td class="mono nw">{e(t)}</td>'
+                f'<td><b>{e(str(r.get("symbol") or "-"))}</b></td><td>{e(str(r.get("side") or "-"))}</td>'
+                f'<td class="mono">{num(r.get("volume"))}</td><td class="mono">{num(r.get("entry"))}</td>'
+                f'<td class="mono">{num(r.get("exit"))}</td><td class="money mono">{e(money)}{tag}</td>'
+                f'<td class="small">{e(str(r.get("reason") or "-"))}</td></tr>')
+    head = ('<tr><th>Closed (UK)</th><th>Market</th><th>Side</th><th>Size</th><th>Entry</th><th>Exit</th>'
+            '<th>Result after commission</th><th>Exit reason</th></tr>')
+    shown, rest = rows[:30], rows[30:]
+    live = [r for r in rows if r.get("mode") == "LIVE"]
+    practice = [r for r in rows if r.get("mode") != "LIVE"]
+    live_sum = round(sum(float(r.get("net") or 0.0) for r in live), 2)
+    prac_sum = round(sum(float(r.get("net") or 0.0) for r in practice), 2)
+    foot = []
+    if live:
+        foot.append(f'LIVE: {len(live)} trade{"" if len(live) == 1 else "s"}, {_fmt_money(live_sum, cur)} - '
+                    f'MetaTrader\'s own figures, each trade once and in full (both halves of its commission)')
+    if practice:
+        foot.append(f'practice: {len(practice)} trade{"" if len(practice) == 1 else "s"}, '
+                    f'{_fmt_money(prac_sum, cur)} - simulated, not money, never in the account')
+    return (f'<div class="card"><h2>{e(label)} - trades closed {e(when)} - {len(rows)}</h2>'
+            f'<div class="scroll"><table class="trades">{head}{"".join(row(r) for r in shown)}</table></div>'
+            + (f'<details id="bot-trades-rest"><summary>{len(rest)} earlier trades</summary><div class="scroll">'
+               f'<table class="trades">{head}{"".join(row(r) for r in rest)}</table></div></details>' if rest else "")
+            + f'<div class="small">{"; ".join(foot)}.</div></div>')
+
+
+def render_bot_view(snap: dict, top: Optional[dict], bot: str) -> str:
+    """One bot alone, for the chosen period: its card (mode, the period,
+    Overall, what it has open), the trades it closed in the period, its open
+    trades, and its own live view. Renders whatever is missing as missing."""
+    from .standing import BOTS
+    e = html.escape
+    top = top or {}
+    sd = snap.get("standing") or {}
+    cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
+    b = next((x for x in sd.get("bots") or () if x.get("id") == bot), None)
+    label = str((b or {}).get("label") or dict(BOTS).get(bot, bot))
+    magic = int((b or {}).get("magic") or DEFAULT_MAGICS.get(bot, 0))
+    mode = str((b or {}).get("mode") or "")
+    sel, tot = top.get("sel"), top.get("tot")
+    parts = []
+    if b is not None and sel and tot and tot.get("made") is not None:
+        parts.append(f'<div class="cards one">{_bot_card(snap, b, sel, tot, top.get("p_sel") or {}, top.get("p_tot") or {}, cur, alone=True)}</div>')
+        if magic in set(sd.get("unknown_magics") or ()):
+            parts.append(f'<div class="card"><h2>{e(label)} - trades closed {e(_in_period(sel))}</h2><div class="small bad">'
+                         f'MetaTrader\'s records for its magic number {magic} could not be read just now, so its trades '
+                         f'are not listed rather than listed wrong; they come back on their own.</div></div>')
+        else:
+            try:
+                rows = bot_trade_rows(top.get("data_dir") or "", bot, sel, magic)
+            except Exception as exc:                      # never a reason to fail the page
+                log.warning("trades of %s: %s", bot, exc)
+                rows = []
+            parts.append(render_bot_trades(rows, sel, label, cur))
+    parts.append(render_open_trades(snap, magic=magic, title=f"{label} - open trades right now"))
+    parts.append(_bot_live_view(snap, bot, top.get("data_dir") or "", mode, top.get("now")))
+    return "".join(parts)
+
+
+def render_thinking(snap: dict) -> str:
+    """What Trend & Breakout is looking at right now: its ranked markets."""
+    think = snap.get("thinking") or []
+    if not think:
+        return ('<div class="card"><h2>What the bot is looking at right now</h2>'
+                '<div class="small">No scan has completed yet.</div></div>')
+
+    def trow(t):
+        return (f'<tr><td class="mono">{html.escape(str(t.get("rank", "")))}</td><td><b>{html.escape(str(t.get("symbol", "")))}</b> '
+                f'{html.escape(str(t.get("direction", "")))}</td>'
+                f'<td class="mono">{_num(t.get("score"), "{:.0f}")} {html.escape(str(t.get("tier", "")))}</td>'
+                f'<td>{html.escape(str(t.get("tactic") or "").replace("_", " ").title())}'
+                f'<div class="small">{html.escape(str(t.get("regime", "")))}'
+                + (f' - waiting: {html.escape("; ".join(str(x) for x in t["blockers"]))}'
+                   if t.get("blockers") else "")
+                + '</div></td></tr>')
+    thead = '<tr><th>#</th><th>Market</th><th>Score</th><th>Approach and why</th></tr>'
+    first, rest = think[:4], think[4:]
+    return ('<div class="card"><h2>What the bot is looking at right now</h2>'
+            '<table>' + thead + "".join(trow(t) for t in first) + '</table>'
+            + (f'<details id="thinking-rest"><summary>{len(rest)} more markets</summary><table>'
+               + "".join(trow(t) for t in rest) + '</table></details>' if rest else "")
+            + '</div>')
+
+
+def _panel_snap(snap: dict, key: str, data_dir: str, status_file: str, sid: str, label: str,
+                now: Optional[dt.datetime] = None) -> dict:
+    """The status block a folded panel reads: the snapshot's own, else its
+    status file (read-only, NOT RUNNING when missing)."""
+    st = (snap.get("strategies") or {}).get(key)
+    if not st and data_dir:
+        if key == "scalper":
+            from .attribution import read_scalper_status
+            st = read_scalper_status(data_dir, now=now)
+        else:
+            from .attribution import _read_status
+            st = _read_status(Path(data_dir) / status_file, sid, label, to_utc(now or utcnow()))
+    return {"strategies": {key: st}} if st else {}
+
+
+def _bot_live_view(snap: dict, bot: str, data_dir: str, mode: str, now: Optional[dt.datetime] = None) -> str:
+    """The bot's own live view, from the renderers of "Each bot in detail"
+    and its status file. Never fails the page."""
+    e = html.escape
+    try:
+        now = to_utc(now or utcnow())
+        if bot == "market_intelligence":
+            what = ("It is on PAPER: it decides on real prices and its orders are simulated, while the Momentum Runner "
+                    "rides its index entries with real orders." if mode == "PAPER" else
+                    "It is LIVE: its orders go to MetaTrader, and the Momentum Runner rides its index entries.")
+            return f'<div class="card small">{e(what)}</div>' + render_thinking(snap)
+        if bot == "momentum_rider":
+            return _rider_live_html(data_dir, now)
+        if bot == "financial_ian":
+            return _ian_live_html(data_dir, now)
+        panels = {"momentum_runner": ("runner", "runner-status.json", "momentum_runner", "Momentum Runner",
+                                      render_runner_panel),
+                  "band_breaker": ("bandbreaker", "bandbreaker-status.json", "band_breaker", "Band Breaker",
+                                   render_bandbreaker_panel),
+                  "crowd_fader": ("crowd", "crowd-status.json", "crowd_fader", "Crowd Fader", render_crowd_panel),
+                  "rapid_scalper": ("scalper", "scalper-status.json", "rapid_scalper", "Rapid Scalper",
+                                    render_scalper_panel)}
+        if bot in panels:
+            key, fname, sid, label, fn = panels[bot]
+            out = fn(_panel_snap(snap, key, data_dir, fname, sid, label, now))
+            return out or f'<div class="card small">{e(label)} has not reported yet.</div>'
+    except Exception as exc:
+        log.warning("live view of %s: %s", bot, exc)
+        return f'<div class="card small">Its live view could not be shown just now ({e(str(exc))}).</div>'
+    return ""
+
+
+def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict] = None, bot: str = "all") -> str:
     st = snap.get("status") or {}
     health = snap.get("health") or {}
     checks = health.get("checks") or []
@@ -852,8 +1186,8 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
     tiles = "".join([
         tile("Equity", _fmt_money(st.get("equity", 0.0),
                                   st.get("currency", ""))),
-        tile("Today (broker's day)", _fmt_money(st.get("today_pnl", 0.0),
-                                                st.get("currency", "")),
+        tile("Today (UK day)" if st.get("day_basis") == "UK" else "Today (broker's day)",
+             _fmt_money(st.get("today_pnl", 0.0), st.get("currency", "")),
              "ok" if (st.get("today_pnl") or 0) >= 0 else "bad"),
         tile("Win rate today",
              "-" if st.get("win_rate_today") is None
@@ -887,27 +1221,7 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
         prob_html = (f'<div class="card"><h2>What is wrong</h2>'
                      f'<table>{rows}</table></div>')
 
-    think = snap.get("thinking") or []
-    if think:
-        def trow(t):
-            return (f'<tr><td class="mono">{t["rank"]}</td><td><b>{html.escape(t["symbol"])}</b> {t["direction"]}</td>'
-                    f'<td class="mono">{t["score"]:.0f} {html.escape(t["tier"])}</td>'
-                    f'<td>{html.escape(t["tactic"].replace("_", " ").title())}'
-                    f'<div class="small">{html.escape(t["regime"])}'
-                    + (f' - waiting: {html.escape("; ".join(t["blockers"]))}'
-                       if t.get("blockers") else "")
-                    + '</div></td></tr>')
-        thead = ('<tr><th>#</th><th>Market</th><th>Score</th><th>Approach and why</th></tr>')
-        top, rest = think[:4], think[4:]
-        think_html = (
-            '<div class="card"><h2>What the bot is looking at right now</h2>'
-            '<table>' + thead + "".join(trow(t) for t in top) + '</table>'
-            + (f'<details id="thinking-rest"><summary>{len(rest)} more markets</summary><table>'
-               + "".join(trow(t) for t in rest) + '</table></details>' if rest else "")
-            + '</div>')
-    else:
-        think_html = ('<div class="card"><h2>What the bot is looking at right now</h2>'
-                      '<div class="small">No scan has completed yet.</div></div>')
+    think_html = render_thinking(snap)
 
     build_html = ""
     if st.get("build"):
@@ -946,9 +1260,11 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
         periods_html = ('<div class="card"><h2>Results by period</h2><table>'
                         '<tr><th>Period</th><th>Net (after commission)</th><th>Before commission</th>'
                         '<th>Commission</th><th>Trades</th><th>Win rate</th></tr>' + prow + '</table>'
-                        '<div class="small">This strategy\'s trades only, by the time they '
-                        'closed, on the broker\'s day - the same way MetaTrader\'s History '
-                        'filter counts them.</div></div>')
+                        + ('<div class="small">This strategy\'s trades only, each in full on the UK day it '
+                           'closed (midnight to midnight UK).</div></div>' if st.get("day_basis") == "UK" else
+                           '<div class="small">This strategy\'s trades only, by the time they '
+                           'closed, on the broker\'s day - the same way MetaTrader\'s History '
+                           'filter counts them.</div></div>'))
     else:
         periods_html = ""
 
@@ -1013,7 +1329,7 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
 <div class="top">{NAV}
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div></div>
 {prob_html}
-{render_standing(snap, headline, strategy)}
+{render_standing(snap, headline, strategy, bot)}
 {more}
 <p class="small">{build_html}Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
@@ -1144,6 +1460,219 @@ def _own_file(data, name: str) -> dict:
     return raw or {}
 
 
+# ------------------------------------------- each bot's trades, MetaTrader's way --
+OWN_RECORDS = {  # bot: (its own sqlite, its money column, its entry column, its exit column)
+    "market_intelligence": ("journal.sqlite", "pnl_money", "entry", "exit_price"),
+    "momentum_rider": ("rider.sqlite", "net_money", "entry", "exit_price"),
+    "momentum_runner": ("runner.sqlite", "net_pnl", "entry", "exit_price"),
+    "band_breaker": ("bandbreaker.sqlite", "net_pnl", "entry", "exit_price"),
+    "crowd_fader": ("crowd.sqlite", "net_pnl", "entry", "exit_price"),
+    "financial_ian": ("ian.sqlite", "net_pnl", "entry", "exit_price"),
+    "rapid_scalper": ("scalper.sqlite", "net_pnl", "entry_filled", "exit_filled"),
+}
+
+
+def _own_db(data: Path, bot: str) -> Optional[Path]:
+    """The bot's own sqlite (the Rider's may be renamed in rider.json)."""
+    rec = OWN_RECORDS.get(bot)
+    if rec is None:
+        return None
+    name = rec[0]
+    if bot == "momentum_rider":
+        jf = _own_file(data, "rider.json").get("journal_file")
+        if isinstance(jf, str) and jf.strip():
+            name = jf
+    return data / name
+
+
+def _when(v) -> Optional[dt.datetime]:
+    try:
+        t = v if isinstance(v, dt.datetime) else dt.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        return to_utc(t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc))
+    except Exception:
+        return None
+
+
+def bot_trade_rows(data_dir, bot: str, view: dict, magic: int) -> list[dict]:
+    """The bot's trades that closed in a ``period_view``'s period (UK days),
+    newest first. LIVE: MetaTrader's positions opened with its magic, each
+    once and in full (``view["closed"]``), with the side, prices and exit
+    reason from its own record of the same ticket when it has one. Practice:
+    its own PAPER rows that closed in the period (Trend & Breakout's from
+    its paper record), as the card's practice figure counts them - never
+    money. Read-only; a missing file is simply no rows."""
+    from .attribution import _rows_ro, is_test_data, row_mode
+    from .standing import TnbPaperRecord, bot_view
+    start, end = _when(view.get("start")), _when(view.get("end"))
+    _db, money_col, entry_col, exit_col = OWN_RECORDS.get(bot, (None, "net_pnl", "entry", "exit_price"))
+    data = Path(data_dir) if data_dir else None
+    path = _own_db(data, bot) if data is not None else None
+    live = bot_view(view, magic)["closed"] if magic else []
+
+    def by_ticket(p: Optional[Path], tickets) -> dict:
+        out: dict = {}
+        tickets = sorted({int(t) for t in tickets if t})
+        if p is None or not tickets or not p.exists():
+            return out
+        for i in range(0, len(tickets), 400):
+            chunk = tickets[i:i + 400]
+            for r in _rows_ro(p, f"SELECT * FROM trades WHERE ticket IN ({','.join('?' * len(chunk))})", tuple(chunk)):
+                t = int(r.get("ticket") or 0)
+                # a PAPER shadow can share a real ticket (the Momentum Runner's): the LIVE row is this trade's
+                if t not in out or (bot != "market_intelligence" and row_mode(r) == "LIVE"):
+                    out[t] = r
+        return out
+
+    def symbol_of(r: dict) -> str:
+        return str(r.get("symbol") or r.get("spot_symbol") or r.get("instrument") or "")
+    rows: list[dict] = []
+    own = by_ticket(path, [p.get("position") for p in live])
+    for p in live:
+        r = own.get(int(p.get("position") or 0)) or {}
+        rows.append({"closed": p.get("closed"), "symbol": p.get("symbol") or symbol_of(r), "side": r.get("side"),
+                     "volume": p.get("volume") or r.get("volume"), "entry": r.get(entry_col), "exit": r.get(exit_col),
+                     "net": p.get("net"), "reason": r.get("exit_reason"), "mode": "LIVE", "ticket": p.get("position"),
+                     "pips": r.get("realised_pips"), "in_records": bool(r)})
+    if start is not None and end is not None and data is not None:
+        if bot == "market_intelligence":
+            record = TnbPaperRecord(data)
+            paper = [] if record.error else record.positions(start, end)
+            jr = by_ticket(data / "journal.sqlite", [p["ticket"] for p in paper])
+            for p in paper:
+                r = jr.get(int(p["ticket"])) or {}
+                rows.append({"closed": p.get("closed"), "symbol": p.get("symbol") or symbol_of(r), "side": r.get("side"),
+                             "volume": p.get("volume") or r.get("volume"), "entry": r.get("entry"),
+                             "exit": r.get("exit_price"), "net": p.get("net"), "reason": r.get("exit_reason"),
+                             "mode": "PAPER", "ticket": p.get("ticket"), "pips": r.get("pnl_pips"), "in_records": True})
+        elif path is not None and path.exists():
+            for r in _rows_ro(path, "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? AND "
+                                    "closed_utc < ? ORDER BY closed_utc ASC LIMIT 5000",
+                              (start.isoformat(), end.isoformat())):
+                if row_mode(r) == "LIVE":
+                    continue                                # LIVE money is MetaTrader's, above
+                if bot == "momentum_rider" and str(r.get("exit_reason") or "").startswith("SWITCHED"):
+                    continue                                # closed in its records at a switch: never a trade
+                if bot == "financial_ian" and is_test_data(r):
+                    continue                                # a synthetic or replayed feed: a test, not a result
+                rows.append({"closed": _when(r.get("closed_utc")), "symbol": symbol_of(r), "side": r.get("side"),
+                             "volume": r.get("volume"), "entry": r.get(entry_col), "exit": r.get(exit_col),
+                             "net": r.get(money_col), "reason": r.get("exit_reason"), "mode": row_mode(r),
+                             "ticket": r.get("ticket"), "pips": r.get("realised_pips"), "in_records": True})
+    rows.sort(key=lambda x: x.get("closed") or dt.datetime.min.replace(tzinfo=dt.timezone.utc), reverse=True)
+    return rows
+
+
+def bot_today(sd: Optional[dict], deals, bot: str, data_dir, now: Optional[dt.datetime] = None) -> Optional[dict]:
+    """A bot's TODAY for its own page, from the same position records and UK
+    day as its card on the status page: {live, practice, magic, mode,
+    figure}. None when the page has no figures from MetaTrader yet, or its
+    magic's rows could not be read (never a false "no trades")."""
+    if not sd or not sd.get("start") or sd.get("made") is None:
+        return None
+    from .standing import period_view
+    b = next((x for x in sd.get("bots") or () if x.get("id") == bot), {}) or {}
+    magic = int(b.get("magic") or DEFAULT_MAGICS.get(bot, 0))
+    if magic in set(sd.get("unknown_magics") or ()):
+        return None                                   # its rows could not be read: never a false "no trades"
+    view = period_view(sd, list(deals or ()), "today", now=now)
+    rows = bot_trade_rows(data_dir, bot, view, magic)
+    return {"live": [r for r in rows if r["mode"] == "LIVE"], "practice": [r for r in rows if r["mode"] != "LIVE"],
+            "magic": magic, "mode": str(b.get("mode") or ""), "figure": (view.get("bots") or {}).get(bot) or {}}
+
+
+def _day_tiles(rows: list, ccy: str = "GBP") -> dict:
+    """Trades, won, lost, win rate, money, pips and the best trade of some trade rows."""
+    nets = [float(r.get("net") or 0.0) for r in rows]
+    won = sum(1 for v in nets if v > 0)
+    pips = [float(r["pips"]) for r in rows if r.get("pips") is not None]
+    best = max(rows, key=lambda r: float(r.get("net") or 0.0), default=None)
+    best_txt = None
+    if best is not None:
+        money = _money_txt(best.get("net"), ccy)
+        best_txt = (f"{best.get('symbol')} {float(best['pips']):+.1f} pips ({money})" if best.get("pips") is not None
+                    else f"{best.get('symbol')} ({money})")
+    return {"trades": len(rows), "won": won, "lost": len(rows) - won,
+            "win_rate": round(100.0 * won / len(rows), 1) if rows else None,
+            "net_money": round(sum(nets), 2), "net_pips": round(sum(pips), 1) if pips else None,
+            "pips_missing": len(rows) - len(pips), "best_trade": best_txt}
+
+
+def _rider_state_html(st: dict, mode_set: str, now: dt.datetime) -> str:
+    """Is the Rider healthy, paused or not running, and its exposure."""
+    e = html.escape
+    age = _age_of(st.get("updated_utc") or st.get("updated"), now)
+    h = st.get("health") or {}
+    if age is None or age > BOT_STALE_SECONDS:
+        state = (f'<span class="pill bad">NOT RUNNING</span> last report '
+                 f'{"never" if age is None else f"{age / 60:.0f} min ago"}')
+    elif h.get("entries_allowed"):
+        state = '<span class="pill ok">HEALTHY</span>'
+    else:
+        state = '<span class="pill warn">RUNNING, NEW ENTRIES PAUSED</span>'
+    run_mode = str(st.get("mode") or mode_set)
+    restart = (f' <span class="small bad">(running {e(run_mode)}; data/rider.json says {e(mode_set)}: '
+               f'it changes on the next restart)</span>' if run_mode != mode_set else "")
+    return (f'<div class="card">{state} {e(str(h.get("summary") or ""))}{restart}'
+            f'<div class="small">{e(str(st.get("tagline") or ""))} Exposure: '
+            f'GBP {_num(st.get("user_pip_value_gbp"), "{:.2f}")} per pip (Aaron\'s setting). '
+            f'Order flow: {e(str(st.get("order_flow") or "-"))}.</div></div>')
+
+
+def _rider_scanner_html(st: dict) -> str:
+    """The Rider's live scanner: MARKET, DIRECTION, SCORE, STATE, REASON, best score first."""
+    e = html.escape
+    scan = [r for r in (st.get("scanner") or []) if isinstance(r, dict)]
+    if not scan:
+        return '<div class="card"><h2>The scanner right now</h2><div class="small">No scan reported yet.</div></div>'
+    scan.sort(key=lambda r: -float(r.get("score") or 0.0))
+    body = "".join(
+        f'<tr><td><b>{e(str(r.get("market")))}</b></td><td>{e(str(r.get("direction")))}</td>'
+        f'<td class="mono">{_num(r.get("score"), "{:.0f}")}</td><td>{e(str(r.get("state")))}</td>'
+        f'<td class="small">{e(str(r.get("reason") or ""))}</td></tr>' for r in scan)
+    return (f'<div class="card"><h2>The scanner right now - {len(scan)} markets</h2><table><tr><th>Market</th>'
+            f'<th>Direction</th><th>Score</th><th>State</th><th>Reason</th></tr>{body}</table></div>')
+
+
+def _rider_checks_html(st: dict) -> str:
+    """The Rider's health checks, as its status file gives them."""
+    e = html.escape
+    checks = (st.get("health") or {}).get("checks") or []
+    if not checks:
+        return ""
+    body = "".join(
+        f'<tr><td><span class="pill {"ok" if c.get("ok") else ("bad" if c.get("critical") else "warn")}">'
+        f'{"OK" if c.get("ok") else ("FAIL" if c.get("critical") else "WARN")}</span></td>'
+        f'<td>{e(str(c.get("name") or ""))}</td><td>{e(str(c.get("message") or ""))}</td></tr>'
+        for c in checks if isinstance(c, dict))
+    return f'<div class="card"><h2>Health checks</h2><table>{body}</table></div>'
+
+
+def _rider_files(data: Path) -> tuple[str, str, str]:
+    """(mode in rider.json, its status file, its own sqlite)."""
+    from .watchdog import own_file_mode
+    settings = _own_file(data, "rider.json")
+    status_name = settings.get("status_file") if isinstance(settings.get("status_file"), str) else "rider-status.json"
+    db_name = settings.get("journal_file") if isinstance(settings.get("journal_file"), str) else "rider.sqlite"
+    return own_file_mode(data / "rider.json"), status_name or "rider-status.json", db_name or "rider.sqlite"
+
+
+def _rider_live_html(data_dir: str, now: dt.datetime) -> str:
+    """The Rider's live view on the status page: its state, the scanner and
+    its health checks, from its status file; a link to its own page."""
+    e = html.escape
+    link = '<div class="small"><a href="/rider">Everything it is doing, trade by trade</a></div>'
+    if not data_dir:
+        return '<div class="card small">The status page has not been told where the bots keep their files.</div>'
+    data = Path(data_dir)
+    mode_set, status_name, _db = _rider_files(data)
+    st, why = _read_status_file(data / status_name)
+    if st is None:
+        what = "not started yet" if why == "missing" else f"its status file {why}"
+        return (f'<div class="card"><b>Rapid Momentum Rider: {e(what)}.</b> <span class="small">It is set to '
+                f'{e(mode_set)} in data/rider.json; this fills in once it reports.</span>{link}</div>')
+    return _rider_state_html(st, mode_set, now) + _rider_scanner_html(st) + _rider_checks_html(st) + link
+
+
 def _rider_today_from_rows(rows: list) -> dict:
     """TODAY from the Rider's own rows, when no status file says it."""
     rows = [r for r in rows if not str(r.get("exit_reason") or "").startswith("SWITCHED")]
@@ -1161,13 +1690,19 @@ def _rider_today_from_rows(rows: list) -> dict:
                            if best is not None else None)}
 
 
-def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
+def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None, sd: Optional[dict] = None,
+                      deals=None) -> str:
     """The Rapid Momentum Rider's own page: TODAY, every trade's story, the
     live scanner, open positions with their FlowLock X state, and the
     health checks. Read-only, from data/rider-status.json and
     data/rider.sqlite. Renders (saying "not started yet") when they are
-    missing."""
-    from pathlib import Path
+    missing.
+
+    TODAY is the UK day. Given the account's standing and deal rows (``sd``,
+    ``deals``: the status page hands over its own), it is worked out here
+    from MetaTrader's positions for the Rider's magic - the same records and
+    the same day as its card, so the two can never disagree; without them
+    (MetaTrader not read yet), from its status file or its own records."""
     e = html.escape
     now = to_utc(now or utcnow())
     title = "RAPID MOMENTUM RIDER"
@@ -1175,15 +1710,11 @@ def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
         return _page("Rapid Momentum Rider", f'<h1>{title}</h1><div class="card">Not started yet: the status page has '
                                              f'not been told where the bots keep their files.</div>')
     data = Path(data_dir)
-    from .watchdog import own_file_mode
-    settings = _own_file(data, "rider.json")
-    mode_set = own_file_mode(data / "rider.json")
-    status_name = settings.get("status_file") if isinstance(settings.get("status_file"), str) else "rider-status.json"
-    db_name = settings.get("journal_file") if isinstance(settings.get("journal_file"), str) else "rider.sqlite"
-    st, why = _read_status_file(data / (status_name or "rider-status.json"))
-    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    mode_set, status_name, db_name = _rider_files(data)
+    st, why = _read_status_file(data / status_name)
+    day0 = uk_day_start(now)
     from .attribution import _rows_ro
-    rows = _rows_ro(data / (db_name or "rider.sqlite"),
+    rows = _rows_ro(data / db_name,
                     "SELECT * FROM trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? ORDER BY closed_utc DESC "
                     "LIMIT 200", (day0.isoformat(),))
     parts = [f'<h1>{title} <span class="pill {"bad" if mode_set == "LIVE" else ""}">{e(mode_set)}</span></h1>']
@@ -1196,30 +1727,43 @@ def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
                      f'and this page fills in once it reports.</span></div>')
         st = {}
     else:
-        age = _age_of(st.get("updated_utc") or st.get("updated"), now)
-        h = st.get("health") or {}
-        if age is None or age > BOT_STALE_SECONDS:
-            state = (f'<span class="pill bad">NOT RUNNING</span> last report '
-                     f'{"never" if age is None else f"{age / 60:.0f} min ago"}')
-        elif h.get("entries_allowed"):
-            state = '<span class="pill ok">HEALTHY</span>'
-        else:
-            state = '<span class="pill warn">RUNNING, NEW ENTRIES PAUSED</span>'
-        run_mode = str(st.get("mode") or mode_set)
-        restart = (f' <span class="small bad">(running {e(run_mode)}; data/rider.json says {e(mode_set)}: '
-                   f'it changes on the next restart)</span>' if run_mode != mode_set else "")
-        parts.append(f'<div class="card">{state} {e(str(h.get("summary") or ""))}{restart}'
-                     f'<div class="small">{e(str(st.get("tagline") or ""))} Exposure: '
-                     f'GBP {_num(st.get("user_pip_value_gbp"), "{:.2f}")} per pip (Aaron\'s setting). '
-                     f'Order flow: {e(str(st.get("order_flow") or "-"))}.</div></div>')
+        parts.append(_rider_state_html(st, mode_set, now))
     # ---- TODAY
-    today = st.get("today") if isinstance(st.get("today"), dict) else None
-    source = "the Rider's status file"
-    if today is None:
-        today = _rider_today_from_rows(rows)
-        source = "the Rider's own records since 00:00 UTC"
-    money_src = str(today.get("money_source") or "")
-    est = " (some estimated from the last price)" if today.get("net_money_estimated") else ""
+    day = None
+    try:
+        day = bot_today(sd, deals, "momentum_rider", data_dir, now)
+    except Exception as exc:                             # never a reason to fail the page: say it, fall back
+        log.warning("rider today from MetaTrader: %s", exc)
+    by_ticket: dict = {}
+    if day is not None:
+        live_now = bool(day["live"]) or "LIVE" in (mode_set, str(st.get("mode") or ""), day["mode"])
+        shown = day["live"] if live_now else day["practice"]
+        today = _day_tiles(shown)
+        by_ticket = {int(r.get("ticket") or 0): r for r in day["live"]}
+        if live_now:
+            source = (f"MetaTrader's own records for its magic number {day['magic']}: every trade it opened that "
+                      f"closed since 00:00 UK today, each counted once and in full (both halves of the commission) - "
+                      f"the same figures as its card on the status page")
+            money_src = "MetaTrader's figures"
+        else:
+            source = "its own records: every PAPER trade that closed since 00:00 UK today"
+            money_src = "practice (paper) figures, not money"
+        extra = []
+        if today["pips_missing"] and shown:
+            extra.append(f"pips are from its own records, which do not have {today['pips_missing']} of these trades")
+        if live_now and day["practice"]:
+            p = _day_tiles(day["practice"])
+            extra.append(f"practice today (PAPER, not money): {p['trades']} trade{'' if p['trades'] == 1 else 's'}, "
+                         f"{_money_txt(p['net_money'])}")
+        est = ("; " + "; ".join(extra)) if extra else ""
+    else:
+        today = st.get("today") if isinstance(st.get("today"), dict) else None
+        source = "the Rider's status file (MetaTrader's records have not reached this page yet)"
+        if today is None:
+            today = _rider_today_from_rows(rows)
+            source = "the Rider's own records since 00:00 UK"
+        money_src = str(today.get("money_source") or "")
+        est = " (some estimated from the last price)" if today.get("net_money_estimated") else ""
 
     def tile(k, v, c=""):
         return f'<div class="tile"><div class="k">{e(k)}</div><div class="v {c}">{v}</div></div>'
@@ -1231,9 +1775,8 @@ def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
         tile("Net pips", _num(today.get("net_pips"), "{:+.1f}"), _cls_of(today.get("net_pips"))),
         tile("Net money", _money_txt(today.get("net_money")), _cls_of(today.get("net_money"))),
         tile("Best trade", e(str(today.get("best_trade") or "-")))])
-    parts.append(f'<div class="card"><h2>Today</h2><div class="row">{tiles}</div><div class="small">From {e(source)}; '
-                 f'money: {e(money_src or "-")}{e(est)}. The headline cards on the status page are MetaTrader\'s own '
-                 f'figures.</div></div>')
+    parts.append(f'<div class="card"><h2>Today (UK day, since 00:00 UK)</h2><div class="row">{tiles}</div>'
+                 f'<div class="small">From {e(source)}; money: {e(money_src or "-")}{e(est)}.</div></div>')
     # ---- open positions with FlowLock X
     opens = st.get("open_positions") or []
     if opens:
@@ -1252,28 +1795,27 @@ def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
     else:
         parts.append('<div class="card"><h2>Open positions</h2><div class="small">None open.</div></div>')
     # ---- the live scanner
-    scan = [r for r in (st.get("scanner") or []) if isinstance(r, dict)]
-    if scan:
-        scan.sort(key=lambda r: -float(r.get("score") or 0.0))
-        body = "".join(
-            f'<tr><td><b>{e(str(r.get("market")))}</b></td><td>{e(str(r.get("direction")))}</td>'
-            f'<td class="mono">{_num(r.get("score"), "{:.0f}")}</td><td>{e(str(r.get("state")))}</td>'
-            f'<td class="small">{e(str(r.get("reason") or ""))}</td></tr>' for r in scan)
-        parts.append(f'<div class="card"><h2>The scanner right now - {len(scan)} markets</h2><table><tr><th>Market</th>'
-                     f'<th>Direction</th><th>Score</th><th>State</th><th>Reason</th></tr>{body}</table></div>')
-    else:
-        parts.append('<div class="card"><h2>The scanner right now</h2><div class="small">No scan reported yet.</div></div>')
+    parts.append(_rider_scanner_html(st))
     # ---- every trade's story
+    rows = [r for r in rows if not str(r.get("exit_reason") or "").startswith("SWITCHED")]
     if rows:
-        stories = "".join(
-            f'<div class="story"><b>{e(str(r.get("symbol")))}</b> {e(str(r.get("side") or ""))} '
-            f'<span class="pill">{e(str(r.get("mode") or "PAPER"))}</span> '
-            f'<span class="mono">{e(str(r.get("closed_utc") or "")[11:19])} UTC</span> '
-            f'<span class="mono {_cls_of(r.get("realised_pips"))}">{_num(r.get("realised_pips"), "{:+.1f}")} pips</span> '
-            f'<span class="mono {_cls_of(r.get("net_money"))}">{_money_txt(r.get("net_money"))}</span>'
-            f'{" (estimate)" if r.get("money_source") == "estimate" else ""}'
-            f'<div class="small">{e(str(r.get("explanation") or r.get("exit_detail") or ""))}</div></div>' for r in rows)
-        parts.append(f'<div class="card"><h2>Every trade today, explained - {len(rows)}</h2>{stories}</div>')
+        def story(r):
+            mine = by_ticket.get(int(r.get("ticket") or 0)) if str(r.get("mode") or "") == "LIVE" else None
+            if mine is not None:                           # MetaTrader's figure for the whole position
+                money = f'{_money_txt(mine.get("net"))} (MetaTrader, in full)'
+                cls = _cls_of(mine.get("net"))
+            else:
+                money = (_money_txt(r.get("net_money"))
+                         + (" (estimate)" if r.get("money_source") == "estimate" else ""))
+                cls = _cls_of(r.get("net_money"))
+            return (f'<div class="story"><b>{e(str(r.get("symbol")))}</b> {e(str(r.get("side") or ""))} '
+                    f'<span class="pill">{e(str(r.get("mode") or "PAPER"))}</span> '
+                    f'<span class="mono">{e(_uk(r.get("closed_utc") or "", "%H:%M:%S"))} UK</span> '
+                    f'<span class="mono {_cls_of(r.get("realised_pips"))}">{_num(r.get("realised_pips"), "{:+.1f}")} pips</span> '
+                    f'<span class="mono {cls}">{e(money)}</span>'
+                    f'<div class="small">{e(str(r.get("explanation") or r.get("exit_detail") or ""))}</div></div>')
+        parts.append(f'<div class="card"><h2>Every trade today, explained - {len(rows)}</h2>'
+                     f'{"".join(story(r) for r in rows)}</div>')
     elif st.get("stories"):
         stories = "".join(f'<div class="story small">{e(str(x))}</div>' for x in st["stories"])
         parts.append(f'<div class="card"><h2>Recent trades, explained</h2>{stories}</div>')
@@ -1281,14 +1823,7 @@ def render_rider_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
         parts.append('<div class="card"><h2>Every trade today, explained</h2><div class="small">No trades today yet.'
                      '</div></div>')
     # ---- health checks
-    checks = (st.get("health") or {}).get("checks") or []
-    if checks:
-        body = "".join(
-            f'<tr><td><span class="pill {"ok" if c.get("ok") else ("bad" if c.get("critical") else "warn")}">'
-            f'{"OK" if c.get("ok") else ("FAIL" if c.get("critical") else "WARN")}</span></td>'
-            f'<td>{e(str(c.get("name") or ""))}</td><td>{e(str(c.get("message") or ""))}</td></tr>'
-            for c in checks if isinstance(c, dict))
-        parts.append(f'<div class="card"><h2>Health checks</h2><table>{body}</table></div>')
+    parts.append(_rider_checks_html(st))
     notes = st.get("notes") or []
     if notes:
         parts.append('<div class="card"><h2>What it has been doing</h2><ul class="small" style="margin:0;padding-left:16px">'
@@ -1346,13 +1881,66 @@ def _ladder_html(lad: dict) -> str:
             f'<th>Sold here</th><th>Notes</th></tr>{"".join(out)}</table>')
 
 
-def render_ian_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
+def _ian_feed(st: dict) -> tuple[str, str]:
+    """(the feed's state, its pill class)."""
+    feed = st.get("feed") or {}
+    fstate = str(feed.get("state") or "UNKNOWN")
+    return fstate, {"LIVE": "ok", "DEGRADED": "warn", "NOT CONFIGURED": "warn", "CONNECTING": "warn"}.get(fstate, "bad")
+
+
+def _ian_top_html(st: dict) -> str:
+    """Financial Ian's top opportunity and its plain-English reasoning."""
+    e = html.escape
+    top = st.get("top_opportunity") or {}
+    if not top:
+        return ('<div class="card"><h2>Top opportunity</h2><div class="small">None yet: it needs the institutional '
+                'order book to form a view.</div>'
+                + (f'<p>{e(str(st.get("reasoning")))}</p>' if st.get("reasoning") else "") + '</div>')
+    reg = top.get("regime") or {}
+    return (f'<div class="card"><h2>Top opportunity</h2><b>{e(str(top.get("spot_symbol")))} '
+            f'{e(str(top.get("spot_side") or "no side"))}</b> from {e(str(top.get("instrument") or top.get("root")))} - '
+            f'score {_num(top.get("score"), "{:.0f}")}, {e(str(reg.get("regime") if isinstance(reg, dict) else reg))}, '
+            f'{"tradeable" if top.get("tradeable") else "not tradeable: " + e(str(top.get("why_not") or ""))}'
+            f'<p>{e(str(st.get("reasoning") or top.get("reasoning") or ""))}</p></div>')
+
+
+def _ian_live_html(data_dir: str, now: dt.datetime) -> str:
+    """Financial Ian's live view on the status page: its feed and its
+    reasoning, from its status file; the order-book ladder is on /ian."""
+    e = html.escape
+    link = '<div class="small"><a href="/ian">The order book ladder, the reasoning and the trades</a></div>'
+    if not data_dir:
+        return '<div class="card small">The status page has not been told where the bots keep their files.</div>'
+    from .watchdog import own_file_mode
+    data = Path(data_dir)
+    mode_set = own_file_mode(data / "ian.json")
+    st, why = _read_status_file(data / "ian-status.json")
+    if st is None:
+        what = "not started yet" if why == "missing" else f"its status file {why}"
+        return (f'<div class="card"><b>Financial Ian: {e(what)}.</b> <span class="small">It is set to {e(mode_set)} '
+                f'in data/ian.json. With no institutional data feed it runs DATA-DEGRADED: no signals, no trades, and '
+                f'says so here once it reports.</span>{link}</div>')
+    age = _age_of(st.get("updated") or st.get("updated_utc"), now)
+    running = age is not None and age <= BOT_STALE_SECONDS
+    feed = st.get("feed") or {}
+    fstate, fcls = _ian_feed(st)
+    label = str(st.get("data_label") or "LIVE")
+    return (f'<div class="card"><h2>Financial Ian right now</h2><b>{e(str(st.get("status") or ""))}</b>'
+            + (f' <span class="pill bad">{e(label)}</span>' if label != "LIVE" else "")
+            + f'<div>Running: {"yes" if running else "no" + ("" if age is None else f" (last report {age / 60:.0f} min ago)")}'
+            f' &middot; Feed: <span class="pill {fcls}">{e(fstate)}</span> {e(str(feed.get("vendor") or "none"))} - '
+            f'{e(str(feed.get("reason") or ""))}</div>{link}</div>' + _ian_top_html(st))
+
+
+def render_ian_page(data_dir: str, now: Optional[dt.datetime] = None, sd: Optional[dict] = None,
+                    deals=None) -> str:
     """Financial Ian's own page, read-only from data/ian-status.json:
     running, the feed (NOT CONFIGURED / LIVE / DEGRADED / DOWN), MetaTrader,
     the top opportunity and its plain-English reasoning, open positions,
     today, the last trade and the order-book ladder. Renders (saying "not
-    started yet") when the file is missing."""
-    from pathlib import Path
+    started yet") when the file is missing. Today is the UK day; given the
+    account's standing and deal rows (``sd``, ``deals``) its figures are
+    MetaTrader's for Ian's magic, the same as its card."""
     e = html.escape
     now = to_utc(now or utcnow())
     title = "FINANCIAL IAN"
@@ -1375,11 +1963,27 @@ def render_ian_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
     age = _age_of(st.get("updated") or st.get("updated_utc"), now)
     running = age is not None and age <= BOT_STALE_SECONDS
     feed = st.get("feed") or {}
-    fstate = str(feed.get("state") or "UNKNOWN")
-    fcls = {"LIVE": "ok", "DEGRADED": "warn", "NOT CONFIGURED": "warn", "CONNECTING": "warn"}.get(fstate, "bad")
+    fstate, fcls = _ian_feed(st)
     mt5 = (st.get("mt5") or {}).get("connected")
     today = st.get("today") or {}
     wr = today.get("win_rate")
+    today_src = (f"Financial Ian's own records ({e(str(today.get('data_source') or '-'))}, "
+                 f"{e(str(st.get('mode') or mode_set))}); PAPER is practice, not money")
+    day = None
+    try:
+        day = bot_today(sd, deals, "financial_ian", data_dir, now)
+    except Exception as exc:                             # never a reason to fail the page
+        log.warning("ian today from MetaTrader: %s", exc)
+    if day is not None:
+        live_now = bool(day["live"]) or "LIVE" in (mode_set, str(st.get("mode") or ""), day["mode"])
+        t = _day_tiles(day["live"] if live_now else day["practice"])
+        today = {"net": t["net_money"], "trades": t["trades"]}
+        wr = None if t["win_rate"] is None else t["win_rate"] / 100.0
+        today_src = (f"MetaTrader's own records for its magic number {day['magic']}: every trade it opened that closed "
+                     f"since 00:00 UK today, each in full after both halves of its commission - the same figures as its "
+                     f"card on the status page" if live_now else
+                     "its own records: every PAPER trade that closed since 00:00 UK today - practice, not money")
+        today_src = e(today_src)
     label = str(st.get("data_label") or "LIVE")
 
     def tile(k, v, c=""):
@@ -1402,19 +2006,8 @@ def render_ian_page(data_dir: str, now: Optional[dt.datetime] = None) -> str:
                  + (f' <span class="pill bad">{e(label)}</span>' if synthetic else "")
                  + f'<div class="small">Feed: {e(str(feed.get("vendor") or "none"))} - {e(str(feed.get("reason") or ""))}'
                  f'</div><div class="row" style="margin-top:6px">{tiles}</div>'
-                 f'<div class="small">Today\'s figures are Financial Ian\'s own records ({e(str(today.get("data_source") or "-"))}'
-                 f', {e(str(st.get("mode") or mode_set))}); PAPER is practice, not money.</div></div>')
-    top = st.get("top_opportunity") or {}
-    if top:
-        reg = top.get("regime") or {}
-        parts.append(f'<div class="card"><h2>Top opportunity</h2><b>{e(str(top.get("spot_symbol")))} '
-                     f'{e(str(top.get("spot_side") or "no side"))}</b> from {e(str(top.get("instrument") or top.get("root")))} - '
-                     f'score {_num(top.get("score"), "{:.0f}")}, {e(str(reg.get("regime") if isinstance(reg, dict) else reg))}, '
-                     f'{"tradeable" if top.get("tradeable") else "not tradeable: " + e(str(top.get("why_not") or ""))}'
-                     f'<p>{e(str(st.get("reasoning") or top.get("reasoning") or ""))}</p></div>')
-    else:
-        parts.append('<div class="card"><h2>Top opportunity</h2><div class="small">None yet: it needs the institutional '
-                     'order book to form a view.</div></div>')
+                 f'<div class="small">Today (UK day, since 00:00 UK) is from {today_src}.</div></div>')
+    parts.append(_ian_top_html(st))
     opens = st.get("open_positions") or []
     if opens:
         body = "".join(
@@ -1479,13 +2072,15 @@ class _Handler(BaseHTTPRequestHandler):
             if self.path.startswith("/results"):
                 self._send(render_results(snap.get("results") or {}))
             elif self.path.startswith("/rider"):
-                with self.state.lock:
+                with self.state.lock:                    # the same records the cards are drawn from
                     data_dir = self.state.data_dir
-                self._send(render_rider_page(data_dir))
+                    sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
+                self._send(render_rider_page(data_dir, self.state.now(), sd=sd, deals=deals))
             elif self.path.startswith("/ian"):
                 with self.state.lock:
                     data_dir = self.state.data_dir
-                self._send(render_ian_page(data_dir))
+                    sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
+                self._send(render_ian_page(data_dir, self.state.now(), sd=sd, deals=deals))
             elif self.path.startswith("/health"):
                 code = 200 if (snap.get("health") or {}).get(
                     "entries_allowed", False) else 503
@@ -1501,32 +2096,47 @@ class _Handler(BaseHTTPRequestHandler):
                 period = (q.get("period") or ["today"])[0]
                 date_from = (q.get("from") or [""])[0]
                 date_to = (q.get("to") or [""])[0]
+                bot = _bot_choice((q.get("bot") or ["all"])[0])
                 headline = None
+                now = self.state.now()
                 with self.state.lock:                    # the figures and their deal rows from the same refresh
                     sd = dict(self.state.standing or {})
                     deals = list(self.state.deals or ())
                     data_dir = self.state.data_dir
                 snap = dict(snap)
                 snap["standing"] = sd
+                snap["bot_selected"] = bot
                 if sd.get("start") and sd.get("made") is not None:
                     try:
-                        from .standing import period_view, practice_figures
-                        sel = period_view(sd, deals, period, date_from, date_to)
+                        from .standing import bot_view, open_charged, period_view, practice_figures
+                        sel = period_view(sd, deals, period, date_from, date_to, now=now)
                         sel["from"], sel["to"] = date_from, date_to
-                        tot = period_view(sd, deals, "total")
-                        headline = {"sel": sel, "tot": tot, "p_sel": {}, "p_tot": {}}
+                        tot = period_view(sd, deals, "total", now=now)
+                        headline = {"sel": sel, "tot": tot, "p_sel": {}, "p_tot": {}, "data_dir": data_dir, "now": now}
+                        snap["open_charged"] = open_charged(deals, sd.get("open_tickets"))
+                        today_v = sel if sel["key"] == "today" else period_view(sd, deals, "today", now=now)
+                        rider = next((b for b in sd.get("bots") or () if b.get("id") == "momentum_rider"), None)
+                        if rider is not None and rider.get("made") is not None:
+                            snap["bot_today"] = {"momentum_rider": bot_view(today_v, int(rider.get("magic") or 0))}
                         if data_dir:
                             ccy = str(sd.get("currency") or "GBP")
                             for k, v in (("p_sel", sel), ("p_tot", tot)):
-                                headline[k] = practice_figures(data_dir, dt.datetime.fromisoformat(v["start"]), utcnow(),
+                                headline[k] = practice_figures(data_dir, dt.datetime.fromisoformat(v["start"]), now,
                                                           ccy, end=dt.datetime.fromisoformat(v["end"]))
                     except Exception as exc:
                         log.warning("period %s: %s", period, exc)
                         headline = None
-                # the folded tabs follow the same filter (from the bots' own records)
+                if headline is None:                     # the chosen period still shows on its button
+                    headline = {"period": {"key": period, "from": date_from, "to": date_to}, "data_dir": data_dir,
+                                "now": now}
+                # the folded tabs follow the same filter (from the bots' own records), on the same UK days
                 tab_period, tf, tt = period, date_from, date_to
                 if period == "total" and sd.get("start"):
-                    tab_period, tf, tt = "custom", str(sd["start"])[:10], utcnow().date().isoformat()
+                    try:
+                        tab_period, tf, tt = ("custom", uk_date(dt.datetime.fromisoformat(str(sd["start"]))).isoformat(),
+                                              uk_date(now).isoformat())
+                    except Exception:
+                        tab_period, tf, tt = "custom", str(sd["start"])[:10], uk_date(now).isoformat()
                 if tab_period != "today" and self.state.period_resolver is not None:
                     try:
                         snap = dict(snap)
@@ -1539,7 +2149,7 @@ class _Handler(BaseHTTPRequestHandler):
                         snap["strategies"]["period"]["key"] = period
                     except Exception as exc:
                         log.warning("period %s: %s", period, exc)
-                self._send(render_status(snap, strategy, headline))
+                self._send(render_status(snap, strategy, headline, bot))
         except Exception as exc:      # never let the page kill the process
             self._send(f"<pre>dashboard error: {html.escape(str(exc))}</pre>",
                        code=500)

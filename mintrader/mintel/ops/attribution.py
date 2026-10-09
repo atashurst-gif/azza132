@@ -579,37 +579,39 @@ def period_bounds(period: str, now: Optional[dt.datetime] = None,
                   date_from: str = "", date_to: str = "") -> tuple[dt.datetime, dt.datetime, str]:
     """(start_utc, end_utc, label) for a page period.
 
-    Day boundaries follow the computer's local clock (the page is read on the
-    Mac), converted to UTC for the journals. A custom range takes two ISO
+    Day boundaries are UK calendar days (Europe/London, midnight to midnight,
+    BST and GMT handled) - the same days as the cards at the top of the page
+    (mintel/ops/standing.py period_bounds), whatever the computer's own clock
+    says - converted to UTC for the journals. A custom range takes two ISO
     dates (YYYY-MM-DD) and is inclusive of both days."""
+    from .standing import _months_back, uk_date, uk_midnight
     now = to_utc(now or utcnow())
-    local = now.astimezone()
-    tz = local.tzinfo
-    day0 = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    today = uk_date(now)
     one = dt.timedelta(days=1)
     if period == "custom" and (date_from or date_to):
         try:
             a = dt.date.fromisoformat(date_from) if date_from else dt.date.fromisoformat(date_to)
             b = dt.date.fromisoformat(date_to) if date_to else a
         except ValueError:
-            a = b = local.date()
+            a = b = today
         if b < a:
             a, b = b, a
-        start = dt.datetime(a.year, a.month, a.day, tzinfo=tz)
-        end = dt.datetime(b.year, b.month, b.day, tzinfo=tz) + one
+        lo, hi = dt.date(2000, 1, 1), today + one                 # nothing outside the bots' lifetime
+        a, b = min(max(a, lo), hi), min(max(b, lo), hi)
+        start, end = uk_midnight(a), uk_midnight(b + one)
         label = f"{a.isoformat()} to {b.isoformat()}" if a != b else a.isoformat()
     elif period == "yesterday":
-        start, end, label = day0 - one, day0, "Yesterday"
+        start, end, label = uk_midnight(today - one), uk_midnight(today), "Yesterday"
     elif period == "week":
-        start, end, label = day0 - dt.timedelta(days=day0.weekday()), day0 + one, "This week"
+        start, end, label = uk_midnight(today - dt.timedelta(days=today.weekday())), uk_midnight(today + one), "This week"
     elif period == "month":
-        start, end, label = day0.replace(day=1), day0 + one, "This month"
+        start, end, label = uk_midnight(today.replace(day=1)), uk_midnight(today + one), "This month"
     elif period == "6m":
-        start, end, label = day0 - dt.timedelta(days=182), day0 + one, "Last 6 months"
+        start, end, label = uk_midnight(_months_back(today, 6)), uk_midnight(today + one), "Last 6 months"
     elif period == "1y":
-        start, end, label = day0 - dt.timedelta(days=365), day0 + one, "Last year"
+        start, end, label = uk_midnight(_months_back(today, 12)), uk_midnight(today + one), "Last year"
     else:
-        start, end, label = day0, day0 + one, "Today"
+        start, end, label = uk_midnight(today), uk_midnight(today + one), "Today"
     return to_utc(start), to_utc(end), label
 
 

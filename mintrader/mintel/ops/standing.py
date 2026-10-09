@@ -26,6 +26,21 @@ read through ``PaperBroker(..., read_only=True)``), shown apart and never
 added. The broker read here is always the real one (``real_broker``), even
 if the trader's wrapper is handed in: the whole-account view is MetaTrader's
 own.
+
+The page's periods (Aaron, 9 Oct: "I don't want last night 11pm trade
+showing, just today's") are UK CALENDAR DAYS: Europe/London, midnight to
+midnight, BST and GMT handled by the time-zone database - never the
+broker's day (which starts at 22:00 UK in summer). Every period but Total
+counts each CLOSED position once, on the UK day it closed, with its full
+result as MetaTrader shows a position (every one of its deals: both halves
+of the commission, swap, profit, fees), for the bot whose magic OPENED it;
+trades and wins are counted by position, never by deal. A position still
+open counts in no period (its open profit is shown as open). Total and each
+card's Overall stay balance-based (the balance less the balance at the
+reset, and each bot's deals since the reset), so they always equal the
+account; where a period's figure differs from what the trades moved the
+balance in the same UK days, ``period_view`` says why in one plain line.
+The daily-loss stop is not this: it keeps its own day (the broker's).
 """
 from __future__ import annotations
 
@@ -35,13 +50,34 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..clock import to_utc
+from ..clock import TZ_LONDON, to_utc
 
 log = logging.getLogger("mintel.standing")
 
 TNB_MAGIC = 990_311
 TNB_PAPER_DB = "tnb_paper.sqlite"
 _EPOCH = dt.datetime(2000, 1, 1, tzinfo=dt.timezone.utc)
+UTC = dt.timezone.utc
+# the deal history is read from this long before the reset as well, so a
+# position that closed after the reset still carries the commission charged
+# when it opened (its full result, as MetaTrader shows it)
+LOOKBACK = dt.timedelta(days=14)
+UK_DAYS_NOTE = "Days are UK days, midnight to midnight"
+
+
+def uk_date(t: dt.datetime) -> dt.date:
+    """The UK calendar date (Europe/London: BST in summer, GMT in winter) of an instant."""
+    return to_utc(t).astimezone(TZ_LONDON).date()
+
+
+def uk_midnight(d: dt.date) -> dt.datetime:
+    """00:00 UK on ``d``, in UTC (23:00 UTC the evening before in BST, 00:00 UTC in GMT)."""
+    return dt.datetime(d.year, d.month, d.day, tzinfo=TZ_LONDON).astimezone(UTC)
+
+
+def uk_day_start(now: dt.datetime) -> dt.datetime:
+    """00:00 UK today, in UTC."""
+    return uk_midnight(uk_date(now))
 
 
 def tnb_mode(cfg=None, data_dir=None) -> str:
@@ -178,14 +214,73 @@ def _start(cfg, now: dt.datetime) -> dt.datetime:
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-def _day_start(broker, now: dt.datetime) -> dt.datetime:
-    try:
-        clock = getattr(broker, "clock", None)
-        if clock is not None and hasattr(clock, "day_start_utc"):
-            return to_utc(clock.day_start_utc(now))
-    except Exception:
-        pass
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+def positions_of(deals, open_tickets=None) -> list[dict]:
+    """Every position in the deal rows, as MetaTrader shows a position: all
+    of its deals added up (the adapter's "profit" already holds the deal's
+    profit, commission, swap and fees), credited to the bot that OPENED it
+    (the ``bot_magic`` its entry deal was tagged with). ``closed`` is the
+    time of its last exit deal; it is CLOSED once it has an exit and is no
+    longer open - ``open_tickets`` is MetaTrader's open positions read with
+    the deals (None when they could not be read: then its exits must add up
+    to its entries' volume, where the rows give a volume). A position still
+    open, or only partly closed, is not closed and counts in no period.
+
+    Each: {position, bot_magic, symbol, net, commission (a positive cost),
+    volume, opened, closed, is_closed, deals}, in the order they closed."""
+    open_set = None if open_tickets is None else {int(t) for t in open_tickets}
+    by: dict = {}
+    for r in deals or ():
+        t = r.get("time")
+        if t is None:
+            continue
+        t = to_utc(t)
+        pos = int(r.get("position") or 0)
+        key = pos if pos else ("deal", id(r))
+        p = by.get(key)
+        if p is None:
+            p = by[key] = {"position": pos, "bot_magic": r.get("bot_magic", -1), "symbol": "", "net": 0.0,
+                           "commission": 0.0, "entry_volume": 0.0, "exit_volume": 0.0, "opened": None,
+                           "closed": None, "deals": [], "_entry_tag": False}
+        if r.get("is_entry"):
+            if not p["_entry_tag"]:
+                p["bot_magic"], p["_entry_tag"] = r.get("bot_magic", p["bot_magic"]), True
+            p["opened"] = t if p["opened"] is None else min(p["opened"], t)
+            p["entry_volume"] += float(r.get("volume") or 0.0)
+        else:
+            p["closed"] = t if p["closed"] is None else max(p["closed"], t)
+            p["exit_volume"] += float(r.get("volume") or 0.0)
+        p["symbol"] = p["symbol"] or str(r.get("symbol") or "")
+        p["net"] += float(r.get("profit") or 0.0)
+        p["commission"] += abs(float(r.get("commission") or 0.0))
+        p["deals"].append({"time": t, "profit": float(r.get("profit") or 0.0), "is_entry": bool(r.get("is_entry"))})
+    out = []
+    for p in by.values():
+        if p["closed"] is None:
+            closed = False
+        elif open_set is not None:
+            closed = p["position"] not in open_set
+        else:
+            closed = not (p["entry_volume"] > 0 and p["exit_volume"] + 1e-9 < p["entry_volume"])
+        p.pop("_entry_tag", None)
+        out.append(dict(p, net=round(p["net"], 2), commission=round(p["commission"], 2), is_closed=closed,
+                        volume=round(p["entry_volume"] or p["exit_volume"], 2)))
+    out.sort(key=lambda p: (p["closed"] or p["opened"] or _EPOCH))
+    return out
+
+
+def closed_between(positions, start: dt.datetime, end: dt.datetime) -> list[dict]:
+    """The positions that CLOSED in [start, end)."""
+    return [p for p in positions if p["is_closed"] and start <= p["closed"] < end]
+
+
+def tally(positions) -> dict:
+    """{made, trades, wins, losses, commission} of closed positions, each
+    counted once: a win made money after commission, every other trade is a
+    loss (as the Rider's own page counts them)."""
+    nets = [float(p["net"]) for p in positions]
+    wins = sum(1 for v in nets if v > 0)
+    return {"made": round(sum(nets), 2), "trades": len(nets), "wins": wins, "losses": len(nets) - wins,
+            "commission": round(sum(float(p["commission"]) for p in positions), 2)}
 
 
 def bot_modes_and_magics(cfg) -> dict[str, tuple[int, str]]:
@@ -266,7 +361,13 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     broker could not give is None, with the reason in ``error`` (shown on the
     page). One read of the deal history, split locally by magic number, so the
     rows and the total come from the same moment; the balance and the open
-    positions are read straight after it."""
+    positions are read straight after it.
+
+    ``made`` (and each bot's ``made``) is balance-based: everything since the
+    reset. ``today`` (and each bot's ``today``) is the UK day: every position
+    that CLOSED since 00:00 UK (``day_start``), each with its full result
+    (every one of its deals, the commission charged when it opened too), once,
+    for the bot that opened it - the same figure as the page's Today."""
     now = to_utc(now)
     at = _CACHE["at"]
     if at is not None and cache_seconds and (now - at).total_seconds() < cache_seconds and _CACHE["value"]:
@@ -275,7 +376,8 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     # Trend & Breakout's magic would add its simulated deals
     broker = real_broker_of(broker)
     start = _start(cfg, now)
-    day = max(_day_start(broker, now), start)
+    since = start - LOOKBACK                     # the opening deals of positions that closed after the reset
+    day = max(uk_day_start(now), start)
     reset_balance = float(getattr(cfg, "account_reset_balance", 0.0) or 0.0)
     out: dict = {"start": start.isoformat(), "day_start": day.isoformat(), "source": "broker",
                  "made": None, "trading": None, "adjustments": None, "today": None, "open": None,
@@ -299,7 +401,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
             return None
     before = balance_now()
     try:
-        everything = fn(start, 0, False) or []          # magic 0: every trade on the account
+        everything = fn(since, 0, False) or []          # magic 0: every trade on the account
     except Exception as exc:
         errors.append(f"deal history not readable: {exc}")
         return done()
@@ -308,7 +410,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     after = balance_now()
     if before is not None and after is not None and abs(float(before.balance) - float(after.balance)) >= 0.005:
         try:
-            everything = fn(start, 0, False) or []
+            everything = fn(since, 0, False) or []
             after = balance_now() or after
         except Exception as exc:
             errors.append(f"deal history not readable: {exc}")
@@ -325,9 +427,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
         if pos_list is None:
             errors.append(f"open positions not readable: {exc}")
     trading, n_since, fees_since = _sum(everything, start)
-    today, n_today, fees_today = _sum(everything, day)
-    out.update({"trading": trading, "made_trades": n_since, "made_commission": fees_since,
-                "today": today, "today_trades": n_today, "today_commission": fees_today})
+    out.update({"trading": trading, "made_trades": n_since, "made_commission": fees_since})
     if account is not None:
         out["balance"] = round(float(account.balance), 2)
         out["equity"] = round(float(account.equity), 2)
@@ -362,7 +462,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
         # an older bridge: ask per magic; any failure leaves that row and the rest unknown
         for m in magics:
             try:
-                per[m] = fn(start, m, False) or []
+                per[m] = fn(since, m, False) or []
             except Exception as exc:
                 per[m] = None
                 errors.append(f"magic {m}'s deals not readable: {exc}")
@@ -372,20 +472,10 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
             per[-1] = [r for r in everything if (r.get("position"), str(r.get("time")), r.get("profit")) not in keys]
         else:
             per[-1] = None
-    for bid, label in BOTS:
-        magic, mode = modes.get(bid, (0, "PAPER"))
-        rows = per.get(magic) if magic else []
-        if rows is None:
-            b = {"made": None, "today": None, "trades": 0, "today_trades": 0}
-        else:
-            b_since, b_n_since, _ = _sum(rows, start)
-            b_today, b_n_today, _ = _sum(rows, day)
-            b = {"made": b_since, "today": b_today, "trades": b_n_since, "today_trades": b_n_today}
-        out["bots"].append({"id": bid, "label": label, "magic": magic, "mode": mode, **b,
-                            "open": round(open_by.get(magic, 0.0), 2) if pos_list is not None else None,
-                            "open_trades": n_open.get(magic, 0), "retired": bid in RETIRED})
-    # every deal since the reset, tagged with the bot that opened it, so the page
-    # can work out any period from the broker's own rows (held in memory, never published)
+    # every deal, tagged with the bot that opened it, so the page can work out
+    # any period from the broker's own rows (held in memory, never published).
+    # A deal from before the reset is kept only for a position still going
+    # after it (the commission charged when it opened belongs to its result).
     tagged: list[dict] = []
     if split is None and any(v is None for v in per.values()):
         claimed = {(r.get("position"), str(r.get("time")), r.get("profit"))
@@ -394,12 +484,46 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     for m, rows_m in per.items():
         for r in rows_m or ():
             t = r.get("time")
-            if t is None or to_utc(t) < start:
+            if t is None:
                 continue
             tagged.append({"time": to_utc(t), "bot_magic": m, "position": r.get("position"),
                            "profit": float(r.get("profit") or 0.0), "commission": float(r.get("commission") or 0.0),
-                           "is_entry": bool(r.get("is_entry"))})
+                           "is_entry": bool(r.get("is_entry")), "symbol": str(r.get("symbol") or ""),
+                           "volume": float(r.get("volume") or 0.0)})
+    after_reset = {r["position"] for r in tagged if r["time"] >= start and r["position"]}
+    tagged = [r for r in tagged if r["time"] >= start or (r["position"] and r["position"] in after_reset)]
     tagged.sort(key=lambda r: r["time"])
+    # today: the positions that closed since 00:00 UK, each in full, once
+    open_tickets = (sorted(int(getattr(q, "ticket", 0) or 0) for q in pos_list) if pos_list is not None else None)
+    today_pos = closed_between(positions_of(tagged, open_tickets), day,
+                               uk_midnight(uk_date(now) + dt.timedelta(days=1)))
+
+    def today_of(m) -> tuple[float, int]:
+        mine = [p for p in today_pos if p["bot_magic"] == m]
+        return round(sum(p["net"] for p in mine), 2), len(mine)
+    for bid, label in BOTS:
+        magic, mode = modes.get(bid, (0, "PAPER"))
+        rows = per.get(magic) if magic else []
+        if rows is None:
+            b = {"made": None, "today": None, "trades": 0, "today_trades": 0}
+        else:
+            b_since, b_n_since, _ = _sum(rows, start)
+            b_today, b_n_today = today_of(magic) if magic else (0.0, 0)
+            b = {"made": b_since, "today": b_today, "trades": b_n_since, "today_trades": b_n_today}
+        out["bots"].append({"id": bid, "label": label, "magic": magic, "mode": mode, **b,
+                            "open": round(open_by.get(magic, 0.0), 2) if pos_list is not None else None,
+                            "open_trades": n_open.get(magic, 0), "retired": bid in RETIRED})
+    # standing["today"] - the ACCOUNT's figure for the UK day (since 00:00 UK,
+    # Europe/London): every position that closed today, every bot's and any
+    # placed by hand, each with its full result (every deal of it, the
+    # commission charged when it opened too, even if that was yesterday),
+    # counted once. The page's Today and the pulse (mintel/ops/pulse.py reads
+    # it as today_pnl) carry exactly this figure. Positions still open are not
+    # in it; their open profit is "open".
+    t_all = tally(today_pos)
+    out.update({"today": t_all["made"], "today_trades": t_all["trades"], "today_commission": t_all["commission"]})
+    out["day_basis"] = "UK"
+    out["open_tickets"] = open_tickets
     out["deals"] = tagged
     out["deals_complete"] = all(v is not None for v in per.values())
     out["unknown_magics"] = [m for m, v in per.items() if v is None and m != -1]
@@ -409,8 +533,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
                         "open": round(open_by.get(-1, 0.0), 2) if pos_list is not None else None}
     else:
         o_since, _, _ = _sum(rest, start)
-        o_today, _, _ = _sum(rest, day)
-        out["other"] = {"label": "Anything else (placed by hand)", "made": o_since, "today": o_today,
+        out["other"] = {"label": "Anything else (placed by hand)", "made": o_since, "today": today_of(-1)[0],
                         "open": round(open_by.get(-1, 0.0), 2) if pos_list is not None else None}
     return done()
 
@@ -457,24 +580,21 @@ def _months_back(d: dt.date, n: int) -> dt.date:
 
 def period_bounds(sd: dict, period: str, date_from: str = "", date_to: str = "",
                   now: Optional[dt.datetime] = None) -> tuple[dt.datetime, dt.datetime, str, str]:
-    """(start, end, label, key) on the broker's days - the same days MetaTrader
-    and the daily-loss stop use - never earlier than the reset."""
-    now = to_utc(now or dt.datetime.now(dt.timezone.utc))
-    reset = to_utc(dt.datetime.fromisoformat(sd["start"]))
+    """(start, end, label, key), in UTC, for one of the page's periods on UK
+    CALENDAR DAYS (Europe/London, midnight to midnight; BST and GMT are the
+    time-zone database's business, never a fixed offset): Today from 00:00
+    UK today, Yesterday 00:00-24:00 UK yesterday, This week from Monday 00:00
+    UK, This month from the 1st, the last 6 months and the last year from
+    that date so many months back, and a custom range from 00:00 UK on its
+    first date to 24:00 UK on its last. Never earlier than the reset; Total
+    is from the reset. Not the broker's day, which starts at 22:00 UK."""
+    now = to_utc(now or dt.datetime.now(UTC))
     try:
-        d0 = to_utc(dt.datetime.fromisoformat(sd["day_start"]))
+        reset = to_utc(dt.datetime.fromisoformat(str(sd["start"])))
     except Exception:
-        d0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    if d0 > now:
-        d0 -= dt.timedelta(days=1)
-    # the broker day boundary is the same clock time every day: work in whole days from it
-    while d0 + dt.timedelta(days=1) <= now:
-        d0 += dt.timedelta(days=1)
-    bdate = (d0 + dt.timedelta(hours=12)).date()           # the broker's calendar date of "today"
+        reset = _EPOCH
+    today = uk_date(now)
     one = dt.timedelta(days=1)
-
-    def day_start(d: dt.date) -> dt.datetime:
-        return d0 - dt.timedelta(days=(bdate - d).days)
     key = period if period in {k for k, _ in PERIOD_BUTTONS} | {"custom"} else "total"
     if key == "custom":
         try:
@@ -482,64 +602,199 @@ def period_bounds(sd: dict, period: str, date_from: str = "", date_to: str = "",
             b = dt.date.fromisoformat(date_to) if date_to else a
             if b < a:
                 a, b = b, a
-            a = max(a, reset.date() - one)                         # nothing to count before the start
-            b = min(b, bdate + dt.timedelta(days=1))               # nor after today
-            if b < a:
-                b = a
-            start, end = day_start(a), day_start(b) + one
+            lo, hi = dt.date(2000, 1, 1), today + one                 # nothing to count after today
+            a, b = min(max(a, lo), hi), min(max(b, lo), hi)
+            start, end = uk_midnight(a), uk_midnight(b + one)
         except (ValueError, OverflowError):
             key = "total"
         else:
             label = (f"{a.strftime('%d %b %Y')} to {b.strftime('%d %b %Y')}" if a != b else a.strftime("%a %d %b %Y"))
             return max(start, reset), max(end, reset), label, key
+    tomorrow = uk_midnight(today + one)
     if key == "today":
-        start, end, label = d0, d0 + one, "Today"
+        start, end, label = uk_midnight(today), tomorrow, "Today"
     elif key == "yesterday":
-        start, end, label = d0 - one, d0, "Yesterday"
+        start, end, label = uk_midnight(today - one), uk_midnight(today), "Yesterday"
     elif key == "week":
-        start, end, label = day_start(bdate - dt.timedelta(days=bdate.weekday())), d0 + one, "This week"
+        start, end, label = uk_midnight(today - dt.timedelta(days=today.weekday())), tomorrow, "This week"
     elif key == "month":
-        start, end, label = day_start(bdate.replace(day=1)), d0 + one, "This month"
+        start, end, label = uk_midnight(today.replace(day=1)), tomorrow, "This month"
     elif key == "6m":
-        start, end, label = day_start(_months_back(bdate, 6)), d0 + one, "Last 6 months"
+        start, end, label = uk_midnight(_months_back(today, 6)), tomorrow, "Last 6 months"
     elif key == "1y":
-        start, end, label = day_start(_months_back(bdate, 12)), d0 + one, "Last year"
+        start, end, label = uk_midnight(_months_back(today, 12)), tomorrow, "Last year"
     else:
-        start, end, label, key = reset, d0 + one, "Total", "total"
+        start, end, label, key = reset, tomorrow, "Total", "total"
     return max(start, reset), max(end, reset), label, key
+
+
+# how the "why" line names a period: (in it, before it)
+_PHRASES = {"today": ("today", "before today"), "yesterday": ("yesterday", "before yesterday"),
+            "week": ("this week", "before this week"), "month": ("this month", "before this month"),
+            "6m": ("in the last 6 months", "before the last 6 months"),
+            "1y": ("in the last year", "before the last year"), "custom": ("in these dates", "before these dates")}
+
+
+def _money(v: float, ccy: str = "GBP", signed: bool = True) -> str:
+    sym = {"GBP": "£", "USD": "$", "EUR": "€"}.get(str(ccy or ""), "")
+    sign = ("+" if v > 0 else ("-" if v < 0 else "")) if signed else ""
+    return f"{sign}{sym}{abs(v):,.2f}"
+
+
+def why_it_differs(key: str, start: dt.datetime, end: dt.datetime, closed: list, positions: list,
+                   made: float, moved: float, ccy: str = "GBP") -> str:
+    """One plain line saying why a period's figure (each position that closed
+    in it, in full) is not what the trades moved the balance in the same UK
+    days: commission charged before the period on a trade that closed in it,
+    or charged in it on a trade still open or closed later. "" when they agree."""
+    if key == "total" or abs(round(made - moved, 2)) < 0.005:
+        return ""
+    here, before = _PHRASES.get(key, ("in this period", "before this period"))
+    in_ids = {id(p) for p in closed}
+    early = [(p, d) for p in closed for d in p["deals"] if d["time"] < start]
+    still_open, later = [], []
+    for p in positions:
+        if id(p) in in_ids:
+            continue
+        for d in p["deals"]:
+            if start <= d["time"] < end:
+                (later if p["is_closed"] and p["closed"] >= end else still_open).append((p, d))
+    day_before = uk_date(start) - dt.timedelta(days=1)
+    if early and key in ("today", "yesterday") and all(uk_date(d["time"]) == day_before for _p, d in early):
+        before = "yesterday" if key == "today" else "the day before"
+
+    def amount(pairs) -> str:
+        v = round(sum(d["profit"] for _p, d in pairs), 2)
+        if all(d["is_entry"] for _p, d in pairs) and v <= 0:
+            return f"{_money(v, ccy, signed=False)} of commission was charged"
+        return f"{_money(v, ccy)} was booked"
+
+    def trades(pairs) -> tuple[str, int]:
+        n = len({id(p) for p, _d in pairs})
+        return ("a trade" if n == 1 else f"{n} trades"), n
+    parts = []
+    if early:
+        t, _n = trades(early)
+        parts.append(f"{amount(early)} {before} on {t} that closed {here}")
+    if still_open:
+        t, n = trades(still_open)
+        parts.append(f"{amount(still_open)} {here} on {t} still open, which "
+                     f"{'counts on the day it closes' if n == 1 else 'count on the day they close'}")
+    if later:
+        t, n = trades(later)
+        parts.append(f"{amount(later)} {here} on {t} that closed after, which "
+                     f"{'counts on the day it closed' if n == 1 else 'count on the day they closed'}")
+    if not parts:
+        return ""
+    return f"This differs from what trades moved the balance {here} ({_money(moved, ccy)}) because " \
+           + " and ".join(parts) + "."
 
 
 def period_view(sd: dict, deals: list, period: str, date_from: str = "", date_to: str = "",
                 now: Optional[dt.datetime] = None) -> dict:
-    """The account and each bot for one period, from the broker's deal rows.
-    Total is the balance less the balance at the reset (as on the phone); any
-    other period is every deal booked in it (profit, commission and swap)."""
+    """The account and each bot for one period, from the broker's deal rows,
+    on UK days (``period_bounds``). Any period but Total: every position that
+    CLOSED in it, each once, with its full result (every one of its deals,
+    whenever booked), for the bot that opened it - ``closed`` holds them, and
+    ``why`` says in one line why that differs from what the trades moved the
+    balance in the same days (``balance_moved``), if it does. Total is the
+    balance less the balance at the reset (as on the phone), and each bot's
+    deals since the reset, so the cards always add up to the account.
+    Positions still open count in no period."""
     start, end, label, key = period_bounds(sd, period, date_from, date_to, now)
-    rows = [r for r in deals or () if start <= r["time"] < end]
+    deals = list(deals or ())
+    positions = positions_of(deals, sd.get("open_tickets"))
+    closed = closed_between(positions, start, end)
+    booked = [r for r in deals if start <= r["time"] < end]
     unknown = set(sd.get("unknown_magics") or ())
+    complete = bool(sd.get("deals_complete", True))
+    total = key == "total"
     bots = {}
     for b in sd.get("bots") or ():
         m = b.get("magic")
         if m in unknown or b.get("made") is None:
-            bots[b["id"]] = {"made": None, "trades": None}
+            bots[b["id"]] = {"made": None, "trades": None, "wins": None, "losses": None, "commission": None}
             continue
-        mine = [r for r in rows if r["bot_magic"] == m]
-        bots[b["id"]] = {"made": round(sum(r["profit"] for r in mine), 2),
-                         "trades": len({r["position"] for r in mine if not r["is_entry"]})}
-    other_rows = [r for r in rows if r["bot_magic"] == -1]
-    trading = round(sum(r["profit"] for r in rows), 2)
+        t = tally([p for p in closed if p["bot_magic"] == m])
+        if total:                                          # balance-based: its deals since the reset
+            t["made"] = round(sum(r["profit"] for r in booked if r["bot_magic"] == m), 2)
+        bots[b["id"]] = t
+    every = tally(closed)
+    moved = round(sum(r["profit"] for r in booked), 2)
+    if total:
+        trading = moved
+        other = round(sum(r["profit"] for r in booked if r["bot_magic"] == -1), 2)
+    else:
+        trading = every["made"]
+        other = tally([p for p in closed if p["bot_magic"] == -1])["made"]
     view = {"key": key, "label": label, "start": start.isoformat(), "end": end.isoformat(),
-            "trading": trading, "made": trading, "adjustments": None,
-            "trades": len({r["position"] for r in rows if not r["is_entry"]}),
-            "commission": round(sum(abs(r["commission"]) for r in rows), 2),
-            "bots": bots, "other": round(sum(r["profit"] for r in other_rows), 2),
-            "complete": bool(sd.get("deals_complete", True))}
-    if not view["complete"]:
-        view["other"] = None                               # the hand-trade row is unknown while a bot is
-    if key == "total" and sd.get("made") is not None:
+            "trading": trading, "made": trading, "adjustments": None, "trades": every["trades"],
+            "wins": every["wins"], "losses": every["losses"], "commission": every["commission"],
+            "bots": bots, "other": other if complete else None,     # the hand-trade row is unknown while a bot is
+            "complete": complete, "balance_moved": moved, "closed": closed, "why": ""}
+    if total and sd.get("made") is not None:
         view["made"] = sd["made"]                          # the balance less the balance at the reset
-        view["adjustments"] = round(sd["made"] - trading, 2) if view["complete"] else None
+        view["adjustments"] = round(sd["made"] - trading, 2) if complete else None
+    if not total:
+        view["why"] = why_it_differs(key, start, end, closed, positions, trading, moved, str(sd.get("currency") or "GBP"))
     return view
+
+
+def bot_view(view: dict, magic: int) -> dict:
+    """One bot's positions that closed in a ``period_view``'s period, and their tally."""
+    mine = [p for p in view.get("closed") or () if p.get("bot_magic") == magic]
+    return dict(tally(mine), closed=mine)
+
+
+def open_charged(deals, open_tickets) -> dict:
+    """{ticket: money already booked on an open position} - the commission
+    charged when it opened (and any part already closed): on the balance now,
+    in its result on the day it closes."""
+    if not open_tickets:
+        return {}
+    want = {int(t) for t in open_tickets}
+    out: dict = {}
+    for r in deals or ():
+        pos = int(r.get("position") or 0)
+        if pos in want:
+            out[pos] = round(out.get(pos, 0.0) + float(r.get("profit") or 0.0), 2)
+    return out
+
+
+def strategy_days(deals, magic: int, tracking_start: dt.datetime, now: dt.datetime, open_tickets=None,
+                  extra=()) -> dict:
+    """One bot's own "Results by period" (the folded tiles) on UK days, from
+    the account's deal rows: its positions OPENED at or after
+    ``tracking_start`` (the rules' measuring start) and closed in each
+    period, each in full; ``extra`` adds positions of the same shape (Trend
+    & Breakout's paper record on PAPER). {"today": {...}, "periods": [...]}
+    in the shape the page's tiles read."""
+    now = to_utc(now)
+    start = to_utc(tracking_start)
+    mine = [p for p in positions_of([r for r in deals or () if r.get("bot_magic") == magic], open_tickets)
+            if p["is_closed"] and p["opened"] is not None and p["opened"] >= start]
+    mine += [p for p in extra or () if p.get("closed") is not None and p.get("opened") is not None
+             and to_utc(p["opened"]) >= start]
+    today = uk_date(now)
+    far = uk_midnight(today + dt.timedelta(days=1))
+
+    def summary(a: dt.datetime, b: dt.datetime = far) -> dict:
+        keep = [float(p["net"]) for p in mine if a <= to_utc(p["closed"]) < b]
+        fees = sum(float(p.get("commission") or 0.0) for p in mine if a <= to_utc(p["closed"]) < b)
+        wins = sum(1 for v in keep if v > 0)
+        return {"net": round(sum(keep), 2), "trades": len(keep), "wins": wins,
+                "win_rate": round(wins / len(keep) * 100, 1) if keep else None,
+                "commission": round(fees, 2), "before_fees": round(sum(keep) + fees, 2),
+                "nets": [round(v, 2) for v in keep]}
+    d0 = uk_midnight(today)
+    periods = [("Today", summary(max(d0, start))),
+               ("Yesterday", summary(uk_midnight(today - dt.timedelta(days=1)), d0)),
+               ("This week", summary(uk_midnight(today - dt.timedelta(days=today.weekday())))),
+               ("Last 7 days", summary(uk_midnight(today - dt.timedelta(days=6)))),
+               ("Last 14 days", summary(uk_midnight(today - dt.timedelta(days=13)))),
+               ("Since start", summary(start))]
+    return {"today": periods[0][1], "since_start": periods[-1][1], "day_start": d0.isoformat(), "day_basis": "UK",
+            "periods": [{"label": k, **{kk: vv for kk, vv in v.items() if kk != "nets"}} for k, v in periods]}
 
 
 def open_rows(positions, cfg) -> list[dict]:
