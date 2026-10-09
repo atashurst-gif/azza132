@@ -25,6 +25,12 @@ threshold and at least ``min_groups`` independent groups agreeing (two of them
 from the institutional book), with no group strongly against. Execution
 quality (the spot spread and quote age) and the bot's own history after costs
 scale the score; they never invent a direction.
+
+For a generic instrument (Binance's crypto book) the book components carry
+the feed's own data class (EXCHANGE), never INSTITUTIONAL: the same
+evidence, honestly labelled. Its news is the US dollar's high-impact
+releases, for timing only (no entry into a release, never chase the first
+print); a release gives a crypto book no direction.
 """
 from __future__ import annotations
 
@@ -193,11 +199,12 @@ def news_context(root: str, events: Sequence[CalendarEvent], now: dt.datetime, m
                  surprise_window_s: float = 1800.0) -> NewsContext:
     """From the MT5 calendar (RETAIL): the latest and next high-impact release for the future's two
     currencies, and what the latest surprise means for the FUTURE: family sign x sign(actual - forecast)
-    gives good/bad for that currency; good for the foreign currency = future up, good for USD = future down."""
+    gives good/bad for that currency; good for the foreign currency = future up, good for USD = future down.
+    A crypto instrument: the US dollar's releases, for timing only (no direction)."""
     c = contract(root)
-    if c is None or c.asset != "FX":
+    if c is None or c.asset not in ("FX", "CRYPTO"):
         return NewsContext()
-    ccys = {c.currency, "USD"}
+    ccys = {c.currency, "USD"} if c.asset == "FX" else {"USD"}
     rel = [e for e in events if e.currency in ccys and int(e.importance) >= min_importance]
     past = sorted((e for e in rel if e.time_utc <= now), key=lambda e: e.time_utc)
     fut = sorted((e for e in rel if e.time_utc > now), key=lambda e: e.time_utc)
@@ -239,29 +246,30 @@ def cross_market_value(root: str, snaps: dict) -> Optional[float]:
 
 # -------------------------------------------------------------- the score --
 
-def components(fs: FlowSnapshot, regime: str = "") -> list[Component]:
-    """The institutional components, from the futures book. In a REVERSAL the aggression is read from
-    the last 5 seconds only: the 30-second window still remembers the side that was absorbed."""
+def components(fs: FlowSnapshot, regime: str = "", source: str = INSTITUTIONAL) -> list[Component]:
+    """The book components, from the futures book (INSTITUTIONAL) or the feed's own book (``source``: EXCHANGE
+    for Binance). In a REVERSAL the aggression is read from the last 5 seconds only: the 30-second window still
+    remembers the side that was absorbed."""
     out = []
     of = _clip(0.5 * math.tanh(fs.ofi_short) + 0.5 * math.tanh(fs.ofi_medium / 2.0))
-    out.append(Component("order_flow", of, BASE_WEIGHTS["order_flow"], "FLOW", INSTITUTIONAL,
+    out.append(Component("order_flow", of, BASE_WEIGHTS["order_flow"], "FLOW", source,
                          f"OFI {fs.ofi_short:+.2f} (5 s), {fs.ofi_medium:+.2f} (30 s) touch-depths"))
     if regime == REVERSAL:
         ag = _clip(fs.aggr_short * min(1.0, fs.volume_intensity) + 0.5 * fs.large_net)
     else:
         ag = _clip(0.6 * fs.aggr_short * min(1.0, fs.volume_intensity) + 0.4 * fs.aggr_medium + 0.5 * fs.large_net)
-    out.append(Component("aggressive", ag, BASE_WEIGHTS["aggressive"], "FLOW", INSTITUTIONAL,
+    out.append(Component("aggressive", ag, BASE_WEIGHTS["aggressive"], "FLOW", source,
                          f"aggression {fs.aggr_short:+.2f} (5 s) {fs.aggr_medium:+.2f} (30 s), intensity "
                          f"{fs.intensity:.1f}x, large prints {fs.large_net:+.2f}"))
     df = 0.5 * fs.footprint_signal
     if fs.delta_reliable:
         df += 0.4 * math.tanh(fs.delta_slope) + 0.3 * fs.delta_divergence
-    out.append(Component("delta_footprint", _clip(df), BASE_WEIGHTS["delta_footprint"], "FLOW", INSTITUTIONAL,
+    out.append(Component("delta_footprint", _clip(df), BASE_WEIGHTS["delta_footprint"], "FLOW", source,
                          ("stacked buying" if fs.stacked_buy else "stacked selling" if fs.stacked_sell else
                           "no stacked imbalance") + (f", delta slope {fs.delta_slope:+.2f}" if fs.delta_reliable
                                                      else ", delta not reliable on this feed")))
     bp = _clip(0.4 * fs.imbalance + 0.4 * fs.imbalance_avg * fs.imbalance_persist + 0.2 * fs.micro_offset)
-    out.append(Component("book_pressure", bp, BASE_WEIGHTS["book_pressure"], "BOOK", INSTITUTIONAL,
+    out.append(Component("book_pressure", bp, BASE_WEIGHTS["book_pressure"], "BOOK", source,
                          f"imbalance {fs.imbalance:+.2f} now, {fs.imbalance_avg:+.2f} over 30 s, microprice "
                          f"{fs.micro_offset:+.2f}"))
     la = math.tanh(1.5 * (fs.depth5_bid_ratio - fs.depth5_ask_ratio))
@@ -269,19 +277,19 @@ def components(fs: FlowSnapshot, regime: str = "") -> list[Component]:
         la -= 0.3
     if fs.wall_bid and fs.wall_bid.get("distance_ticks", 99) <= 3:
         la += 0.3
-    out.append(Component("liquidity_ahead", _clip(la), BASE_WEIGHTS["liquidity_ahead"], "BOOK", INSTITUTIONAL,
+    out.append(Component("liquidity_ahead", _clip(la), BASE_WEIGHTS["liquidity_ahead"], "BOOK", source,
                          f"near depth bid {fs.depth5_bid_ratio:.0%} / offer {fs.depth5_ask_ratio:.0%} of normal"))
     cs = 0.4 * fs.consumption_signal + 0.3 * fs.pulling_signal + 0.3 * fs.wall_signal + 0.2 * fs.resilience_signal
     if fs.sweep_dir and fs.sweep_age_s is not None and fs.sweep_age_s <= 20:
         cs += 0.4 * fs.sweep_dir
-    out.append(Component("consumption", _clip(cs), BASE_WEIGHTS["consumption"], "CONSUMPTION", INSTITUTIONAL,
+    out.append(Component("consumption", _clip(cs), BASE_WEIGHTS["consumption"], "CONSUMPTION", source,
                          f"consumed-vs-replenished {fs.consumption_signal:+.2f}, pulling {fs.pulling_signal:+.2f}, "
                          f"walls {fs.wall_signal:+.2f}, sweep {fs.sweep_dir:+d}"))
     ab = fs.absorption_dir * fs.absorption_score + 0.5 * fs.refresh_signal
-    out.append(Component("absorption", _clip(ab), BASE_WEIGHTS["absorption"], "ABSORPTION", INSTITUTIONAL,
+    out.append(Component("absorption", _clip(ab), BASE_WEIGHTS["absorption"], "ABSORPTION", source,
                          f"absorption {fs.absorption_score:.2f} toward {fs.absorption_dir:+d}, refresh {fs.refresh_signal:+.2f}"))
     pv = 0.5 * fs.profile_signal + 0.5 * fs.vwap_signal
-    out.append(Component("profile_vwap", _clip(pv), BASE_WEIGHTS["profile_vwap"], "CONTEXT", INSTITUTIONAL,
+    out.append(Component("profile_vwap", _clip(pv), BASE_WEIGHTS["profile_vwap"], "CONTEXT", source,
                          f"{fs.profile_location or 'profile building'}, {fs.vwap_dist_ticks:+.1f} ticks from VWAP"))
     return out
 
@@ -289,11 +297,11 @@ def components(fs: FlowSnapshot, regime: str = "") -> list[Component]:
 def score(fs: FlowSnapshot, regime: RegimeRead, *, spot_symbol: str = "", chart: Optional[ChartContext] = None,
           news: Optional[NewsContext] = None, cross: Optional[float] = None, exec_quality: float = 1.0,
           exec_note: str = "", history_mult: float = 1.0, history_note: str = "",
-          cfg: Optional[ScoreConfig] = None) -> Opportunity:
+          cfg: Optional[ScoreConfig] = None, data_class: str = INSTITUTIONAL) -> Opportunity:
     cfg = cfg or ScoreConfig()
     root = root_of(fs.instrument)
     c = contract(root)
-    comps = components(fs, regime.regime) if fs.ok else []
+    comps = components(fs, regime.regime, data_class) if fs.ok else []
     # retail and cross-market evidence, in the FUTURES direction
     if chart is not None and chart.ok and c is not None and c.spot:
         comps.append(Component("chart", _clip(futures_direction(root, _s(chart.value)) * abs(chart.value)),
@@ -327,7 +335,7 @@ def score(fs: FlowSnapshot, regime: RegimeRead, *, spot_symbol: str = "", chart:
     spot = spot_symbol or (c.spot if c is not None else "")
     sdir = spot_direction(root, direction) if (direction and c is not None) else 0
     opp = Opportunity(fs.instrument, root, spot, fs.ts, direction, sdir, round(sc, 1), round(min(1.0, sc / 100.0), 3),
-                      abs(S), regime, comps, groups, agree, against)
+                      abs(S), regime, comps, groups, agree, against, data_class=data_class)
     # can it be traded?
     why = []
     inst = [g for g in agree if g in INSTITUTIONAL_GROUPS]
@@ -447,8 +455,12 @@ def reasoning(opp: Opportunity, fs: FlowSnapshot, chart: Optional[ChartContext] 
         body = ", ".join(parts[:-1]) + ", and " + parts[-1]
     body = body[0].upper() + body[1:]
     side = "BUY" if opp.spot_direction > 0 else "SELL"
-    tail = (f" {c.name} futures ({c.root}) point to the {c.currency} {'rising' if d > 0 else 'falling'}, so "
-            f"{opp.spot_symbol} {side}")
+    if c.generic:
+        tail = (f" {c.venue}'s public {c.root} order book points to {c.currency} {'rising' if d > 0 else 'falling'}, "
+                f"so {opp.spot_symbol} {side} (the broker's CFD)")
+    else:
+        tail = (f" {c.name} futures ({c.root}) point to the {c.currency} {'rising' if d > 0 else 'falling'}, so "
+                f"{opp.spot_symbol} {side}")
     if c.inverted:
         tail += " (the pair is quoted the other way round)"
     tail += "."

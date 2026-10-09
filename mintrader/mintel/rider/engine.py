@@ -41,7 +41,10 @@ Every pass (about once a second) it:
    ``user_pip_value_gbp`` (never changed by the bot), the stop at the broker
    with the order, one position per market, a sanity cap on concurrent
    positions, re-entry only on a fresh trigger after a short cooldown, no
-   quotas and no daily caps;
+   quotas and no daily caps; the guards added on 9 Oct (RiderCore.guard_hold:
+   the currency cluster and the loss cooldown, fed every closed trade's net
+   and, after a restart, the recent closed trades in rider.sqlite) refuse an
+   entry, never change a size;
 7. writes data/rider-status.json atomically (every ~2 s) and a heartbeat.
    The status carries "why_no_trade" (WhyNoTrade): the last hour of scans
    per market and in total, and for every near miss (the score at the
@@ -89,10 +92,12 @@ MISSING_PASSES = 3
 MISSING_SECONDS = 60.0
 CLOSE_RETRY_SECONDS = 60.0              # a refused close of an orphan or a leftover: tried again this much later
 ESTIMATE_WINDOW_HOURS = 24.0
+EXITS_RESTORED = 500                    # closed trades read back for the loss guards after a restart
 FLOWLOCK_STALE_SECONDS = 10.0
 TICK_HISTORY_MAX_SECONDS = 120.0
 TICK_HISTORY_MARGIN_SECONDS = 1.0       # the history is asked a little past the latest price's time
 TICK_HISTORY_WAIT_SECONDS = 5.0         # a history behind the latest price this long: the latest price is fed
+TICK_FEED_MINUTES = 10                  # "tick_history" in the status: where the prices came from, this long
 WHY_WINDOW_MINUTES = 60                 # "why no trade": a rolling hour, kept one bucket per minute
 WHY_NEAR_MISSES = 10                    # ... and the last few near misses in full
 WHY_MERGE_SECONDS = 30.0                # ... one market held back by the same rule scan after scan is one near miss
@@ -116,6 +121,12 @@ GATE_WORDS = {
     "cooldown": "cooldown after the last signal or exit on this market",
     "one_position": "a position is already open on this market",
     "max_concurrent": "the cap on open positions was reached",
+    # the guards added on 9 Oct (RiderCore.guard_hold)
+    "loss_brake": "several losing exits within a few minutes: no new entries anywhere for a while",
+    "loss_pause": "two losing exits in a row on this market: paused",
+    "loss_cooldown": "a losing exit on this market a few minutes ago: cooling down",
+    "currency_loss": "the same side of one of its currencies just lost through another market: resting",
+    "currency_cluster": "an open position already takes the same side of one of its currencies",
     "stop": "no sensible stop could be placed",
     "health": "a health check failed: new entries paused",
     "mode": "the mode allows no entries",
@@ -499,7 +510,8 @@ class RiderEngine:
         self.missing: dict[int, tuple[int, float]] = {}
         self.stop_seen: dict[int, float] = {}               # LIVE: FlowLock X saw the stop reached (time)
         self.stop_restored: dict[int, float] = {}           # LIVE: the stop was re-sent to the broker (time)
-        self.tick_feed = "every tick" if cfg.tick_history else "snapshots"
+        self.tick_feed = "every tick" if cfg.tick_history else "snapshots"   # the setting (tick_history(): the fact)
+        self._feed_minutes: deque = deque(maxlen=TICK_FEED_MINUTES + 1)
         self._sweep_due = self.mode == "LIVE"
         self._leftovers_done = broker is None
         self._close_retry: dict[int, float] = {}            # a refused orphan/leftover close: when it is tried again
@@ -701,10 +713,12 @@ class RiderEngine:
                     self._held_back.pop(s, None)
                 else:
                     self._held_back[s] = held
+            latest_fed = False
             if tk is not None and feed_latest and (not fresh or tk.time > fresh[-1].time or
                                                    (tk.time == fresh[-1].time and
                                                     _px(tk) not in {_px(x) for x in fresh if x.time == tk.time})):
                 fresh.append(tk)                           # the latest price, unless the history already has it
+                latest_fed = True
             # the history is read again from the newest millisecond fed: a tick of that millisecond
             # already fed on an earlier pass is not fed again, so the core sees each tick once (as the replay)
             done = Counter(self._fed_at_last.get(s) or ())
@@ -715,6 +729,9 @@ class RiderEngine:
                     continue
                 feed.append(x)
             added = [x for x in feed if self.core.on_tick(s, x)]
+            if hist_fn is not None and added:              # for reading only: is the history delivering?
+                by_latest = 1 if latest_fed and added[-1] is tk else 0
+                self._count_feed(now, len(added) - by_latest, by_latest)
             t_new = added[-1].time if added else last_t
             if t_new is not None:
                 fed = Counter(self._fed_at_last.get(s) or ()) if t_new == last_t else Counter()
@@ -728,6 +745,40 @@ class RiderEngine:
                 if s not in self._last_tick_time:
                     self._last_tick_time[s] = tk.time
             self.new_ticks[s] = added
+
+    def _count_feed(self, now: dt.datetime, from_history: int, latest: int) -> None:
+        """FOR READING ONLY: prices the core got from the tick history, and
+        latest prices fed instead because the history had not brought them,
+        per minute over the last TICK_FEED_MINUTES (rider-status.json
+        "tick_history"). No decision reads it."""
+        key = int(now.timestamp() // 60)
+        if not self._feed_minutes or self._feed_minutes[-1][0] != key:
+            self._feed_minutes.append([key, 0, 0])
+        self._feed_minutes[-1][1] += from_history
+        self._feed_minutes[-1][2] += latest
+
+    def tick_history(self, now: dt.datetime) -> dict:
+        """Whether the tick history is actually delivering, in plain words
+        (``tick_feed`` is only the setting). Never raises."""
+        if not self.cfg.tick_history:
+            return {"setting": "snapshots", "verdict": "the tick history is switched off: one price a pass"}
+        try:
+            first = int(now.timestamp() // 60) - TICK_FEED_MINUTES + 1
+            hist = sum(m[1] for m in self._feed_minutes if m[0] >= first)
+            latest = sum(m[2] for m in self._feed_minutes if m[0] >= first)
+            if hist:
+                verdict = f"working: {hist:,} prices came from the tick history in the last {TICK_FEED_MINUTES} min"
+                if latest:
+                    verdict += f" ({latest:,} latest prices were fed when it lagged)"
+            elif latest:
+                verdict = (f"NOT delivering: the tick history brought nothing new in the last {TICK_FEED_MINUTES} min, "
+                           f"so {latest:,} latest prices were fed instead (one a pass, not every tick)")
+            else:
+                verdict = f"no new prices in the last {TICK_FEED_MINUTES} min"
+            return {"setting": "every tick", "from_history": hist, "latest_fed_instead": latest,
+                    "minutes": TICK_FEED_MINUTES, "verdict": verdict}
+        except Exception as exc:
+            return {"setting": "every tick", "verdict": f"could not be worked out ({exc})"}
 
     def _history_behind(self, s: str, tk: Tick, fresh: list[Tick], last_t: Optional[dt.datetime]) -> bool:
         """True when the latest price ``tk`` is not in the tick history yet
@@ -1199,7 +1250,8 @@ class RiderEngine:
         net_pips = (money / gpp) if (money is not None and gpp > 0) else realised
         if b:
             self.learning.add(Outcome(to_utc(closed_at).date().isoformat(), net_pips, b))
-        self.core.position_closed(pos, closed_at)
+        # the loss guards judge a trade on its money after every cost (the pips when there is no money figure)
+        self.core.position_closed(pos, closed_at, money if money is not None else realised)
         self.positions.pop(pos.ticket, None)
         self.last_manage.pop(pos.ticket, None)
         self.missing.pop(pos.ticket, None)
@@ -1479,9 +1531,38 @@ class RiderEngine:
                 notes.append(self._note(f"ticket {r['ticket']} {r['symbol']}: could not record the broker's figure "
                                         f"({exc}); tried again next minute"))
                 continue
+            self._exit_to_core({**r, "net_money": pnl, "realised_pips": realised, "exit_reason": reason})
             notes.append(self._note(f"ticket {r['ticket']} {r['symbol']} now holds the broker's figure: "
                                     f"{_money(pnl)} (was an estimate)"))
         return notes
+
+    def _exit_to_core(self, r: dict) -> None:
+        """A closed trade from the records, for the loss guards (keyed by its
+        ticket, so a later figure replaces an earlier one): only a trade the
+        Rider itself decided (an orphan or a mode switch says nothing about an
+        idea), judged on its money after costs (the pips when there is none)."""
+        try:
+            if not r.get("closed_utc") or not r.get("signal_utc"):
+                return
+            if str(r.get("exit_reason") or "").startswith("SWITCHED"):
+                return
+            net = r.get("net_money") if r.get("net_money") is not None else r.get("realised_pips")
+            when = to_utc(dt.datetime.fromisoformat(str(r["closed_utc"])))
+            self.core.record_exit(str(r["symbol"]), 1 if r.get("side") == "BUY" else -1, when, net,
+                                  key=int(r["ticket"]))
+        except Exception as exc:                           # a record that cannot be read is left out
+            log.debug("closed trade %s left out of the loss guards: %s", r.get("ticket"), exc)
+
+    def _restore_exits(self) -> None:
+        """After a restart the loss guards carry on from the records: the
+        recent closed trades in rider.sqlite, oldest first."""
+        try:
+            rows = list(reversed(self.journal.all_closed(EXITS_RESTORED)))
+        except Exception as exc:
+            self._note(f"could not read the closed trades for the loss guards ({exc}); they start empty")
+            return
+        for r in rows:
+            self._exit_to_core(r)
 
     def _has_live_rows(self) -> bool:
         try:
@@ -1520,6 +1601,8 @@ class RiderEngine:
         except sqlite3.Error as exc:
             return self._note(f"{r['symbol']}: ticket {r['ticket']} could not be recorded as closed ({exc}); "
                               "tried again next minute")
+        self._exit_to_core({**r, "closed_utc": now.isoformat(), "exit_reason": reason, "net_money": money,
+                            "realised_pips": realised})
         return None
 
     def _close_live_leftovers(self, now: dt.datetime) -> list[str]:
@@ -1706,6 +1789,7 @@ class RiderEngine:
                 self.missing[pos.ticket] = (1, now.timestamp())
         if self.mode == "PAPER" and self.executor is not None:
             self.executor.reserve(self.journal.max_ticket(PAPER_FIRST_TICKET - 1))
+        self._restore_exits()
 
     # --------------------------------------------------------------- health --
     def check_health(self, now: dt.datetime) -> list[dict]:
@@ -1979,9 +2063,12 @@ class RiderEngine:
             "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL, "tagline": TAGLINE, "magic": MAGIC,
             "mode": self.mode, "updated_utc": now.isoformat(), "pid": os.getpid(),
             "user_pip_value_gbp": self.pip_value_gbp, "tick_feed": self.tick_feed,
+            "tick_history": self.tick_history(now),
             "order_flow": "not available on retail MetaTrader FX - never faked" if not ORDER_FLOW_AVAILABLE else "available",
             "health": {"entries_allowed": self.entries_allowed, "summary": summary, "checks": self.health},
             "scanner": [r.to_dict() for r in self.last_rows],
+            # the guards added on 9 Oct: their switches and what they hold back right now (for reading only)
+            "guards": self.core.guard_status(now.timestamp()),
             # why no trade: the last hour of scans, per market and in total, and what held each near miss back
             "why_no_trade": self.why_no_trade(now),
             "open_positions": positions,

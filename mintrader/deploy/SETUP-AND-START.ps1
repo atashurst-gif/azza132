@@ -370,6 +370,7 @@ Step "The bots' line-up"
 $P = Get-MintelPaths $InstallDir
 if (Test-MintelInstalled $P) {
     [void](Invoke-LineUpOnce $P)
+    [void](Set-IanBinanceOnce $P)      # after the line-up: Binance's public crypto book unless a Databento key is saved
     Good "The bots as they are set now:"
     Write-LineUp $P
 } else {

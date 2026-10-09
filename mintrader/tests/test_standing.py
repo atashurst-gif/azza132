@@ -193,7 +193,7 @@ class TestThePage:
                       "Financial Ian"):
             assert label in html, label
         # the account and the six active bots; the retired scalper made nothing here, so it has no line
-        assert html.count('<div class="fk">Today</div>') == 7 and html.count('<div class="fk">Overall</div>') == 7
+        assert html.count('<div class="fk">Today') == 7 and html.count('<div class="fk">Overall') == 7
         assert "Rapid Scalper" not in html
         assert "Practice only, not real money" in html and "-£57.09" in html     # paper Financial Ian, in grey
         assert "from trades placed by hand" in html                              # the +2.00 hand trade keeps the sum
@@ -402,7 +402,7 @@ class TestTheLineUpOfNineOctober:
         top = _top(sd, deals)
         page = render_standing({"standing": sd}, top)
         assert page.count('<div class="hc') == 7                                # the account and six bots
-        assert page.count('<div class="fk">Overall</div>') == 7
+        assert page.count('<div class="fk">Overall') == 7
         assert "Rapid Scalper (retired): overall <b" in page and "-£8.72" in page
         assert "kept here so the cards add up to the account" in page
         assert 'class="nm">Rapid Scalper' not in page                          # a line, never a card

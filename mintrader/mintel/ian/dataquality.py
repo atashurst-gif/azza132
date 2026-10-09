@@ -46,6 +46,22 @@ class QualityConfig:
     recovery_seconds: float = 5.0
     recover_backoff_s: float = 5.0
     recover_backoff_max_s: float = 120.0
+    # how far an event's exchange time may go back before it counts as out of order. 1 ms for a feed whose
+    # events come in exchange order (CME); a feed that sends the book in 100 ms batches and the trades on a
+    # separate stream (Binance) says so with its own figure (FeedAdapter.quality_overrides)
+    order_tolerance_ms: float = 1.0
+
+    @classmethod
+    def for_feed(cls, overrides: Optional[dict] = None) -> "QualityConfig":
+        """The defaults, with the feed's own figures for the fields it names (unknown names ignored)."""
+        c = cls()
+        for k, v in dict(overrides or {}).items():
+            if hasattr(c, k):
+                try:
+                    setattr(c, k, type(getattr(c, k))(v))
+                except (TypeError, ValueError):
+                    pass
+        return c
 
 
 @dataclass
@@ -120,7 +136,8 @@ class DataQualityMonitor:
             elif st.last_seq and seq <= st.last_seq:
                 st.out_of_order += 1
                 problem = f"out-of-order event: #{seq} after #{st.last_seq}"
-        if not problem and st.last_exchange is not None and ex < st.last_exchange - dt.timedelta(milliseconds=1):
+        if not problem and st.last_exchange is not None and \
+                ex < st.last_exchange - dt.timedelta(milliseconds=self.cfg.order_tolerance_ms):
             st.out_of_order += 1
             problem = f"out-of-order event: exchange time went back {(st.last_exchange - ex).total_seconds():.3f} s"
         if not problem and st.last_rx is not None and (rx - st.last_rx).total_seconds() >= self.cfg.stale_book_s:

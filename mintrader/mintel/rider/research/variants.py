@@ -15,6 +15,13 @@ and a choice is judged by its own in-sample result AVERAGED with its grid
 neighbours', so a lone lucky setting next to bad ones is not picked (prefer
 stable parameter ranges). RMR-CHOP-OFF is not a candidate: it tests whether
 the anti-chop gate earns its keep.
+
+RMR-GUARDS-ON / RMR-GUARDS-OFF are the pair for the guards added on 9 Oct
+(the currency cluster and the loss cooldown), each forced on or off with
+everything else as the baseline. RMR-BASE keeps its definition (the core's
+defaults plus rider.json), so with the shipped defaults it is the same
+settings as RMR-GUARDS-ON; the pipeline replays identical settings once.
+Neither is a walk-forward candidate.
 """
 from __future__ import annotations
 
@@ -55,7 +62,8 @@ class Variant:
     def params(self, base: RiderConfig) -> dict:
         c = self.config(base)
         return {"overrides": self.overrides, "trigger_score": c.trigger_score, "ready_score": c.ready_score,
-                "max_chop": c.max_chop, "curve": (c.flowlock or {}).get("curve", "balanced")}
+                "max_chop": c.max_chop, "curve": (c.flowlock or {}).get("curve", "balanced"),
+                "currency_cluster_guard": c.currency_cluster_guard, "loss_cooldown_guard": c.loss_cooldown_guard}
 
     def key(self, base: RiderConfig) -> str:
         blob = json.dumps(self.config(base).to_dict(), sort_keys=True, default=str)
@@ -82,6 +90,30 @@ VARIANTS = (
     Variant("RMR-CHOP-OFF", "The anti-chop gate switched off (everything else as the baseline).",
             "The anti-chop gate saves money: without it there are more trades and a worse result after costs.",
             {"max_chop": 1.01}, ()),
+    Variant("RMR-GUARDS-ON", "The guards added on 9 Oct switched on: no second position on the same side of a "
+            "currency (the currency cluster), and the loss cooldown (15 min on a market after a losing exit, 2 h "
+            "after two in a row within 2 h, the losing currency side rested 15 min, and no entry anywhere for 15 min after 4 "
+            "losing exits within 10 min). Everything else as the baseline.",
+            "Taking one idea once (not once per correlated market) and resting after losses cuts the costs of "
+            "repeated losing entries by more than it gives up in later winners.",
+            {"currency_cluster_guard": True, "loss_cooldown_guard": True}, ()),
+    Variant("RMR-GUARDS-OFF", "The guards added on 9 Oct switched off (no currency cluster, no loss cooldown): "
+            "the Rider as it traded on its first live morning. Everything else as the baseline.",
+            "The control for RMR-GUARDS-ON: without the guards there are more trades, and correlated repeats lose "
+            "more after costs.",
+            {"currency_cluster_guard": False, "loss_cooldown_guard": False}, ()),
+    Variant("RMR-COST-25", "The cost gate as it was until 9 Oct: costs up to a quarter of the expected move "
+            "(the live setting is now 15%).",
+            "The control for the 15% gate: allowing smaller moves adds trades whose wins commission swallows.",
+            {"max_cost_ratio": 0.25}, ()),
+    Variant("RMR-PATIENT", "Hold on longer before calling a trade dead: 'never got going' after 5 minutes "
+            "instead of 2.5, and 'went against and kept going' at 0.9 R instead of 0.7 R.",
+            "Aaron, 9 Oct: wins are too small - the bot is not riding the highs. More patience lets more trades "
+            "become runners; the cost is bigger losses on the ones that fail.",
+            {"flowlock": {"no_progress_seconds": 300.0, "adverse_r": 0.9}}, ()),
+    Variant("RMR-RIDE-LONGER", "Ride the winners longer: the loose giveback curve AND the patient dead-trade rules.",
+            "Together, more room and more patience turn the best moves into the big wins the live morning lacked.",
+            {"flowlock": {"curve": "loose", "no_progress_seconds": 300.0, "adverse_r": 0.9}}, ()),
 )
 
 EXTRA_VARIANTS = (
@@ -102,8 +134,8 @@ def by_id(method_id: str) -> Optional[Variant]:
 
 
 def choose(spec: str) -> list[Variant]:
-    """"default" (the six above), "all" (plus the extra curves), "base", or a
-    comma list of METHOD_IDs. The baseline is always included."""
+    """"default" (the eight above), "all" (plus the extra curves), "base", or
+    a comma list of METHOD_IDs. The baseline is always included."""
     s = (spec or "default").strip()
     if s == "default":
         out = list(VARIANTS)

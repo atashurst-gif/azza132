@@ -19,7 +19,10 @@ Modules:
 
 * ``tickstore.py``  - real ticks from ``broker.ticks_range`` in hour chunks,
   stored as ``ticks/<SYMBOL>/<YYYY-MM-DD>.csv.gz`` (time_ms, bid, ask),
-  with resume, progress, a size budget and a coverage report
+  with resume, progress, a size budget and a coverage report; an empty
+  busy hour is never stored as final (MetaTrader is asked to load it and
+  asked again), an answer for the wrong hour is measured and corrected, and
+  ``--probe`` checks in one command that past ticks can be read
 * ``synthetic.py``  - the seeded SYNTHETIC generator (trends, chop,
   squeezes, news-like jumps) - never a result
 * ``labeler.py``    - SUCCESSFUL MOMENTUM RUN labels: X pips favourable

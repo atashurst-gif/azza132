@@ -14,7 +14,7 @@ from array import array
 
 import pytest
 
-from mintel.broker.base import AccountInfo, CalendarEvent, Side
+from mintel.broker.base import AccountInfo, CalendarEvent, Side, Tick
 from mintel.rider import synth
 from mintel.rider.config import RiderConfig
 from mintel.rider.core import EntryIntent, RiderCore
@@ -36,7 +36,10 @@ def small(tmp_path_factory):
     root = tmp_path_factory.mktemp("rr")
     store = TickStore(root / "ticks")
     specs, events = synthetic.generate(store, [SEED_DAY, DAY], SYMS, seed=9, hours=(7, 8))
-    cfg = RiderConfig()
+    # the 9 Oct guards off: this made-up hour is here to exercise the replay's own machinery (fills, stop moves,
+    # stress, no look-ahead) on many trades; the guards cut it to 3 and have their own replay tests
+    # (tests/test_rider_guards.py)
+    cfg = RiderConfig(max_cost_ratio=0.25, currency_cluster_guard=False, loss_cooldown_guard=False)
     cost = CostModel(slippage_pips=cfg.slippage_pips, latency_ms=cfg.latency_ms)
     data = load_day(store, DAY, SYMS, specs, events, cache_dir=root / "cache")
     # the run also records every committed stop move: when it was sent, and the spread the gate saw then
@@ -187,7 +190,7 @@ class TestFills:
         path = [(-5, 1.10000, 1.10002), (0, 1.10000, 1.10002), (0.1, 1.10010, 1.10012), (0.4, 1.10020, 1.10022),
                 (10, 1.10010, 1.10012), (20, 1.09900, 1.09902), (25, 1.09900, 1.09902)]
         data, t0 = scripted(path)
-        cfg = RiderConfig()
+        cfg = RiderConfig(max_cost_ratio=0.25)
         cost = CostModel(slippage_pips=0.2, latency_ms=250)
         out = DayReplay(cfg, data, cost, "T").run_fixed([intent("EURUSD", Side.BUY, 1.09950, t0, 1.10002)],
                                                         ZRecord(["EURUSD"]))
@@ -207,7 +210,7 @@ class TestFills:
     def test_a_fill_through_the_planned_stop_is_closed_at_once(self):
         path = [(-5, 1.10000, 1.10002), (0, 1.10000, 1.10002), (0.3, 1.09940, 1.09942), (5, 1.09940, 1.09942)]
         data, t0 = scripted(path)
-        out = DayReplay(RiderConfig(), data, CostModel(slippage_pips=0.2, latency_ms=250), "T").run_fixed(
+        out = DayReplay(RiderConfig(max_cost_ratio=0.25), data, CostModel(slippage_pips=0.2, latency_ms=250), "T").run_fixed(
             [intent("EURUSD", Side.BUY, 1.09950, t0, 1.10002)], ZRecord(["EURUSD"]))
         assert [t["exit_reason"] for t in out.trades] == ["FILL_THROUGH_STOP"]
         t = out.trades[0]
@@ -218,7 +221,7 @@ class TestFills:
         path = [(-5, 1.10000, 1.10002), (0, 1.10000, 1.10002), (0.3, 1.10000, 1.10002),
                 (8, 1.10070, 1.10072), (12, 1.10070, 1.10072)]
         data, t0 = scripted(path)
-        out = DayReplay(RiderConfig(), data, CostModel(slippage_pips=0.2, latency_ms=250), "T").run_fixed(
+        out = DayReplay(RiderConfig(max_cost_ratio=0.25), data, CostModel(slippage_pips=0.2, latency_ms=250), "T").run_fixed(
             [intent("EURUSD", Side.SELL, 1.10060, t0, 1.10000)], ZRecord(["EURUSD"]))
         t = out.trades[0]
         assert t["side"] == "SHORT" and t["entry"] == pytest.approx(1.09998)
@@ -329,11 +332,53 @@ class TestCommand:
         assert reg.run_count() == 4                                                # every run is recorded
         reg.close()
 
+    def test_probe_reads_one_past_hour_says_what_came_back_and_stores_nothing(self, tmp_path, monkeypatch, capsys):
+        class Broker:
+            disconnected = False
+
+            def connect(self):
+                return True
+
+            def disconnect(self):
+                Broker.disconnected = True
+
+            def symbols(self):
+                return ["EURUSD.a", "GBPUSD"]
+
+            def ticks_range(self, s, start, end):
+                assert s == "EURUSD.a"                           # the broker's own name for EURUSD
+                out, t = [], start
+                while t <= end:
+                    out.append(Tick(s, t, 1.10000, 1.10002))
+                    t += dt.timedelta(seconds=30)
+                return out
+
+        class Empty(Broker):
+            def ticks_range(self, s, start, end):
+                return []
+
+        import time
+        import mintel.run as run_mod
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        data = tmp_path / "data"
+        data.mkdir()
+        monkeypatch.setattr(run_mod, "build_broker", lambda cfg: Broker())
+        assert main(["--config", str(data / "config.json"), "--probe"]) == 0
+        out = capsys.readouterr().out
+        assert "past history, as the research reads it" in out and "kept for the hour: 120 ticks" in out
+        assert "VERDICT: past ticks ARE reachable." in out and Broker.disconnected
+        assert not (data / "rider-research").exists()                           # a probe stores nothing
+        monkeypatch.setattr(run_mod, "build_broker", lambda cfg: Empty())
+        assert main(["--config", str(data / "config.json"), "--probe"]) == 5
+        assert "VERDICT: past ticks are NOT reachable" in capsys.readouterr().out
+
     def test_real_mode_fetches_through_the_broker_then_disconnects(self, tmp_path, monkeypatch):
         src = TickStore(tmp_path / "src")
         today = dt.datetime.now(UTC).date()
         from mintel.rider.research.tickstore import weekdays_back
-        days = weekdays_back(today - dt.timedelta(days=1), 2)
+        # every weekday the fetch asks for (the replay day and the four days before it), as MetaTrader has them:
+        # a weekday with no ticks in its busy hours is never stored as final, so it would be asked again
+        days = weekdays_back(today - dt.timedelta(days=1), 5)
         specs, events = synthetic.generate(src, days, ["EURUSD", "GBPUSD"], seed=3, hours=(7, 8))
 
         class Broker:
@@ -366,8 +411,12 @@ class TestCommand:
 
         import time
         import mintel.run as run_mod
+        from mintel.rider.research import tickstore
         monkeypatch.setattr(run_mod, "build_broker", lambda cfg: Broker())
-        monkeypatch.setattr(time, "sleep", lambda s: None)       # the made-up history has empty busy hours
+        monkeypatch.setattr(time, "sleep", lambda s: None)
+        # the made-up market trades 07:00-08:00 UTC only: an empty hour outside it is its truth, not MetaTrader
+        # still loading (an empty hour inside the busy hours is never stored as final)
+        monkeypatch.setattr(tickstore, "BUSY_HOURS", (7, 8))
         data = tmp_path / "data"
         data.mkdir()
         assert main(["--config", str(data / "config.json"), "--days", "1", "--symbols", "EURUSD,GBPUSD",

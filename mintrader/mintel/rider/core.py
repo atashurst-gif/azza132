@@ -31,7 +31,9 @@ entry states have memory, so a replay must use the live cadence)::
     core.stop_move_due(pos, stop, tick, now)      # is this move worth sending? (min step, min interval)
     core.stop_move_sent(pos, now)                 # it was sent
     core.confirm_stop(pos, stop, sent_at)         # once the broker (or the paper fill) holds it
-    core.position_closed(pos, now)                # starts the re-entry cooldown
+    core.position_closed(pos, now, net)           # starts the re-entry cooldown; net (after costs) feeds the
+                                                  # loss guards
+    core.record_exit(symbol, side, when, net, key)    # a closed trade from the records (after a restart)
 
 The live engine's order each pass, which a replay must copy: feed every new
 tick (``on_tick``) -> ``manage`` each open position (a proposed stop is
@@ -44,6 +46,30 @@ Rules the core keeps on its own: one position per market, the max
 concurrent cap, re-entry only on a FRESH trigger (a new arrival in TRIGGER)
 and only after ``cooldown_seconds``. An intent spends its trigger at once,
 so asking again before the fill (replay latency) never duplicates it.
+
+The guards added on 9 Oct (``guard_hold``; each switchable in rider.json,
+both on by default) only ever refuse a new entry - never a size change,
+never a score, threshold, gate or stop:
+
+* CURRENCY CLUSTER: no entry that would add to an open position's side of
+  a currency beyond ``max_same_currency_positions`` (short EURJPY and short
+  GBPJPY are both long JPY; long EURUSD and short USDCHF are both short USD);
+* LOSS COOLDOWN: after a losing exit (net of every cost) on a market, none
+  there for ``loss_cooldown_minutes``; after two in a row (the second within
+  ``loss_pause_minutes`` of the first), none there for
+  ``loss_pause_minutes``; a losing exit also rests its currency sides for
+  ``loss_cooldown_minutes`` (``loss_cooldown_same_currency``); and after
+  ``loss_brake_losses`` losing exits within ``loss_brake_window_minutes``,
+  none anywhere for ``loss_brake_minutes``.
+
+The replay feeds the same exits (``position_closed`` with the trade's net)
+through the same rules, but it builds a fresh core for each UTC day, so each
+replayed day starts with no exits. Live keeps the exits across midnight (and
+reloads them after a restart), so the two can differ only around midnight
+UTC: when a rest set before midnight would run on past it, or when the two
+losses of a pause fall either side of it (the second then within
+``loss_pause_minutes`` of midnight). Every rule has a time limit, so a loss
+from an earlier day never holds anything back the next morning.
 
 No look-ahead: feed every tick with time <= now BEFORE calling scan(now) /
 manage(..., now). Bars count as closed only once their end time has passed;
@@ -73,10 +99,39 @@ from .strength import PairMove, StrengthMap, compute_strength, pair_move_z
 
 UTC = dt.timezone.utc
 TICK_SECONDS = 200.0
+GUARD_SIGNAL_HOLD_SECONDS = 5.0     # an entry intent not (yet) a position counts in the currency cluster this long
+MAX_EXITS = 1000                    # closed trades the loss guards keep (the newest)
 
 
 def _ts(x: dt.datetime) -> float:
     return x.timestamp()
+
+
+def _minutes(seconds: float) -> str:
+    """A span in plain words, rounded UP to the minute ("13 min", "1 h 52 min")."""
+    m = max(1, int(-(-float(seconds) // 60)))
+    if m < 60:
+        return f"{m} min"
+    h, mm = divmod(m, 60)
+    return f"{h} h" if not mm else f"{h} h {mm} min"
+
+
+def _ago(seconds: float) -> str:
+    s = max(0.0, float(seconds))
+    return "under a minute" if s < 60 else f"{int(s // 60)} min"
+
+
+def _long_short(sign: int) -> str:
+    return "long" if sign > 0 else "short"
+
+
+@dataclass(frozen=True)
+class ExitRecord:
+    """One closed trade as the loss guards see it."""
+    time: float                        # epoch seconds of the exit
+    symbol: str
+    side: int                          # +1 long, -1 short
+    lost: bool                         # net of every cost below zero
 
 
 @dataclass
@@ -95,13 +150,16 @@ class ScanRow:
     cost_ratio: float = 0.0
     headroom_atr: float = 0.0
     chop: float = 0.0
+    held: str = ""                     # a 9 Oct guard holding this market back (plain words), else ""
+    held_rule: str = ""
 
     def to_dict(self) -> dict:
         # cost_ratio and headroom_atr are for reading only (rider-status.json, the pulse's bots.json)
         return {"market": self.symbol, "direction": self.direction, "score": round(self.score, 1),
                 "state": self.state, "reason": self.reason, "family": self.family,
                 "cost_ratio": round(min(float(self.cost_ratio), 99.0), 3),
-                "headroom_atr": round(min(float(self.headroom_atr), 99.0), 2)}
+                "headroom_atr": round(min(float(self.headroom_atr), 99.0), 2),
+                "held_back": self.held}
 
 
 @dataclass
@@ -204,6 +262,13 @@ class RiderCore:
         # decision. For each market in TRIGGER that the last entries() call did not turn into an intent:
         # (rule, plain words).
         self.why_not: dict[str, tuple[str, str]] = {}
+        # the guards added on 9 Oct (guard_hold): closed trades by exit time, and the side of each entry intent
+        self.exit_log: dict = {}                               # key (the ticket) -> ExitRecord
+        self._exits_by_sym: dict[str, list[ExitRecord]] = {}
+        self._losses: list[ExitRecord] = []
+        self._loss_times: list[float] = []
+        self._exit_seq = 0
+        self.signal_side: dict[str, int] = {}
 
     # ------------------------------------------------------------ set-up --
     def _sym(self, symbol: str) -> _Sym:
@@ -376,12 +441,20 @@ class RiderCore:
                 res.reason = self.states.note[sym]
             results[sym] = res
             shown = ENTERED if sym in self.open else state
-            rows.append(ScanRow(sym, "LONG" if res.side > 0 else "SHORT" if res.side < 0 else "NONE", res.score, shown,
-                                res.reason, {"categories": res.categories,
-                                             "families": {k: {"s": round(e.strength, 2), "d": e.direction, "p": e.phrase}
-                                                          for k, e in res.families.items()}},
-                                res.side, res.family, tid, res.confirmed, v.atr if v.ok else 0.0,
-                                res.cost_ratio if res.cost_ratio != float("inf") else 99.0, res.headroom_atr, res.chop))
+            row = ScanRow(sym, "LONG" if res.side > 0 else "SHORT" if res.side < 0 else "NONE", res.score, shown,
+                          res.reason, {"categories": res.categories,
+                                       "families": {k: {"s": round(e.strength, 2), "d": e.direction, "p": e.phrase}
+                                                    for k, e in res.families.items()}},
+                          res.side, res.family, tid, res.confirmed, v.atr if v.ok else 0.0,
+                          res.cost_ratio if res.cost_ratio != float("inf") else 99.0, res.headroom_atr, res.chop)
+            if shown != ENTERED:
+                # for the scanner only: a 9 Oct guard that would refuse an entry here now, in plain words
+                # (entries() asks guard_hold itself; the score, the state and the gates are untouched)
+                hold = self.guard_hold(sym, res.side, t)
+                if hold is not None:
+                    row.held_rule, row.held = hold
+                    row.reason = f"Held back: {hold[1]}. {row.reason}"
+            rows.append(row)
         rows.sort(key=lambda r: (-r.score, r.symbol))
         self.last_scan_at = t
         self.last_rows = rows
@@ -412,6 +485,10 @@ class RiderCore:
             if t - last < self.cfg.cooldown_seconds:
                 why_not[sym] = self._skip_rule(sym, row, t)
                 continue
+            hold = self.guard_hold(sym, row.side, t)              # the 9 Oct guards: a refusal, never a resize
+            if hold is not None:
+                why_not[sym] = hold
+                continue
             if len(self.open) + len(out) >= self.cfg.max_concurrent_positions:
                 self.notes.append(f"{sym}: trigger skipped - {self.cfg.max_concurrent_positions} positions already open")
                 break
@@ -422,6 +499,7 @@ class RiderCore:
                 continue
             self.spent_trigger[sym] = row.trigger_id
             self.last_signal[sym] = t
+            self.signal_side[sym] = intent.side.sign             # the currency cluster counts it until it fills
             out.append(intent)
         try:
             taken = {i.symbol for i in out}
@@ -436,9 +514,9 @@ class RiderCore:
 
     def _skip_rule(self, sym: str, row: ScanRow, t: float) -> Optional[tuple[str, str]]:
         """FOR READING ONLY: which of entries()' own rules - one position per
-        market, a fresh trigger, the cooldown - holds back a market in
-        TRIGGER, in the order entries() applies them, or None. It changes
-        nothing, no decision asks it, and it never raises."""
+        market, a fresh trigger, the cooldown, the 9 Oct guards - holds back
+        a market in TRIGGER, in the order entries() applies them, or None. It
+        changes nothing, no decision asks it, and it never raises."""
         try:
             if sym in self.open:
                 return "one_position", "a position is already open on this market"
@@ -450,9 +528,212 @@ class RiderCore:
                 return "cooldown", (f"{self.cfg.cooldown_seconds - (t - last):.0f} s of the "
                                     f"{self.cfg.cooldown_seconds:g} s cooldown left after the last signal or exit on "
                                     f"this market")
-            return None
+            return self.guard_hold(sym, int(getattr(row, "side", 0) or 0), t)
         except Exception as exc:
             return "error", f"could not be worked out ({exc})"
+
+    # ------------------------------------------------------------- guards --
+    def record_exit(self, symbol: str, side: int, when, net: Optional[float], key=None) -> None:
+        """A closed trade for the loss guards. ``net``: its result after every
+        cost, in any unit (only its sign counts; None records nothing).
+        ``key`` (the ticket): recording the same key again replaces it - the
+        broker's figure replacing an estimate, the records read again after
+        a restart."""
+        if net is None:
+            return
+        try:
+            net = float(net)
+        except (TypeError, ValueError):
+            return
+        if net != net:
+            return
+        t = float(when) if isinstance(when, (int, float)) else _ts(when)
+        if key is None:
+            self._exit_seq += 1
+            key = ("auto", self._exit_seq)
+        self.exit_log[key] = ExitRecord(t, str(symbol), 1 if side > 0 else -1, net < 0)
+        if len(self.exit_log) > MAX_EXITS:
+            old = sorted(self.exit_log.items(), key=lambda kv: kv[1].time)[:len(self.exit_log) - MAX_EXITS]
+            for k, _r in old:
+                del self.exit_log[k]
+        by: dict[str, list[ExitRecord]] = {}
+        losses: list[ExitRecord] = []
+        for r in sorted(self.exit_log.values(), key=lambda r: (r.time, r.symbol)):
+            by.setdefault(r.symbol, []).append(r)
+            if r.lost:
+                losses.append(r)
+        self._exits_by_sym = by
+        self._losses = losses
+        self._loss_times = [r.time for r in losses]
+
+    def _sides(self, symbol: str, side: int) -> set:
+        """The currency sides a position takes: long EURJPY is (EUR, +1) and
+        (JPY, -1). Empty when the currencies are not known."""
+        if not side:
+            return set()
+        s = self.syms.get(symbol)
+        base, quote = (s.base, s.quote) if s is not None and s.base else ("", "")
+        if not base:
+            try:
+                from ..contracts import classify_fx
+                base, quote, _ = classify_fx(symbol)
+            except Exception:
+                return set()
+        if not base or not quote:
+            return set()
+        d = 1 if side > 0 else -1
+        return {(base, d), (quote, -d)}
+
+    def guard_hold(self, symbol: str, side: int, t: float) -> Optional[tuple[str, str]]:
+        """The guards added on 9 Oct: the first that refuses a new entry on
+        ``symbol`` in direction ``side`` (+1/-1; 0 asks only the rules that
+        do not need a direction) at ``t`` (epoch seconds), as (rule, plain
+        words), or None. Pure: a function of the recorded exits, the open
+        positions and the intents just issued - never of a score, a gate or a
+        size. The order: the global brake, the market's own pause or cooldown,
+        the rest of a currency side that just lost, the currency cluster."""
+        c = self.cfg
+        if c.loss_cooldown_guard and self._losses:
+            hold = self._brake(t) or self._market_rest(symbol, t)
+            if hold is None and side and c.loss_cooldown_same_currency:
+                hold = self._currency_rest(symbol, side, t)
+            if hold is not None:
+                return hold
+        if side and c.currency_cluster_guard:
+            return self._cluster(symbol, side, t)
+        return None
+
+    def guard_status(self, t: float) -> dict:
+        """FOR READING ONLY (rider-status.json): the 9 Oct guards' switches
+        and, in plain words, what they hold back right now. Never raises."""
+        c = self.cfg
+        now: list[str] = []
+        try:
+            if c.loss_cooldown_guard:
+                b = self._brake(t)
+                if b is not None:
+                    now.append(b[1])
+                for sym in sorted(self._exits_by_sym):
+                    h = self._market_rest(sym, t)
+                    if h is not None:
+                        now.append(h[1])
+                if c.loss_cooldown_same_currency:
+                    cool = c.loss_cooldown_minutes * 60.0
+                    seen: set = set()
+                    lo = bisect.bisect_right(self._loss_times, t - cool)
+                    for r in reversed(self._losses[lo:bisect.bisect_right(self._loss_times, t)]):
+                        for ccy, sg in sorted(self._sides(r.symbol, r.side) - seen):
+                            seen.add((ccy, sg))
+                            now.append(f"{_long_short(sg)} {ccy} resting after a loss through {r.symbol}: "
+                                       f"{_minutes(cool - (t - r.time))} left")
+            if c.currency_cluster_guard:
+                for sym, pos in sorted(self.open.items()):
+                    sides = " and ".join(f"{_long_short(sg)} {ccy}" for ccy, sg in sorted(self._sides(sym, pos.side.sign)))
+                    if sides:
+                        now.append(f"{sym} is open: {sides} taken")
+        except Exception as exc:
+            now.append(f"could not be worked out ({exc})")
+        return {"currency_cluster_guard": bool(c.currency_cluster_guard),
+                "max_same_currency_positions": int(c.max_same_currency_positions),
+                "loss_cooldown_guard": bool(c.loss_cooldown_guard),
+                "loss_cooldown_minutes": c.loss_cooldown_minutes, "loss_pause_minutes": c.loss_pause_minutes,
+                "loss_cooldown_same_currency": bool(c.loss_cooldown_same_currency),
+                "loss_brake": (f"{c.loss_brake_losses} losing exits within {c.loss_brake_window_minutes:g} min: "
+                               f"none anywhere for {c.loss_brake_minutes:g} min"),
+                "now": now}
+
+    def _brake(self, t: float) -> Optional[tuple[str, str]]:
+        """``loss_brake_losses`` losing exits within ``loss_brake_window_minutes``:
+        no new entry anywhere for ``loss_brake_minutes`` after the last of them."""
+        c = self.cfg
+        n = max(1, int(c.loss_brake_losses))
+        times = self._loss_times
+        hi = bisect.bisect_right(times, t)
+        if hi < n:
+            return None
+        window, hold = c.loss_brake_window_minutes * 60.0, c.loss_brake_minutes * 60.0
+        until, last = None, None
+        for k in range(max(bisect.bisect_left(times, t - hold), n - 1), hi):
+            if times[k] - times[k - n + 1] <= window + 1e-9 and times[k] + hold > t:
+                if until is None or times[k] + hold > until:
+                    until, last = times[k] + hold, times[k]
+        if until is None:
+            return None
+        at = dt.datetime.fromtimestamp(last, UTC).strftime("%H:%M")
+        return "loss_brake", (f"{n} losing exits within {_minutes(window)} (the last at {at} UTC): no new entry on any "
+                              f"market for {_minutes(hold)} - {_minutes(until - t)} left")
+
+    def _market_rest(self, symbol: str, t: float) -> Optional[tuple[str, str]]:
+        """A losing exit on this market: ``loss_cooldown_minutes``; two in a
+        row, the second within ``loss_pause_minutes`` of the first:
+        ``loss_pause_minutes``. The time limit keeps a loss from an earlier
+        day (or before a weekend) from pausing the market: the replay starts
+        each UTC day with a fresh core and could not copy that pause."""
+        ex = self._exits_by_sym.get(symbol)
+        if not ex:
+            return None
+        i = len(ex)
+        while i > 0 and ex[i - 1].time > t:
+            i -= 1
+        if i == 0 or not ex[i - 1].lost:
+            return None
+        c = self.cfg
+        ago = t - ex[i - 1].time
+        pause = c.loss_pause_minutes * 60.0
+        if i >= 2 and ex[i - 2].lost and ex[i - 1].time - ex[i - 2].time <= pause + 1e-9:
+            left = pause - ago
+            if left > 0:
+                return "loss_pause", (f"two losing exits in a row on {symbol}: no new entry on it for "
+                                      f"{_minutes(pause)} - {_minutes(left)} left")
+        left = c.loss_cooldown_minutes * 60.0 - ago
+        if left > 0:
+            return "loss_cooldown", (f"{symbol} lost {_ago(ago)} ago: no new entry on it for "
+                                     f"{_minutes(c.loss_cooldown_minutes * 60.0)} - {_minutes(left)} left")
+        return None
+
+    def _currency_rest(self, symbol: str, side: int, t: float) -> Optional[tuple[str, str]]:
+        """A losing exit rests its currency sides (long JPY, short EUR for a
+        losing short EURJPY) for ``loss_cooldown_minutes``: the same idea is
+        not tried again at once through another market."""
+        mine = self._sides(symbol, side)
+        if not mine:
+            return None
+        cool = self.cfg.loss_cooldown_minutes * 60.0
+        lo = bisect.bisect_right(self._loss_times, t - cool)
+        hi = bisect.bisect_right(self._loss_times, t)
+        for r in reversed(self._losses[lo:hi]):
+            if r.symbol == symbol:
+                continue                                  # the market's own cooldown covers it
+            common = sorted(mine & self._sides(r.symbol, r.side))
+            if common:
+                ccy, sg = common[0]
+                ago = t - r.time
+                return "currency_loss", (f"{_long_short(sg)} {ccy} lost through {r.symbol} {_ago(ago)} ago: no new "
+                                         f"{_long_short(sg)} {ccy} for {_minutes(cool)} - {_minutes(cool - ago)} left")
+        return None
+
+    def _cluster(self, symbol: str, side: int, t: float) -> Optional[tuple[str, str]]:
+        """No entry that would take more than ``max_same_currency_positions``
+        open positions (or intents not filled yet) to one side of a
+        currency."""
+        mine = self._sides(symbol, side)
+        if not mine:
+            return None
+        holders: dict[tuple, list[str]] = {}
+        for other, pos in self.open.items():
+            if other != symbol:
+                for k in mine & self._sides(other, pos.side.sign):
+                    holders.setdefault(k, []).append(other)
+        for other, ts in self.last_signal.items():
+            if other == symbol or other in self.open or not (0.0 <= t - ts < GUARD_SIGNAL_HOLD_SECONDS):
+                continue
+            for k in mine & self._sides(other, self.signal_side.get(other, 0)):
+                holders.setdefault(k, []).append(other)
+        cap = max(1, int(self.cfg.max_same_currency_positions))
+        for (ccy, sg), names in sorted(holders.items()):
+            if len(names) >= cap:
+                return "currency_cluster", f"already {_long_short(sg)} {ccy} through {' and '.join(sorted(names))}"
+        return None
 
     def initial_stop(self, v: MarketView, d: int, entry: float) -> tuple[Optional[float], str]:
         """The broker-side stop at entry: just beyond the last micro swing
@@ -559,10 +840,14 @@ class RiderCore:
         self.spent_trigger[pos.symbol] = max(self.spent_trigger.get(pos.symbol, 0),
                                              self.states.trigger_id.get(pos.symbol, 0))
 
-    def position_closed(self, pos: RiderPosition, now: dt.datetime) -> None:
+    def position_closed(self, pos: RiderPosition, now: dt.datetime, net: Optional[float] = None) -> None:
+        """``net``: the trade's result after every cost (money, or pips when
+        no money figure exists) for the loss guards; None (a duplicate ticket
+        closed again at once) records no exit."""
         if self.open.get(pos.symbol) is pos or (pos.symbol in self.open and self.open[pos.symbol].ticket == pos.ticket):
             self.open.pop(pos.symbol, None)
         self.last_exit[pos.symbol] = _ts(now)
+        self.record_exit(pos.symbol, pos.side.sign, now, net, key=pos.ticket)
 
     def flow_inputs(self, pos: RiderPosition, tick: Tick, now: float) -> FlowInputs:
         s = self.syms.get(pos.symbol)

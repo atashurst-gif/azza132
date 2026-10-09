@@ -22,6 +22,14 @@ Safety: OFF has no executor. A synthetic or replayed feed never drives a LIVE
 order (and its results are labelled SYNTHETIC - NOT PERFORMANCE / REPLAY).
 The bot's own daily loss limit stops NEW entries for the day only; it does
 not touch the account-level daily-loss logic of the main bot.
+
+Which instruments: the CME FX futures (``instruments``) with a CME feed
+(Databento); with the Binance feed, the crypto set (``crypto_instruments``:
+BTCUSDT -> the broker's BTC/USD CFD, ETHUSDT -> ETH/USD), which never rolls,
+trades through the weekend and is labelled for what it is - "Binance public
+order book (crypto exchange)", data class EXCHANGE - never CME. A crypto
+instrument whose CFD the broker does not list, or lists as not tradable, is
+watched but never traded, and the page says so plainly.
 """
 from __future__ import annotations
 
@@ -29,6 +37,7 @@ import datetime as dt
 import json
 import logging
 import math
+import time
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Callable, Optional
@@ -37,14 +46,16 @@ from ..botexec import make_executor
 from ..broker.base import Position, Side, TF, Tick
 from ..clock import to_utc, utcnow
 from ..scalper.features import TickBuffer
-from . import INSTITUTIONAL, MAGIC, RETAIL, STRATEGY_ID, STRATEGY_LABEL, SYNTHETIC_LABEL, TAG, TAGLINE
+from . import (BINANCE_TAGLINE, EXCHANGE, INSTITUTIONAL, MAGIC, RETAIL, STRATEGY_ID, STRATEGY_LABEL, SYNTHETIC_LABEL,
+               TAG, TAGLINE)
 from .book import FeedNotice, received_at
-from .bridge import FILLED_S, BridgeConfig, ExecutionReport, Mt5Bridge, TimedBroker
+from .bridge import FILLED_S, BridgeConfig, CfdRules, ExecutionReport, Mt5Bridge, TimedBroker
 from .dataquality import DEGRADED, DOWN, LIVE, NOT_CONFIGURED, DataQualityMonitor, QualityConfig
 from .features import FlowConfig, FlowSnapshot, InstrumentFlow
 from .feeds.base import FINISHED, FeedAdapter, NotConfiguredFeed
+from .instruments import BINANCE, default_crypto_config, parse_crypto
 from .journal import ABSENT, ADOPTED, FILLED, REJECTED, SENDING, UNKNOWN, Journal
-from .mapping import (ALL, CONTRACTS, contract, front_month, futures_direction, root_of, spot_symbol)
+from .mapping import (ALL, CONTRACTS, contract, futures_direction, root_of, spot_symbol, subscription_symbol)
 from .recorder import Recorder, recording_dir
 from .regime import classify
 from .score import ChartContext, Opportunity, ScoreConfig, chart_context, cross_market_value, news_context, score
@@ -58,6 +69,7 @@ MISSING_PASSES = 3
 MISSING_SECONDS = 60.0
 RECHECK_SECONDS = 10.0                        # a trade missing that long: its closing deal is looked for this often
 ENTRY_LOOKBACK = dt.timedelta(minutes=10)     # the deal history is searched from this long before an unknown send
+SELECT_RETRY_SECONDS = 60.0                   # a broker symbol MetaTrader would not put in Market Watch: asked again
 STOP_NOTE = f"{STRATEGY_LABEL}: broker stop"
 
 
@@ -92,6 +104,12 @@ class IanConfig:
     min_stop_pips: float = 6.0
     max_stop_pips: float = 30.0
     allow_paper_on_synthetic: bool = False    # research and tests only: a synthetic feed normally places nothing
+    # the crypto set read from Binance's public book (feed vendor "binance"), each traded through the broker's CFD;
+    # see mintel/ian/instruments.py for every setting
+    crypto_instruments: dict = field(default_factory=default_crypto_config)
+    broker_label: str = "IC Markets"          # named in the notes and on the page ("traded through IC Markets BTCUSD")
+    cfd_min_lot_risk_mult: float = 1.5        # a CFD's smallest lot only if it risks <= this x risk_money
+    cfd_max_margin_share: float = 0.5         # a CFD order never takes more than this share of the free margin
 
     @classmethod
     def default_path(cls, data_dir: str | Path) -> Path:
@@ -137,6 +155,12 @@ class IanConfig:
                         STRATEGY_LABEL, raw.get("magic"), MAGIC)
             c.magic = MAGIC
         return c
+
+    def universe(self, vendor: str) -> tuple[tuple, tuple]:
+        """(traded, context) for a feed vendor: the crypto set with Binance's book, else the CME futures."""
+        if str(vendor or "").lower() == BINANCE:
+            return tuple(parse_crypto(self.crypto_instruments)), ()
+        return tuple(self.instruments), tuple(self.context)
 
     @staticmethod
     def save_minimal(path: str | Path, mode: str = "PAPER") -> None:
@@ -212,11 +236,19 @@ class IanEngine:
         self._misses: dict[str, tuple[int, dt.datetime]] = {}
         self._no_exec = ""                             # why nothing can be placed, when that is not the mode's choice
         self._link_down = False
+        self.crypto = parse_crypto(self.cfg.crypto_instruments)    # registers the crypto set with the mapping
+        self._set_universe()
         self._subscribe()                    # first: a replay only knows what it holds once it has opened it
+        self._set_universe()                 # a replay knows whose data it holds once it has opened it
         self.synthetic = bool(getattr(self.feed, "synthetic", False))
         self.virtual = bool(getattr(self.feed, "virtual_time", False))
         self.data_source = ("SYNTHETIC" if self.synthetic else "REPLAY" if self.virtual else "LIVE FEED")
-        self.quality = DataQualityMonitor(QualityConfig(), getattr(self.feed, "sequence_scope", "instrument"))
+        self.quality = DataQualityMonitor(QualityConfig.for_feed(getattr(self.feed, "quality_overrides", None)),
+                                          getattr(self.feed, "sequence_scope", "instrument"))
+        self._grid: dict[str, float] = {}             # instrument -> the price step its feed groups the book into
+        self.spot_of: dict[str, str] = {}             # root -> the broker symbol it trades through (as last resolved)
+        self._selected: set[str] = set()              # broker symbols put into MetaTrader's Market Watch
+        self._select_tried: dict[str, float] = {}     # broker symbol -> when a refused selection was last asked
         self.flows: dict[str, InstrumentFlow] = {}
         self.raw_of: dict[str, str] = {}
         self.latest: dict[str, FlowSnapshot] = {}
@@ -255,14 +287,23 @@ class IanEngine:
         else:
             self.executor = make_executor(mode, self.timed or broker, self.cfg.magic, TAG,
                                           self.cfg.paper_slippage_points, max(base + 1, PAPER_FIRST_TICKET))
+        cfd = {k: CfdRules(max_cost_share=ci.max_cost_share, target_r=ci.target_r,
+                           commission_per_lot=ci.commission_per_lot, max_against_frac=ci.max_against_frac,
+                           min_lot_risk_mult=self.cfg.cfd_min_lot_risk_mult,
+                           max_margin_share=self.cfg.cfd_max_margin_share, broker_label=self.cfg.broker_label)
+               for k, ci in self.crypto.items()}
         self.bridge = Mt5Bridge(self.executor, self.journal, broker,
                                 BridgeConfig(max_quote_age_s=self.cfg.max_quote_age_s,
                                              max_spread_pips=self.cfg.max_spread_pips, risk_money=self.cfg.risk_money,
                                              max_risk_money=self.cfg.max_risk_money, max_lots=self.cfg.max_lots,
-                                             paper_slippage_points=self.cfg.paper_slippage_points),
+                                             paper_slippage_points=self.cfg.paper_slippage_points, cfd=cfd),
                                 self.spec_fn, self.timed, self.cfg.magic)
         self.score_cfg = ScoreConfig(entry_score=self.cfg.entry_score, min_groups=self.cfg.min_groups)
         self.stop_cfg = StopConfig(min_stop_pips=self.cfg.min_stop_pips, max_stop_pips=self.cfg.max_stop_pips)
+        # a CFD on a crypto instrument: its stop limits in basis points of the price (a CFD's pip is one point)
+        self.stop_cfgs = {k: StopConfig(min_stop_pips=self.cfg.min_stop_pips, max_stop_pips=self.cfg.max_stop_pips,
+                                        min_stop_bp=ci.min_stop_bp, max_stop_bp=ci.max_stop_bp)
+                          for k, ci in self.crypto.items()}
         self.flow_cfg = FlowConfig()
         self._restore()
 
@@ -282,13 +323,95 @@ class IanEngine:
                 return t
         return to_utc(self.clock())
 
+    # ----------------------------------------------------------- universe --
+    def _set_universe(self) -> None:
+        """Which instruments this run reads and trades, from whose data the feed carries."""
+        vendor = str(getattr(self.feed, "source_vendor", "") or getattr(self.feed, "vendor", "") or "").lower()
+        self.vendor = vendor
+        self.instruments, self.context = self.cfg.universe(vendor)
+        self.binance = vendor == BINANCE
+        self.data_class = EXCHANGE if self.binance else INSTITUTIONAL
+
+    def _round_the_clock(self, root: str) -> bool:
+        c = contract(root)
+        return bool(c is not None and c.trades_24_7)
+
+    def _stop_cfg_for(self, root: str) -> StopConfig:
+        return self.stop_cfgs.get(root, self.stop_cfg)
+
+    def cfd_symbols(self) -> list[str]:
+        """The broker CFDs the crypto set trades through (the broker's own spelling once it is known)."""
+        out = []
+        for r in self.instruments:
+            c = contract(r)
+            out.append(getattr(self, "spot_of", {}).get(r) or (c.spot if c is not None else r))
+        return out
+
+    def feed_label(self) -> str:
+        """What the data is and what it is traded through, in plain words, for the page and the status."""
+        if not self.binance:
+            return ""
+        cfds = self.cfd_symbols()
+        what = f"{self.cfg.broker_label} {' and '.join(cfds)} CFD{'s' if len(cfds) > 1 else ''}".strip()
+        return f"Binance public order book (crypto exchange) - traded through {what}"
+
+    def _spot_for(self, root: str, broker_syms: Optional[list]) -> tuple[str, str]:
+        """(the broker symbol to trade, why it cannot be traded or ''). A CME future falls back to the usual
+        spot name; a crypto instrument is strict: no CFD at the broker, or one that is not tradable, is not
+        traded."""
+        c = contract(root)
+        if c is None:
+            return "", "no mapping"
+        if not c.generic:
+            return spot_symbol(root, broker_syms) or c.spot, ""
+        label = self.cfg.broker_label or "the broker"
+        if broker_syms is None:
+            return c.spot, ("" if self.broker is None else
+                            f"{label}'s symbol list cannot be read: {root} is not traded until it can")
+        sym = spot_symbol(root, broker_syms)
+        if not sym:
+            return c.spot, f"{label} has no {c.currency} CFD (looked for {c.spot}): {root} is watched, not traded"
+        if not self._select(sym):
+            return sym, f"{label} {sym} cannot be selected in Market Watch: {root} is watched, not traded"
+        spec = self._spec(sym)
+        if spec is None:
+            return sym, f"{label} gives no contract details for {sym}: {root} is watched, not traded"
+        if not spec.is_tradable():
+            missing = spec.missing_fields()
+            return sym, (f"{label} {sym} is not tradable now (" + (f"incomplete contract: {', '.join(missing)}" if missing
+                         else "trading disabled at the broker - the market may be closed") + ")")
+        return sym, ""
+
+    def _select(self, sym: str) -> bool:
+        """Put a generic instrument's broker symbol into MetaTrader's Market Watch: a symbol the broker has but
+        hides gets no live quote, and the main bot's universe leaves the crypto CFDs out, so nothing else selects
+        them. Asked once per symbol; a refusal is asked again at most once a minute."""
+        if sym in self._selected:
+            return True
+        fn = getattr(self.broker, "ensure_selected", None) if self.broker is not None else None
+        if not callable(fn):
+            return True                               # a broker with no Market Watch (paper research, tests)
+        now = time.monotonic()
+        last = self._select_tried.get(sym)
+        if last is not None and now - last < SELECT_RETRY_SECONDS:
+            return False
+        self._select_tried[sym] = now
+        try:
+            ok = bool(fn(sym))
+        except Exception:
+            ok = False
+        if ok:
+            self._selected.add(sym)
+            self._select_tried.pop(sym, None)
+        return ok
+
     # ----------------------------------------------------------------- feed --
     def _wanted(self, day: dt.date) -> list[str]:
         out = []
-        for r in list(self.cfg.instruments) + list(self.cfg.context):
+        for r in list(self.instruments) + list(self.context):
             if r in ALL:
                 try:
-                    out.append(front_month(r, day, self.cfg.roll_days).raw_symbol)
+                    out.append(subscription_symbol(r, day, self.cfg.roll_days))
                 except Exception:
                     pass
         return out
@@ -332,7 +455,7 @@ class IanEngine:
         if "-" in instrument:                        # a calendar spread, not an outright
             return None
         root = root_of(instrument)
-        if not root or root not in (set(self.cfg.instruments) | set(self.cfg.context)):
+        if not root or root not in (set(self.instruments) | set(self.context)):
             self.unknown_instruments.add(instrument)
             return None
         cur = self.raw_of.get(root)
@@ -341,9 +464,32 @@ class IanEngine:
             self.flows.pop(cur, None)
             self.latest.pop(root, None)
         self.raw_of[root] = instrument
-        f = InstrumentFlow(instrument, self.flow_cfg, aggressor_reliable=True)
+        c = contract(root)
+        if c is not None and c.generic:
+            # a generic book (Binance): its price step from the feed, sizes relative to its own trades
+            f = InstrumentFlow(instrument, self.flow_cfg, tick_size=self._grid.get(instrument) or None,
+                               aggressor_reliable=True, relative_sizes=True, snap_trades=True, size_label=c.currency,
+                               round_the_clock=c.trades_24_7, data_class=self.data_class)
+        else:
+            f = InstrumentFlow(instrument, self.flow_cfg, aggressor_reliable=True)
         self.flows[instrument] = f
         return f
+
+    def _on_grid(self, ev: FeedNotice) -> None:
+        """The feed announced the price step it groups an instrument's book into. A flow built on another step
+        starts again (its prices would not line up)."""
+        try:
+            g = float(str(ev.detail).split()[0])
+        except (ValueError, IndexError):
+            return
+        if g <= 0:
+            return
+        if self._grid.get(ev.instrument) != g:
+            self._grid[ev.instrument] = g
+            f = self.flows.get(ev.instrument)
+            if f is not None and abs(f.ref_tick - g) > 1e-12:
+                self.flows.pop(ev.instrument, None)
+                self.latest.pop(root_of(ev.instrument), None)
 
     def ingest(self, events) -> int:
         n = 0
@@ -357,6 +503,8 @@ class IanEngine:
             if self.recorder is not None:
                 self.recorder.write(ev)
             if isinstance(ev, FeedNotice):
+                if ev.notice == "GRID":
+                    self._on_grid(ev)
                 self.journal.event("FEED", f"{ev.notice}: {ev.detail}", ev.instrument, received_at(ev))
                 continue
             f = self._flow_for(ev.instrument)
@@ -388,9 +536,9 @@ class IanEngine:
         if h.state in (DOWN, "CONNECTING"):
             return DOWN, h.reason or "not connected"
         self._link_down = False
-        roots = [root_of(i) for i in self.flows if root_of(i) in self.cfg.instruments]
+        roots = [root_of(i) for i in self.flows if root_of(i) in self.instruments]
         states = [self.quality.state(i, now, f.book, LIVE if h.state != FINISHED else FINISHED)
-                  for i, f in self.flows.items() if root_of(i) in self.cfg.instruments]
+                  for i, f in self.flows.items() if root_of(i) in self.instruments]
         if not states:
             return DEGRADED, f"{h.reason}; no order-book data received yet"
         if all(s.state == DOWN for s in states):
@@ -399,6 +547,10 @@ class IanEngine:
         if bad:
             self.degraded = sorted({r for r, s in zip(roots, states) if s.state != LIVE})
             return DEGRADED, "; ".join(sorted({r for s in bad for r in s.reasons}))[:300]
+        if h.state == DEGRADED:
+            # the feed itself says its data is not good enough to trade on (a book being rebuilt, a polled book)
+            self.degraded = sorted(set(roots))
+            return DEGRADED, h.reason[:300]
         return LIVE, h.reason
 
     # ---------------------------------------------------------------- retail --
@@ -469,6 +621,13 @@ class IanEngine:
         pip = spec.pip_size
         sp = (tick.ask - tick.bid) / pip if pip else 0.0
         typ = float(spec.typical_spread_points or 0.0) * spec.point / pip if pip else 0.0
+        if symbol in self.cfd_symbols() and self.binance:
+            # a CFD's "pip" is one point: say the spread in price and basis points
+            mid = (tick.ask + tick.bid) / 2.0 or 1.0
+            words = f"spread {tick.ask - tick.bid:.2f} ({(tick.ask - tick.bid) / mid * 1e4:.1f} bp)"
+            if typ <= 0 or sp <= 1.5 * typ:
+                return 1.0, words
+            return _clip(1.5 * typ / sp, 0.2, 1.0), f"{words} vs typical {typ * pip:.2f}"
         if typ <= 0 or sp <= 1.5 * typ:
             return 1.0, f"spread {sp:.1f} pips"
         return _clip(1.5 * typ / sp, 0.2, 1.0), f"spread {sp:.1f} pips vs typical {typ:.1f}"
@@ -533,7 +692,7 @@ class IanEngine:
         # opportunities
         events = self._events(now)
         broker_syms = self._broker_symbols()
-        for root in list(self.cfg.instruments):
+        for root in list(self.instruments):
             fs = snaps.get(root)
             if fs is None:
                 lf = self.latest.get(root)
@@ -541,7 +700,8 @@ class IanEngine:
                 self.notes[root] = f"no signals: {why}" if lf is not None else f"waiting: {why}"
                 self.opps.pop(root, None)
                 continue
-            sym = spot_symbol(root, broker_syms) or (contract(root).spot if contract(root) else "")
+            sym, sym_why = self._spot_for(root, broker_syms)
+            self.spot_of[root] = sym
             tick = self._tick(sym)
             news = news_context(root, events, now)
             reg = classify(fs, news, self.flows[self.raw_of[root]].absorption_episodes)
@@ -549,12 +709,16 @@ class IanEngine:
             cross = cross_market_value(root, snaps)
             eq, eq_note = self._exec_quality(sym, tick, now)
             opp = score(fs, reg, spot_symbol=sym, chart=chart, news=news, cross=cross, exec_quality=eq,
-                        exec_note=eq_note, history_mult=1.0, cfg=self.score_cfg)
+                        exec_note=eq_note, history_mult=1.0, cfg=self.score_cfg, data_class=self.data_class)
             if opp.direction:
                 hist, hist_note = self.journal.history(root, reg.regime, opp.direction, data_source=self.data_source)
                 if hist != 1.0:
                     opp = score(fs, reg, spot_symbol=sym, chart=chart, news=news, cross=cross, exec_quality=eq,
-                                exec_note=eq_note, history_mult=hist, history_note=hist_note, cfg=self.score_cfg)
+                                exec_note=eq_note, history_mult=hist, history_note=hist_note, cfg=self.score_cfg,
+                                data_class=self.data_class)
+            if sym_why:
+                opp.tradeable = False
+                opp.why_not = sym_why + (f"; {opp.why_not}" if opp.why_not else "")
             if self.broker is None and opp.tradeable:
                 opp.tradeable = False
                 opp.why_not = "no MetaTrader connection: nothing can be placed"
@@ -597,7 +761,7 @@ class IanEngine:
             root = opp.root
             # asked again for every candidate: a fill closed at once earlier in this pass is booked as a loss
             # and can take this bot past its own daily loss limit
-            why_all = self._entry_block(now)
+            why_all = self._entry_block(now, root)
             if why_all:
                 self.notes[root] = f"{opp.reasoning} Not entered: {why_all}"
                 continue
@@ -612,7 +776,7 @@ class IanEngine:
                 self.notes[root] = f"{opp.reasoning} Not entered: no spot quote or contract for {opp.spot_symbol}"
                 continue
             received = self.quality.inst.get(fs.instrument)
-            sig, why = build_signal(opp, fs, tick, spec, now, self._m1(opp.spot_symbol), self.stop_cfg,
+            sig, why = build_signal(opp, fs, tick, spec, now, self._m1(opp.spot_symbol), self._stop_cfg_for(root),
                                     self.data_source, received.last_rx if received else None,
                                     self.cfg.signal_bucket_s)
             if sig is None:
@@ -648,12 +812,13 @@ class IanEngine:
                 break
         return notes
 
-    def _entry_block(self, now: dt.datetime) -> str:
+    def _entry_block(self, now: dt.datetime, root: str = "") -> str:
         if self.synthetic and not self.cfg.allow_paper_on_synthetic:
             return "synthetic data: nothing is ever placed"
         if len(self.open) >= self.cfg.max_open:
             return f"{len(self.open)} positions open (the most at once)"
-        if now.weekday() >= 5 or (now.weekday() == 4 and now.time() >= _hhmm(self.cfg.weekend_flat_utc)):
+        weekend = now.weekday() >= 5 or (now.weekday() == 4 and now.time() >= _hhmm(self.cfg.weekend_flat_utc))
+        if weekend and not self._round_the_clock(root):          # crypto trades through the weekend
             return "the weekend"
         day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
         rows = self.journal.closed_since(day0, self.mode)
@@ -701,7 +866,7 @@ class IanEngine:
         f = self.flows.get(self.raw_of.get(root, ""))
         cached = self._bars.get(sig.spot_symbol)
         book = {"features": fs.as_dict(), "ladder": f.ladder(fs, 10) if f is not None else {},
-                "regime": opp.regime.to_dict(), "score": opp.to_dict(), "data_class": INSTITUTIONAL,
+                "regime": opp.regime.to_dict(), "score": opp.to_dict(), "data_class": self.data_class,
                 "chart": asdict(cached[1]) if cached is not None and cached[1] is not None else None,
                 "chart_data_class": RETAIL, "news": next((c.note for c in opp.components if c.name == "news"), None)}
         tr = IanTrade(int(rep.ticket), sig.signal_id, root, sig.instrument, sig.spot_symbol, sig.side, float(rep.volume),
@@ -754,7 +919,7 @@ class IanEngine:
         held = (now - tr.opened).total_seconds() / 60.0
         if held >= self.cfg.hold_max_minutes:
             return self._close(tr, tick, "TIME", now, why=f"held {held:.0f} minutes, the most this bot holds a trade")
-        if now.weekday() == 4 and now.time() >= _hhmm(self.cfg.weekend_flat_utc):
+        if now.weekday() == 4 and now.time() >= _hhmm(self.cfg.weekend_flat_utc) and not self._round_the_clock(tr.root):
             return self._close(tr, tick, "WEEKEND", now, why="flat for the weekend")
         flow = self._flow_read(tr, now)
         try:
@@ -1281,17 +1446,24 @@ class IanEngine:
     def status(self, now: Optional[dt.datetime] = None) -> dict:
         now = to_utc(now or self._now())
         state = self.feed_state
+        label = self.feed_label()
+        markets = "market" if self.binance else "future"
         if state == NOT_CONFIGURED:
             headline = ("DATA-DEGRADED: no institutional feed is configured - no signals, no trades. "
                         "See docs/ops/financial_ian_data_feed.md.")
         elif state == LIVE:
-            headline = "WATCHING the futures order book" if not self.open else f"IN {len(self.open)} TRADE(S)"
+            if self.binance:
+                headline = f"WATCHING the {label}" if not self.open else f"IN {len(self.open)} TRADE(S) - {label}"
+            else:
+                headline = "WATCHING the futures order book" if not self.open else f"IN {len(self.open)} TRADE(S)"
         elif state == DEGRADED:
             where = f" on {', '.join(self.degraded)}" if self.degraded else ""
-            headline = (f"DATA-DEGRADED{where}: {self.feed_reason} - no new trades on any future until the data "
+            headline = (f"DATA-DEGRADED{where}: {self.feed_reason} - no new trades on any {markets} until the data "
                         "is clean; open positions are still managed")
         else:
             headline = f"FEED DOWN: {self.feed_reason} - no new signals; open positions keep their broker stops"
+        if self.binance and state != LIVE and label:
+            headline += f" ({label})"
         if self._no_exec:
             headline = f"{self._no_exec} - " + headline
         elif self.mode == "OFF":
@@ -1337,12 +1509,16 @@ class IanEngine:
         except Exception:
             h = {}
         return {
-            "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL, "tagline": TAGLINE, "magic": int(self.cfg.magic),
+            "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL,
+            "tagline": BINANCE_TAGLINE if self.binance else TAGLINE, "magic": int(self.cfg.magic),
             "mode": self.mode, "running": True, "updated": now.isoformat(), "status": headline,
             "data_source": self.data_source,
             "data_label": SYNTHETIC_LABEL if self.synthetic else ("REPLAY - NOT LIVE" if self.virtual else "LIVE"),
             "feed": {"state": state, "reason": self.feed_reason, "vendor": h.get("vendor", ""),
-                     "data_class": INSTITUTIONAL, "synthetic": self.synthetic, "events": self.events_in,
+                     "label": label or None, "source": BINANCE if self.binance else (self.vendor or None),
+                     "instruments": list(self.instruments), "trades_through": self.cfd_symbols() if self.binance else None,
+                     "price_steps": dict(self._grid) or None,
+                     "data_class": self.data_class, "synthetic": self.synthetic, "events": self.events_in,
                      "subscribed": list(getattr(self, "subscribed", [])), "quality": dict(getattr(self, "quality_text", {})),
                      "latency_ms": {r: self.quality.stats(i).get("latency_ms") for r, i in self.raw_of.items()}},
             "mt5": {"connected": mt5, "data_class": RETAIL,
@@ -1420,12 +1596,22 @@ def write_waiting_status(data_dir: str | Path, cfg: IanConfig, attempt: int, now
                 f"logged in? It tries again every {retry_s:g} seconds; nothing is placed until it connects")
     if opens and mode == "LIVE":
         headline += f". {len(opens)} open position(s) keep their broker stops meanwhile"
+    vendor = str((cfg.feed or {}).get("vendor", "none")).lower()
+    binance = vendor == BINANCE
+    label = None
+    if binance:
+        traded = cfg.universe(BINANCE)[0]
+        cfds = [contract(r).spot for r in traded if contract(r) is not None]
+        label = (f"Binance public order book (crypto exchange) - traded through {cfg.broker_label} "
+                 f"{' and '.join(cfds)} CFD{'s' if len(cfds) > 1 else ''}")
+        headline += f" ({label})"
     st = {
-        "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL, "tagline": TAGLINE, "magic": MAGIC,
+        "strategy_id": STRATEGY_ID, "label": STRATEGY_LABEL, "tagline": BINANCE_TAGLINE if binance else TAGLINE,
+        "magic": MAGIC,
         "mode": mode, "running": True, "updated": now.isoformat(), "status": headline,
         "waiting": "waiting for MetaTrader", "data_source": "", "data_label": "LIVE",
         "feed": {"state": "NOT STARTED", "reason": "waiting for MetaTrader: the feed starts once it is connected",
-                 "vendor": str((cfg.feed or {}).get("vendor", "none")), "data_class": INSTITUTIONAL,
+                 "vendor": vendor, "label": label, "data_class": EXCHANGE if binance else INSTITUTIONAL,
                  "synthetic": False, "events": 0, "subscribed": [], "quality": {}, "latency_ms": {}},
         "mt5": {"connected": False, "data_class": RETAIL, "note": "MetaTrader cannot be reached yet"},
         "top_opportunity": None, "reasoning": "", "opportunities": {}, "markets_now": {},

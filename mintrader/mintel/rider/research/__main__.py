@@ -20,6 +20,13 @@ labelled SYNTHETIC - NOT PERFORMANCE.
 Other options: --workers N (parallel processes), --variants
 default|all|base|ID,ID, --no-fetch (use stored ticks only), --max-gb (tick
 store budget), --out DIR (research directory).
+
+PROBE (``--probe``): one quick check that past ticks can be read. It
+connects, fetches one past hour of EURUSD (10:00-11:00 UTC on the last
+complete weekday, plus the last complete hour to compare) exactly as the
+research would, prints how many ticks MetaTrader returned and kept, with
+the first and last times, and disconnects. Exit code 0: past ticks are
+reachable; 5: they are not.
 """
 from __future__ import annotations
 
@@ -146,6 +153,34 @@ def fetch_real(args, root: Path, store, days: list[str]) -> tuple[list[str], dic
             pass
 
 
+def run_probe(args) -> int:
+    """--probe: can past ticks be read from here? (tickstore.probe)"""
+    from ...config import Config
+    from ...run import build_broker
+    from .tickstore import probe
+    broker = build_broker(Config.load(args.config))
+    _say("Connecting to MetaTrader...")
+    if not _connect(broker):
+        _say("Could not connect to MetaTrader (is the bot's bridge running?). Nothing was asked.")
+        return 3
+    try:
+        try:
+            names = list(broker.symbols())
+        except Exception:
+            names = []
+        sym = (resolve_symbols(names, "EURUSD") or ["EURUSD"])[0]
+        _say(f"Probe: can past ticks of {sym} be read? (each empty answer is asked again for up to about 15 s)")
+        res = probe(broker, sym)
+        for line in res["lines"]:
+            _say(line)
+        return 0 if res["reachable"] else 5
+    finally:
+        try:
+            broker.disconnect()                 # leave the bridge (and the trader) running
+        except Exception:
+            pass
+
+
 def load_stored(root: Path) -> tuple[list[str], dict, list, str]:
     from .pipeline import event_from_dict, spec_from_dict
     try:
@@ -178,7 +213,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--synthetic-hours", default="7-17", help="synthetic market hours UTC, e.g. 0-24")
     ap.add_argument("--synthetic-tick-scale", type=float, default=0.6)
     ap.add_argument("--no-cache", action="store_true", help="recompute every job")
+    ap.add_argument("--probe", action="store_true",
+                    help="only check that past ticks can be read: one past hour of EURUSD, its tick count and times")
     a = ap.parse_args(argv)
+    if a.probe:
+        return run_probe(a)
     from ..config import RiderConfig
     from .pipeline import Plan, default_workers, run
     from .publish import publish

@@ -58,6 +58,17 @@ def _read(path: Path, idx: int) -> Iterator[tuple]:
 
 
 CHANNEL_SEQUENCED = {"databento"}        # event sources whose sequence numbers are per channel, not per instrument
+# sources whose sequence numbers are not one contiguous count per instrument at all (Binance: book update ids
+# and aggregate trade ids are separate; the feed checked both itself and recorded any gap as a GAP notice)
+UNSEQUENCED = {"binance"}
+
+
+def _source_overrides(src: str) -> dict:
+    """The data-quality figures the live feed of this source used, so a replay judges it the same way."""
+    if src == "binance":
+        from .binance import BinanceFeed
+        return dict(BinanceFeed.quality_overrides)
+    return {}
 
 
 class ReplayFeed(FeedAdapter):
@@ -106,6 +117,10 @@ class ReplayFeed(FeedAdapter):
                 # per CHANNEL (Databento/CME) is checked per channel, as it was when it ran
                 if src in CHANNEL_SEQUENCED:
                     self.sequence_scope = "channel"
+                elif src in UNSEQUENCED:
+                    self.sequence_scope = "none"
+                self.source_vendor = src
+                self.quality_overrides = _source_overrides(src)
             return True
         except Exception as exc:
             self._error = f"{type(exc).__name__}: {exc}"
@@ -166,10 +181,17 @@ class ReplayFeed(FeedAdapter):
         if self._error and not self._connected:
             return FeedHealth(DOWN, f"replay cannot start: {self._error}", self.vendor, INSTITUTIONAL, self.synthetic)
         state = FINISHED if self.exhausted() else LIVE
-        reason = (f"replay of {len(self.files)} recorded file(s) finished" if state == FINISHED
-                  else f"replaying {len(self.files)} recorded file(s) ({self.speed})")
-        return FeedHealth(state, reason, self.vendor, INSTITUTIONAL, self.synthetic, self._connected, self._count,
+        what = " of Binance's public crypto book" if self.source_vendor == "binance" else ""
+        reason = (f"replay{what} of {len(self.files)} recorded file(s) finished" if state == FINISHED
+                  else f"replaying{what} {len(self.files)} recorded file(s) ({self.speed})")
+        return FeedHealth(state, reason, self.vendor, self.data_class_of(), self.synthetic, self._connected, self._count,
                           self._last.isoformat() if self._last else None, self._error)
+
+    def data_class_of(self) -> str:
+        if self.source_vendor == "binance":
+            from .. import EXCHANGE
+            return EXCHANGE
+        return INSTITUTIONAL
 
     def recover(self, reason: str = "") -> bool:
         return True                                     # a recording cannot be re-requested; it is what it is

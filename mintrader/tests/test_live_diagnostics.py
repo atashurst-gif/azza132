@@ -492,7 +492,7 @@ def test_the_same_prices_give_the_same_orders_stops_and_exits(live_run, tmp_path
     tb, start = two_markets()
     clock0 = Clock(start)
     broker0 = FakeBroker(tb, clock0)
-    eng0 = _EngineBefore(RiderConfig(mode="LIVE", max_concurrent_positions=1), broker0, tmp_path, clock=clock0,
+    eng0 = _EngineBefore(RiderConfig(mode="LIVE", max_concurrent_positions=1, max_cost_ratio=0.25), broker0, tmp_path, clock=clock0,
                          heartbeat=False)
     seen0 = run_capturing(eng0, broker0, clock0, tb)
     before, after = _decisions(eng0, broker0, seen0), _decisions(eng, broker, seen)

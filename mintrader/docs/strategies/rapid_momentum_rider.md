@@ -89,8 +89,9 @@ Each market moves through these states:
 
 - **BUILDING:** the score reaches 40 in a direction.
 - **READY:** the score reaches 55, and every gate is passed. The gates
-  are: not choppy; the costs are no more than a quarter of the expected
-  move; at least 1.2 ATR of open space ahead; no high-impact news for
+  are: not choppy; the costs are no more than 15% of the expected
+  move (a quarter until 9 Oct, when the first live morning showed
+  commission eating the wins); at least 1.2 ATR of open space ahead; no high-impact news for
   either currency due in the next two minutes; the spread not blown out;
   and enough price updates.
 - **TRIGGER:** the score reaches 60, and price itself confirms the
@@ -119,7 +120,8 @@ sanity cap, not a target. No quotas and no daily limits: the market
 decides. After a trade ends, the same market can be traded again only on
 a **fresh** trigger, meaning a new arrival in TRIGGER, not the same one.
 There is also a 20-second cooldown so the same signal is never taken
-twice. Momentum comes in waves, and a new wave may be ridden again.
+twice. Momentum comes in waves, and a new wave may be ridden again. The
+two guards added on 9 Oct (next section) can also refuse an entry.
 
 **News.** News alone is never a reason to trade. Before a high-impact
 release for one of the pair's currencies, new entries wait. After it, the
@@ -130,6 +132,77 @@ what happened:
 - whether a second wave carried on beyond it;
 - whether the move was rejected;
 - whether the spread has come back to normal.
+
+## Guards added on 9 Oct
+
+**What happened.** The Rider's first LIVE morning was Friday 9 October.
+The broker's own figures: 23 trades between 08:54 and 11:05 UTC; 9 won
+and 14 lost. Before costs they made +4.7 pips. After GBP 22.92 of costs
+(commission is about GBP 1 a trade at GBP 1 a pip) the result was
+-GBP 18.27. By exit:
+
+- THESIS_DEAD: 11 trades, -GBP 32.62.
+- STOP: 8 trades, -GBP 8.19.
+- PROTECT_LEVEL: 4 trades, +GBP 22.54.
+
+Eleven of the trades came in five minutes (08:54-08:59), most of them JPY
+crosses on the same yen move: EURJPY four times (-4.97, -5.07, -2.56,
+-4.17), GBPJPY twice, CADJPY and AUDJPY. Later CHFJPY was traded four
+times (-3.76, -3.16, -3.47, +0.24). One idea was traded many times over,
+and every time it paid the costs again.
+
+**Two guards now stop that.** Both only ever refuse a new entry. They
+never change a size, a score, a threshold, a gate, or how FlowLock X
+manages a trade. Both are on by default, and each can be switched off in
+`data/rider.json`.
+
+1. **The currency cluster** (`currency_cluster_guard`). Every pair is two
+   bets: short EURJPY is short EUR and long JPY. A new entry is refused
+   when it would add to an open position's bet on the same currency in
+   the same direction, beyond `max_same_currency_positions` (1). Short
+   EURJPY and short GBPJPY are both long JPY, so the second one is refused,
+   and the scanner says "already long JPY through EURJPY". Long EURUSD and
+   short USDCHF are both short USD. Long GBPJPY (short JPY) is a different
+   idea, and it is allowed.
+2. **The loss cooldown** (`loss_cooldown_guard`). A loss means a loss
+   after every cost.
+   - After a losing exit on a market, no new entry there for 15 minutes
+     (`loss_cooldown_minutes`).
+   - After two losing exits in a row on a market, the second within 2 hours
+     of the first, none there for 2 hours (`loss_pause_minutes`). A win in
+     between breaks the run. Two losses further apart (yesterday's last
+     trade and today's first, say) get only the 15-minute rest, so the
+     research replay, which starts each UTC day afresh, measures the same
+     rule that trades live.
+   - A losing exit also rests its two currency bets for 15 minutes
+     (`loss_cooldown_same_currency`). After a losing short EURJPY, there is
+     no new long JPY and no new short EUR anywhere for 15 minutes. Without
+     this, the same yen idea came straight back through the next JPY cross
+     as soon as the first trade had closed.
+   - The brake: after 4 losing exits within 10 minutes, no new entry on any
+     market for 15 minutes (`loss_brake_losses`,
+     `loss_brake_window_minutes`, `loss_brake_minutes`).
+
+**What you see.** A market that is held back says so at the start of its
+reason on the scanner, for example: "Held back: CADJPY lost 3 min ago: no
+new entry on it for 15 min - 12 min left." The status file has a `guards`
+block that lists what is held right now. The "why no trade" record counts
+each guard by name.
+
+**After a restart** the waits carry on. The bot reads its recent closed
+trades back from `data/rider.sqlite`. A trade it did not decide itself (an
+orphan it closed, or a trade closed by a mode switch) does not count.
+
+**Research.** The replay applies exactly the same rules, because they live
+in RiderCore. The registry gets a pair: RMR-GUARDS-ON and RMR-GUARDS-OFF.
+RMR-BASE keeps its definition (the shipped settings, which now include the
+guards).
+
+**Tested on made-up prices only.** A SYNTHETIC replay of the 08:54-08:59
+shape uses four quick yen waves through five JPY crosses. Without the
+guards it entered 12 times, every one of them long JPY. With the guards it
+entered once. This shows that the rules work as designed. It says nothing
+about profit; the research pair on real prices has to show that.
 
 ## How FlowLock X manages the trade
 
@@ -235,6 +308,12 @@ Useful keys:
   `max_cost_ratio`, `max_chop`, `min_headroom_atr`.
 - **Re-entry and limits:** `cooldown_seconds`,
   `max_concurrent_positions`.
+- **The 9 Oct guards:** `currency_cluster_guard`,
+  `max_same_currency_positions`, `loss_cooldown_guard`,
+  `loss_cooldown_minutes`, `loss_pause_minutes`,
+  `loss_cooldown_same_currency`, `loss_brake_losses`,
+  `loss_brake_window_minutes`, `loss_brake_minutes`. For example,
+  `{"loss_cooldown_guard": false}` switches the loss cooldown off.
 - **Starting stop:** `stop_min_atr`, `stop_max_atr`, `stop_max_pips`.
 - **FlowLock X:** `flowlock`, a dictionary of settings, for example
   `{"curve": "tight"}`.
@@ -318,7 +397,16 @@ python -m mintel.rider.run --config data/config.json
   holds the mode, the health checks, the scanner rows (MARKET, DIRECTION,
   SCORE, STATE, REASON), open positions (pips, money, stop, FlowLock state)
   and a TODAY block (trades, won, lost, win rate, net pips, net money, best
-  trade). It also holds the latest trades, each explained as to a child.
+  trade). It also holds the latest trades, each explained as to a child,
+  and the `guards` block (see "Guards added on 9 Oct").
+- **Is the tick history really working?** `tick_feed` in the status is
+  only the setting. `tick_history` says where the prices of the last 10
+  minutes came from: "working" when the broker's tick history brought
+  them, "NOT delivering" when only the latest price was fed, one a pass.
+  On 9 Oct MetaTrader under Wine read the times it was given as UK local
+  time, so every history answer was for the hour before the one asked and
+  the live Rider ran on one price a pass while the status still said
+  "every tick".
 
 ## The records: `data/rider.sqlite`
 
@@ -428,11 +516,49 @@ Options:
 - `--chunk-minutes`: how many minutes of ticks to ask for at once
   (default 60). An hour that times out is tried again in 15-minute pieces.
 - `--synthetic`: run everything on made-up prices.
+- `--probe`: only check that past ticks can be read (below).
+
+**Past ticks that do not come.** On 9 Oct the research on the Mac
+(`reports/rider-research/2026-10-09`) asked for 3,456 hour chunks of 10
+past weekdays for 8 pairs, and got ONE tick in total, with no error. Two
+things are now handled:
+
+- **An answer for the wrong hour.** MetaTrader under Wine read the times it
+  was given as UK local time, so each answer was for the hour before the
+  one asked, and those ticks were dropped as outside the hour. The broker
+  adapter now gives MetaTrader the broker's clock as whole seconds. The
+  tick store also checks every answer against the hour it asked for. If
+  the answer is for another time, it measures how far off it is, asks
+  every later hour that much later, and says so in a note.
+- **An empty answer.** MetaTrader often answers nothing for a past period
+  it has not loaded from the server yet. An empty hour in the busy hours
+  (01:00-20:00 UTC on a weekday) is never stored as final. MetaTrader is
+  asked to load it (the market selected, its one-minute bars read), and
+  the hour is asked again after 1, 2, 4 and 8 seconds. If it is still
+  empty, nothing is stored for it, so the next run asks again; the rest of
+  that day gets one quick retry per hour. If three market-days in a row
+  give no tick at all, the fetch stops and says to run the probe. An empty
+  hour outside the busy hours, or on a weekend, is stored as it came.
+
+**The probe:**
+
+```
+python -m mintel.rider.research --config data/config.json --probe
+```
+
+It fetches 10:00-11:00 UTC of EURUSD on the last complete weekday (and the
+last complete hour, to compare) exactly as the research would. It prints
+how many ticks MetaTrader returned and how many were kept, with the first
+and last times, then a plain verdict. It stores nothing. The exit code is
+0 when past ticks can be read and 5 when they cannot.
 
 **How long it takes:** the replay cost is the bot's own scan, once a second
-for every market. With the defaults (10 days, 8 markets, 6 variants), expect
-roughly one to two hours on the Mac, plus the first fetch. This is an
-estimate scaled from synthetic runs, not a measurement on real ticks.
+for every market. With the defaults (10 days, 8 markets, 6 variants), the
+estimate was roughly one to two hours on the Mac, plus the first fetch.
+The guard pair adds one more replay (RMR-GUARDS-ON has the same settings as
+RMR-BASE with the shipped defaults, so it is replayed once and reported
+under both), so expect a little longer. This is an estimate scaled from
+synthetic runs, not a measurement on real ticks.
 
 ### What it does
 
@@ -486,6 +612,8 @@ estimate scaled from synthetic runs, not a measurement on real ticks.
    - Trigger score 55 and trigger score 65.
    - The loose and tight giveback curves.
    - The anti-chop gate switched off.
+   - The 9 Oct guards forced on (RMR-GUARDS-ON) and off (RMR-GUARDS-OFF),
+     everything else as the baseline.
    - Optionally (`--variants all`), the steep and flat curves.
 8. **Report.** In plain English, it covers:
    - trades tested and trades per day;
@@ -502,7 +630,9 @@ estimate scaled from synthetic runs, not a measurement on real ticks.
 
 - **Days are separate:** each day is replayed with a fresh bot, seeded
   with the previous days' bars. A trade open at midnight is followed to
-  its end, but the next day does not know about it.
+  its end, but the next day does not know about it. The loss guards also
+  start each replayed day empty (live, a loss just before midnight UTC
+  still counts after it).
 - **Learning:** the bot's own learning (2 of 100 points) stays neutral.
 - **Weekends:** a trade still open on Friday night is closed at Friday's
   last price. It is not held through the weekend gap.

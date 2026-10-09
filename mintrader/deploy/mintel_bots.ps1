@@ -296,6 +296,41 @@ function Invoke-LineUpOnce {
     return $changed
 }
 
+function Set-IanBinanceOnce {
+    # 9 Oct, Aaron: "I don't have the Databento key, just do anything closest
+    # so we can get it live". Unless a Databento key is already saved (then the
+    # feed is the CME FX book through Databento - set now if ian.json did not
+    # name it yet), Financial Ian reads Binance's PUBLIC crypto order
+    # book (no account, no key) and trades BTC and ETH through the broker's
+    # crypto CFDs; Ian stays LIVE. Only data\ian.json is touched - never
+    # another bot's mode. Once per machine (marker), after the line-up.
+    # Returns $true when it changed something (Ian must restart to read it).
+    param($P)
+    $marker = Join-Path $P.Data ".ian-binance-2026-10-09"
+    if (Test-Path $marker) { return $false }
+    if (-not (Test-MintelInstalled $P)) { return $false }
+    Write-Host "    Financial Ian's data feed:"
+    $r = Invoke-MintelPython $P @("-m", "mintel.ian", "--config", $P.Config, "--free-feed")
+    $feed = "$($r.Lines | Select-Object -Last 1)".Trim()
+    if ($r.Code -ne 0 -or ($feed -ne "binance" -and $feed -ne "cme")) {
+        Write-Host "    [WARN] Financial Ian's data feed could not be set ($feed). Set `"feed`": {`"vendor`": `"binance`"} in $($P.Data)\ian.json" -ForegroundColor Yellow
+        return $false
+    }
+    if ((Get-BotFileMode $P "ian") -ne "LIVE") {
+        if (-not (Invoke-Modes $P @("--live", "ian"))) {
+            Write-Host "    [WARN] Financial Ian could not be switched to LIVE (see above)" -ForegroundColor Yellow
+        }
+    }
+    Set-Content -Path $marker -Value (Get-Date).ToUniversalTime().ToString("s")
+    $mode = Get-BotFileMode $P "ian"
+    if ($feed -eq "binance") {
+        Write-Host "    [ OK ] Financial Ian: $mode on Binance's public crypto order book, trading BTC and ETH through IC Markets CFDs (no key needed). The CME FX feed can be added later." -ForegroundColor Green
+    } else {
+        Write-Host "    [ OK ] Financial Ian: $mode, its feed set to the CME FX futures book through Databento (a Databento key is saved)." -ForegroundColor Green
+    }
+    return $true
+}
+
 function Start-RiderResearch {
     # The Rapid Momentum Rider's research on the last ten days of the
     # broker's REAL ticks, in the background, at most once a day (marker),

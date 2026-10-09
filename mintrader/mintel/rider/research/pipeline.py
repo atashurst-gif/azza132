@@ -151,6 +151,18 @@ def _job_key(args: dict) -> str:
     return hashlib.sha1(blob.encode()).hexdigest()[:20]
 
 
+def same_settings(variants: Sequence[Variant], base: RiderConfig) -> dict[str, str]:
+    """METHOD_ID -> the METHOD_ID whose replay it shares: variants with
+    identical settings (RMR-GUARDS-ON and RMR-BASE with the shipped defaults)
+    are replayed once and reported under each name."""
+    first: dict[str, str] = {}
+    out: dict[str, str] = {}
+    for v in variants:
+        key = json.dumps(v.config(base).to_dict(), sort_keys=True, default=str)
+        out[v.method_id] = first.setdefault(key, v.method_id)
+    return out
+
+
 def run_job(args: dict) -> dict:
     """One unit of work (in a worker process). Cached on disk by its inputs."""
     cache = Path(args["cache_dir"]) / "jobs" / args["kind"] / f"{_job_key(args)}.json"
@@ -248,8 +260,11 @@ def run(plan: Plan, specs: dict, calendar: Sequence[CalendarEvent], progress: Ca
     variants: list[Variant] = list(plan.variants)
     cost = plan.cost()
     stresses = plan.stresses()
+    shared = same_settings(variants, plan.rider_cfg)
     jobs: list[dict] = []
     for v in variants:
+        if shared[v.method_id] != v.method_id:
+            continue                                          # the same settings as an earlier variant: replayed once
         cfg = v.config(plan.rider_cfg)
         for d in days:
             jobs.append({**base_args, "kind": "replay", "variant": v.method_id, "day": d, "cfg": cfg.to_dict(),
@@ -291,6 +306,13 @@ def run(plan: Plan, specs: dict, calendar: Sequence[CalendarEvent], progress: Ca
                 acc[k] = acc.get(k, 0) + x
         if vid == variants[0].method_id:
             notes += r.get("_notes", [])
+    for v in variants:
+        src = shared[v.method_id]
+        if src != v.method_id:
+            trades[v.method_id] = {label: [dict(t, variant=v.method_id) for t in ts]
+                                   for label, ts in trades[src].items()}
+            counters[v.method_id] = json.loads(json.dumps(counters[src]))
+            notes.append(f"{v.method_id} has exactly the settings of {src}: replayed once, reported under both")
     es = combine(study_days) if study_days else None
     normal = cost.label
     grid = [v for v in variants if v.grid]

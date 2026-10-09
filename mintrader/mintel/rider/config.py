@@ -48,12 +48,25 @@ class RiderConfig:
     # ---- positions ----------------------------------------------------------
     cooldown_seconds: float = 20.0             # against duplicates only; a fresh trigger is still required
     max_concurrent_positions: int = 4          # a sanity cap; one position per market always
+    # ---- guards added on 9 Oct (RiderCore.guard_hold; live and replay alike) ---------------------
+    # They only ever REFUSE a new entry: never a size change, never a score, threshold, gate or stop.
+    # Currency cluster: short EURJPY and short GBPJPY are both long JPY - one idea, not two.
+    currency_cluster_guard: bool = True        # refuse an entry that adds to an open position's currency side
+    max_same_currency_positions: int = 1       # ... beyond this many positions long (or short) one currency
+    # Loss cooldown: after losing exits (net of every cost), wait.
+    loss_cooldown_guard: bool = True
+    loss_cooldown_minutes: float = 15.0        # a losing exit on a market: no new entry there for this long
+    loss_pause_minutes: float = 120.0          # two losing exits in a row on a market: none there for this long
+    loss_cooldown_same_currency: bool = True   # a losing exit also rests its currency sides (long JPY, short EUR)
+    loss_brake_losses: int = 4                 # the global brake: this many losing exits ...
+    loss_brake_window_minutes: float = 10.0    # ... within this many minutes ...
+    loss_brake_minutes: float = 15.0           # ... and no new entry anywhere for this long
     # ---- entry states -------------------------------------------------------
     building_score: float = 40.0
     ready_score: float = 55.0
     trigger_score: float = 60.0
     state_hysteresis: float = 5.0
-    max_cost_ratio: float = 0.25               # (spread + commission + slippage) / expected available move
+    max_cost_ratio: float = 0.15               # (spread + commission + slippage) / expected available move; 0.25 until 9 Oct (Aaron: wins were being eaten by commission)
     expected_run_atr: float = 3.0              # the expected available move: the largest of these three,
     expected_run_atr5: float = 1.5             # capped by the open space to the next level (headroom)
     expected_run_impulse: float = 1.0
@@ -144,6 +157,13 @@ class RiderConfig:
             cfg.user_pip_value_gbp = cls.user_pip_value_gbp
         if cfg.max_concurrent_positions < 1:
             cfg.max_concurrent_positions = 1
+        if cfg.max_same_currency_positions < 1:
+            cfg.max_same_currency_positions = 1
+        if cfg.loss_brake_losses < 1:
+            cfg.loss_brake_losses = cls.loss_brake_losses
+        for k in ("loss_cooldown_minutes", "loss_pause_minutes", "loss_brake_window_minutes", "loss_brake_minutes"):
+            if getattr(cfg, k) < 0:
+                setattr(cfg, k, getattr(cls, k))
         return cfg
 
     @classmethod

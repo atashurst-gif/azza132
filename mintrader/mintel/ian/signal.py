@@ -82,6 +82,14 @@ class StopConfig:
     min_stop_pips: float = 6.0
     max_stop_pips: float = 30.0
     spread_mult: float = 3.0
+    # a CFD on a generic instrument (BTCUSD ...): its "pip" is one point, so the limits are basis points of the
+    # price instead (both > 0 replaces the pip limits)
+    min_stop_bp: float = 0.0
+    max_stop_bp: float = 0.0
+
+    @property
+    def in_bp(self) -> bool:
+        return self.min_stop_bp > 0 and self.max_stop_bp > 0
 
 
 @dataclass
@@ -98,6 +106,11 @@ def _atr(bars: Sequence[Bar], n: int = 14) -> float:
         return 0.0
     trs = [max(b.high - b.low, abs(b.high - a.close), abs(b.low - a.close)) for a, b in zip(bars, bars[1:])][-n:]
     return sum(trs) / len(trs) if trs else 0.0
+
+
+def _dist_txt(d: float, price: float) -> str:
+    """A CFD distance in price and basis points: '150.00 (15 bp)'."""
+    return f"{d:.2f} ({d / price * 1e4:.0f} bp)" if price > 0 else f"{d:.2f}"
 
 
 def plan_stop(fs: FlowSnapshot, opp: Opportunity, tick: Tick, spec, m1: Sequence[Bar] = (),
@@ -123,17 +136,27 @@ def plan_stop(fs: FlowSnapshot, opp: Opportunity, tick: Tick, spec, m1: Sequence
             d_struct = futures_distance_to_spot(root, fs.mid, max(f_dist, 0.0))
         except (ValueError, KeyError):
             d_struct = 0.0
-        basis.append(f"futures structure {d_struct / pip:.1f} pips")
+        basis.append(f"book structure {_dist_txt(d_struct, touch)}" if cfg.in_bp
+                     else f"futures structure {d_struct / pip:.1f} pips")
     d_atr = cfg.atr_mult * _atr(list(m1)) if m1 else 0.0
     if d_atr:
-        basis.append(f"{cfg.atr_mult:g}x 1-min ATR {d_atr / pip:.1f} pips")
-    d_min = cfg.min_stop_pips * pip
+        basis.append(f"{cfg.atr_mult:g}x 1-min ATR {_dist_txt(d_atr, touch)}" if cfg.in_bp
+                     else f"{cfg.atr_mult:g}x 1-min ATR {d_atr / pip:.1f} pips")
+    d_min = (touch * cfg.min_stop_bp / 1e4) if cfg.in_bp else cfg.min_stop_pips * pip
     d_spread = cfg.spread_mult * max(float(tick.ask) - float(tick.bid), 0.0)
     try:
         d_broker = spec.min_stop_distance_price(float(tick.ask) - float(tick.bid)) * 1.2
     except Exception:
         d_broker = 0.0
     dist = max(d_struct, d_atr, d_min, d_spread, d_broker)
+    if cfg.in_bp:
+        d_max = touch * cfg.max_stop_bp / 1e4
+        if dist > d_max + 1e-12:
+            return StopPlan(False, distance=dist, basis=", ".join(basis),
+                            reason=(f"the structural stop would be {dist:.2f} away ({dist / touch * 1e4:.0f} bp of the "
+                                    f"price), over {cfg.max_stop_bp:g} bp"))
+        stop = spec.normalise_price(touch - side.sign * dist)
+        return StopPlan(True, stop, abs(touch - stop), ", ".join(basis) or f"minimum {cfg.min_stop_bp:g} bp")
     if dist > cfg.max_stop_pips * pip + 1e-12:
         return StopPlan(False, distance=dist, basis=", ".join(basis),
                         reason=f"the structural stop would be {dist / pip:.1f} pips away, over {cfg.max_stop_pips:g}")

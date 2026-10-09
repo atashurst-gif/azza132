@@ -1089,6 +1089,48 @@ apply_lineup() {
   return 0
 }
 
+# apply_ian_binance - 9 Oct, Aaron: "I don't have the Databento key, just do
+# anything closest so we can get it live". Unless a Databento key is already
+# saved (then the feed is the CME FX book through Databento - set now if
+# ian.json did not name it yet), Financial Ian's feed becomes Binance's
+# PUBLIC crypto order book (no account, no key) and it trades BTC and ETH
+# through the broker's crypto CFDs; Ian stays LIVE. Only data/ian.json is
+# touched - never another bot's mode. The websocket-client package is added
+# when it is missing (Ian has a built-in client if that fails). Runs after
+# the line-up; once only (marker), so a later choice is never undone.
+apply_ian_binance() {
+  local marker="$DATA_DIR/.ian-binance-2026-10-09"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  step "Financial Ian's data feed"
+  local feed
+  feed="$(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ian --config "$CONFIG" --free-feed 2>/dev/null | tail -1)"
+  if [[ "$feed" != "binance" && "$feed" != "cme" ]]; then
+    warn "Could not set Financial Ian's data feed. Set \"feed\": {\"vendor\": \"binance\"} in $DATA_DIR/ian.json"
+    return 0
+  fi
+  if [[ "$(bot_file_mode ian)" != "LIVE" ]]; then
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --live ian 2>&1) \
+      | sed -e '/Restart the bot/d' -e 's/^/  /' \
+      || warn "Could not switch Financial Ian to LIVE. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live ian"
+  fi
+  if [[ "$feed" == "binance" ]] && [[ -z "${MINTEL_NO_PIP:-}" ]] \
+     && ! "$VENV_DIR/bin/python" -c 'import websocket' >/dev/null 2>&1; then
+    "$VENV_DIR/bin/python" -m pip install --quiet --disable-pip-version-check --retries 1 --timeout 30 \
+        "websocket-client>=1.6,<2" >/dev/null 2>&1 \
+      && good "WebSocket package installed for the live stream" \
+      || say "    The WebSocket package did not install: Ian uses its own built-in WebSocket client instead."
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  CODE_CHANGED="yes"                         # Ian reads its feed at start: restart it
+  if [[ "$feed" == "binance" ]]; then
+    good "Financial Ian: $(bot_file_mode ian) on Binance's public crypto order book, trading BTC and ETH through IC Markets CFDs (no key needed). The CME FX feed can be added later."
+  else
+    good "Financial Ian: $(bot_file_mode ian), its feed set to the CME FX futures book through Databento (a Databento key is saved)."
+  fi
+  return 0
+}
+
 # print_lineup - which bots are LIVE and which are PAPER, in plain English,
 # read back from the files the bots themselves read.
 print_lineup() {
@@ -1288,11 +1330,22 @@ except Exception:
 start_rider_research() {
   local today
   today="$(date -u +%Y-%m-%d)"
-  [[ -f "$DATA_DIR/rider-research/$today/summary.json" ]] && return 0
-  [[ -f "$DATA_DIR/.rider-research-$today" ]] && return 0
   [[ -x "$VENV_DIR/bin/python" && -f "$CONFIG" ]] || return 0
   if [[ ! -f "$APP_DIR/mintel/rider/research.py" && ! -f "$APP_DIR/mintel/rider/research/__main__.py" ]]; then
     return 0                                 # not in this version
+  fi
+  # 9 Oct: until the time fix, MetaTrader answered every past-tick request with
+  # the hour before, so the stored ticks are empty and that day's report says
+  # INSUFFICIENT DATA. Once, throw those ticks away and let today run again.
+  if [[ ! -f "$DATA_DIR/.rider-ticks-refetch-2026-10-09" ]]; then
+    rm -rf "$DATA_DIR/rider-research/ticks"
+    rm -f "$DATA_DIR/.rider-research-$today" "$DATA_DIR/rider-research/$today/summary.json"
+    : > "$DATA_DIR/.rider-ticks-refetch-2026-10-09"
+  fi
+  [[ -f "$DATA_DIR/rider-research/$today/summary.json" ]] && return 0
+  [[ -f "$DATA_DIR/.rider-research-$today" ]] && return 0
+  if pgrep -f "mintel.rider.research" >/dev/null 2>&1; then
+    return 0                                 # one is already running (started by hand)
   fi
   mkdir -p "$LOG_DIR"
   : > "$DATA_DIR/.rider-research-$today"

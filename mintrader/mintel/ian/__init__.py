@@ -24,6 +24,13 @@ Two kinds of data, always labelled and never confused:
 
 With no institutional feed configured the bot runs in a safe DATA-DEGRADED
 state: no signals, no trades, a plain status saying why.
+
+Without a CME data key it can instead read the closest free source: BINANCE's
+public crypto order book (BTCUSDT, ETHUSDT - a real exchange book with every
+trade's aggressor side, no account or key needed), trading the broker's
+matching crypto CFDs (BTCUSD, ETHUSD). That data is labelled EXCHANGE and
+"Binance public order book (crypto exchange)" everywhere - never CME, never
+institutional FX (mintel/ian/feeds/binance.py, mintel/ian/instruments.py).
 """
 STRATEGY_ID = "financial_ian"
 STRATEGY_LABEL = "Financial Ian"
@@ -31,8 +38,13 @@ MAGIC = 990_911
 TAG = "IAN"
 
 INSTITUTIONAL = "INSTITUTIONAL"
+EXCHANGE = "EXCHANGE"           # a public exchange book that is not the CME futures book (Binance's crypto book)
 RETAIL = "RETAIL"
 SYNTHETIC_LABEL = "SYNTHETIC - NOT PERFORMANCE"
 
 TAGLINE = ("Reads the CME FX futures order book - who is taking liquidity, who is absorbing it, where it is "
            "being pulled - and trades the matching spot pair early, with a broker stop that only ever tightens.")
+BINANCE_TAGLINE = ("Reads Binance's public crypto order book (BTCUSDT, ETHUSDT) - who is taking liquidity, who is "
+                   "absorbing it, where it is being pulled - and trades the matching crypto CFD at the broker early, "
+                   "with a broker stop that only ever tightens. Binance is a crypto exchange: its book is public "
+                   "market data, not a futures market.")

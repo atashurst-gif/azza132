@@ -42,7 +42,7 @@ def replay(core, ticks_by_symbol, start_scan, end=None, every=1.0, on_scan=None)
 
 def single(kind, seed, direction=1, symbol="EURUSD", **kw):
     ticks, pivot = synth.scenario(kind, symbol, seed=seed, direction=direction, **kw)
-    core = RiderCore(RiderConfig())
+    core = RiderCore(RiderConfig(max_cost_ratio=0.25))
     core.set_spec(symbol, synth.make_spec(symbol))
     scans = replay(core, {symbol: ticks}, pivot - dt.timedelta(seconds=120))
     return core, scans, pivot
@@ -133,7 +133,7 @@ class TestScenarios:
         assert other != ticks
         res = []
         for path in (ticks, other):
-            core = RiderCore(RiderConfig())
+            core = RiderCore(RiderConfig(max_cost_ratio=0.25))
             core.set_spec("EURUSD", synth.make_spec("EURUSD"))
             scans = replay(core, {"EURUSD": path}, pivot - dt.timedelta(seconds=30), end=cut)
             res.append([(r.direction, r.score, r.state) for _, rows in scans for r in rows])
@@ -151,7 +151,7 @@ class TestScenarios:
 class TestEntries:
     def _trend_core(self):
         ticks, pivot = synth.scenario("trend", "EURUSD", seed=3, direction=1, pips_per_minute=6.0)
-        core = RiderCore(RiderConfig(cooldown_seconds=20.0))
+        core = RiderCore(RiderConfig(max_cost_ratio=0.25, cooldown_seconds=20.0))
         core.set_spec("EURUSD", synth.make_spec("EURUSD"))
         got = []
         def on_scan(now, rows):
@@ -171,11 +171,11 @@ class TestEntries:
         assert it.side is Side.BUY and it.stop < it.reference_price
         assert 0.6 * it.atr - 1e-9 <= it.reference_price - it.stop <= min(3.0 * it.atr, 30 * 0.0001) + 1e-9
         assert it.snapshot["categories"] and it.snapshot["families"]["velocity"]["strength"] > 0
-        assert it.family and it.score >= RiderConfig().trigger_score and "momentum" in it.reason
+        assert it.family and it.score >= RiderConfig(max_cost_ratio=0.25).trigger_score and "momentum" in it.reason
 
     def test_one_position_per_market_cooldown_and_fresh_trigger(self):
         ticks, pivot = synth.scenario("trend", "EURUSD", seed=3, direction=1, pips_per_minute=6.0)
-        core = RiderCore(RiderConfig(cooldown_seconds=20.0))
+        core = RiderCore(RiderConfig(max_cost_ratio=0.25, cooldown_seconds=20.0))
         core.set_spec("EURUSD", synth.make_spec("EURUSD"))
         state = {"pos": None, "entries": 0, "closed_at": None, "blocked": 0}
 
@@ -241,7 +241,7 @@ class TestCurrencyStrength:
 
     def test_eur_weakest_usd_strongest_puts_eurusd_short_first(self):
         paths, pivot = synth.currency_paths({"EUR": -2.5, "USD": 2.5}, self.SYMS, seed=5)
-        core = RiderCore(RiderConfig())
+        core = RiderCore(RiderConfig(max_cost_ratio=0.25))
         for s in self.SYMS:
             core.set_spec(s, synth.make_spec(s))
         tops, strong = [], []
@@ -262,7 +262,7 @@ class TestNews:
     def test_news_blocks_before_and_never_chases_the_first_tick(self):
         ticks, pivot = synth.scenario("trend", "EURUSD", seed=3, direction=-1, pips_per_minute=8.0)
         ev = CalendarEvent("nfp", pivot, "USD", "US", "Non-Farm Payrolls", 3, 250.0, 180.0, 150.0)
-        core = RiderCore(RiderConfig())
+        core = RiderCore(RiderConfig(max_cost_ratio=0.25))
         core.set_spec("EURUSD", synth.make_spec("EURUSD"))
         core.set_calendar([ev])
         seen = {}
@@ -335,3 +335,16 @@ class TestConfig:
         assert json.loads(p.read_text()) == {"mode": "LIVE"}
         with pytest.raises(ValueError):
             RiderConfig.save_minimal(p, "MAYBE")
+
+
+def test_the_live_cost_gate_is_15_percent_since_9_october():
+    """Aaron, 9 Oct: wins were being eaten by commission. The live default
+    now asks that costs be at most 15% of the expected move (it was 25%);
+    the research keeps the old gate as a control (RMR-COST-25)."""
+    from mintel.rider.research.variants import by_id
+    assert RiderConfig().max_cost_ratio == 0.15
+    assert by_id("RMR-COST-25").config(RiderConfig()).max_cost_ratio == 0.25
+    patient = by_id("RMR-PATIENT").config(RiderConfig())
+    longer = by_id("RMR-RIDE-LONGER").config(RiderConfig())
+    assert patient.flowlock["no_progress_seconds"] == 300.0 and patient.flowlock["adverse_r"] == 0.9
+    assert longer.flowlock["curve"] == "loose" and longer.flowlock["no_progress_seconds"] == 300.0

@@ -454,11 +454,12 @@ def _play(g: _Gen, scenario: str, warmup: float) -> None:
 
 def generate(scenario: str = "balanced", instrument: str = "6EZ6", seed: int = 7,
              start: Optional[dt.datetime] = None, warmup: float = 120.0, latency_ms: float = 2.0,
-             base_price: Optional[float] = None) -> tuple[list[Event], dict]:
-    """The events for one scenario and the times of its key moments."""
+             base_price: Optional[float] = None, tick: Optional[float] = None) -> tuple[list[Event], dict]:
+    """The events for one scenario and the times of its key moments. ``tick``: the price step (for an
+    instrument whose definition has none - a generic one)."""
     root = root_of(instrument) or "6E"
     c = contract(root)
-    tick = c.tick_size if c is not None else 0.00005
+    tick = tick or (c.tick_size if c is not None and c.tick_size else 0.00005)
     bp = base_price if base_price is not None else BASE_PRICES.get(root, 1.0)
     g = _Gen(instrument, tick, bp, seed, start or DEFAULT_START, latency_ms)
     _play(g, scenario, warmup)

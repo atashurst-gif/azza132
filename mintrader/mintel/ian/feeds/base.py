@@ -56,6 +56,8 @@ class FeedAdapter:
     synthetic = False               # True for generated data: never performance, never LIVE orders
     virtual_time = False            # True when time is the events' own (a replay, a scenario)
     sequence_scope = "instrument"   # "instrument": contiguous per instrument; "channel"/"none": per-instrument gaps are normal
+    quality_overrides: dict = {}    # this feed's own data-quality figures (dataquality.QualityConfig field -> value)
+    source_vendor = ""              # the vendor whose data this is when it is not this adapter's own (a replay)
 
     def connect(self) -> bool:
         return False

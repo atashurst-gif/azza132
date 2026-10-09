@@ -1,4 +1,5 @@
-"""CME futures <-> spot symbols, directions and prices.
+"""CME futures <-> spot symbols, directions and prices - and the generic
+(non-CME) instruments, such as Binance's crypto books traded through a CFD.
 
 CME FX futures are quoted in US DOLLARS PER ONE UNIT OF THE FOREIGN CURRENCY.
 For EUR, GBP, AUD and NZD that is the same way round as the spot pair
@@ -17,6 +18,19 @@ distances in ticks and describing the market; the feature code measures the
 real price grid from the book itself and uses the smaller of the two, so a
 changed exchange tick never silently distorts the features. Check the
 exchange's own contract specifications before relying on them for money.
+
+GENERIC INSTRUMENTS (``rolls=False``): one order book that never rolls, read
+from another venue and traded through a broker symbol that tracks it - the
+crypto set reads Binance's public BTCUSDT / ETHUSDT books and trades the
+broker's BTC/USD and ETH/USD CFDs. The same definition carries them through
+the book, features, regime, score, signal, trail and bridge code:
+
+* the feed symbol is the root (``BTCUSDT``) and the subscription symbol;
+* the broker symbol is looked up in the broker's own list (``BTCUSD``,
+  ``BTCUSD.a`` ...) and an instrument whose CFD is not found is not traded;
+* never inverted, price multiplier 1 (spot price = 1 x the book's price);
+* tick size 0 here: the feed reports the price step it uses;
+* no front month, no roll.
 """
 from __future__ import annotations
 
@@ -38,13 +52,22 @@ class FuturesContract:
     inverted: bool              # True when spot = 1 / futures price (JPY, CAD, CHF)
     contract_size: float        # units of the foreign currency per contract (reference)
     tick_size: float            # minimum price increment (reference; the book's own grid wins if finer)
-    asset: str = "FX"           # FX, INDEX, RATES, METAL
+    asset: str = "FX"           # FX, INDEX, RATES, METAL, CRYPTO
     context_only: bool = False  # watched as cross-market evidence, never traded
     last_trade_days_before_third_wed: int = 2
+    rolls: bool = True          # a dated future with a quarterly front month; False: one book that never rolls
+    venue: str = "CME Globex"   # where the book is read
+    price_multiplier: float = 1.0   # spot price = multiplier x book price (generic instruments; never inverted)
+    trades_24_7: bool = False   # the market (and its broker CFD) trades through the weekend
 
     @property
     def same_direction(self) -> bool:
         return not self.inverted
+
+    @property
+    def generic(self) -> bool:
+        """A non-CME instrument: no roll, never inverted, the feed symbol is the root."""
+        return not self.rolls
 
 
 # The FX futures traded through their spot pair (MODE A).
@@ -66,7 +89,35 @@ CONTEXT: dict[str, FuturesContract] = {
     "GC": FuturesContract("GC", "Gold", "USD", "XAUUSD", False, 100, 0.10, "METAL", True),
 }
 
-ALL: dict[str, FuturesContract] = {**CONTRACTS, **CONTEXT}
+# Generic instruments: Binance's public spot books (a crypto EXCHANGE, not CME), traded through the broker's CFD.
+# The tick size is 0: the feed reports the price step it uses (see mintel/ian/feeds/binance.py).
+CRYPTO: dict[str, FuturesContract] = {
+    "BTCUSDT": FuturesContract("BTCUSDT", "Bitcoin (Binance BTCUSDT)", "BTC", "BTCUSD", False, 1.0, 0.0, "CRYPTO",
+                               rolls=False, venue="Binance", trades_24_7=True),
+    "ETHUSDT": FuturesContract("ETHUSDT", "Ether (Binance ETHUSDT)", "ETH", "ETHUSD", False, 1.0, 0.0, "CRYPTO",
+                               rolls=False, venue="Binance", trades_24_7=True),
+}
+
+ALL: dict[str, FuturesContract] = {**CONTRACTS, **CONTEXT, **CRYPTO}
+
+
+def register_instrument(symbol: str, spot: str, name: str = "", currency: str = "", asset: str = "CRYPTO",
+                        venue: str = "Binance", trades_24_7: bool = True,
+                        price_multiplier: float = 1.0) -> FuturesContract:
+    """Add (or replace) a generic instrument: one book read as ``symbol`` and traded through the broker
+    symbol ``spot``. Never inverted, no roll. A CME root can never be replaced this way."""
+    root = str(symbol or "").strip().upper()
+    if not root or root in CONTRACTS or root in CONTEXT:
+        raise ValueError(f"{symbol!r} cannot be registered as a generic instrument")
+    if float(price_multiplier) <= 0:
+        raise ValueError("the price multiplier must be positive")
+    cur = (currency or root.replace("USDT", "").replace("USDC", "").replace("USD", "") or root).upper()
+    c = FuturesContract(root, name or f"{cur} ({venue} {root})", cur, str(spot or "").strip().upper(), False, 1.0, 0.0,
+                        asset, rolls=False, venue=venue, price_multiplier=float(price_multiplier),
+                        trades_24_7=bool(trades_24_7))
+    CRYPTO[root] = c
+    ALL[root] = c
+    return c
 
 
 # ------------------------------------------------------------------ lookup --
@@ -176,7 +227,7 @@ def futures_to_spot_price(root: str, futures_price: float) -> float:
         if f <= 0:
             raise ValueError("an inverted future needs a positive price")
         return 1.0 / f
-    return f
+    return f * float(c.price_multiplier or 1.0)
 
 
 def spot_to_futures_price(root: str, spot_price: float) -> float:
@@ -186,7 +237,7 @@ def spot_to_futures_price(root: str, spot_price: float) -> float:
         if s <= 0:
             raise ValueError("an inverted pair needs a positive price")
         return 1.0 / s
-    return s
+    return s / float(c.price_multiplier or 1.0)
 
 
 def futures_distance_to_spot(root: str, futures_price: float, futures_distance: float) -> float:
@@ -196,7 +247,7 @@ def futures_distance_to_spot(root: str, futures_price: float, futures_distance: 
     c = _strict(root)
     d = abs(float(futures_distance))
     if not c.inverted:
-        return d
+        return d * float(c.price_multiplier or 1.0)
     f = float(futures_price)
     if f <= 0 or f + d <= 0:
         raise ValueError("an inverted future needs a positive price")
@@ -242,8 +293,19 @@ class FrontMonth:
                 "last_trade": self.last_trade.isoformat(), "roll_date": self.roll_date.isoformat()}
 
 
+def subscription_symbol(root: str, today: dt.date, roll_days: int = 8) -> str:
+    """What the feed is asked for: the front-month contract of a CME future (6EZ6), the root itself for a
+    generic instrument that never rolls (BTCUSDT)."""
+    c = _strict(root)
+    if c.generic:
+        return c.root
+    return front_month(root, today, roll_days).raw_symbol
+
+
 def contract_for(root: str, year: int, month: int) -> FrontMonth:
     c = _strict(root)
+    if c.generic:
+        raise ValueError(f"{root} is not a dated future: it has no contract months")
     last = business_days_before(third_wednesday(year, month), c.last_trade_days_before_third_wed)
     return FrontMonth(c.root, year, month, MONTH_CODES[month], f"{c.root}{MONTH_CODES[month]}{year % 10}",
                       last, last - dt.timedelta(days=8))

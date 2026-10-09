@@ -24,6 +24,18 @@ leaves a depth-limited view (cause "view") is neither.
 Windows: SHORT (5 s), MEDIUM (30 s), LONG (120 s), and a BASELINE of the
 300 s before the medium window - "normal" for this market right now, so
 every intensity, depth and spread figure is relative to its own recent past.
+
+Generic instruments (Binance's crypto books): sizes are in coins, not
+contracts, so every absolute size floor below (the large-print minimum, the
+refresh and footprint minimums, the profile minimum, the "at least one
+contract" guards) is scaled by the instrument's OWN typical trade size - the
+mean size of its recent trades (``relative_sizes``); for a CME future the
+unit is one contract, exactly as before. The book arrives grouped into price
+steps (the feed's analysis grid), so a trade's price is placed on the step of
+the level it hit (an offer's step rounds up, a bid's down) to tell executed
+liquidity from cancelled liquidity (``snap_trades``); VWAP and the session
+volume keep the real trade prices. A market that trades round the clock
+starts its session at 00:00 UTC instead of the CME's 17:00 Chicago.
 """
 from __future__ import annotations
 
@@ -255,17 +267,31 @@ def session_key(ts: dt.datetime) -> str:
     return (ts.astimezone(TZ_CHICAGO) + dt.timedelta(hours=7)).date().isoformat()
 
 
+def utc_session_key(ts: dt.datetime) -> str:
+    """A market that trades round the clock (crypto): the UTC day."""
+    return ts.astimezone(dt.timezone.utc).date().isoformat()
+
+
 class InstrumentFlow:
     """All the order-flow state of one futures instrument."""
 
     def __init__(self, instrument: str, cfg: Optional[FlowConfig] = None, tick_size: Optional[float] = None,
-                 aggressor_reliable: bool = True):
+                 aggressor_reliable: bool = True, relative_sizes: bool = False, snap_trades: bool = False,
+                 size_label: str = "lots", round_the_clock: bool = False, data_class: str = "INSTITUTIONAL"):
         self.instrument = instrument
         self.cfg = cfg or FlowConfig()
         c = contract(root_of(instrument))
         self.ref_tick = float(tick_size or (c.tick_size if c is not None else 0.0) or 0.0)
         self.grid_tick = 0.0
         self.aggressor_reliable = bool(aggressor_reliable)
+        # generic instruments (see the module notes): sizes relative to the instrument's own trades, trade
+        # prices placed on the book's price step, a UTC-day session
+        self.relative_sizes = bool(relative_sizes)
+        self.snap_trades = bool(snap_trades)
+        self.size_label = str(size_label or "lots")
+        self.session_fn = utc_session_key if round_the_clock else session_key
+        self.data_class = str(data_class or "INSTITUTIONAL")
+        self._unit: Optional[float] = None
         self.book = OrderBook(instrument, self.cfg.levels)
         keep = self.cfg.baseline_s + self.cfg.medium_s + self.cfg.long_s + 5
         self.secs: deque[_Sec] = deque(maxlen=keep)
@@ -307,6 +333,28 @@ class InstrumentFlow:
 
     def _tick_index(self, price: float) -> int:
         return int(round(price / self.tick))
+
+    def size_unit(self) -> float:
+        """What "one" means for the absolute size floors: one contract for a CME future; for a generic
+        instrument, the mean size of its recent trades (its own typical order), never a CME number."""
+        if not self.relative_sizes:
+            return 1.0
+        if self._unit is None:
+            if self.sizes:
+                self._unit = max(sum(self.sizes) / len(self.sizes), 1e-12)
+            else:
+                lv = [q for _, q in self.book.levels(BID, 10)] + [q for _, q in self.book.levels(ASK, 10)]
+                self._unit = max((st.median(lv) / 10.0) if lv else 1.0, 1e-12)
+        return self._unit
+
+    def _snap(self, price: float, side: str) -> float:
+        """The book step a trade at ``price`` hit: offers are grouped upward, bids downward. Exact for a
+        price already on the step."""
+        g = self.tick
+        if not self.snap_trades or g <= 1e-9:
+            return price
+        k = round(price / g, 6)
+        return px((math.ceil(k) if side == ASK else math.floor(k)) * g)
 
     def _observe_grid(self) -> None:
         for side in (BID, ASK):
@@ -411,7 +459,7 @@ class InstrumentFlow:
 
     # ------------------------------------------------------------ ingest --
     def _new_session(self, ts: dt.datetime) -> None:
-        key = session_key(ts)
+        key = self.session_fn(ts)
         if key != self.session:
             self.session = key
             self.cum_delta = self.cum_classified = self.cum_unknown = 0.0
@@ -554,6 +602,9 @@ class InstrumentFlow:
             hit = ASK if (ba is not None and price >= ba) else BID if (bb is not None and price <= bb) else ""
         else:
             hit = ASK if aggr == BUY else BID
+        raw_price = price
+        if hit and self.snap_trades:
+            price = self._snap(price, hit)          # the grouped level it executed against
         if hit:
             p = self.pending.get((hit, price))
             if p is None or (ts - p[1]).total_seconds() > self.cfg.exec_match_s:
@@ -576,9 +627,9 @@ class InstrumentFlow:
             self.cum_unknown += size
         self.sizes.append(size)
         self.trades.append((ts, price, size, aggr, ev.sequence, hit))
-        self.pv += price * size
+        self.pv += raw_price * size
         self.v += size
-        k = self._tick_index(price)
+        k = self._tick_index(raw_price)
         self.profile[k] = self.profile.get(k, 0.0) + size
 
     def on_event(self, ev) -> None:
@@ -708,7 +759,9 @@ class InstrumentFlow:
         fs.depth5_ask_ratio = fs.depth5_ask / base["d5a"] if base["d5a"] > 0 else 1.0
 
         # --- executed flow ---
-        touch = max(base["touch"], 1.0)
+        self._unit = None
+        u = self.size_unit()
+        touch = max(base["touch"], u)
         fs.ofi_short = sum(s.ofi for s in short) / touch
         fs.ofi_medium = sum(s.ofi for s in medium) / touch
         fs.buy_vol_short, fs.sell_vol_short = sum(s.buy for s in short), sum(s.sell for s in short)
@@ -721,7 +774,7 @@ class InstrumentFlow:
         fs.unknown_share = unk / (tot_m + unk) if (tot_m + unk) > 0 else 0.0
         rate_s = sum(s.trades for s in short) / cfg.short_s
         fs.intensity = rate_s / max(base["trades"], 0.05)
-        fs.volume_intensity = (sum(s.vol for s in short) / cfg.short_s) / max(base["vol"], 0.05)
+        fs.volume_intensity = (sum(s.vol for s in short) / cfg.short_s) / max(base["vol"], 0.05 * u)
         prev_short = self._window(2 * cfg.short_s)[cfg.short_s:]
         rate_prev = sum(s.trades for s in prev_short) / cfg.short_s if prev_short else rate_s
         fs.acceleration = (rate_s - rate_prev) / max(base["trades"], 0.05)
@@ -730,8 +783,8 @@ class InstrumentFlow:
         cut = now - dt.timedelta(seconds=cfg.medium_s)
         trades_med = [t for t in trades_med if t[0] > cut]
         prints = self._prints(trades_med)
-        med_size = st.median(self.sizes) if self.sizes else 1.0
-        fs.large_threshold = max(cfg.large_print_min, cfg.large_print_mult * med_size)
+        med_size = st.median(self.sizes) if self.sizes else u
+        fs.large_threshold = max(cfg.large_print_min * u, cfg.large_print_mult * med_size)
         large = [p for p in prints if p[2] >= fs.large_threshold and p[3] in (BUY, SELL)]
         fs.large_buy = sum(p[2] for p in large if p[3] == BUY)
         fs.large_sell = sum(p[2] for p in large if p[3] == SELL)
@@ -790,7 +843,7 @@ class InstrumentFlow:
         cfg = self.cfg
         w = self._window(cfg.absorption_s)
         n = sum(s.buy - s.sell for s in w)
-        bvol = max(base["vol"] * cfg.absorption_s, 1.0)
+        bvol = max(base["vol"] * cfg.absorption_s, self.size_unit())
         p = abs(n) / bvol
         fs.absorption_pressure = p
         old = None
@@ -875,8 +928,9 @@ class InstrumentFlow:
         aa = sum(s.add_near_a for s in medium)
         cb = sum(s.can_near_b for s in medium)
         ab = sum(s.add_near_b for s in medium)
-        fs.pull_ask = max(0.0, ca - aa) / max(base["d5a"], 1.0)
-        fs.pull_bid = max(0.0, cb - ab) / max(base["d5b"], 1.0)
+        u = self.size_unit()
+        fs.pull_ask = max(0.0, ca - aa) / max(base["d5a"], u)
+        fs.pull_bid = max(0.0, cb - ab) / max(base["d5b"], u)
         fs.pulling_signal = _clip(fs.pull_ask - fs.pull_bid)
 
     def _walls(self, fs: FlowSnapshot, now: dt.datetime) -> None:
@@ -939,7 +993,7 @@ class InstrumentFlow:
         iceberg as a fact. refresh_signal: + for a refreshing bid (support), - for an offer."""
         cfg = self.cfg
         base = self.baseline() or {"vol": 0.0}
-        floor = max(cfg.refresh_min_volume, cfg.refresh_volume_mult * base["vol"] / 2.0 * cfg.medium_s)
+        floor = max(cfg.refresh_min_volume * self.size_unit(), cfg.refresh_volume_mult * base["vol"] / 2.0 * cfg.medium_s)
         exe: dict[tuple, float] = {}
         for t in trades_med:
             hit = t[5]
@@ -971,7 +1025,7 @@ class InstrumentFlow:
         old = next((s for s in reversed(medium) if s.closed), None)
         d10 = self.book.depth(BID, 10) + self.book.depth(ASK, 10)
         fs.depth_change = (d10 - old.d10) / base["d10"] if old is not None and base["d10"] > 0 else 0.0
-        fs.turnover = (sum(s.turnover for s in short) / n) / max(base["d10"], 1.0)
+        fs.turnover = (sum(s.turnover for s in short) / n) / max(base["d10"], self.size_unit())
         fs.spread_change_ticks = fs.spread_ticks - base["spread"]
 
     def _consumption(self, fs: FlowSnapshot, base: dict, medium: list) -> None:
@@ -983,8 +1037,9 @@ class InstrumentFlow:
         fs.replenish_ask = sum(s.add_near_a for s in medium)
         fs.consume_bid = sum(s.exe_near_b for s in medium)
         fs.replenish_bid = sum(s.add_near_b for s in medium)
-        a = math.tanh((fs.consume_ask - fs.replenish_ask) / max(base["d5a"], 1.0))
-        b = math.tanh((fs.consume_bid - fs.replenish_bid) / max(base["d5b"], 1.0))
+        u = self.size_unit()
+        a = math.tanh((fs.consume_ask - fs.replenish_ask) / max(base["d5a"], u))
+        b = math.tanh((fs.consume_bid - fs.replenish_bid) / max(base["d5b"], u))
         fs.consumption_signal = _clip(a - b)
 
     def _resilience(self, fs: FlowSnapshot, now: dt.datetime) -> None:
@@ -1028,7 +1083,7 @@ class InstrumentFlow:
         fs.cum_delta = self.cum_delta
         if not fs.delta_reliable:
             return
-        bvol = max(base["vol"] * self.cfg.medium_s, 1.0)
+        bvol = max(base["vol"] * self.cfg.medium_s, self.size_unit())
         d_med = sum(s.buy - s.sell for s in medium)
         fs.delta_slope = d_med / bvol
         half = len(medium) // 2
@@ -1057,7 +1112,8 @@ class InstrumentFlow:
         -1 stacked selling, else (buys - sells) / (buys + sells) of the imbalance counts x 0.25."""
         cfg = self.cfg
         base = self.baseline() or {"vol": 0.0}
-        min_vol = max(cfg.footprint_min_volume, cfg.footprint_volume_share * base["vol"] * cfg.medium_s)
+        min_vol = max(cfg.footprint_min_volume * self.size_unit(),
+                      cfg.footprint_volume_share * base["vol"] * cfg.medium_s)
         ask_v: dict[int, float] = {}
         bid_v: dict[int, float] = {}
         for t in trades_med:
@@ -1099,7 +1155,7 @@ class InstrumentFlow:
         accepted (< 30%) = a failed auction back towards value (-0.3 above, +0.3 below)."""
         prof = self.profile
         total = sum(prof.values())
-        if total < self.cfg.profile_min_volume or not prof:
+        if total < self.cfg.profile_min_volume * self.size_unit() or not prof:
             return
         tick = self.tick
         keys = sorted(prof)
@@ -1174,7 +1230,7 @@ class InstrumentFlow:
             L.append(f"ABSORPTION: {who} (score {fs.absorption_score:.2f})")
         if fs.sweep_dir and fs.sweep_age_s is not None and fs.sweep_age_s <= self.cfg.medium_s:
             L.append(f"SWEEP {'UP' if fs.sweep_dir > 0 else 'DOWN'}: {fs.sweep_levels} levels, "
-                     f"{fs.sweep_volume:g} lots, {fs.sweep_age_s:.0f} s ago")
+                     f"{fs.sweep_volume:g} {self.size_label}, {fs.sweep_age_s:.0f} s ago")
         if fs.pull_ask >= 0.8:
             L.append("OFFERS PULLED ahead of price")
         if fs.pull_bid >= 0.8:
@@ -1235,6 +1291,6 @@ class InstrumentFlow:
                 pressure = f"buyers (book {fs.imbalance_avg:+.2f}, aggression {fs.aggr_medium:+.2f})"
             elif score < -0.2:
                 pressure = f"sellers (book {fs.imbalance_avg:+.2f}, aggression {fs.aggr_medium:+.2f})"
-        return {"instrument": self.instrument, "data_class": "INSTITUTIONAL", "tick": tick,
+        return {"instrument": self.instrument, "data_class": self.data_class, "tick": tick,
                 "bid": b.best_bid(), "ask": b.best_ask(), "mid": b.mid(),
                 "imbalance": round(fs.imbalance, 3) if fs is not None else None, "pressure": pressure, "rows": rows}

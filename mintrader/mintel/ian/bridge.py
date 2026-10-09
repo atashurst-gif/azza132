@@ -40,6 +40,24 @@ LATENCY is recorded at every hop: data received, signal, order request, MT5
 receipt (when the adapter reports it), broker acceptance and fill. A hop that
 cannot be measured is reported as not measured, never estimated.
 
+CFDs ON A GENERIC INSTRUMENT (Binance's crypto books traded through the
+broker's BTCUSD / ETHUSD CFDs, ``BridgeConfig.cfd``): a CFD's "pip" is one
+point, so the FX pip limits are replaced by:
+
+* the market is open at the broker: trading enabled for the symbol and a
+  fresh quote (a closed market stops quoting);
+* COSTS: the live spread plus the commission must not eat more than
+  ``max_cost_share`` of the target move (``target_r`` x the stop distance);
+  the spread is otherwise held only against its own typical size;
+* spot confirmation: not moved against the signal by more than
+  ``max_against_frac`` of the stop distance;
+* size: ``risk_money`` at the stop from the CFD's own contract (tick value,
+  volume step, minimum and maximum); the broker's minimum only when it risks
+  no more than ``min_lot_risk_mult`` (1.5) x ``risk_money`` - otherwise the
+  trade is skipped with a note; never more than ``max_lots``;
+* margin: the order is skipped when it would take more than
+  ``max_margin_share`` of the free margin (when the broker can say).
+
 Legal behaviour only: every order is one genuine market order with intent to
 hold the position; nothing is ever placed to be cancelled.
 """
@@ -73,6 +91,18 @@ DUPLICATE = "DUPLICATE"      # this id was already sent once; nothing was sent n
 OUTCOME_UNKNOWN_RETCODES = frozenset({10031, 10012})
 
 
+@dataclass(frozen=True)
+class CfdRules:
+    """Costs and safety for a CFD traded on a generic instrument's signal (see the module notes)."""
+    max_cost_share: float = 0.3          # spread + commission vs the target move
+    target_r: float = 1.0                # the target move = target_r x the stop distance
+    commission_per_lot: float = 0.0      # round turn, account currency, per 1.0 lot (0: the broker's own figure if known)
+    max_against_frac: float = 0.15       # spot confirmation, as a share of the stop distance
+    min_lot_risk_mult: float = 1.5       # the broker's minimum lot only if it risks no more than this x risk_money
+    max_margin_share: float = 0.5        # of the free margin
+    broker_label: str = ""               # "IC Markets": named in the notes
+
+
 @dataclass
 class BridgeConfig:
     max_quote_age_s: float = 5.0
@@ -85,6 +115,7 @@ class BridgeConfig:
     max_risk_money: float = 20.0
     max_lots: float = 0.5
     paper_slippage_points: float = 1.0
+    cfd: dict = field(default_factory=dict)      # root (BTCUSDT) -> CfdRules: that instrument trades a CFD
 
 
 @dataclass
@@ -162,10 +193,17 @@ class Mt5Bridge:
         return getattr(self.executor, "mode", "OFF") if self.executor is not None else "OFF"
 
     # -------------------------------------------------------------- checks --
+    def rules_for(self, sig) -> Optional[CfdRules]:
+        r = (self.cfg.cfd or {}).get(str(getattr(sig, "root", "") or ""))
+        return r if isinstance(r, CfdRules) else None
+
     def check(self, sig, tick: Optional[Tick], spec, now: dt.datetime,
               spot_history: Sequence[Tick] = ()) -> tuple[bool, str]:
         """All the pre-trade checks. No side effects."""
         c = self.cfg
+        rules = self.rules_for(sig)
+        if rules is not None:
+            return self._check_cfd(sig, tick, spec, now, spot_history, rules)
         if self.executor is None:
             return False, "mode is OFF: nothing is ever sent"
         if spec is None:
@@ -214,7 +252,85 @@ class Mt5Bridge:
                                "not chasing it")
         return True, ""
 
-    def size(self, spec, stop_distance: float) -> tuple[float, float, str]:
+    def _check_cfd(self, sig, tick: Optional[Tick], spec, now: dt.datetime, spot_history: Sequence[Tick],
+                   rules: CfdRules) -> tuple[bool, str]:
+        """The checks for a CFD on a generic instrument (see the module notes). No side effects."""
+        c = self.cfg
+        sym = sig.spot_symbol
+        who = f"{rules.broker_label} {sym}".strip()
+        if self.executor is None:
+            return False, "mode is OFF: nothing is ever sent"
+        if spec is None:
+            return False, f"{who}: the broker has no such CFD (no contract specification)"
+        if not spec.is_tradable():
+            missing = spec.missing_fields()
+            return False, (f"{who}: not tradable - " + (f"its contract is incomplete ({', '.join(missing)})" if missing
+                           else "trading is disabled at the broker (the market is closed or the symbol is close-only)"))
+        if self.mode == "LIVE" and self.broker is not None:
+            try:
+                acc = self.broker.account()
+                if not acc.trade_allowed:
+                    return False, "the account does not allow trading right now"
+            except Exception as exc:
+                return False, f"cannot read the account ({exc})"
+        if tick is None or tick.bid <= 0 or tick.ask <= 0 or tick.ask < tick.bid:
+            return False, f"{who}: no valid quote (the market may be closed at the broker)"
+        age = (to_utc(now) - to_utc(tick.time)).total_seconds()
+        if age > c.max_quote_age_s:
+            return False, (f"{who}: the last quote is {age:.1f} s old (over {c.max_quote_age_s:g} s) - the market is "
+                           "closed or not quoting at the broker")
+        spread = float(tick.ask) - float(tick.bid)
+        typical = float(getattr(spec, "typical_spread_points", 0.0) or 0.0) * float(spec.point)
+        if typical > 0 and spread > c.max_spread_typical_mult * typical + 1e-12:
+            return False, f"{who}: spread {spread:.2f} is {spread / typical:.1f}x its typical {typical:.2f}"
+        side = sig.side
+        touch = float(tick.ask if side is Side.BUY else tick.bid)
+        if (touch - sig.intended_stop) * side.sign <= 0:
+            return False, f"{who}: the stop {sig.intended_stop} is not on the losing side of {touch}"
+        try:
+            min_d = spec.min_stop_distance_price(spread)
+        except Exception:
+            min_d = 0.0
+        if abs(touch - sig.intended_stop) < min_d - 1e-12:
+            return False, f"{who}: the stop is inside the broker's minimum distance"
+        # costs: the spread and the commission against the move the trade is aiming for
+        target = rules.target_r * float(sig.stop_distance)
+        if target <= 0:
+            return False, f"{who}: no stop distance to measure the costs against"
+        comm, comm_src = self.commission_price(sym, spec, rules)
+        share = (spread + comm) / target
+        if share > rules.max_cost_share + 1e-12:
+            what = f"spread {spread:.2f}" + (f" + commission {comm:.2f} ({comm_src})" if comm > 0 else "")
+            return False, (f"{who}: costs too high - {what} would eat {share:.0%} of the {target:.2f} target move "
+                           f"({rules.target_r:g} x the stop distance); the most allowed is {rules.max_cost_share:.0%}")
+        hist = [t for t in spot_history if (to_utc(now) - to_utc(t.time)).total_seconds() <= c.confirm_window_s]
+        if hist:
+            moved = (tick.mid - hist[0].mid) * side.sign
+            if moved < -rules.max_against_frac * sig.stop_distance - 1e-12:
+                return False, (f"{who}: the CFD does not confirm - it moved {moved:+.2f} against the signal in the last "
+                               f"{c.confirm_window_s:g} s")
+            if moved > c.max_chase_fraction * sig.stop_distance + 1e-12:
+                return False, f"{who}: the CFD has already run {moved:+.2f} the signal's way; not chasing it"
+        return True, ""
+
+    def commission_price(self, symbol: str, spec, rules: CfdRules) -> tuple[float, str]:
+        """The round-turn commission of one lot as a price distance (what it costs in the same units as the
+        spread), and where the figure came from. The configured figure wins; else the broker's own, when it can
+        say; else none."""
+        money, src = float(rules.commission_per_lot or 0.0), "configured"
+        if money <= 0:
+            fn = getattr(self.broker, "commission_per_side", None)
+            if callable(fn):
+                try:
+                    money, src = 2.0 * abs(float(fn(symbol, 1.0, spec) or 0.0)), "the broker's rate"
+                except Exception:
+                    money = 0.0
+        per_price = float(spec.tick_value) / float(spec.tick_size) if float(spec.tick_size or 0) > 0 else 0.0
+        if money <= 0 or per_price <= 0:
+            return 0.0, ""
+        return money / per_price, src
+
+    def size(self, spec, stop_distance: float, rules: Optional[CfdRules] = None) -> tuple[float, float, str]:
         """(volume, money at the stop, refusal reason)."""
         c = self.cfg
         per_lot = spec.money_per_lot(stop_distance)
@@ -222,12 +338,45 @@ class Mt5Bridge:
             return 0.0, 0.0, "cannot value the stop"
         vol = spec.normalise_volume(min(c.risk_money / per_lot, c.max_lots))
         vmin = float(getattr(spec, "volume_min", 0.01) or 0.01)
+        if rules is not None:
+            # a CFD: risk_money at the stop; the broker's minimum only up to min_lot_risk_mult x risk_money
+            cap = min(c.max_risk_money, rules.min_lot_risk_mult * c.risk_money)
+            if vol < vmin:
+                if vmin > c.max_lots + 1e-12:
+                    return 0.0, 0.0, (f"the broker's smallest {spec.name} size ({vmin:g} lots) is over the most this bot "
+                                      f"trades ({c.max_lots:g} lots): skipped")
+                if per_lot * vmin <= cap + 1e-9:
+                    vol = vmin
+                else:
+                    return 0.0, 0.0, (f"the broker's smallest {spec.name} size ({vmin:g} lots) would risk "
+                                      f"{per_lot * vmin:.2f} at the stop, more than {rules.min_lot_risk_mult:g} x the "
+                                      f"{c.risk_money:g} this bot risks: skipped")
+            return vol, per_lot * vol, ""
         if vol < vmin:
             if per_lot * vmin <= c.max_risk_money:
                 vol = vmin
             else:
                 return 0.0, 0.0, f"the smallest size would risk {per_lot * vmin:.2f}, over {c.max_risk_money:g}"
         return vol, per_lot * vol, ""
+
+    def _margin_block(self, sig, vol: float, tick: Optional[Tick], rules: CfdRules) -> str:
+        """A CFD order that would take more than ``max_margin_share`` of the free margin is skipped (only when the
+        broker can say what it needs and what is free)."""
+        fn = getattr(self.broker, "calc_margin", None)
+        if not callable(fn) or tick is None or self.broker is None:
+            return ""
+        try:
+            price = float(tick.ask if sig.side is Side.BUY else tick.bid)
+            need = fn(sig.spot_symbol, sig.side, float(vol), price)
+            free = float(getattr(self.broker.account(), "margin_free", 0.0) or 0.0)
+        except Exception:
+            return ""
+        if need is None or free <= 0:
+            return ""
+        if float(need) > rules.max_margin_share * free + 1e-9:
+            return (f"{rules.broker_label} {sig.spot_symbol}: {vol:g} lots would need {float(need):.2f} of margin, more "
+                    f"than {rules.max_margin_share:.0%} of the {free:.2f} free: skipped").strip()
+        return ""
 
     # -------------------------------------------------------------- submit --
     def submit(self, sig, tick: Optional[Tick], now: dt.datetime, spot_history: Sequence[Tick] = (),
@@ -240,9 +389,14 @@ class Mt5Bridge:
         ok, why = self.check(sig, tick, spec, now, spot_history)
         if not ok:
             return ExecutionReport(sig.signal_id, REFUSED, False, why, mode=self.mode, latency=lat)
-        vol, risk, why = self.size(spec, sig.stop_distance)
+        rules = self.rules_for(sig)
+        vol, risk, why = self.size(spec, sig.stop_distance, rules)
         if vol <= 0:
             return ExecutionReport(sig.signal_id, REFUSED, False, why, mode=self.mode, latency=lat)
+        if rules is not None:
+            why = self._margin_block(sig, vol, tick, rules)
+            if why:
+                return ExecutionReport(sig.signal_id, REFUSED, False, why, mode=self.mode, latency=lat)
         claimed, row = self.journal.claim(sig.signal_id, sig.spot_symbol, sig.direction, vol, sig.intended_stop,
                                           self.mode, now)
         if not claimed:

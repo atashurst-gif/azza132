@@ -23,7 +23,9 @@ from mintel.rider.research.publish import publish, put_with_retry
 from mintel.rider.research.registry import COLUMNS, Registry
 from mintel.rider.research.report import verdict
 from mintel.rider.research.stats import drawdown, summarise
-from mintel.rider.research.tickstore import (DAY_MS, DayTicks, TickStore, day_start_ms, fetch_ticks, ms_to_dt,
+from mintel.broker.base import TF
+from mintel.rider.research.pipeline import same_settings
+from mintel.rider.research.tickstore import (DAY_MS, DayTicks, TickStore, day_start_ms, fetch_ticks, ms_to_dt, probe,
                                              weekdays_back)
 from mintel.rider.research.variants import VARIANTS, by_id, choose, neighbours
 from mintel.rider.research.walkforward import make_folds, select, walk_forward
@@ -63,12 +65,50 @@ class FakeBroker:
         return [t for t in self.ticks if t.symbol == symbol and start <= t.time <= end]
 
 
-def scripted_day(symbol="EURUSD", hole=None, every_s=20):
+class Loading(FakeBroker):
+    """MetaTrader still loading a past period: the windows starting at
+    ``slow`` answer nothing for the first ``empty_first`` asks. It records
+    the load requests (the symbol selected, its one-minute bars read)."""
+
+    def __init__(self, ticks, slow=(), empty_first=2):
+        super().__init__(ticks)
+        self.slow = set(slow)
+        self.empty_first = empty_first
+        self.asked = {}
+        self.selected, self.bar_asks = [], []
+
+    def ticks_range(self, symbol, start, end):
+        if start in self.slow:
+            self.asked[start] = self.asked.get(start, 0) + 1
+            if self.asked[start] <= self.empty_first:
+                self.calls.append((symbol, start, end))
+                return []
+        return super().ticks_range(symbol, start, end)
+
+    def ensure_selected(self, symbol):
+        self.selected.append(symbol)
+        return True
+
+    def bars(self, symbol, tf, count, end=None):
+        self.bar_asks.append((symbol, tf, count, end))
+        return []
+
+
+class LocalTime(FakeBroker):
+    """MetaTrader reading the times it is given as local time an hour ahead
+    of UTC: every answer is for the hour before the one asked."""
+
+    def ticks_range(self, symbol, start, end):
+        return super().ticks_range(symbol, start - dt.timedelta(hours=1), end - dt.timedelta(hours=1))
+
+
+def scripted_day(symbol="EURUSD", hole=None, every_s=20, day=DAY):
     out = []
-    t = D0
+    d0 = day_start_ms(day)
+    t = d0
     px = 1.08
     rng = random.Random(4)
-    while t < D0 + DAY_MS:
+    while t < d0 + DAY_MS:
         if hole and hole[0] <= t < hole[1]:
             t += every_s * 1000
             continue
@@ -164,6 +204,149 @@ class TestTickStore:
         assert cov.usable_days == [DAY]
         assert not cov.sufficient and "History insufficient" in cov.statement()
         assert cov.to_dict()["sufficient"] is False
+
+    # ---- 9 Oct: 3,456 past hour chunks came back with ONE tick in total, and no error ----
+
+    def test_an_empty_past_hour_is_loaded_and_asked_again_after_short_waits(self, tmp_path):
+        store = TickStore(tmp_path / "ticks")
+        ticks = scripted_day()
+        slow = [ms_to_dt(D0 + 9 * 3_600_000), ms_to_dt(D0 + 13 * 3_600_000)]
+        b = Loading(ticks, slow=slow, empty_first=2)
+        waits = []
+        rep = fetch_ticks(b, store, ["EURUSD"], [DAY], now=ms_to_dt(D0 + 2 * DAY_MS), progress=lambda m: None,
+                          sleep=waits.append)
+        assert rep.days_fetched == 1 and len(store.load("EURUSD", DAY)) == len(ticks)
+        assert rep.empty_retried == 2 and not rep.empty_busy_chunks
+        assert waits == [1.0, 2.0, 1.0, 2.0]                      # short waits, and only for the slow hours
+        assert [c[1] for c in b.calls].count(slow[0]) == 3
+        assert b.selected == ["EURUSD", "EURUSD"]                 # MetaTrader asked to load each slow hour ...
+        assert [(a[1], a[3]) for a in b.bar_asks] == [(TF.M1, s + dt.timedelta(hours=1)) for s in slow]  # ... bars
+
+    def test_a_busy_hour_that_stays_empty_is_never_stored_and_the_next_run_asks_again(self, tmp_path):
+        store = TickStore(tmp_path / "ticks")
+        ticks = scripted_day()
+        nine = ms_to_dt(D0 + 9 * 3_600_000)
+        b = Loading(ticks, slow=[nine], empty_first=99)
+        waits, said = [], []
+        rep = fetch_ticks(b, store, ["EURUSD"], [DAY], now=ms_to_dt(D0 + 2 * DAY_MS), progress=said.append,
+                          sleep=waits.append)
+        assert rep.days_fetched == 0 and not store.complete("EURUSD", DAY)
+        assert waits == [1.0, 2.0, 4.0, 8.0]                      # asked five times over about 15 s
+        assert rep.empty_busy_chunks == [{"symbol": "EURUSD", "day": DAY, "start_utc": nine.isoformat(), "asked": 5,
+                                          "bars_in_hour": 0}]
+        assert any("not stored as final; the next run asks again" in m for m in said)
+        assert not (store.partial_dir("EURUSD", DAY) / "0900.csv.gz").exists()   # the hours that came are kept
+        assert len(list(store.partial_dir("EURUSD", DAY).glob("*.csv.gz"))) == 23
+        b2 = FakeBroker(ticks)                                    # the next run: MetaTrader has it now
+        rep2 = fetch_ticks(b2, store, ["EURUSD"], [DAY], now=ms_to_dt(D0 + 2 * DAY_MS), progress=lambda m: None)
+        assert [c[1] for c in b2.calls] == [nine] and rep2.days_fetched == 1
+        assert len(store.load("EURUSD", DAY)) == len(ticks)
+
+    def test_an_empty_quiet_hour_or_weekend_is_what_the_market_did(self, tmp_path):
+        store = TickStore(tmp_path / "ticks")
+        hole = (D0 + 21 * 3_600_000, D0 + 22 * 3_600_000)         # 21:00-22:00 UTC: outside the busy hours
+        waits = []
+        rep = fetch_ticks(FakeBroker(scripted_day(hole=hole)), store, ["EURUSD"], [DAY, "2026-10-10"],
+                          now=ms_to_dt(D0 + 6 * DAY_MS), progress=lambda m: None, sleep=waits.append)
+        assert rep.days_fetched == 2 and waits == [] and not rep.empty_busy_chunks
+        assert store.complete("EURUSD", "2026-10-10") and len(store.load("EURUSD", "2026-10-10")) == 0   # Saturday
+
+    def test_no_history_at_all_stops_the_fetch_after_three_market_days_and_says_how_to_check(self, tmp_path):
+        store = TickStore(tmp_path / "ticks")
+        b = FakeBroker([])
+        waits, said = [], []
+        days = ["2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09"]
+        rep = fetch_ticks(b, store, ["EURUSD"], days, now=ms_to_dt(D0 + 9 * DAY_MS), progress=said.append,
+                          sleep=waits.append)
+        asked = sorted({c[1].date().isoformat() for c in b.calls})
+        assert asked == days[:3] and rep.stopped_no_history and rep.days_fetched == 0
+        assert "--probe" in rep.notes[-1] and "Nothing empty was stored" in rep.notes[-1]
+        assert sum(waits) == pytest.approx(3 * (15.0 + 18 * 1.0))   # the full wait once a day, then one quick try
+        assert not any(store.complete("EURUSD", d) for d in days)
+
+    def test_a_day_the_old_fetch_stored_as_complete_with_empty_busy_hours_is_fetched_again(self, tmp_path):
+        """Before 9 Oct the fetch took MetaTrader's empty answers as final and
+        stored whole weekdays as complete with about no tick in them. Any
+        later fetch (not only the Mac launcher's one-off wipe) asks again."""
+        store = TickStore(tmp_path / "ticks")
+        ticks = scripted_day()
+        one = [t for t in ticks if t.time == ms_to_dt(D0 + 22 * 3_600_000)]          # one tick, outside busy hours
+        store.write_day("EURUSD", DAY, [D0 + 22 * 3_600_000], [one[0].bid], [one[0].ask], complete=True,
+                        source="broker.ticks_range")                                  # as the old fetch wrote it
+        good = scripted_day(day="2026-10-05")
+        store.write_day("EURUSD", "2026-10-05", [int(t.time.timestamp() * 1000) for t in good],
+                        [t.bid for t in good], [t.ask for t in good], complete=True, source="broker.ticks_range")
+        b = FakeBroker(ticks + good)
+        said = []
+        rep = fetch_ticks(b, store, ["EURUSD"], ["2026-10-05", DAY], now=ms_to_dt(D0 + 2 * DAY_MS),
+                          progress=said.append, sleep=lambda s: None)
+        assert {c[1].date().isoformat() for c in b.calls} == {DAY}     # the good old day is not asked for again
+        assert rep.days_refetched == 1 and rep.days_already_stored == 1 and rep.days_fetched == 1
+        assert any("19 busy hours hold no tick" in m for m in said)
+        assert len(store.load("EURUSD", DAY)) == len(ticks)
+        assert store.entry("EURUSD", DAY)["busy_hours_checked"] is True
+        assert store.entry("EURUSD", "2026-10-05")["busy_hours_empty"] == 0              # worked out once, kept
+        b2 = FakeBroker(ticks + good)
+        rep2 = fetch_ticks(b2, store, ["EURUSD"], ["2026-10-05", DAY], now=ms_to_dt(D0 + 2 * DAY_MS),
+                           progress=lambda m: None)
+        assert b2.calls == [] and rep2.days_already_stored == 2 and rep2.days_refetched == 0
+
+    def test_the_old_day_is_kept_until_the_new_fetch_is_complete_and_an_old_empty_chunk_is_asked_again(self, tmp_path):
+        store = TickStore(tmp_path / "ticks")
+        ticks = scripted_day()
+        store.write_day("EURUSD", DAY, [], [], [], complete=True, source="broker.ticks_range")
+        quiet = [t for t in ticks if not 1 <= t.time.hour < 20]      # MetaTrader still sends no busy hour
+        rep = fetch_ticks(FakeBroker(quiet), store, ["EURUSD"], [DAY], now=ms_to_dt(D0 + 2 * DAY_MS),
+                          progress=lambda m: None, sleep=lambda s: None)
+        assert rep.days_refetched == 1 and rep.days_fetched == 0 and rep.empty_busy_chunks
+        assert store.complete("EURUSD", DAY) and len(store.load("EURUSD", DAY)) == 0    # nothing better yet: kept
+        nine = store.partial_dir("EURUSD", DAY) / "0900.csv.gz"
+        TickStore._write_csv(nine, [], [], [])                       # an empty busy hour an old fetch left half-way
+        rep2 = fetch_ticks(FakeBroker(ticks), store, ["EURUSD"], [DAY], now=ms_to_dt(D0 + 2 * DAY_MS),
+                           progress=lambda m: None)
+        assert rep2.days_fetched == 1 and len(store.load("EURUSD", DAY)) == len(ticks)
+        assert store.busy_hours_empty("EURUSD", DAY) == 0
+
+    def test_an_answer_for_the_wrong_hour_is_measured_and_corrected(self, tmp_path):
+        """The bridge gives MetaTrader times with no time zone; MetaTrader on
+        the Mac can read them as UK local time (BST, an hour ahead of UTC), so
+        the answer for 10:00-11:00 holds 09:00-10:00 - and the ticks outside
+        the hour are dropped. The lag is measured and corrected."""
+        store = TickStore(tmp_path / "ticks")
+        ticks = scripted_day(day="2026-10-05") + scripted_day()
+        b = LocalTime(ticks)
+        said = []
+        rep = fetch_ticks(b, store, ["EURUSD"], [DAY], now=ms_to_dt(D0 + 2 * DAY_MS), progress=said.append,
+                          sleep=lambda s: None)
+        assert rep.days_fetched == 1 and not rep.failed_chunks and rep.time_shift_minutes == 60.0
+        got = store.load("EURUSD", DAY)
+        mine = [t for t in ticks if D0 <= int(t.time.timestamp() * 1000) < D0 + DAY_MS]
+        assert len(got) == len(mine) and got.times[0] == D0 and got.bids[0] == mine[0].bid
+        note = next(m for m in said if "60 minutes earlier than asked" in m)
+        # the code fix is already in mt5_adapter; what is left is a bridge still running the old copy
+        assert "already in mintel/broker/mt5_adapter.py" in note and "restart the bridge" in note
+        assert "No code needs to change" in note and "lasting fix" not in note
+
+    def test_the_probe_says_plainly_whether_past_ticks_can_be_read(self):
+        now = dt.datetime(2026, 10, 7, 12, 30, tzinfo=UTC)
+        both = scripted_day() + scripted_day(day="2026-10-07")
+        res = probe(FakeBroker(both), "EURUSD", now, sleep=lambda s: None)
+        assert res["reachable"] and [w["window"] for w in res["windows"]] == ["recent", "past"]
+        text = "\n".join(res["lines"])
+        assert "EURUSD 2026-10-06 10:00-11:00 UTC - past history" in text
+        assert "MetaTrader returned 181 ticks (first 10:00:00.000, last 11:00:00.000 UTC)" in text
+        assert "kept for the hour: 180 ticks, first 10:00:00.000, last 10:59:40.000 UTC" in text
+        assert res["lines"][-1] == "VERDICT: past ticks ARE reachable."
+        dead = probe(FakeBroker([]), "EURUSD", now, sleep=lambda s: None)
+        assert not dead["reachable"] and dead["lines"][-1].startswith("VERDICT: past ticks are NOT reachable")
+        assert "MetaTrader returned 0 ticks, asked 5 times" in "\n".join(dead["lines"])
+        past = ms_to_dt(D0 + 10 * 3_600_000)
+        loading = probe(Loading(both, slow=[past], empty_first=99), "EURUSD", now, sleep=lambda s: None)
+        assert not loading["reachable"] and "the recent hour works and the past hour does not" in loading["lines"][-1]
+        lagged = probe(LocalTime(both), "EURUSD", now, sleep=lambda s: None)
+        assert lagged["reachable"] and lagged["time_shift_minutes"] == 60.0
+        assert "asked 60 minutes later" in lagged["lines"][-1]
+        assert any("restart the bridge" in line for line in lagged["lines"])        # the probe says the same
 
     def test_load_span_crosses_days_and_weekdays(self, tmp_path):
         store = TickStore(tmp_path / "t")
@@ -392,9 +575,30 @@ class TestVariants:
         assert by_id("RMR-BASE").config(base).to_dict() == base.to_dict()
         assert [v.method_id for v in choose("default")][0] == "RMR-BASE"
         assert [v.method_id for v in choose("RMR-TRIG-65")] == ["RMR-BASE", "RMR-TRIG-65"]
-        assert len(choose("all")) == 8
+        assert len(choose("all")) == 13
         with pytest.raises(ValueError):
             choose("NOPE")
+
+    def test_the_guard_pair_keeps_the_baseline_as_it_is(self):
+        """RMR-GUARDS-ON / RMR-GUARDS-OFF force the 9 Oct guards on and off
+        with everything else as the baseline; RMR-BASE stays "the defaults
+        plus rider.json" (no overrides of its own)."""
+        base = RiderConfig()
+        on, off = by_id("RMR-GUARDS-ON").config(base), by_id("RMR-GUARDS-OFF").config(base)
+        assert on.currency_cluster_guard and on.loss_cooldown_guard
+        assert not off.currency_cluster_guard and not off.loss_cooldown_guard
+        assert by_id("RMR-BASE").overrides == {} and by_id("RMR-BASE").config(base).to_dict() == base.to_dict()
+        rest = lambda c: {k: v for k, v in c.to_dict().items()                          # noqa: E731
+                          if k not in ("currency_cluster_guard", "loss_cooldown_guard")}
+        assert rest(on) == rest(off) == rest(base)
+        assert not by_id("RMR-GUARDS-ON").grid and not by_id("RMR-GUARDS-OFF").grid      # not walk-forward picks
+        ids = [v.method_id for v in choose("default")]
+        assert "RMR-GUARDS-ON" in ids and "RMR-GUARDS-OFF" in ids
+        # with the shipped defaults RMR-GUARDS-ON is RMR-BASE's settings: replayed once
+        assert same_settings(choose("default"), base) == {**{i: i for i in ids}, "RMR-GUARDS-ON": "RMR-BASE"}
+        aaron = RiderConfig.from_dict({"loss_cooldown_guard": False})                   # rider.json switched one off
+        assert same_settings(choose("default"), aaron)["RMR-GUARDS-ON"] == "RMR-GUARDS-ON"
+        assert same_settings(choose("default"), aaron)["RMR-GUARDS-OFF"] == "RMR-GUARDS-OFF"
 
 
 # -------------------------------------------------------------- registry --
@@ -404,7 +608,7 @@ class TestRegistry:
         p = tmp_path / "registry.sqlite"
         reg = Registry(p)
         reg.seed([{"method_id": v.method_id, "description": v.description, "hypothesis": v.hypothesis,
-                   "params": v.params(RiderConfig())} for v in VARIANTS])
+                   "params": v.params(RiderConfig(max_cost_ratio=0.25))} for v in VARIANTS])
         rid = reg.record({"method_id": "RMR-TRIG-55", "data_source": "SYNTHETIC", "markets": "EURUSD,GBPUSD",
                           "period": "2026-10-01 to 2026-10-02 (2 days)", "trades": 42, "win_rate": 0.45,
                           "expectancy": -0.31, "profit_factor": 0.88, "drawdown": 25.5, "mfe_capture": 0.41,

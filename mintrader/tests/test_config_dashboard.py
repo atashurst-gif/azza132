@@ -277,6 +277,41 @@ class TestDashboardPages:
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;" in html
 
+    def test_the_now_line_on_each_card_is_plain_escaped_text(self, journal, workdir):
+        """Every card says what its bot is doing now ("Now: ..."); Trend &
+        Breakout's comes from the trader's own snapshot, the others' from
+        their status files - every word of it escaped."""
+        from mintel.ops.standing import period_view
+        now = dt.datetime(2026, 10, 9, 11, 40, tzinfo=UTC)                  # Friday 12:40 UK
+        snap = self._snapshot(journal)
+        snap["thinking"][0]["symbol"] = "<script>alert(1)</script>"
+        snap["thinking"][0]["blockers"] = ["<img src=x onerror=alert(2)>"]
+        snap["status"]["not_trading_because"] = ["daily cap <b>reached</b>"]
+        snap["open_live"], snap["positions"] = [], []                         # nothing open anywhere
+
+        sd = {"start": "2026-10-05T11:30:42+00:00", "made": 0.0, "currency": "GBP", "open_tickets": [],
+              "bots": [{"id": "market_intelligence", "label": "Trend & Breakout", "magic": 990_311, "mode": "LIVE",
+                        "made": 0.0},
+                       {"id": "momentum_runner", "label": "Momentum Runner", "magic": 990_511, "mode": "LIVE",
+                        "made": 0.0}]}
+        (workdir / "runner-status.json").write_text(json.dumps({
+            "status": "WATCHING", "updated": now.isoformat(), "skip_tactics": ["<i>MOMENTUM_CONTINUATION</i>"],
+            "open": []}))
+        snap["standing"] = sd
+        headline = {"sel": period_view(sd, [], "today", now=now), "tot": period_view(sd, [], "total", now=now),
+                    "data_dir": str(workdir), "now": now}
+        page = render_status(snap, "overall", headline)
+        assert "<script>alert(1)</script>" not in page and "<img src=x" not in page and "<b>reached</b>" not in page
+        assert "<i>momentum" not in page
+        assert ('<div class="now"><b>Now:</b> looking at &lt;script&gt;alert(1)&lt;/script&gt; short 93 (exceptional) - '
+                'waiting: &lt;img src=x onerror=alert(2)&gt;; held back: daily cap &lt;b&gt;reached&lt;/b&gt;; '
+                'no real trade since Mon 05 Oct</div>') in page
+        assert ("Now:</b> waiting for Trend &amp; Breakout&#x27;s next index entry (it skips &lt;i&gt;momentum "
+                "continuation&lt;/i&gt;); no real trade since Mon 05 Oct") in page
+        # nothing has traded since the start and nothing is open, in market hours: the top says why, escaped too
+        assert ('<div class="quiet"><div class="qh">No live trade since the account started (Mon 05 Oct) - here is '
+                'why:</div><div><b>Trend &amp; Breakout</b>: looking at &lt;script&gt;') in page
+
 
 class TestDashboardServer:
     def test_server_serves_all_three_pages(self, journal):

@@ -140,10 +140,13 @@ class TestThreeProcessPipeline:
         url = f"http://127.0.0.1:{deployment['dash_port']}/api"
         assert wait_for(lambda: http_json(url) is not None, 120), \
             f"the dashboard never answered; see {deployment['logs']}"
+        # the dashboard answers "STARTING" until the trader's first pass reaches it: wait for the trader's own word
+        wait_for(lambda: (http_json(url) or {}).get("status", {}).get("bot")
+                 not in (None, "STARTING", "WAITING FOR METATRADER"), 120)
 
         snap = http_json(url)
         status = snap["status"]
-        assert status["bot"] in ("RUNNING", "SAFE MODE")
+        assert status["bot"] in ("RUNNING", "SAFE MODE"), f"{status}; see {deployment['logs']}"
         assert status["mt5_connected"] is True, (
             "the trader must see the broker through the bridge")
         assert status["mode"] == "DEMO"

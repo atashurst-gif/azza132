@@ -534,7 +534,8 @@ class DayReplay:
             "categories": snap.get("categories", {}),
         })
         if core_held:
-            self.core.position_closed(pos, ms_to_dt(t_ms))
+            # the trade's money after every cost feeds the loss guards, exactly as the live engine's _finalise
+            self.core.position_closed(pos, ms_to_dt(t_ms), m["net_money"])
             self.open.pop(pos.symbol, None)
 
     def _end_of_data(self, newest: Optional[int]) -> None:

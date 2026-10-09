@@ -161,6 +161,7 @@ def wave_path(seed=3, waves=((1, 8.0, 180),), drop=(-30.0, 30), gap_quiet=90.0):
 def make(tmp_path, ticks_by, start, mode="LIVE", broker_cls=None, **kw):
     clock = Clock(start)
     broker = (broker_cls or FakeBroker)(ticks_by, clock)
+    kw.setdefault("max_cost_ratio", 0.25)       # the gate as it was: these tests are about the mechanics
     cfg = RiderConfig(mode=mode, **kw)
     eng = RiderEngine(cfg, broker, tmp_path, clock=clock, heartbeat=False)
     return eng, broker, clock
@@ -284,7 +285,7 @@ def test_restart_restores_the_position_and_manages_it(tmp_path):
     run(eng, broker, clock, last_time(tb), hook=lambda now, n: False if eng.positions else None)
     assert eng.positions
     ticket = next(iter(eng.positions))
-    eng2 = RiderEngine(RiderConfig(mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
     assert ticket in eng2.positions and eng2.positions[ticket].flow.stop == pytest.approx(broker.positions_[ticket].sl)
     sent_before = len(broker.sent)
     before = len([m for m in broker.modified if m[0] == ticket])
@@ -305,7 +306,7 @@ def test_an_orphan_with_our_magic_is_closed_and_other_bots_are_untouched(tmp_pat
     t0 = broker.tick("EURUSD")
     broker.positions_[777] = Position(777, "EURUSD", Side.BUY, 0.14, t0.ask, t0.ask - 0.0010, 0.0, start, magic=MAGIC)
     broker.positions_[778] = Position(778, "EURUSD", Side.BUY, 0.50, t0.ask, t0.ask - 0.0010, 0.0, start, magic=990711)
-    eng = RiderEngine(RiderConfig(mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
     assert 777 not in eng.positions                          # never adopted
     eng.step()
     assert 777 not in broker.positions_ and 777 in broker.deals
@@ -432,7 +433,7 @@ def test_ticks_sharing_a_millisecond_reach_the_core_once_as_in_the_replay(tmp_pa
             clock.now += dt.timedelta(seconds=1)
 
     def replayed(ts):
-        ref = RiderCore(RiderConfig())
+        ref = RiderCore(RiderConfig(max_cost_ratio=0.25))
         ref.set_spec("EURUSD", synth.make_spec("EURUSD"))
         return sum(ref.on_tick("EURUSD", x) for x in ts)
     passes(6)
@@ -469,7 +470,7 @@ def test_a_tick_history_behind_the_latest_price_still_feeds_every_tick_once_in_o
     ticks, pivot = wave_path()
     clock = Clock(pivot - dt.timedelta(seconds=300))
     broker = LaggingHistory({"EURUSD": ticks}, clock)
-    eng = RiderEngine(RiderConfig(mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
     fed = []
     orig = eng.core.on_tick
 
@@ -504,6 +505,31 @@ def test_a_tick_history_that_stays_empty_falls_back_to_the_latest_price(tmp_path
     wait = int(TICK_HISTORY_WAIT_SECONDS)
     assert seen[wait] == 1                                    # held back while the history may still catch up
     assert seen[-1] >= 30 - wait - 3                          # then the latest price, every pass
+
+
+def test_the_status_says_whether_the_tick_history_is_really_delivering(tmp_path):
+    """"tick_feed" is only the setting. "tick_history" says where the prices
+    came from. On 9 Oct MetaTrader under Wine answered every history request
+    with the hour before the one asked, so the live Rider ran on one latest
+    price a pass while its status still said "every tick"."""
+    ticks, pivot = wave_path()
+    eng, broker, clock = make(tmp_path / "ok", {"EURUSD": ticks}, pivot - dt.timedelta(seconds=300), mode="PAPER")
+    hour_early, b2, clock2 = make(tmp_path / "early", {"EURUSD": ticks}, pivot - dt.timedelta(seconds=300),
+                                  mode="PAPER")
+    hour = dt.timedelta(hours=1)
+    b2.ticks_range = lambda s, start, end: [t for t in b2.ticks_by[s] if start - hour <= t.time <= end - hour]
+    for _ in range(30):
+        eng.step()
+        hour_early.step()
+        clock.now += dt.timedelta(seconds=1)
+        clock2.now += dt.timedelta(seconds=1)
+    good = eng.status(clock.now)["tick_history"]
+    assert good["from_history"] > 30 and good["verdict"].startswith("working")
+    bad = hour_early.status(clock2.now)
+    assert bad["tick_feed"] == "every tick"                                   # the setting, as before
+    th = bad["tick_history"]
+    assert th["from_history"] == 0 and th["latest_fed_instead"] >= 20
+    assert th["verdict"].startswith("NOT delivering") and "one a pass" in th["verdict"]
 
 
 def test_a_paper_stop_reached_by_the_latest_price_before_the_history_has_it(tmp_path):
@@ -691,7 +717,7 @@ def test_the_stop_move_gate_needs_a_real_step_and_a_pause_and_a_refusal_waits_to
     net breakeven skips the pause. The pacing survives a restart."""
     from mintel.rider.core import RiderCore, RiderPosition
     from mintel.rider.flowlock_x import FlowState
-    cfg = RiderConfig()
+    cfg = RiderConfig(max_cost_ratio=0.25)
     assert (cfg.stop_min_step_pips, cfg.stop_min_step_spreads, cfg.stop_min_modify_seconds) == (0.3, 1.0, 5.0)
     core = RiderCore(cfg)
     core.set_spec("EURUSD", synth.make_spec("EURUSD"))
@@ -789,7 +815,7 @@ def test_the_live_engine_and_the_replay_ask_the_same_core_gate(tmp_path, monkeyp
                      0.0005, 0.00002, 0.00008, 0.002, 0.1, 0.6, 2.0, 5.2)
 
     def replay():
-        return DayReplay(RiderConfig(), data, CostModel(slippage_pips=0.2, latency_ms=250), "T").run_fixed(
+        return DayReplay(RiderConfig(max_cost_ratio=0.25), data, CostModel(slippage_pips=0.2, latency_ms=250), "T").run_fixed(
             [it], ZRecord(["EURUSD"]))
     assert replay().counters.get("stop_moves", 0) > 0                     # the rising path does move the stop
     asked = []
@@ -839,7 +865,7 @@ def test_a_missing_broker_stop_is_sent_again_after_a_restart(tmp_path):
     recorded = eng.positions[ticket].flow.stop
     side = eng.positions[ticket].side
     broker.positions_[ticket].sl = 0.0                       # removed by hand, not attached, or reported as 0
-    eng2 = RiderEngine(RiderConfig(mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
     assert eng2.positions[ticket].flow.stop == pytest.approx(recorded)     # kept: never "adopted" as 0
     drive_through(broker, clock, side, recorded)
     n_mod = len(broker.modified)
@@ -860,7 +886,7 @@ def test_no_broker_stop_and_the_price_already_through_it_is_closed_at_once(tmp_p
     broker.positions_[ticket].sl = 0.0
     drive_through(broker, clock, side, recorded)
     clock.now += dt.timedelta(seconds=5)                     # the bot was down while the price ran through
-    eng2 = RiderEngine(RiderConfig(mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
     n_mod = len(broker.modified)
     broker.advance()
     eng2.step()
@@ -894,7 +920,7 @@ def test_a_restart_adopts_only_a_tighter_broker_stop(tmp_path, tighter):
     shift = min(1.0 * 0.0001, room / 2) if tighter else -3.0 * 0.0001
     broker_sl = round(recorded + d * shift, 5)
     broker.positions_[ticket].sl = broker_sl
-    eng2 = RiderEngine(RiderConfig(mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
     want = broker_sl if tighter else recorded
     assert eng2.positions[ticket].flow.stop == pytest.approx(want)         # never a looser one
     broker.advance()
@@ -965,7 +991,7 @@ def test_a_live_row_gone_with_no_deal_found_in_paper_is_estimated_and_later_corr
     gone = [tick_at(side, stop, pips_through, clock.now + dt.timedelta(seconds=i)) for i in range(1, 200)]
     broker.ticks_by["EURUSD"] = keep + gone
     clock.now += dt.timedelta(seconds=2)
-    eng2 = RiderEngine(RiderConfig(mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
     first = clock.now
     eng2.step()
     while eng2.journal.trade(ticket)["closed_utc"] is None and clock.now < first + dt.timedelta(seconds=90):
@@ -1078,7 +1104,7 @@ def test_a_leftover_closed_before_its_deal_is_readable_is_booked_at_the_close_pr
     p = broker.positions_[ticket]
     clock.now += dt.timedelta(seconds=20)                     # the price has moved on since the entry
     broker.closed_deal = lambda t: None                       # the closing deal is not readable yet
-    eng2 = RiderEngine(RiderConfig(mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
     eng2.step()
     assert ticket not in broker.positions_
     fill = broker.deals[ticket]["exit_price"]                 # the price the broker closed it at
@@ -1281,7 +1307,7 @@ def test_one_empty_answer_from_the_broker_never_books_a_leftover_as_gone(tmp_pat
     eng, broker, clock, ticket = open_live(tmp_path)
     go_blind(broker, 1)
     clock.now += dt.timedelta(seconds=2)
-    eng2 = RiderEngine(RiderConfig(mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng2 = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
     eng2.step()
     assert ticket in broker.positions_ and eng2.journal.trade(ticket)["closed_utc"] is None
     assert eng2.leftovers_outstanding()
@@ -1365,7 +1391,7 @@ def test_a_refused_orphan_or_leftover_close_is_tried_once_a_minute_not_on_every_
     broker = FakeBroker({"EURUSD": ticks}, clock)
     stray(broker, clock)
     broker.fail_close = True
-    eng = RiderEngine(RiderConfig(mode=mode), broker, tmp_path, clock=clock, heartbeat=False)
+    eng = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode=mode), broker, tmp_path, clock=clock, heartbeat=False)
     run(eng, broker, clock, start + dt.timedelta(seconds=119))
     assert len([c for c in broker.closed_calls if c[0] == 777]) == 2
     assert len(eng.journal.events("ORPHAN_REFUSED")) == 2
@@ -1386,7 +1412,7 @@ def test_a_refused_leftover_close_is_not_retried_while_the_fx_market_is_closed(t
     broker = FakeBroker({"EURUSD": ticks}, clock)
     stray(broker, clock)
     broker.fail_close = True
-    eng = RiderEngine(RiderConfig(mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="PAPER"), broker, tmp_path, clock=clock, heartbeat=False)
     run(eng, broker, clock, sat + dt.timedelta(seconds=300))
     assert len([c for c in broker.closed_calls if c[0] == 777]) == 1
     clock.now = dt.datetime(2026, 10, 12, 8, 0, tzinfo=UTC)          # Monday morning
@@ -1451,7 +1477,7 @@ def test_an_orphan_close_whose_row_could_not_be_written_is_recorded_next_minute(
     clock = Clock(start)
     broker = FakeBroker({"EURUSD": ticks}, clock)
     stray(broker, clock)
-    eng = RiderEngine(RiderConfig(mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
+    eng = RiderEngine(RiderConfig(max_cost_ratio=0.25, mode="LIVE"), broker, tmp_path, clock=clock, heartbeat=False)
     lock = _lock_inserts(eng.journal)
     eng.step()
     assert 777 not in broker.positions_ and eng.journal.trade(777) is None

@@ -21,6 +21,12 @@ mintel/ops/standing.py). Under the period buttons a row of bot buttons
 (``?bot=<id>``) shows one bot alone: its card, its trades closed in the
 period, its open trades and its own live view, reusing the renderers of
 the folded "Each bot in detail" section.
+
+Every bot card ends with one plain "Now: ..." line - what that bot is doing
+right now and its last trade, from its own status file and records - and
+the All bots view opens with a short "No live trade since HH:MM UK - here
+is why:" banner when no LIVE bot has traded for 30 minutes in market hours
+(``bot_now_lines``, ``render_quiet_banner``).
 """
 from __future__ import annotations
 
@@ -33,7 +39,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Optional
 
-from ..clock import TZ_LONDON, to_utc, utcnow
+from ..clock import TZ_LONDON, fx_market_open, to_utc, utcnow
 from .standing import UK_DAYS_NOTE, uk_date, uk_day_start
 
 log = logging.getLogger("mintel.dashboard")
@@ -293,6 +299,11 @@ details.more>summary{font-size:13px;font-weight:600;padding:6px 0}
 .trades tr.practice td{color:#9ca3af}
 .trades td.money{font-weight:700;color:#1b1c1e;white-space:nowrap}
 .trades tr.practice td.money{color:#9ca3af;font-weight:500}
+.hc .now{font-size:12px;color:#1b1c1e;margin-top:6px;border-top:1px solid #eef0f3;padding-top:5px}
+.quiet{background:#fef4e6;border:1px solid #f5d9a8;border-radius:8px;padding:8px 12px;margin-bottom:8px;
+color:#78350f;font-size:12px}
+.quiet .qh{font-weight:700;font-size:13px;margin-bottom:3px}
+.quiet div{margin-top:2px}
 @media (max-width:1150px){.grid{grid-template-columns:1fr 1fr}}
 @media (max-width:720px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}
 .st.big{grid-column:span 2}.dates{margin-left:0}}
@@ -847,10 +858,11 @@ def _open_of(open_live, magic, label) -> tuple[float, int]:
 
 
 def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dict, cur: str,
-              alone: bool = False) -> str:
+              alone: bool = False, now_line: str = "") -> str:
     """One bot's card: its mode, the chosen period and Overall (MetaTrader's
     figures, after commission), its trades, what it has open, and - in grey,
-    never added - its practice. ``alone``: the card at the top of its own view."""
+    never added - its practice. ``alone``: the card at the top of its own view.
+    ``now_line``: what it is doing now (``bot_now_lines``), shown as "Now: ..."."""
     e = html.escape
     bid, label, mode = b.get("id"), str(b.get("label")), str(b.get("mode") or "")
     live = mode == "LIVE"
@@ -864,15 +876,28 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
 
     def fig(lbl, v):
         return f'<div><div class="fk">{e(lbl)}</div><div class="fv {_cls(v)}">{m(v)}</div></div>'
-    figs = (fig(sel_label, vs.get("made")) if show_sel else "") + fig("Overall", vt.get("made"))
+    ps, pt = p_sel.get(bid), p_tot.get(bid)
     bits = []
-    v = vs if show_sel else vt
-    n, when = v.get("trades"), (sel_label.lower() if show_sel else "overall")
-    if n is None:
-        bits.append("trades not known just now")
+    if live:
+        figs = (fig(sel_label, vs.get("made")) if show_sel else "") + fig("Overall", vt.get("made"))
+        v = vs if show_sel else vt
+        n, when = v.get("trades"), (sel_label.lower() if show_sel else "overall")
+        if n is None:
+            bits.append("trades not known just now")
+        else:
+            won = f' ({v.get("wins")} won, {v.get("losses")} lost)' if n and v.get("wins") is not None else ""
+            bits.append(f'{n} trade{"" if n == 1 else "s"} {e(when)}{won}')
     else:
-        won = f' ({v.get("wins")} won, {v.get("losses")} lost)' if n and v.get("wins") is not None else ""
-        bits.append(f'{n} trade{"" if n == 1 else "s"} {e(when)}{won}')
+        # Aaron, 9 Oct: "overall showing the exact same constantly" - a PAPER bot's real money is frozen
+        # at what it made while LIVE, so its card leads with what it is doing now: its practice
+        # (simulated orders on real prices), labelled as such and never added to the account.
+        figs = ((fig(f"{sel_label} (practice)", ps) if show_sel else "")
+                + fig("Overall (practice)", pt))
+        v = vs if show_sel else vt
+        n, when = v.get("trades"), (sel_label.lower() if show_sel else "overall")
+        if n:                                           # real trades from its LIVE days in this period
+            won = f' ({v.get("wins")} won, {v.get("losses")} lost)' if v.get("wins") is not None else ""
+            bits.append(f'{n} trade{"" if n == 1 else "s"} {e(when)}{won} (real, from its LIVE days)')
     money, n_open = _open_of(snap.get("open_live"), b.get("magic"), label)
     if snap.get("open_live") is None and alone:
         bits.append("open trades not readable just now")
@@ -889,14 +914,499 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
     if bid == "momentum_runner":
         bits.append("rides Trend &amp; Breakout's index entries")
     practice = ""
-    ps, pt = p_sel.get(bid), p_tot.get(bid)
-    if not live or (show_sel and ps is not None and abs(float(ps)) >= 0.005):
+    if not live:
+        real_sel = vs.get("made") if show_sel else None
+        practice = ('<div class="pr">Practice only, not real money. Real money from its LIVE days (in the account): '
+                    + (f'{e(sel_label.lower())} {m(real_sel)} &middot; '
+                       if real_sel is not None and abs(float(real_sel)) >= 0.005 else "")
+                    + f'overall {m(vt.get("made"))}</div>')
+    elif show_sel and ps is not None and abs(float(ps)) >= 0.005:
         practice = (f'<div class="pr">Practice only, not real money: '
-                    + (f'{e(sel_label.lower())} {m(ps)} &middot; ' if show_sel and ps is not None else "")
-                    + f'overall {m(pt)}</div>')
+                    + f'{e(sel_label.lower())} {m(ps)} &middot; overall {m(pt)}</div>')
     pill = f'<span class="pill {"ok" if live else ""}">{e(mode)}</span>'
+    now_html = f'<div class="now"><b>Now:</b> {e(str(now_line))}</div>' if now_line else ""
     return (f'<div class="hc{"" if live else " paper"}"><div class="nm">{e(label)} {pill}</div>'
-            f'<div class="figs">{figs}</div><div class="ft">{" &middot; ".join(bits)}</div>{practice}</div>')
+            f'<div class="figs">{figs}</div><div class="ft">{" &middot; ".join(bits)}</div>{practice}{now_html}</div>')
+
+
+# --------------------------------------------- "Now:" - what each bot is doing --
+# Aaron, 9 Oct 12:40 UK: "looks like we've stopped trading, don't even know
+# what's going on". Every card says in one plain line what its bot is doing
+# right now and its last trade, from the bot's own status file and records
+# (read-only); the top of the page says why when no LIVE bot has traded for
+# a while in market hours. Display only: nothing here takes part in a decision.
+QUIET_MINUTES = 30                     # no LIVE trade this long in market hours: the page says why
+NOW_STATUS_FILES = {"momentum_runner": "runner-status.json", "band_breaker": "bandbreaker-status.json",
+                    "crowd_fader": "crowd-status.json", "financial_ian": "ian-status.json"}
+_FRACTIONS = ((0.5, "half"), (1 / 3, "a third"), (0.25, "a quarter"), (0.2, "a fifth"), (0.1, "a tenth"))
+# The Rapid Momentum Rider's scanner reasons (mintel/rider/score.py reason_for), grouped as the line says them
+_RIDER_GROUPS = (("costs would eat the move", "moving but costs would eat the move"),
+                 ("but too choppy", "moving but too choppy"),
+                 ("Choppy and going nowhere", "choppy and going nowhere"),
+                 ("Quiet", "quiet"),
+                 ("Spread too wide", "held back by a wide spread"),
+                 ("Hardly any price updates", "too thin (hardly any price updates)"),
+                 ("Warming up", "still warming up"),
+                 ("No clear direction", "without a clear direction"))
+_RIDER_COST_GROUP = _RIDER_GROUPS[0][1]
+# A scanner row the Rider's 9 Oct guards hold back (loss brake, loss cooldown or pause, a currency resting after a
+# loss, the currency cluster): its build sets "held_back" and puts "Held back: <words>. " in front of the reason
+# (mintel/rider/core.py scan). Such a row is never "moving with nothing in the way".
+_RIDER_HELD_LEAD = "Held back: "
+_RIDER_HELD_GROUP = "held back by its loss or currency guards"
+
+
+def _rider_held(r: dict) -> tuple[str, str]:
+    """(what holds this scanner row back in the guard's own words, or '';
+    the row's reason without the "Held back: ..." its build puts in front)."""
+    reason = str(r.get("reason") or "")
+    held = r.get("held_back")
+    held = held.strip() if isinstance(held, str) else ""
+    if held:
+        lead = f"{_RIDER_HELD_LEAD}{held}. "
+        return held, (reason[len(lead):] if reason.startswith(lead) else reason)
+    if reason.startswith(_RIDER_HELD_LEAD):                # the words in the reason alone
+        held, _sep, rest = reason[len(_RIDER_HELD_LEAD):].partition(". ")
+        return held.strip().rstrip("."), rest
+    return "", reason
+
+
+def _uk_at(t, now) -> str:
+    """'11:50 UK' on today's UK day, else 'Thu 08 Oct 23:36 UK'; '' when it is not a time."""
+    w = _when(t)
+    if w is None:
+        return ""
+    fmt = "%H:%M UK" if uk_date(w) == uk_date(to_utc(now)) else "%a %d %b %H:%M UK"
+    return w.astimezone(TZ_LONDON).strftime(fmt)
+
+
+def _fraction(x) -> str:
+    """0.25 -> 'a quarter'; any other share as a percentage."""
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return ""
+    for v, word in _FRACTIONS:
+        if abs(f - v) < 1e-6:
+            return word
+    return f"{f:.0%}"
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def _not_reporting(st: Optional[dict], why: str, now: dt.datetime) -> str:
+    """'' while the status file is fresh; else, plainly, that the bot is not reporting."""
+    if st is None:                                        # _read_status_file says "it could not be read (...)"
+        return ("not reporting - no status file from it yet" if why == "missing"
+                else f"not reporting - its status file {why[3:] if why.startswith('it ') else why}")
+    stamp = st.get("updated_utc") or st.get("updated")
+    age = _age_of(stamp, now)
+    if age is None or _uk_at(stamp, now) == "":
+        return "not reporting - its status file carries no time"
+    if age > BOT_STALE_SECONDS:
+        return f"not reporting since {_uk_at(stamp, now)}"
+    return ""
+
+
+def _last_practice(data: Path, bot: str) -> Optional[dict]:
+    """The bot's last PAPER trade from its own records - Trend & Breakout's
+    from its paper record - as {closed, symbol, net}; None when it has none."""
+    from .attribution import _rows_ro, is_test_data, row_mode
+    if bot == "market_intelligence":
+        from .standing import TnbPaperRecord
+        record = TnbPaperRecord(data)
+        done = [] if record.error else record.positions()
+        if not done:
+            return None
+        p = done[-1]
+        return {"closed": _when(p.get("closed")), "symbol": p.get("symbol"), "net": p.get("net")}
+    path = _own_db(data, bot)
+    if path is None or not path.exists():
+        return None
+    money_col = OWN_RECORDS[bot][1]
+    for r in _rows_ro(path, "SELECT * FROM trades WHERE closed_utc IS NOT NULL ORDER BY closed_utc DESC LIMIT 200", ()):
+        if row_mode(r) == "LIVE":
+            continue                                    # real money is MetaTrader's (the caller's ``closed``)
+        if bot == "momentum_rider" and str(r.get("exit_reason") or "").startswith("SWITCHED"):
+            continue                                    # closed in its records at a switch: never a trade
+        if bot == "financial_ian" and is_test_data(r):
+            continue                                    # a synthetic or replayed feed: a test, not a result
+        return {"closed": _when(r.get("closed_utc")), "net": r.get(money_col),
+                "symbol": str(r.get("symbol") or r.get("spot_symbol") or r.get("instrument") or "")}
+    return None
+
+
+def _trade_txt(kind: str, t: dict, now: dt.datetime, cur: str) -> str:
+    when = _uk_at(t.get("closed"), now) or "at a time not on record"
+    money = "-" if t.get("net") is None else _money_txt(t.get("net"), cur)
+    return f"last {kind}trade {when} {t.get('symbol') or '-'} {money}"
+
+
+def _last_trade_txt(data: Optional[Path], bot: str, magic: int, mode: str, closed: Optional[list],
+                    now: dt.datetime, cur: str, began: str) -> str:
+    """Its last trade: time (UK), market and result. Real trades are
+    MetaTrader's closed positions for its magic (``closed``; None when they
+    could not be read), each in full after commission; practice is its own
+    PAPER record. A LIVE bot leads with its real trades, a PAPER bot with
+    its practice (a real one left from LIVE when that is the newer)."""
+    real = None
+    if closed is not None:
+        mine = [p for p in closed if p.get("bot_magic") == magic and _when(p.get("closed")) is not None]
+        if mine:
+            p = max(mine, key=lambda x: _when(x["closed"]))
+            real = {"closed": _when(p["closed"]), "symbol": p.get("symbol"), "net": p.get("net")}
+    practice = None
+    if data is not None:
+        try:
+            practice = _last_practice(data, bot)
+        except Exception as exc:                         # never a reason to fail the page
+            log.debug("last practice trade of %s: %s", bot, exc)
+    if mode == "LIVE":
+        if real is not None:
+            return _trade_txt("", real, now, cur)
+        out = ("last real trade not known yet (MetaTrader's records not read)" if closed is None
+               else (f"no real trade since {began}" if began else "no real trade on record"))
+        return out + (f"; {_trade_txt('practice ', practice, now, cur)}" if practice else "")
+    epoch = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+    if real is not None and (practice is None or real["closed"] >= (practice.get("closed") or epoch)):
+        return _trade_txt("real ", real, now, cur)
+    if practice is not None:
+        return _trade_txt("practice ", practice, now, cur)
+    return "no practice trade on record"
+
+
+def _rider_now(data: Path, now: dt.datetime) -> str:
+    """The Rider: entries paused or not, what it is riding, what the scanner
+    sees (how many markets, the biggest group of reasons, the best score and
+    what it still needs - a market its loss or currency guards hold back
+    says so, never "nothing in the way") and, from its why_no_trade block
+    when its build writes one, the last hour; older builds: the scanner
+    rows alone."""
+    _mode_set, status_name, _db = _rider_files(data)
+    st, why = _read_status_file(data / status_name)
+    gone = _not_reporting(st, why, now)
+    if gone:
+        return gone
+    try:
+        from ..rider.config import RiderConfig
+        rcfg = RiderConfig.load(data / "rider.json")    # read-only: what the Rider reads at its start
+    except Exception:
+        rcfg = None
+    w = st.get("why_no_trade")
+    w = w if isinstance(w, dict) and not w.get("unavailable") else None
+    trigger = (w or {}).get("trigger_score")
+    if not isinstance(trigger, (int, float)) or isinstance(trigger, bool):
+        trigger = getattr(rcfg, "trigger_score", None)
+    bits = []
+    h = st.get("health") if isinstance(st.get("health"), dict) else {}
+    if h.get("entries_allowed") is False:
+        bits.append(str(h.get("summary") or "new entries paused"))
+    opens = [o for o in (st.get("open_positions") or []) if isinstance(o, dict)]
+    if opens:
+        bits.append("riding " + ", ".join(f"{o.get('market')} {str(o.get('side') or '').lower()} "
+                                          f"{_num(o.get('pips'), '{:+.1f}')} pips" for o in opens[:4]))
+    scan = [r for r in (st.get("scanner") or []) if isinstance(r, dict)]
+    names = [str(r.get("market") or "") for r in scan] or [str(k) for k in ((w or {}).get("markets") or {})]
+    word = "pairs" if names and all(len(s) == 6 and s.isalpha() for s in names) else "markets"
+    if names:
+        groups: dict = {}
+        for r in scan:
+            guard, reason = _rider_held(r)
+            ha = r.get("headroom_atr")
+            if str(r.get("state") or "") == "ENTERED":
+                g = "in a trade"
+            elif guard:
+                g = _RIDER_HELD_GROUP
+            else:
+                g = next((said for words, said in _RIDER_GROUPS if words in reason), None)
+            if g is None and ", but " in reason:          # score.py: news is judged before costs, room after
+                if rcfg is not None and isinstance(ha, (int, float)) and not isinstance(ha, bool):
+                    g = ("moving but too close to the next level" if ha < rcfg.min_headroom_atr
+                         else "moving but held back by news")
+                else:
+                    g = "moving but held back"
+            elif g is None and "momentum" in reason:
+                g = "moving with nothing in the way yet"
+            if g is not None:
+                groups[g] = groups.get(g, 0) + 1
+        order = sorted(groups.items(), key=lambda kv: (-kv[1], kv[0]))
+        shown = order[:1] + [kv for kv in order[1:] if kv[0] in (_RIDER_HELD_GROUP, _RIDER_COST_GROUP)]
+        watch = f"watching {len(names)} {word}"
+        if shown:
+            watch += " - " + ", ".join(f"{n} {'is' if n == 1 else 'are'} {g}" for g, n in shown)
+        bits.append(watch)
+    else:
+        bits.append("no scan reported yet")
+    need = f"needs {trigger:g}" if isinstance(trigger, (int, float)) else ""
+    pointed = [r for r in scan if str(r.get("direction") or "").upper() in ("LONG", "SHORT")
+               and str(r.get("state") or "") != "ENTERED"]          # a market it is in is "riding", above
+    if pointed:
+        best = max(pointed, key=lambda r: (float(r.get("score") or 0.0), str(r.get("market") or "")))
+        guard, reason = _rider_held(best)
+        holds = [guard] if guard else []                # a guard first: it refuses the entry whatever the score
+        cr = best.get("cost_ratio")
+        cost = "costs would eat the move" in reason or (
+            rcfg is not None and isinstance(cr, (int, float)) and cr > rcfg.max_cost_ratio)
+        if cost and rcfg is not None:
+            need = (need + " and " if need else "needs ") + f"costs under {_fraction(rcfg.max_cost_ratio)} of the move"
+        elif ", but " in reason:
+            holds.append(reason.split(", but ", 1)[1])
+        elif reason and "momentum" not in reason:
+            need = (need + "; " if need else "") + reason[:1].lower() + reason[1:]
+        if holds:
+            need = (need + "; " if need else "") + "held back: " + "; also ".join(holds)
+        bits.append(f"best {best.get('market')} {str(best.get('direction')).lower()} "
+                    f"{_num(best.get('score'), '{:.0f}')}" + (f" ({need})" if need else ""))
+    lead = "last hour" if str((w or {}).get("covers") or "").startswith("the last") else "since it started"
+    if w is not None and not pointed and isinstance(w.get("best"), dict):
+        b = w["best"]
+        bits.append(f"best {'in the last hour' if lead == 'last hour' else lead} {b.get('market')} "
+                    f"{str(b.get('direction') or '').lower()} "
+                    f"{_num(b.get('score'), '{:.0f}')}" + (f" ({need})" if need else ""))
+    if w is not None:
+        scans = w.get("scans")
+        if not scans:
+            bits.append(f"{lead}: no scans")
+        else:
+            held = [x for x in (w.get("blocked_by") or []) if isinstance(x, dict) and x.get("gate") != "one_position"]
+            txt = (f"{lead}: {_plural(int(w.get('triggers') or 0), 'trigger', 'triggers')}, "
+                   f"{_plural(int(w.get('entries') or 0), 'entry', 'entries')}")
+            if held:
+                txt += f", held back most by {held[0].get('what') or held[0].get('gate')}"
+            bits.append(txt)
+    return "; ".join(bits)
+
+
+def _runner_now(data: Path, now: dt.datetime) -> str:
+    st, why = _read_status_file(data / NOW_STATUS_FILES["momentum_runner"])
+    gone = _not_reporting(st, why, now)
+    if gone:
+        return gone
+    if str(st.get("status") or "") == "OFF":
+        return "OFF - it places no trades"
+    opens = [o for o in (st.get("open") or []) if isinstance(o, dict)]
+    if opens:
+        out = "riding " + ", ".join(f"{o.get('symbol')} {str(o.get('side') or '').lower()} "
+                                    f"{_num(o.get('r_now'), '{:+.2f}')} R" for o in opens[:4])
+    else:
+        skip = [str(t).replace("_", " ").lower() for t in (st.get("skip_tactics") or []) if str(t)]
+        out = ("waiting for Trend & Breakout's next index entry"
+               + (f" (it skips {' and '.join(skip)})" if skip else ""))
+    if st.get("executor_error"):
+        out += f"; last order problem: {st.get('executor_error')}"
+    return out
+
+
+def _band_now(data: Path, now: dt.datetime) -> str:
+    st, why = _read_status_file(data / NOW_STATUS_FILES["band_breaker"])
+    gone = _not_reporting(st, why, now)
+    if gone:
+        return gone
+    status = str(st.get("status") or "")
+    opens = [o for o in (st.get("open") or []) if isinstance(o, dict)]
+    if status == "OFF":
+        return "OFF - it places no trades"
+    if opens:
+        return "in a trade: " + ", ".join(f"{o.get('symbol')} {str(o.get('side') or '').lower()} "
+                                          f"{_num(o.get('r_now'), '{:+.2f}')} R" for o in opens[:4])
+    if status == "OUTSIDE SESSION":
+        return f"outside its session ({st.get('session') or 'the New York session'})"
+    checks = [c for c in (st.get("checks_today") or []) if isinstance(c, dict)]
+    if checks:
+        c = checks[-1]
+        return (f"in its session; last check {c.get('check_ny')} New York on {c.get('symbol')}: "
+                f"{c.get('decision') or 'no decision recorded'}")
+    notes = {k: v for k, v in (st.get("markets_now") or {}).items() if k != "Mode switch"}
+    if notes:
+        k = sorted(notes)[0]
+        return f"in its session; {k}: {notes[k]}"
+    return status.lower() or "running"
+
+
+def _crowd_now(data: Path, now: dt.datetime) -> str:
+    st, why = _read_status_file(data / NOW_STATUS_FILES["crowd_fader"])
+    gone = _not_reporting(st, why, now)
+    if gone:
+        return gone
+    status = str(st.get("status") or "")
+    opens = [o for o in (st.get("open") or []) if isinstance(o, dict)]
+    if status == "OFF":
+        return "OFF - it places no trades"
+    if status.startswith("NO KEY"):
+        return "no Coinversa key saved - it places no trades"
+    if opens:
+        return "in a trade: " + ", ".join(f"{o.get('symbol')} {str(o.get('side') or '').lower()} "
+                                          f"{_num(o.get('r_now'), '{:+.2f}')} R" for o in opens[:4])
+    if status == "COINVERSA UNAVAILABLE":
+        return f"Coinversa is not answering ({st.get('poll_error') or 'no reason given'}) - no new trades"
+    head = "outside its entry hours (managing only)" if status.startswith("OUTSIDE HOURS") else ""
+    notes = {k: v for k, v in (st.get("markets_now") or {}).items() if k != "Mode switch"}
+    reads = {k: v for k, v in (st.get("reads") or {}).items() if isinstance(v, dict)}
+    if reads:
+        sym = max(reads, key=lambda k: (float(reads[k].get("score") or 0.0), k))
+        r = reads[sym]
+        d = r.get("direction") or 0
+        lean = " short" if d < 0 else (" long" if d > 0 else "")
+        said = notes.get(sym) or r.get("reason") or ""
+        best = f"best read {sym} {_num(r.get('score'), '{:.0f}')}{lean}" + (f": {said}" if said else "")
+        return f"{head}; {best}" if head else best
+    if notes:
+        k = sorted(notes)[0]
+        return (f"{head}; " if head else "") + f"{k}: {notes[k]}"
+    return head or status.lower() or "running"
+
+
+def _ian_now(data: Path, now: dt.datetime) -> str:
+    st, why = _read_status_file(data / NOW_STATUS_FILES["financial_ian"])
+    gone = _not_reporting(st, why, now)
+    if gone:
+        return gone
+    feed = st.get("feed") if isinstance(st.get("feed"), dict) else {}
+    state = str(feed.get("state") or "UNKNOWN")
+    reason = str(feed.get("reason") or "")
+    label = str(st.get("data_label") or "LIVE")
+    pre = "" if label == "LIVE" else f"running on {label} data, not a result - "
+    opens = [o for o in (st.get("open_positions") or []) if isinstance(o, dict)]
+    if state == "NOT CONFIGURED":
+        out = "no data feed - places no trades (see Financial Ian)"
+    elif opens:
+        out = "in a trade: " + ", ".join(f"{o.get('symbol')} {str(o.get('side') or '').lower()} "
+                                         f"{_num(o.get('r_now'), '{:+.2f}')} R" for o in opens[:4])
+    elif state == "LIVE":
+        top = st.get("top_opportunity") if isinstance(st.get("top_opportunity"), dict) else None
+        if top:
+            out = (f"watching the futures order book; top {top.get('spot_symbol')} "
+                   f"{str(top.get('spot_side') or 'no side').lower()} {_num(top.get('score'), '{:.0f}')}, "
+                   + ("tradeable" if top.get("tradeable") else f"not tradeable: {top.get('why_not') or 'no reason given'}"))
+        else:
+            out = "watching the futures order book; no opportunity yet"
+    elif state == "DEGRADED":
+        out = f"data degraded ({reason or 'no reason given'}) - no new trades"
+    else:
+        out = f"feed {state.lower()} ({reason or 'no reason given'}) - no new signals"
+    mt5 = st.get("mt5") if isinstance(st.get("mt5"), dict) else {}
+    if not mt5.get("connected"):
+        out += "; MetaTrader not connected"
+    return pre + out
+
+
+def _tnb_now(snap: dict) -> str:
+    """Trend & Breakout runs in the trader itself: its state, its open trades
+    and what it is looking at, from the page's own snapshot."""
+    st = snap.get("status") or {}
+    state = str(st.get("bot") or "")
+    if state == "WAITING FOR METATRADER":
+        return f"waiting for MetaTrader ({st.get('waiting') or 'not connected yet'})"
+    if state in ("", "STARTING"):
+        return "starting - it has not reported yet"
+    bits = []
+    health = snap.get("health") or {}
+    if state != "RUNNING" or health.get("safe_mode"):
+        said = "safe mode" if (health.get("safe_mode") or state == "SAFE MODE") else state.lower()
+        bits.append(f"{said}: {health.get('summary') or 'no new entries'}")
+    paper = str(st.get("tnb_mode") or "").upper() == "PAPER"
+    pos = [p for p in (snap.get("positions") or []) if isinstance(p, dict)]
+    if pos:
+        bits.append(("trades open (practice, and any left from LIVE): " if paper else "trades open: ")
+                    + ", ".join(f"{p.get('symbol')} {str(p.get('side') or '').lower()}" for p in pos[:4]))
+    think = [t for t in (snap.get("thinking") or []) if isinstance(t, dict)]
+    if think:
+        t = min(think, key=lambda x: float(x.get("rank") or 0.0))
+        look = (f"looking at {t.get('symbol')} {str(t.get('direction') or '').lower()} "
+                f"{_num(t.get('score'), '{:.0f}')} ({str(t.get('tier') or '').lower() or 'no tier'})")
+        if t.get("blockers"):
+            look += f" - waiting: {(t.get('blockers') or [''])[0]}"
+        bits.append(look)
+    else:
+        bits.append("no scan has completed yet")
+    held = [str(r) for r in (st.get("not_trading_because") or []) if r]
+    if held:
+        bits.append(f"held back: {held[0]}")
+    return "; ".join(bits)
+
+
+def bot_now_lines(snap: dict, top: Optional[dict] = None, only: Optional[str] = None) -> dict:
+    """{bot id: what it is doing now, and its last trade} for each card - one
+    plain line from that bot's own status file and records (Trend &
+    Breakout's from the snapshot), read-only. Never empty: a missing or old
+    status file says "not reporting". ``only``: that one bot. Unescaped text."""
+    top = top or {}
+    sd = snap.get("standing") or {}
+    now = to_utc(top.get("now") or utcnow())
+    data_dir = top.get("data_dir") or ""
+    data = Path(data_dir) if data_dir else None
+    cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
+    tot = top.get("tot") if isinstance(top.get("tot"), dict) else None
+    closed = tot.get("closed") if tot is not None and isinstance(tot.get("closed"), list) else None
+    unknown = set(sd.get("unknown_magics") or ())
+    began = _uk(sd.get("start") or "", "%a %d %b")
+    makers = {"momentum_rider": _rider_now, "momentum_runner": _runner_now, "band_breaker": _band_now,
+              "crowd_fader": _crowd_now, "financial_ian": _ian_now}
+    out: dict = {}
+    for b in sd.get("bots") or ():
+        bid = b.get("id")
+        if b.get("retired") or (only is not None and bid != only):
+            continue
+        mode = str(b.get("mode") or "")
+        magic = int(b.get("magic") or DEFAULT_MAGICS.get(bid, 0))
+        try:
+            if mode == "OFF":
+                doing = "OFF - it places no trades"
+            elif bid == "market_intelligence":
+                doing = _tnb_now(snap)
+            elif data is None:
+                doing = "not reporting - the page has not been told where the bots keep their files"
+            elif bid in makers:
+                doing = makers[bid](data, now)
+            else:
+                continue
+        except Exception as exc:                         # never a reason to fail the page
+            log.warning("now line of %s: %s", bid, exc)
+            doing = f"what it is doing could not be read just now ({exc})"
+        try:
+            last = _last_trade_txt(data, bid, magic, mode, None if magic in unknown else closed, now, cur, began)
+        except Exception as exc:
+            log.warning("last trade of %s: %s", bid, exc)
+            last = f"its last trade could not be read just now ({exc})"
+        out[bid] = f"PAPER - {last}; {doing}" if mode == "PAPER" else f"{doing}; {last}"
+    return out
+
+
+def render_quiet_banner(snap: dict, top: Optional[dict], lines: dict) -> str:
+    """One line at the top of the All bots view when no LIVE bot has traded
+    for QUIET_MINUTES in market hours: since when, then each LIVE bot's
+    "Now:" line. Not shown at weekends (the FX market is shut), when a trade
+    is open (or the open trades could not be read), or when a LIVE bot's
+    records could not be read (never a false "no trade")."""
+    top = top or {}
+    sd = snap.get("standing") or {}
+    now = to_utc(top.get("now") or utcnow())
+    quiet = dt.timedelta(minutes=QUIET_MINUTES)
+    if not (fx_market_open(now) and fx_market_open(now - quiet)):
+        return ""
+    if snap.get("open_live") is None or snap.get("open_live"):
+        return ""
+    live = [b for b in sd.get("bots") or () if str(b.get("mode") or "") == "LIVE" and not b.get("retired")]
+    tot = top.get("tot") if isinstance(top.get("tot"), dict) else None
+    if not live or tot is None or not isinstance(tot.get("closed"), list):
+        return ""
+    magics = {int(b.get("magic") or 0) for b in live}
+    if magics & set(sd.get("unknown_magics") or ()):
+        return ""
+    times = [_when(p.get("closed")) for p in tot["closed"] if p.get("bot_magic") in magics]
+    times = [t for t in times if t is not None]
+    last = max(times) if times else None
+    if last is not None and now - last < quiet:
+        return ""
+    e = html.escape
+    since = (f"since {_uk_at(last, now)}" if last is not None
+             else f"since the account started ({_uk(sd.get('start') or '', '%a %d %b') or 'its reset'})")
+    rows = "".join(f'<div><b>{e(str(b.get("label")))}</b>: '
+                   f'{e(str(lines.get(b.get("id")) or "what it is doing could not be read just now"))}</div>'
+                   for b in live)
+    return f'<div class="quiet"><div class="qh">No live trade {e(since)} - here is why:</div>{rows}</div>'
 
 
 def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "overall", bot: str = "all") -> str:
@@ -955,7 +1465,17 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
     why_line = f'<div class="why">{e(str(sel["why"]))}</div>' if show_sel and sel.get("why") else ""
     acct = (f'<div class="hc acct"><div><div class="nm">Account - all bots, after commission</div>'
             f'<div class="figs">{acct_figs}</div><div class="ft">{" &middot; ".join(foot)}</div>{why_line}</div></div>')
-    # one card per bot
+    # one card per bot, each with what it is doing now; and, when the LIVE bots have gone quiet, why - at the top
+    try:
+        now_lines = bot_now_lines(snap, top)
+    except Exception as exc:                             # never a reason to fail the page
+        log.warning("now lines: %s", exc)
+        now_lines = {}
+    try:
+        quiet = render_quiet_banner(snap, top, now_lines)
+    except Exception as exc:
+        log.warning("quiet banner: %s", exc)
+        quiet = ""
     cards = ""
     retired_notes = []
     for b in sd.get("bots") or []:
@@ -971,7 +1491,7 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
                 retired_notes.append(f'{e(label)}: ' + ", ".join(f'{e(k.lower())} <b class="{cls(v)}">{m(v)}</b>'
                                                                   for k, v in shown))
             continue
-        cards += _bot_card(snap, b, sel, tot, p_sel, p_tot, cur)
+        cards += _bot_card(snap, b, sel, tot, p_sel, p_tot, cur, now_line=now_lines.get(bid, ""))
     notes = []
     for v, txt in ((tot.get("other"), "from trades placed by hand"),
                    (tot.get("adjustments"), "from other changes to the balance (broker charges or corrections)")):
@@ -991,7 +1511,7 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
              'opened it; a trade still open counts when it closes. Overall is what the balance has made since it '
              'started. '
              'A bot in PAPER places no real orders; its practice result is shown in grey and never counted.</div>')
-    return bar + f'<div class="cards">{acct}{cards}</div>' + note + render_open_trades(snap)
+    return bar + quiet + f'<div class="cards">{acct}{cards}</div>' + note + render_open_trades(snap)
 
 
 def _in_period(view: dict) -> str:
@@ -1070,7 +1590,12 @@ def render_bot_view(snap: dict, top: Optional[dict], bot: str) -> str:
     sel, tot = top.get("sel"), top.get("tot")
     parts = []
     if b is not None and sel and tot and tot.get("made") is not None:
-        parts.append(f'<div class="cards one">{_bot_card(snap, b, sel, tot, top.get("p_sel") or {}, top.get("p_tot") or {}, cur, alone=True)}</div>')
+        try:
+            now_line = bot_now_lines(snap, top, only=bot).get(bot, "")
+        except Exception as exc:                          # never a reason to fail the page
+            log.warning("now line of %s: %s", bot, exc)
+            now_line = ""
+        parts.append(f'<div class="cards one">{_bot_card(snap, b, sel, tot, top.get("p_sel") or {}, top.get("p_tot") or {}, cur, alone=True, now_line=now_line)}</div>')
         if magic in set(sd.get("unknown_magics") or ()):
             parts.append(f'<div class="card"><h2>{e(label)} - trades closed {e(_in_period(sel))}</h2><div class="small bad">'
                          f'MetaTrader\'s records for its magic number {magic} could not be read just now, so its trades '

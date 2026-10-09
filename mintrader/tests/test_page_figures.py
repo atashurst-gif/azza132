@@ -20,13 +20,14 @@ import datetime as dt
 import json
 import sqlite3
 import urllib.request
+from html import unescape
 from pathlib import Path
 from types import SimpleNamespace as NS
 
 from mintel.broker.base import Side
 from mintel.config import Config
-from mintel.ops.dashboard import (REFRESH_JS, DashboardState, render_rider_page, render_standing, render_status,
-                                  start_dashboard)
+from mintel.ops.dashboard import (REFRESH_JS, DashboardState, bot_now_lines, render_rider_page, render_standing,
+                                  render_status, start_dashboard)
 from mintel.ops.standing import (account_standing, open_rows, period_bounds, period_view, positions_of,
                                  uk_date, uk_midnight)
 
@@ -148,27 +149,29 @@ def write_records(data: Path, now=NOW):
     con.close()
 
 
-def a_day(tmp_path: Path, records: bool = True, deals=DEALS, positions=None, broker_cls=None) -> NS:
+def a_day(tmp_path: Path, records: bool = True, deals=DEALS, positions=None, broker_cls=None, now=NOW) -> NS:
     data = tmp_path / "data"
     data.mkdir(parents=True, exist_ok=True)
     if records:
-        write_records(data)
+        write_records(data, now)
     cfg = Config()
     cfg.ops.data_dir = str(data)
     cfg.ops.log_dir = str(tmp_path / "logs")
     cfg.tnb.mode = "PAPER"
     cfg.runner.mode = "LIVE"
     broker = (broker_cls or Broker)(deals, positions)
-    sd = dict(account_standing(broker, cfg, NOW, cache_seconds=0))
+    sd = dict(account_standing(broker, cfg, now, cache_seconds=0))
     rows = sd.pop("deals")
     return NS(data=data, cfg=cfg, broker=broker, sd=sd, deals=rows, open=open_rows(broker.positions(None), cfg))
 
 
-def serve(d: NS):
+def serve(d: NS, now=NOW, **extra):
     state = DashboardState()
-    state.update(status={"bot": "RUNNING"}, health={"checks": []}, standing=d.sd, deals=d.deals, open_live=d.open,
-                 open_at=NOW.isoformat(), data_dir=str(d.data), tnb_mode="PAPER")
-    state.clock = lambda: NOW
+    fields = dict(status={"bot": "RUNNING"}, health={"checks": []}, standing=d.sd, deals=d.deals, open_live=d.open,
+                  open_at=now.isoformat(), data_dir=str(d.data), tnb_mode="PAPER")
+    fields.update(extra)
+    state.update(**fields)
+    state.clock = lambda: now
     httpd = start_dashboard(state, "127.0.0.1", 0)
     port = httpd.server_address[1]
 
@@ -246,12 +249,12 @@ class TestTheSilverShortIsYesterday:
             assert '<div class="fk">Overall</div><div class="fv ok">+£12.42</div>' in acct          # balance less 2,000
             assert "-£9.36" not in acct and "-£9.30" not in acct
             crowd = card_of(page, "Crowd Fader")
-            assert '<div class="fk">Today</div><div class="fv ">£0.00</div>' in crowd             # nothing closed today
-            assert '<div class="fk">Overall</div><div class="fv bad">-£9.36</div>' in crowd
+            assert '<div class="fk">Today (practice)</div>' in crowd                                # PAPER: practice leads
+            assert "Real money from its LIVE days (in the account): overall -£9.36" in crowd         # nothing real today
             assert "Days are UK days, midnight to midnight." in page and page.count("Days are UK days") == 1
             yesterday = get("/?period=yesterday")
             assert '<div class="fk">Yesterday</div><div class="fv bad">-£9.36</div>' in account_card(yesterday)
-            assert '<div class="fk">Yesterday</div><div class="fv bad">-£9.36</div>' in card_of(yesterday, "Crowd Fader")
+            assert "yesterday -£9.36 &middot; overall -£9.36" in card_of(yesterday, "Crowd Fader")
             assert "1 trade yesterday (0 won, 1 lost)" in card_of(yesterday, "Crowd Fader")
         finally:
             httpd.shutdown()
@@ -442,7 +445,7 @@ class TestTheBotButtons:
         assert ">GBPUSD<" in m and ">+£14.70</td>" in m                                       # its real leftover, today
         b = band.split('id="more"')[0]
         assert '<tr class="practice">' in b and '+£4.20 <span class="pill">practice</span>' in b
-        assert "Practice only, not real money: today +£4.20" in b and "BAND BREAKER" in b
+        assert '<div class="fk">Today (practice)</div><div class="fv ok">+£4.20</div>' in b and "BAND BREAKER" in b
 
     def test_every_bot_alone_renders_with_no_status_files_at_all(self, tmp_path):
         d = a_day(tmp_path, records=False)
@@ -512,3 +515,353 @@ class TestThePushPutsTheFoldedTilesOnUkDays:
         assert state.standing["today"] == 6.00 and state.standing["day_basis"] == "UK"
         page = render_status(state.snapshot())
         assert "Today (UK day)" in page and "each in full on the UK day it closed" in page
+
+
+# ================================================== "Now:" on every card --
+# Aaron, 9 Oct 12:40 UK: "looks like we've stopped trading, don't even know
+# what's going on". Every card says what its bot is doing now and its last
+# trade; the top says why when no LIVE bot has traded for 30 minutes in
+# market hours. The status files below are SYNTHETIC (the shape of 12:40 UK,
+# not its figures).
+LATER = t(2026, 10, 9, 11, 40)                                   # Friday 9 Oct, 12:40 UK
+NOW_TAG = '<div class="now"><b>Now:</b> '
+
+
+def rider_scan():
+    return [{"market": "AUDUSD", "direction": "LONG", "score": 64.2, "state": "BUILDING",
+             "reason": "Fast clean upward momentum, but costs would eat the move", "cost_ratio": 0.41,
+             "headroom_atr": 2.0},
+            {"market": "EURUSD", "direction": "SHORT", "score": 48.0, "state": "WATCHING",
+             "reason": "Steady downward momentum, but costs would eat the move", "cost_ratio": 0.33,
+             "headroom_atr": 3.1},
+            {"market": "GBPJPY", "direction": "NONE", "score": 12.0, "state": "WATCHING",
+             "reason": "Quiet - nothing moving", "cost_ratio": 0.9, "headroom_atr": 1.0}]
+
+
+def why_block(now):
+    return {"window_minutes": 60, "covers": "the last 60 minutes", "trigger_score": 60.0, "scans": 3600,
+            "triggers": 0, "entries": 0, "near_miss_scans": 412,
+            "blocked_by": [{"gate": "one_position", "what": "a position is already open on this market", "scans": 900},
+                           {"gate": "cost", "what": "costs too big for the expected move", "scans": 412}],
+            "best": {"market": "AUDUSD", "score": 66.0, "direction": "LONG", "time_utc": now.isoformat()},
+            "markets": {"AUDUSD": {"scans": {"BUILDING": 3600}}, "EURUSD": {"scans": {"WATCHING": 3600}},
+                        "GBPJPY": {"scans": {"WATCHING": 3600}}}}
+
+
+def write_now_files(data: Path, now, rider_why: bool = True, rider: dict | None = None) -> None:
+    """Each bot's status file as at ``now``: the Rider watching (with or
+    without the why_no_trade block of newer builds), the Runner waiting, the
+    Band Breaker outside its session, the Crowd Fader watching. Ian's is
+    write_records' (no feed configured)."""
+    st = {"mode": "LIVE", "updated_utc": now.isoformat(), "user_pip_value_gbp": 1.0,
+          "health": {"entries_allowed": True, "summary": "all checks passing", "checks": []},
+          "scanner": rider_scan(), "open_positions": []}
+    if rider_why:
+        st["why_no_trade"] = why_block(now)
+    st.update(rider or {})
+    (data / "rider-status.json").write_text(json.dumps(st))
+    (data / "runner-status.json").write_text(json.dumps({
+        "mode": "LIVE", "live": True, "status": "WATCHING", "updated": now.isoformat(),
+        "skip_tactics": ["MOMENTUM_CONTINUATION"], "executor_error": "", "open": []}))
+    (data / "bandbreaker-status.json").write_text(json.dumps({
+        "mode": "PAPER", "status": "OUTSIDE SESSION", "updated": now.isoformat(),
+        "session": "09:30-16:00 New York, flat by 15:55", "markets_now": {"US500": "outside the New York session"},
+        "open": [], "checks_today": []}))
+    (data / "crowd-status.json").write_text(json.dumps({
+        "mode": "PAPER", "status": "WATCHING", "updated": now.isoformat(), "open": [],
+        "reads": {"XAGUSD": {"score": 41.0, "direction": -1, "reason": "crowd 58% long, not stretched enough"},
+                  "XAUUSD": {"score": 22.0, "direction": 0, "reason": "crowd balanced"}},
+        "markets_now": {"XAGUSD": "crowd 58% long, not stretched enough", "XAUUSD": "crowd balanced"}}))
+
+
+def quiet_day(tmp_path: Path, now=LATER, positions=(), deals=DEALS, **kw) -> NS:
+    """The day as at ``now`` (12:40 UK unless said), nothing open unless said."""
+    d = a_day(tmp_path, positions=list(positions), deals=deals, now=now)
+    write_now_files(d.data, now, **kw)
+    return d
+
+
+def top_of(d: NS, now, period: str = "today") -> dict:
+    return {"sel": period_view(d.sd, d.deals, period, now=now), "tot": period_view(d.sd, d.deals, "total", now=now),
+            "data_dir": str(d.data), "now": now}
+
+
+THINKING = [{"rank": 1, "symbol": "US500", "direction": "LONG", "score": 71.0, "tier": "NORMAL",
+             "blockers": ["spread 2.0x normal"]},
+            {"rank": 2, "symbol": "GBPUSD", "direction": "SHORT", "score": 55.0, "tier": "WEAK", "blockers": []}]
+
+
+def standing_of(d: NS, now, **snap) -> str:
+    s = {"standing": d.sd, "open_live": d.open, "status": {"bot": "RUNNING", "tnb_mode": "PAPER"}, **snap}
+    return render_standing(s, top_of(d, now))
+
+
+def now_of(page: str, label: str) -> str:
+    """One card's "Now:" line, as plain text."""
+    card = card_of(page, label)
+    assert card.count(NOW_TAG) == 1, label
+    return unescape(card.split(NOW_TAG)[1].split("</div>")[0])
+
+
+class TestEveryCardSaysWhatItsBotIsDoing:
+    def test_each_line_from_the_bots_own_status_file_and_records(self, tmp_path):
+        d = quiet_day(tmp_path)
+        page = standing_of(d, LATER, thinking=THINKING)
+        assert now_of(page, "Rapid Momentum Rider") == (
+            "watching 3 pairs - 2 are moving but costs would eat the move; best AUDUSD long 64 (needs 60 and costs "
+            "under 15% of the move); last hour: 0 triggers, 0 entries, held back most by costs too big for the "
+            "expected move; last trade 09:48 UK EURUSD -£3.04")               # MetaTrader's figure, in full
+        assert now_of(page, "Momentum Runner") == ("waiting for Trend & Breakout's next index entry (it skips momentum "
+                                                   "continuation); no real trade since Mon 05 Oct")
+        assert now_of(page, "Financial Ian") == ("no data feed - places no trades (see Financial Ian); "
+                                                 "no real trade since Mon 05 Oct")
+        assert now_of(page, "Trend &amp; Breakout") == (
+            "PAPER - last real trade 08:00 UK GBPUSD +£14.70; looking at US500 long 71 (normal) - waiting: "
+            "spread 2.0x normal")                                              # its real leftover from LIVE is the newer
+        assert now_of(page, "Band Breaker") == ("PAPER - last practice trade 09:00 UK US500 +£4.20; outside its "
+                                                "session (09:30-16:00 New York, flat by 15:55)")
+        assert now_of(page, "Crowd Fader") == ("PAPER - last real trade Thu 08 Oct 23:36 UK XAGUSD -£9.36; best read "
+                                               "XAGUSD 41 short: crowd 58% long, not stretched enough")
+
+    def test_an_older_rider_without_why_no_trade_falls_back_to_its_scanner_and_its_own_settings(self, tmp_path):
+        d = quiet_day(tmp_path, rider_why=False)
+        line = now_of(standing_of(d, LATER), "Rapid Momentum Rider")
+        assert line == ("watching 3 pairs - 2 are moving but costs would eat the move; best AUDUSD long 64 (needs 60 "
+                        "and costs under 15% of the move); last trade 09:48 UK EURUSD -£3.04")
+        # the numbers are the Rider's own (data/rider.json), never made up here
+        (d.data / "rider.json").write_text(json.dumps({"mode": "LIVE", "trigger_score": 65, "max_cost_ratio": 0.3}))
+        line = now_of(standing_of(d, LATER), "Rapid Momentum Rider")
+        assert "best AUDUSD long 64 (needs 65 and costs under 30% of the move)" in line and "last hour" not in line
+
+    def test_with_no_scanner_rows_the_why_no_trade_block_alone_still_says_it(self, tmp_path):
+        d = quiet_day(tmp_path, rider={"scanner": []})
+        assert now_of(standing_of(d, LATER), "Rapid Momentum Rider") == (
+            "watching 3 pairs; best in the last hour AUDUSD long 66 (needs 60); last hour: 0 triggers, 0 entries, held "
+            "back most by costs too big for the expected move; last trade 09:48 UK EURUSD -£3.04")
+
+    def test_trend_and_breakout_in_safe_mode_or_waiting_for_metatrader(self, tmp_path):
+        d = quiet_day(tmp_path)
+        page = standing_of(d, LATER, thinking=THINKING, health={"safe_mode": True, "summary": "SAFE MODE - news feed down"})
+        assert now_of(page, "Trend &amp; Breakout").endswith("; safe mode: SAFE MODE - news feed down; looking at US500 "
+                                                             "long 71 (normal) - waiting: spread 2.0x normal")
+        page = standing_of(d, LATER, status={"bot": "WAITING FOR METATRADER", "waiting": "terminal not running"})
+        assert now_of(page, "Trend &amp; Breakout").endswith("; waiting for MetaTrader (terminal not running)")
+
+    def test_the_biggest_group_of_reasons_is_said_and_costs_always_are(self, tmp_path):
+        scan = rider_scan() + [
+            {"market": m, "direction": "LONG", "score": 30.0, "state": "WATCHING",
+             "reason": "Fast upward momentum, but high-impact news is due", "cost_ratio": 0.1, "headroom_atr": 4.0}
+            for m in ("NZDUSD", "USDCAD", "USDCHF")] + [
+            {"market": "CADJPY", "direction": "SHORT", "score": 20.0, "state": "WATCHING",
+             "reason": "Steady downward momentum, but the next level is close", "cost_ratio": 0.1, "headroom_atr": 0.4}]
+        d = quiet_day(tmp_path, rider={"scanner": scan})
+        line = now_of(standing_of(d, LATER), "Rapid Momentum Rider")
+        assert line.startswith("watching 7 pairs - 3 are moving but held back by news, 2 are moving but costs would "
+                               "eat the move; best AUDUSD long 64 (needs 60 and costs under 15% of the move)")
+
+    # The Rider's 9 Oct guards (mintel/rider/core.py guard_hold) refuse an entry whatever the score: its scanner
+    # row then carries "held_back" and "Held back: <words>. " in front of the reason. The words below are
+    # SYNTHETIC, in the shape of core.py's own (its defaults: 4 losing exits in 10 min stop entries for 15 min).
+    BRAKE = ("4 losing exits within 10 min (the last at 11:32 UTC): no new entry on any market for 15 min - "
+             "7 min left")
+
+    def test_markets_the_guards_hold_back_are_never_moving_with_nothing_in_the_way(self, tmp_path):
+        scan = [{"market": m, "direction": "LONG", "score": s, "state": "TRIGGER", "cost_ratio": 0.1,
+                 "headroom_atr": 3.0, "reason": f"Held back: {self.BRAKE}. Fast upward momentum",
+                 "held_back": self.BRAKE} for m, s in (("EURUSD", 72.0), ("GBPUSD", 71.0), ("AUDUSD", 70.0))]
+        d = quiet_day(tmp_path, rider_why=False, rider={"scanner": scan})
+        page = standing_of(d, LATER)
+        line = now_of(page, "Rapid Momentum Rider")
+        assert line == ("watching 3 pairs - 3 are held back by its loss or currency guards; best EURUSD long 72 "
+                        f"(needs 60; held back: {self.BRAKE}); last trade 09:48 UK EURUSD -£3.04")
+        assert "nothing in the way" not in line
+        assert unescape(banner_of(page)).count(line) == 1               # the No-live-trade banner says the same
+
+    def test_a_guard_on_the_best_market_is_said_beside_its_costs_and_its_news(self, tmp_path):
+        rest = "short USD lost through NZDUSD 4 min ago: no new short USD for 15 min - 11 min left"
+        scan = rider_scan()
+        scan[0] = {**scan[0], "reason": f"Held back: {rest}. {scan[0]['reason']}", "held_back": rest}
+        d = quiet_day(tmp_path, rider_why=False, rider={"scanner": scan})
+        assert now_of(standing_of(d, LATER), "Rapid Momentum Rider") == (
+            "watching 3 pairs - 1 is held back by its loss or currency guards, 1 is moving but costs would eat the "
+            f"move; best AUDUSD long 64 (needs 60 and costs under 15% of the move; held back: {rest}); last "
+            "trade 09:48 UK EURUSD -£3.04")                               # a guard is always said, like costs
+        # the words in the reason alone (no "held_back" field) still count; news after the guard, never twice
+        d = quiet_day(tmp_path / "b", rider_why=False, rider={
+            "open_positions": [{"market": "USDJPY", "side": "BUY", "pips": 3.0}],
+            "scanner": [{"market": "USDJPY", "direction": "LONG", "score": 80.0, "state": "ENTERED",
+                         "reason": "Fast upward momentum", "cost_ratio": 0.1, "headroom_atr": 4.0},
+                        {"market": "USDCAD", "direction": "LONG", "score": 66.0, "state": "TRIGGER",
+                         "reason": "Held back: already long USD through USDJPY. Fast upward momentum, but "
+                                   "high-impact news is due", "cost_ratio": 0.1, "headroom_atr": 4.0}]})
+        assert now_of(standing_of(d, LATER), "Rapid Momentum Rider") == (
+            "riding USDJPY buy +3.0 pips; watching 2 pairs - 1 is held back by its loss or currency guards; best "
+            "USDCAD long 66 (needs 60; held back: already long USD through USDJPY; also high-impact news is due); "
+            "last trade 09:48 UK EURUSD -£3.04")
+
+    def test_what_the_rider_rides_and_a_pause_come_first(self, tmp_path):
+        d = quiet_day(tmp_path, rider={
+            "health": {"entries_allowed": False, "summary": "new entries paused (open positions are still managed): "
+                                                            "MetaTrader is not answering", "checks": []},
+            "open_positions": [{"market": "AUDJPY", "side": "BUY", "pips": 2.04}]})
+        line = now_of(standing_of(d, LATER), "Rapid Momentum Rider")
+        assert line.startswith("new entries paused (open positions are still managed): MetaTrader is not answering; "
+                               "riding AUDJPY buy +2.0 pips; watching 3 pairs")
+
+    def test_a_status_file_that_stopped_says_since_when(self, tmp_path):
+        d = quiet_day(tmp_path)
+        old = json.loads((d.data / "rider-status.json").read_text())
+        old["updated_utc"] = t(2026, 10, 9, 9, 39).isoformat()                   # 10:39 UK, an hour before
+        (d.data / "rider-status.json").write_text(json.dumps(old))
+        runner = json.loads((d.data / "runner-status.json").read_text())
+        runner["updated"] = t(2026, 10, 8, 21, 10).isoformat()                   # 22:10 UK yesterday
+        (d.data / "runner-status.json").write_text(json.dumps(runner))
+        page = standing_of(d, LATER)
+        assert now_of(page, "Rapid Momentum Rider") == "not reporting since 10:39 UK; last trade 09:48 UK EURUSD -£3.04"
+        assert now_of(page, "Momentum Runner").startswith("not reporting since Thu 08 Oct 22:10 UK; ")
+        (d.data / "crowd-status.json").write_text("{not json")
+        assert now_of(standing_of(d, LATER), "Crowd Fader").startswith("PAPER - last real trade Thu 08 Oct 23:36 UK "
+                                                                       "XAGUSD -£9.36; not reporting - its status file "
+                                                                       "could not be read")
+
+    def test_without_any_status_file_every_card_still_says_something(self, tmp_path):
+        d = a_day(tmp_path, records=False, now=LATER)
+        page = standing_of(d, LATER)
+        assert page.count(NOW_TAG) == 6                                          # every active bot's card, never blank
+        for label in ("Rapid Momentum Rider", "Momentum Runner", "Band Breaker", "Crowd Fader", "Financial Ian"):
+            assert "not reporting - no status file from it yet" in now_of(page, label), label
+        assert now_of(page, "Trend &amp; Breakout").endswith("; no scan has completed yet")
+        assert now_of(page, "Momentum Runner").endswith("; no real trade since Mon 05 Oct")
+        assert now_of(page, "Rapid Momentum Rider") == ("PAPER - last real trade 09:48 UK EURUSD -£3.04; not reporting - "
+                                                        "no status file from it yet")   # no rider.json: its default PAPER
+        # MetaTrader not read yet for the Runner's magic: never a false "no trade"
+        d.sd["unknown_magics"] = [990_511]
+        assert now_of(standing_of(d, LATER), "Momentum Runner").endswith(
+            "last real trade not known yet (MetaTrader's records not read)")
+
+    def test_ian_with_a_feed_and_the_runner_and_band_breaker_in_a_trade(self, tmp_path):
+        d = quiet_day(tmp_path)
+        (d.data / "ian-status.json").write_text(json.dumps({
+            "mode": "LIVE", "updated": LATER.isoformat(), "data_label": "LIVE", "mt5": {"connected": True},
+            "feed": {"state": "LIVE", "reason": "", "vendor": "databento"}, "open_positions": [],
+            "top_opportunity": {"spot_symbol": "EURUSD", "spot_side": "BUY", "score": 58.4, "tradeable": False,
+                                "why_not": "score under 70"}}))
+        runner = json.loads((d.data / "runner-status.json").read_text())
+        runner.update(status="IN TRADE", open=[{"symbol": "US500", "side": "BUY", "r_now": 0.4, "peak_r": 0.9}])
+        (d.data / "runner-status.json").write_text(json.dumps(runner))
+        band = json.loads((d.data / "bandbreaker-status.json").read_text())
+        band.update(status="WATCHING", checks_today=[{"check_ny": "10:30", "symbol": "US500",
+                                                     "decision": "inside the band: noise, no trade"}])
+        (d.data / "bandbreaker-status.json").write_text(json.dumps(band))
+        page = standing_of(d, LATER)
+        assert now_of(page, "Financial Ian").startswith("watching the futures order book; top EURUSD buy 58, not "
+                                                        "tradeable: score under 70; ")
+        assert now_of(page, "Momentum Runner").startswith("riding US500 buy +0.40 R; ")
+        assert now_of(page, "Band Breaker").endswith("in its session; last check 10:30 New York on US500: inside the "
+                                                     "band: noise, no trade")
+        (d.data / "ian-status.json").write_text(json.dumps({
+            "mode": "LIVE", "updated": LATER.isoformat(), "data_label": "LIVE", "mt5": {"connected": False},
+            "feed": {"state": "DEGRADED", "reason": "book gap on 6E"}, "open_positions": []}))
+        assert now_of(standing_of(d, LATER), "Financial Ian").startswith(
+            "data degraded (book gap on 6E) - no new trades; MetaTrader not connected; ")
+
+    def test_through_the_page_and_on_a_bot_alone(self, tmp_path):
+        d = quiet_day(tmp_path)
+        httpd, get = serve(d, LATER, thinking=THINKING, status={"bot": "RUNNING", "tnb_mode": "PAPER"})
+        try:
+            page, runner = get("/"), get("/?bot=momentum_runner")
+        finally:
+            httpd.shutdown()
+        assert page.count(NOW_TAG) == 6
+        assert "best AUDUSD long 64 (needs 60 and costs under 15% of the move)" in now_of(page, "Rapid Momentum Rider")
+        top = runner.split('id="more"')[0]
+        assert top.count(NOW_TAG) == 1 and "waiting for Trend &amp; Breakout&#x27;s next index entry" in top
+        assert bot_now_lines({"standing": d.sd}, top_of(d, LATER), only="financial_ian") == {
+            "financial_ian": "no data feed - places no trades (see Financial Ian); no real trade since Mon 05 Oct"}
+
+
+# ======================================================= the quiet banner --
+def banner_of(page: str) -> str:
+    return page.split('<div class="quiet">')[1].split('<div class="cards">')[0] if '<div class="quiet">' in page else ""
+
+
+class TestTheQuietBanner:
+    def test_no_live_trade_for_30_minutes_in_market_hours_says_why_for_each_live_bot(self, tmp_path):
+        d = quiet_day(tmp_path)
+        page = standing_of(d, LATER)
+        banner = banner_of(page)
+        assert '<div class="qh">No live trade since 09:48 UK - here is why:</div>' in banner
+        lines = bot_now_lines({"standing": d.sd, "status": {"bot": "RUNNING"}}, top_of(d, LATER))
+        for bid, label in (("momentum_rider", "Rapid Momentum Rider"), ("momentum_runner", "Momentum Runner"),
+                           ("financial_ian", "Financial Ian")):                  # the LIVE bots, each its card's line
+            assert f"<div><b>{label}</b>: " in banner and unescape(banner).count(lines[bid]) == 1, label
+        for label in ("Trend &amp; Breakout", "Band Breaker", "Crowd Fader"):   # PAPER: not why no LIVE trade
+            assert f"<b>{label}</b>" not in banner, label
+        assert page.index('<div class="botbar">') < page.index('<div class="quiet">') < page.index('<div class="cards">')
+
+    def test_it_counts_30_minutes_from_the_last_live_trade(self, tmp_path):
+        # the Rider's last real trade closed 08:48:30 UTC (09:48 UK)
+        for now, shown in ((t(2026, 10, 9, 9, 18), False), (t(2026, 10, 9, 9, 19), True)):
+            d = quiet_day(tmp_path / now.strftime("%H%M"), now=now)
+            assert bool(banner_of(standing_of(d, now))) is shown, now
+
+    def test_not_shown_while_a_trade_is_open_or_the_open_trades_are_not_known(self, tmp_path):
+        d = quiet_day(tmp_path, positions=open_now())                            # the Rider's AUDJPY still open
+        assert d.open and banner_of(standing_of(d, LATER)) == ""
+        d = quiet_day(tmp_path / "b")
+        assert banner_of(standing_of(d, LATER)) != ""
+        assert banner_of(standing_of(d, LATER, open_live=None)) == ""
+
+    def test_not_shown_at_weekends_or_with_the_market_shut(self, tmp_path):
+        for i, now in enumerate((t(2026, 10, 10, 11, 40),                        # Saturday
+                                 t(2026, 10, 11, 20, 0),                         # Sunday, before the 17:00 NY open
+                                 t(2026, 10, 9, 21, 30),                         # Friday after the 17:00 NY close
+                                 t(2026, 10, 11, 21, 20))):                       # Sunday, 15 min after the open
+            d = quiet_day(tmp_path / str(i), now=now)
+            assert banner_of(standing_of(d, now)) == "", now
+        d = quiet_day(tmp_path / "monday", now=t(2026, 10, 12, 9, 0))           # Monday morning: it says so
+        assert "No live trade since Fri 09 Oct 09:48 UK" in banner_of(standing_of(d, t(2026, 10, 12, 9, 0)))
+
+    def test_not_shown_when_a_live_bots_records_could_not_be_read_and_never_on_one_bots_view(self, tmp_path):
+        d = quiet_day(tmp_path)
+        d.sd["unknown_magics"] = [RIDER]
+        assert banner_of(standing_of(d, LATER)) == ""
+        d = quiet_day(tmp_path / "b")
+        httpd, get = serve(d, LATER)
+        try:
+            assert '<div class="quiet">' in get("/") and '<div class="quiet">' in get("/?period=yesterday")
+            assert '<div class="quiet">' not in get("/?bot=momentum_rider")
+        finally:
+            httpd.shutdown()
+
+    def test_no_live_trade_at_all_since_the_start(self, tmp_path):
+        d = quiet_day(tmp_path, deals=DEALS[:4])                                   # no Rider deals at all
+        assert '<div class="qh">No live trade since the account started (Mon 05 Oct) - here is why:</div>' in \
+            banner_of(standing_of(d, LATER))
+
+
+# ============================================================== escaped --
+class TestTheNowLinesAreEscaped:
+    def test_every_word_from_a_status_file_or_the_snapshot_is_escaped(self, tmp_path):
+        bad = "<script>alert(1)</script>"
+        d = quiet_day(tmp_path, rider={"scanner": [{"market": bad, "direction": "LONG", "score": 70,
+                                                    "reason": f"Fast upward momentum, but {bad}"}]})
+        for name, change in (("runner-status.json", {"executor_error": bad}),
+                             ("crowd-status.json", {"reads": {bad: {"score": 50, "direction": 1, "reason": bad}},
+                                                    "markets_now": {bad: bad}}),
+                             ("bandbreaker-status.json", {"status": "WATCHING", "checks_today": [
+                                 {"check_ny": bad, "symbol": bad, "decision": bad}]})):
+            st = json.loads((d.data / name).read_text())
+            st.update(change)
+            (d.data / name).write_text(json.dumps(st))
+        (d.data / "ian-status.json").write_text(json.dumps({
+            "mode": "LIVE", "updated": LATER.isoformat(), "data_label": bad, "mt5": {"connected": True},
+            "feed": {"state": "DEGRADED", "reason": bad}, "open_positions": []}))
+        page = standing_of(d, LATER, thinking=[{"rank": 1, "symbol": bad, "direction": "LONG", "score": 1,
+                                                "tier": bad, "blockers": [bad]}],
+                           status={"bot": "RUNNING", "tnb_mode": "PAPER", "not_trading_because": [bad]})
+        assert "<script>" not in page and page.count(NOW_TAG) == 6
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in banner_of(page)
+        for label in ("Rapid Momentum Rider", "Momentum Runner", "Crowd Fader", "Band Breaker", "Financial Ian",
+                      "Trend &amp; Breakout"):
+            assert bad in now_of(page, label), label                               # said, but only as text

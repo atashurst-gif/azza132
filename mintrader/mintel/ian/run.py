@@ -16,6 +16,8 @@ page says "LIVE needs MetaTrader: nothing can be placed".
 With no institutional feed configured the process still runs - it keeps the
 heartbeat and the status page up, in the safe DATA-DEGRADED state (no
 signals, no trades) - so the page always says plainly what is missing.
+With ``"feed": {"vendor": "binance"}`` it reads Binance's public crypto order
+book (no key) and trades the broker's BTC and ETH CFDs.
 
 Heartbeat "ian", pid file data/ian.pid (a second copy refuses to start), log
 logs/ian.log.
@@ -116,7 +118,8 @@ def main(argv=None) -> int:
                 stop.wait(CONNECT_RETRY_S)
             if stop.is_set():
                 return 0
-        feed = build_feed(icfg.feed, data, icfg.instruments)
+        from .instruments import parse_crypto
+        feed = build_feed(icfg.feed, data, icfg.instruments, parse_crypto(icfg.crypto_instruments))
         engine = IanEngine(data, icfg, broker, feed)
         engine.journal.event("START", f"mode {engine.mode}, feed {icfg.feed.get('vendor', 'none')}")
         n = 0
