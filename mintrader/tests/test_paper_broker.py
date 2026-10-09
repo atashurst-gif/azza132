@@ -985,8 +985,6 @@ class TestWiring:
         assert paper.positions(TNB) == [] and paper.closed == []         # nothing on the paper book
         paper.close_db()
 
-    @pytest.mark.xfail(strict=False, reason="wiring step 2 is not made yet: Trader._bot_kwargs still hands "
-                                            "the bots self.broker; it must pass real_broker(self.broker)")
     def test_the_trader_itself_gives_the_bots_the_real_broker(self, sim, cfg):
         from mintel.engine.trader import Trader
         cfg.runner.mode = "LIVE"

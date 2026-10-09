@@ -20,6 +20,18 @@ anyone can actually bank:
   ride 1R      once +1 R is reached, trail the stop 1 R behind the best price
   ride wide    stop 1.5x further away, then trail 1.5 R behind the best price
 
+With --runner it replays the Momentum Runner instead, on index trades only,
+under each variant in RUNNER_VARIANTS: the 3 R trail with every approach (the
+Runner to 8 Oct), without momentum continuation (version 5), a 2 R trail, and
+"enter only once the real trade has proved itself at +x R" (``confirm_r``):
+
+    python -m mintel.ops.potential --config ~/MarketBot/data/config.json --runner
+
+For a confirmed entry the Runner buys at the +x R mark, paying the spread,
+with its stop one of the real trade's R behind its own entry (the same money
+at risk); a minute bar that reaches the mark AND the Runner's stop is counted
+as stopped. Results are in R of that risk.
+
 Bars are the broker's (bid prices; the ask is the bid plus the bar's spread).
 Within a bar we cannot see whether the high or the low came first, so a bar
 that touches the stop is always counted as stopped before it reached its
@@ -220,6 +232,170 @@ def render(res: list[Potential], hours: float) -> str:
 INDICES = ("US30", "US500", "DE40", "UK100", "NAS100", "USTEC", "JP225", "AUS200", "FRA40", "EU50")
 
 
+# ------------------------------------------------------------- the Runner --
+MC = ("MOMENTUM_CONTINUATION",)
+# name -> (trail R, confirm R (0 = enter with the trade), approaches not ridden)
+RUNNER_VARIANTS: dict[str, tuple[float, float, tuple[str, ...]]] = {
+    "with the trade, trail 3R, every approach (to 8 Oct)": (3.0, 0.0, ()),
+    "with the trade, trail 3R, no momentum (version 5)": (3.0, 0.0, MC),
+    "with the trade, trail 2R, no momentum": (2.0, 0.0, MC),
+    "at +0.5R, trail 3R, no momentum": (3.0, 0.5, MC),
+    "at +1R, trail 3R, no momentum": (3.0, 1.0, MC),
+    "at +1R, trail 3R, every approach": (3.0, 1.0, ()),
+}
+
+
+def _marks(b, sign: int, entry: float, dist: float, point: float) -> tuple[float, float, float, float]:
+    """(worst, best, close, spread) of one bar in R, pessimistic: a sell is
+    marked on the ask."""
+    spr = (b.spread_points or 0.0) * point
+    if sign > 0:
+        return (b.low - entry) / dist, (b.high - entry) / dist, (b.close - entry) / dist, spr / dist
+    return ((entry - (b.high + spr)) / dist, (entry - (b.low + spr)) / dist,
+            (entry - (b.close + spr)) / dist, spr / dist)
+
+
+def runner_walk(bars, sign: int, entry: float, dist: float, point: float, opened: dt.datetime,
+                trail_r: float, confirm_r: float = 0.0, window_hours: float = 8.0) -> Optional[float]:
+    """The Runner's result in R on these bars, or None when it never entered.
+
+    confirm_r 0: the real trade's entry and stop, nothing moves until the best
+    price is trail_r ahead, then trailed trail_r behind it (``_walk``).
+    confirm_r > 0: nothing until the real trade is confirm_r ahead (a trade
+    stopped first is never entered); then in at that mark plus the spread,
+    stop 1 R behind, trailed the same way. The bar that reaches the mark is
+    counted stopped if it also reached the new stop (order unknown)."""
+    if confirm_r <= 0:
+        return _walk(bars, sign, entry, dist, point, opened, 1.0, trail_r, window_hours)[3]
+    limit = window_hours * 3600
+    for i, b in enumerate(bars):
+        if (b.time - opened).total_seconds() >= limit:
+            return None
+        worst, best, close, spr = _marks(b, sign, entry, dist, point)
+        if i == 0:
+            best = max(close, 0.0)                         # the entry minute: before the fill is unknown
+        if worst <= -1.0:
+            return None                                   # the real trade was stopped before it proved itself
+        if best < confirm_r:
+            continue
+        in_r = confirm_r + spr                           # paying the spread to get in
+        stop = in_r - 1.0
+        if worst <= stop:
+            return -1.0
+        peak = max(0.0, close - in_r)
+        last = close - in_r
+        for b2 in bars[i + 1:]:
+            if (b2.time - opened).total_seconds() >= limit:
+                return last
+            w2, b2best, c2, _ = _marks(b2, sign, entry, dist, point)
+            level = stop
+            if peak >= trail_r:
+                level = max(level, in_r + peak - trail_r)
+            if w2 <= level:
+                return level - in_r
+            peak = max(peak, b2best - in_r)
+            last = c2 - in_r
+        return last
+    return None
+
+
+@dataclass
+class RunnerReplay:
+    ticket: int
+    symbol: str
+    tactic: str
+    kept_r: float
+    results: dict = field(default_factory=dict)       # variant -> R, or None when not entered
+    note: str = ""
+    day: str = ""                                    # the UTC date it opened, for the days-down count
+
+
+def runner_run(trades: list[dict], fetch: Callable[[str, dt.datetime, int], list],
+               point_of: Callable[[str], float], hours: float = 8.0) -> list[RunnerReplay]:
+    """Every INDEX trade, under every Runner variant, on the same bars."""
+    from ..contracts import infer_group
+    out = []
+    for t in trades:
+        sym = str(t.get("symbol") or "")
+        if infer_group(sym) != "INDEX":
+            continue
+        tactic = str(t.get("tactic") or "").upper()
+        base = tactic[:-3] if tactic.endswith("_2X") else tactic
+        rr = RunnerReplay(int(t.get("ticket") or 0), sym, base, round(float(t.get("realised_r") or 0.0), 2),
+                          day=str(t.get("opened_utc") or "")[:10])
+        try:
+            sign = 1 if str(t.get("side", "")).upper() in ("BUY", "LONG") else -1
+            entry, stop = float(t["entry"]), float(t["stop"])
+            dist = abs(entry - stop)
+            opened = to_utc(dt.datetime.fromisoformat(str(t["opened_utc"])))
+            if dist <= 0:
+                rr.note = "no stop recorded"
+                out.append(rr)
+                continue
+            bars = fetch(sym, opened + dt.timedelta(hours=hours), int(hours * 60) + 5)
+            seq = [b for b in bars if to_utc(b.time) >= opened.replace(second=0, microsecond=0)]
+            if not seq:
+                rr.note = "no price history"
+                out.append(rr)
+                continue
+            point = point_of(sym)
+            for name, (trail, confirm, skip) in RUNNER_VARIANTS.items():
+                if base in skip:
+                    rr.results[name] = None
+                    continue
+                v = runner_walk(seq, sign, entry, dist, point, opened, trail, confirm, hours)
+                rr.results[name] = None if v is None else round(v, 2)
+        except Exception as exc:                            # one bad trade never stops the rest
+            rr.note = f"skipped: {exc}"
+        out.append(rr)
+    return out
+
+
+def render_runner(res: list[RunnerReplay], hours: float = 8.0) -> str:
+    ok = [r for r in res if r.results]
+    if not ok:
+        return "No index trades with price history found."
+    lines = [f"THE MOMENTUM RUNNER, REPLAYED: {len(ok)} index trades, the {hours:g} hours after each entry, in R",
+             "(1 R = the real trade's distance to its original stop; the Runner risks the same)", "",
+             f"  {'variant':52} {'taken':>5} {'wins':>5} {'total R':>8} {'per trade':>9}  {'days down':>9}"]
+    for name in RUNNER_VARIANTS:
+        taken = [(r, r.results.get(name)) for r in ok if r.results.get(name) is not None]
+        xs = [v for _, v in taken]
+        days: dict = {}
+        for r, v in taken:
+            days[r.day] = days.get(r.day, 0.0) + v
+        down = f"{sum(1 for v in days.values() if v < 0)} of {len(days)}"
+        lines.append(f"  {name:52} {len(xs):5d} {sum(1 for v in xs if v > 0):5d} {sum(xs):+8.1f} "
+                     f"{(sum(xs) / len(xs) if xs else 0.0):+9.2f}  {down:>9}")
+    base = next(iter(RUNNER_VARIANTS))
+    lines += ["", f"BY APPROACH ({base})",
+              f"  {'approach':28} {'trades':>6} {'Runner R':>9} {'ladder kept R':>14}"]
+    tactics = sorted({r.tactic for r in ok})
+    for tac in tactics:
+        rs = [r for r in ok if r.tactic == tac and r.results.get(base) is not None]
+        if not rs:
+            continue
+        lines.append(f"  {tac.replace('_', ' ').lower():28} {len(rs):6d} {sum(r.results[base] for r in rs):+9.1f} "
+                     f"{sum(r.kept_r for r in rs):+14.1f}")
+    lines += ["", "A Runner trade is a second position beside the real one: its R is added to what the",
+              "ladder kept, not instead of it. Commission is left out (indices carry none at IC Markets).",
+              "Pessimistic: a bar that touches a stop is stopped first; a confirmed entry pays the spread."]
+    skipped = [r for r in res if not r.results]
+    if skipped:
+        lines.append(f"  ({len(skipped)} index trades had no price history and are left out)")
+    return "\n".join(lines)
+
+
+def runner_csv(res: list[RunnerReplay]) -> str:
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["ticket", "symbol", "tactic", "kept_r", "note"] + list(RUNNER_VARIANTS))
+    for r in res:
+        w.writerow([r.ticket, r.symbol, r.tactic, r.kept_r, r.note]
+                   + ["" if r.results.get(n) is None else r.results[n] for n in RUNNER_VARIANTS])
+    return out.getvalue()
+
+
 def to_csv(res: list[Potential]) -> str:
     out = io.StringIO()
     w = csv.writer(out)
@@ -245,6 +421,8 @@ def main(argv=None) -> int:
     ap.add_argument("--since", default="2026-09-17")
     ap.add_argument("--hours", type=float, default=8.0)
     ap.add_argument("--upload", action="store_true", help="also write the results to the reports branch")
+    ap.add_argument("--runner", action="store_true",
+                    help="replay the Momentum Runner's variants on the index trades instead")
     args = ap.parse_args(argv)
     cfg = Config.load(args.config)
     from ..engine.journal import Journal
@@ -267,17 +445,26 @@ def main(argv=None) -> int:
             return cache[sym]
 
         print(f"Replaying {len(trades)} trades from the broker's price history...", file=sys.stderr)
-        res = run(trades, lambda sym, end, n: broker.bars(sym, TF.M1, n, end), point_of, args.hours)
+        fetch = lambda sym, end, n: broker.bars(sym, TF.M1, n, end)          # noqa: E731
+        if args.runner:
+            rres = runner_run(trades, fetch, point_of, args.hours)
+        else:
+            res = run(trades, fetch, point_of, args.hours)
     finally:
         try:
             broker.disconnect()
         except Exception:
             pass
-    text = render(res, args.hours)
-    print(text)
     data = Path(cfg.ops.data_dir)
-    (data / "potential.txt").write_text(text + "\n")
-    (data / "potential.csv").write_text(to_csv(res))
+    if args.runner:
+        text = render_runner(rres, args.hours)
+        table, name = runner_csv(rres), "potential-runner"
+    else:
+        text = render(res, args.hours)
+        table, name = to_csv(res), "potential"
+    print(text)
+    (data / f"{name}.txt").write_text(text + "\n")
+    (data / f"{name}.csv").write_text(table)
     if args.upload:
         from .report_upload import read_token, upload
         token = read_token(args.config)
@@ -286,9 +473,10 @@ def main(argv=None) -> int:
             return 0
         day = to_utc(utcnow()).date().isoformat()
         try:
-            upload({f"reports/potential/{day}.txt": text + "\n", f"reports/potential/{day}.csv": to_csv(res)},
+            stem = f"{day}-runner" if args.runner else day
+            upload({f"reports/potential/{stem}.txt": text + "\n", f"reports/potential/{stem}.csv": table},
                    cfg.report_repo, cfg.report_branch, token, day=day)
-            print(f"\nUploaded to reports/potential/{day}.txt")
+            print(f"\nUploaded to reports/potential/{stem}.txt")
         except Exception as exc:
             print(f"\n(not uploaded: {exc} - paste the text above instead)")
     return 0

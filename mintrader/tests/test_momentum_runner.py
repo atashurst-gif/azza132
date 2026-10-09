@@ -178,6 +178,8 @@ class TestInsideTheTrader:
         broker.connect()
         tr = Trader(broker, cfg, enable_model=False)
         assert tr.runner is not None and tr.runner.cfg.trail_r == 3.0
+        # the account gate reads the cycle's risk snapshot (closed until one is taken)
+        tr._last_snapshot = tr.risk.snapshot(broker.account(), [], T0)
         # adopt a position straight into FlowLock, as an entry would
         p = pos()
         tr.flowlock.adopt(p, 49990.0, T0)

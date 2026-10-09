@@ -112,11 +112,29 @@ class Calibrator:
     number is large.
     """
 
+    # A trade's R is its result divided by the distance to its ORIGINAL stop.
+    # When that distance was recorded as (almost) nothing - a position adopted
+    # after a restart with its stop already pulled up to the entry, say - one
+    # trade comes out at thousands of R and drowns every honest one: on 8 Oct
+    # the log said "band 76-82 (E=-136390.07R) underperforms 70-76". So R is
+    # held to a sane range before it is counted (a stop cannot lose much more
+    # than 1 R, and nothing this bot does banks more than a handful), a value
+    # that is not a number is not counted at all, and a band needs
+    # ``min_band_samples`` trades before its average is believed.
+    R_FLOOR = -2.0
+    R_CAP = 6.0
+
     def __init__(self, edges: Sequence[float] = (0, 50, 58, 64, 70, 76, 82, 88, 100),
-                 min_samples: int = 25):
+                 min_samples: int = 25, r_floor: float = R_FLOOR,
+                 r_cap: float = R_CAP, min_band_samples: int = 5):
         self.buckets = [Bucket(edges[i], edges[i + 1])
                         for i in range(len(edges) - 1)]
         self.min_samples = min_samples
+        self.r_floor = float(r_floor)
+        self.r_cap = float(r_cap)
+        self.min_band_samples = max(1, int(min_band_samples))
+        self.ignored = 0            # rows not counted (not a number), since the last load
+        self.clipped = 0            # rows held to the sane range, since the last load
 
     def _bucket(self, s: float) -> Bucket:
         for b in self.buckets:
@@ -124,17 +142,46 @@ class Calibrator:
                 return b
         return self.buckets[-1]
 
-    def observe(self, opportunity: float, r_multiple: float) -> None:
-        b = self._bucket(opportunity)
+    def sane_r(self, r_multiple) -> Optional[float]:
+        """The R that is counted: None when it is not a number, otherwise held
+        to [r_floor, r_cap]."""
+        try:
+            r = float(r_multiple)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(r):
+            return None
+        return max(self.r_floor, min(self.r_cap, r))
+
+    def observe(self, opportunity: float, r_multiple: float) -> bool:
+        """Count one closed trade. Returns False when it was not counted."""
+        try:
+            opp = float(opportunity)
+        except (TypeError, ValueError):
+            opp = float("nan")
+        r = self.sane_r(r_multiple)
+        if r is None or not math.isfinite(opp):
+            self.ignored += 1
+            return False
+        if r != float(r_multiple):
+            self.clipped += 1
+        b = self._bucket(opp)
         b.trades += 1
-        b.wins += 1 if r_multiple > 0 else 0
-        b.sum_r += r_multiple
+        b.wins += 1 if r > 0 else 0
+        b.sum_r += r
+        return True
 
     def load(self, rows: Sequence[tuple[float, float]]) -> None:
         for b in self.buckets:
             b.trades = b.wins = 0
             b.sum_r = 0.0
-        for opp, r in rows:
+        self.ignored = self.clipped = 0
+        for row in rows:
+            try:
+                opp, r = row[0], row[1]
+            except (TypeError, IndexError):
+                self.ignored += 1
+                continue
             self.observe(opp, r)
 
     def reliability(self, opportunity: float) -> float:
@@ -144,11 +191,11 @@ class Calibrator:
 
     def expected_r(self, opportunity: float) -> Optional[float]:
         b = self._bucket(opportunity)
-        return b.expectancy_r if b.trades >= 5 else None
+        return b.expectancy_r if b.trades >= self.min_band_samples else None
 
     def win_probability(self, opportunity: float) -> Optional[float]:
         b = self._bucket(opportunity)
-        return b.win_rate if b.trades >= 5 else None
+        return b.win_rate if b.trades >= self.min_band_samples else None
 
     def calibrated_confidence(self, opportunity: float) -> float:
         """Blend the raw score with observed performance, in 0..1.

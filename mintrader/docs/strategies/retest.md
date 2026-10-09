@@ -249,6 +249,53 @@ MOMENTUM_CONTINUATION needs a STRONG score; no limit on trade count.
   number is the only thing that keeps the bots apart. The Start window
   prints every bot's mode at the end.
 
+- 2026-10-09 (version 5, "Commission First (version 5)"; the measuring
+  clock is unchanged). Reviewed on every trade to 8 Oct from the nightly
+  reports (436 trades, the broker's net after commission; the 29 Sep and
+  2 Oct files were not on hand), the 7 Oct replay on the broker's minute
+  bars (435 trades) and the Momentum Runner's rows. Full tables:
+  docs/strategies/v2-commission-first.md, "Version 5".
+  * Standing rule, per kind of market: MOMENTUM_CONTINUATION off on the FX
+    majors (GBPUSD, EURUSD, AUDUSD, NZDUSD, USDCAD): 17 trades, negative on
+    5 of 8 days, the last four in a row, -13.87 after 17.48 commission.
+    On the FX minors it stays on.
+  * HIGHEST OPPORTUNITY, defined from the record and not from the score:
+    an approach in one kind of market with 20+ trades over 4+ days,
+    positive after costs per trade and in R, and more days up than down.
+    One segment qualifies: momentum continuation on FX minor pairs (fast
+    and news markets), 38 trades over 10 days, 8 up and 2 down, +156.31
+    after 29.89 commission, +0.82 R a trade. Momentum continuation on
+    indices (26 trades, +42.82) has more losing days than winning (6 of
+    10) and does not. Scores of 82+ were the WORST band (48 trades,
+    -54.18, 11 of 13 days down), so the score plays no part.
+  * TOP-OPPORTUNITY SIZE (Aaron: "0.5 maximum" read as 0.5 lots): such a
+    trade risks up to 40 instead of 10 (risk.top_risk_money), never above
+    the 1.5% ceiling (30 on 2,000), and at most 0.5 lots on FX and metals
+    (risk.top_max_lots); indices get the money cap without a lot cap. The
+    daily loss stop, drawdown, the correlated (2%) and total (4%) exposure
+    caps, margin and every breaker apply unchanged. The segment's own last
+    40 trades in the journal are checked before every such trade; if they
+    stop qualifying, the trade is sized like any other.
+  * Calibration fixed: the 8 Oct log's "band 76-82 (E=-136390.07R)" came
+    from a tracker rebuilt after a restart with the broker's stop (already
+    at the entry) as its "initial" stop. Rebuilt trackers now take the
+    journal's opening stop; calibration measures R against that stop, drops
+    near-zero-risk rows and holds R to -2..+6, as do Kelly and the
+    historical match.
+  * Momentum Runner: no longer rides momentum continuation (replay: 33
+    index trades, -14.4 R under its 3 R trail, 7 of 9 days down; the rest
+    +43.5 R on 64. Its own momentum trades: 7, one win, -27.48). New option
+    runner.confirm_r ("enter once the real trade is +x R ahead"), OFF and
+    NOT YET EVALUATED - `python -m mintel.ops.potential --runner` replays it
+    on Aaron's Mac from the broker's bars.
+  * Looked at and NOT changed: no remaining market meets the market rule
+    (closest EURUSD, 5 of 8 days down); the 82+ band (inside today's rules
+    +0.18 R a trade); time of day; the ladder (no riding rule beats it on
+    FX or metals; since the profit floor of 25 Sep, 77 trades reached +1 R
+    and none ended in a loss). Quick stop-outs are the biggest loss line
+    (72 of 214 full stops inside five minutes, -422.22), with nothing yet
+    that tells them apart before the entry.
+
 ## Reverting
 Install the pinned build by downloading
 https://github.com/atashurst-gif/azza132/archive/refs/heads/retest-2026-09-18.zip

@@ -33,8 +33,9 @@ from pathlib import Path
 from typing import Callable, Optional, Sequence
 
 from ..broker.base import Bar, Broker, Position, Side, TF, Tick
+from ..broker.paper import PaperBroker, real_broker
 from ..clock import to_utc, utcnow
-from ..config import Config
+from ..config import Config, tnb_mode
 from ..data.series import atr
 from ..news.adapters import AdapterRegistry, ForexFactoryAdapter, Mt5CalendarAdapter, StoreBackedAdapter
 from ..news.calendar_store import CalendarStore
@@ -105,6 +106,20 @@ def apply_twin(state: MarketState, scan_cfg, counts: dict[str, int]) -> tuple[Ma
     return twin, True
 
 
+def dry_run_view(broker: Broker, cfg: Config) -> Broker:
+    """The broker a dry-run Trader (the verify smoke test) reads.
+
+    It runs beside the real trader and shares its journal. With Trend &
+    Breakout on PAPER its trades exist only on the paper book, so on the bare
+    broker the dry run would see none of them and mark every one closed in
+    the shared journal, at a made-up loss. It reads that book through a
+    READ-ONLY view instead: it never books a stop (the real trader's own
+    instance does) and refuses every order. Anything else is unchanged."""
+    if tnb_mode(cfg) != "PAPER" or isinstance(broker, PaperBroker):
+        return broker
+    return PaperBroker.from_config(broker, cfg, read_only=True)
+
+
 class Trader:
     """Owns the components and the cycle.  Safe to run in one thread."""
 
@@ -115,14 +130,24 @@ class Trader:
                  use_store_only_news: bool = False,
                  enable_model: bool = True,
                  dry_run: bool = False):
+        if dry_run:
+            broker = dry_run_view(broker, cfg)
         self.broker = broker
+        # Trend & Breakout on PAPER holds the paper wrapper (mintel/run.py);
+        # everything that must see or trade the REAL account - the other
+        # bots, the account health checks - is given the broker behind it.
+        self.real_broker = real_broker(broker)
         self.cfg = cfg
         self.clock = clock
         # In dry-run everything is evaluated exactly as normal - regime,
         # tactics, scoring, sizing, stop placement, idempotency - and the
         # order is simply never sent.  It is what makes the verification smoke
         # test genuinely safe to run against a live account, rather than
-        # merely claimed to be.
+        # merely claimed to be.  The other bots (Momentum Runner, Band
+        # Breaker, Crowd Fader) are NOT started in a dry run: each already
+        # runs inside the real trader, and a second copy would trail, close
+        # or open REAL positions (a LIVE Runner closes any position with its
+        # number it has no record of yet) or book their paper trades twice.
         self.dry_run = bool(dry_run)
         self.would_have_traded: list[dict] = []
         data_dir = Path(cfg.ops.data_dir)
@@ -142,7 +167,7 @@ class Trader:
                 adapters.append(StoreBackedAdapter(self.calendar_store))
             elif cfg.news.enabled:
                 if cfg.news.use_mt5_calendar:
-                    adapters.append(Mt5CalendarAdapter(broker))
+                    adapters.append(Mt5CalendarAdapter(self.real_broker))
                 if cfg.news.public_calendar_feed:
                     adapters.append(ForexFactoryAdapter())
                 adapters.append(StoreBackedAdapter(self.calendar_store))
@@ -157,6 +182,7 @@ class Trader:
                                history_match=self.matcher)
         self.risk = RiskManager(cfg, self.journal)
         self.risk.realised_today = self.realised_today
+        self._last_snapshot = None               # the newest cycle's RiskSnapshot (None: not taken, or unreadable)
         self.last_entry_utc: Optional[dt.datetime] = None
         self._entry_times: list[dt.datetime] = []
         self._entries_today: list[dt.datetime] = []
@@ -170,9 +196,19 @@ class Trader:
         try:
             from ..runner.shadow import MomentumRunner, RunnerConfig
             rc = cfg.runner if hasattr(cfg, "runner") else RunnerConfig()
-            if getattr(rc, "enabled", True):
-                self.runner = MomentumRunner(data_dir, RunnerConfig(**{k: getattr(rc, k) for k in RunnerConfig.__dataclass_fields__ if hasattr(rc, k)}),
-                                             spec_fn=self.broker.spec, clock=self.clock, **self._bot_kwargs(MomentumRunner))
+            if getattr(rc, "enabled", True) and not self.dry_run:
+                rkw = {k: getattr(rc, k) for k in RunnerConfig.__dataclass_fields__ if hasattr(rc, k)}
+                for k in ("markets", "skip_tactics", "top_segments"):
+                    if k in rkw:
+                        rkw[k] = tuple(tuple(x) if isinstance(x, list) else x for x in (rkw[k] or ()))
+                # The Runner's top size is held under the operator's ceiling on
+                # the REAL account and its margin floor, the same as any trade.
+                rkw["account_max_risk_pct"] = float(cfg.risk.max_risk_pct)
+                rkw["account_min_margin_level_pct"] = float(cfg.risk.min_margin_level_pct)
+                rkw = {k: v for k, v in rkw.items() if k in RunnerConfig.__dataclass_fields__}
+                self.runner = MomentumRunner(data_dir, RunnerConfig(**rkw),
+                                             spec_fn=self.real_broker.spec, clock=self.clock,
+                                             **self._bot_kwargs(MomentumRunner))
         except Exception as exc:
             log.warning("Momentum Runner not started: %s", exc)
         # Band Breaker: the fourth bot, paper intraday index momentum. Same
@@ -181,11 +217,11 @@ class Trader:
         try:
             from ..bandbreaker.engine import BandBreaker, BandBreakerConfig
             bc = getattr(cfg, "bandbreaker", None)
-            if bc is None or getattr(bc, "enabled", True):
+            if not self.dry_run and (bc is None or getattr(bc, "enabled", True)):
                 kw = {k: getattr(bc, k) for k in BandBreakerConfig.__dataclass_fields__ if bc is not None and hasattr(bc, k)}
                 if "markets" in kw:
                     kw["markets"] = tuple(kw["markets"])
-                self.bandbreaker = BandBreaker(data_dir, BandBreakerConfig(**kw), spec_fn=self.broker.spec, clock=self.clock,
+                self.bandbreaker = BandBreaker(data_dir, BandBreakerConfig(**kw), spec_fn=self.real_broker.spec, clock=self.clock,
                                                **self._bot_kwargs(BandBreaker))
         except Exception as exc:
             log.warning("Band Breaker not started: %s", exc)
@@ -195,12 +231,12 @@ class Trader:
         try:
             from ..crowd.engine import CrowdConfig as _CrowdCfg, CrowdFader
             cc = getattr(cfg, "crowd", None)
-            if cc is None or getattr(cc, "enabled", True):
+            if not self.dry_run and (cc is None or getattr(cc, "enabled", True)):
                 kw = {k: getattr(cc, k) for k in _CrowdCfg.__dataclass_fields__ if cc is not None and hasattr(cc, k)}
                 for k in ("markets", "entry_hours_utc"):
                     if k in kw:
                         kw[k] = tuple(kw[k])
-                self.crowd = CrowdFader(data_dir, _CrowdCfg(**kw), spec_fn=self.broker.spec, clock=self.clock,
+                self.crowd = CrowdFader(data_dir, _CrowdCfg(**kw), spec_fn=self.real_broker.spec, clock=self.clock,
                                         **self._bot_kwargs(CrowdFader))
         except Exception as exc:
             log.warning("Crowd Fader not started: %s", exc)
@@ -208,10 +244,10 @@ class Trader:
 
         expected_login = cfg.account_login
         try:
-            expected_login = expected_login or broker.account().login
+            expected_login = expected_login or self.real_broker.account().login
         except Exception:
             pass
-        self.health = HealthSupervisor(cfg, broker, self.journal, self.news,
+        self.health = HealthSupervisor(cfg, self.real_broker, self.journal, self.news,
                                        self.executor,
                                        expected_login=expected_login,
                                        expected_server=cfg.account_server,
@@ -278,7 +314,7 @@ class Trader:
         try:
             positions = self.broker.positions(self.cfg.magic)
             for p in positions:
-                self.flowlock.adopt(p, p.sl, to_utc(self.clock()))
+                self.flowlock.adopt(p, self._original_stop(p), to_utc(self.clock()))
                 risk_money = self._risk_money_for(p)
                 self.risk.register_open_risk(p.ticket, p.symbol, p.side,
                                              risk_money)
@@ -300,6 +336,23 @@ class Trader:
         self.journal.log_event("BOOTSTRAP", "trader started",
                                "INFO", {k: str(v)[:400] for k, v in out.items()})
         return out
+
+    def _original_stop(self, position: Position) -> float:
+        """The stop a position was OPENED with, for a tracker that has to be
+        rebuilt (a restart that lost it). The broker's stop may have been
+        pulled up to the entry or beyond by then; taken as the "initial" stop
+        it makes 1 R almost nothing, and one such trade read -136,390 R in
+        the calibration on 8 Oct. The journal's record of the entry stop is
+        used when it is a real risk; the broker's stop only otherwise."""
+        try:
+            st = self.journal.opening_stop(position.ticket)
+        except Exception:
+            st = None
+        if st:
+            gap = (position.entry_price - st) * position.side.sign
+            if gap > abs(position.entry_price) * 1e-5:
+                return float(st)
+        return position.sl
 
     def _risk_money_for(self, position: Position) -> float:
         spec = self.broker.spec(position.symbol)
@@ -557,6 +610,7 @@ class Trader:
         except Exception as exc:
             account, snapshot = None, None
             log.error("could not read the account: %s", exc)
+        self._last_snapshot = snapshot           # the other bots' account gate reads it (_bots_may_enter)
 
         # Beat BEFORE checking: this thread is demonstrably alive right now, so
         # its own heartbeat should reflect that.  Real liveness testing of this
@@ -761,8 +815,11 @@ class Trader:
         if self.runner is not None:
             try:
                 stops = {t: tr.initial_stop for t, tr in self.flowlock.trackers.items()}
-                tactics = {int(r["ticket"]): r.get("tactic") for r in self._open_journal_rows()}
-                for note in self.runner.observe(positions, stops, self._tick_quietly, now, tactics):
+                rows = self._open_journal_rows()
+                tactics = {int(r["ticket"]): r.get("tactic") for r in rows}
+                regimes = {int(r["ticket"]): r.get("regime") for r in rows}
+                for note in self.runner.observe(positions, stops, self._tick_quietly, now, tactics,
+                                                regimes=regimes):
                     log.info("%s", note)
             except Exception as exc:
                 log.debug("Momentum Runner skipped this pass: %s", exc)
@@ -782,7 +839,10 @@ class Trader:
 
     def _bot_kwargs(self, kls) -> dict:
         """The broker and the account gate, for an engine that can take them
-        (one still without a LIVE path is built exactly as before)."""
+        (one still without a LIVE path is built exactly as before). Always
+        the REAL broker: with Trend & Breakout on PAPER the trader holds the
+        paper wrapper, and the Momentum Runner's LIVE orders, the Band
+        Breaker and the Crowd Fader must never go through it."""
         import inspect
         try:
             params = inspect.signature(kls.__init__).parameters
@@ -790,25 +850,26 @@ class Trader:
             return {}
         out = {}
         if "broker" in params:
-            out["broker"] = self.broker
+            out["broker"] = real_broker(self.broker)
         if "entries_allowed" in params:
             out["entries_allowed"] = self._bots_may_enter
         return out
 
     def _bots_may_enter(self) -> bool:
         """The account-level gate the other bots share with Trend & Breakout:
-        no new entries while the daily-loss stop, a drawdown or exposure
-        breaker, or safe mode holds. Managing open positions is never gated."""
+        no new entries while safe mode or any breaker on the last risk
+        snapshot holds (the daily-loss stop, drawdown, exposure, margin level
+        and the rest). Managing open positions is never gated."""
         try:
             if getattr(self.health, "safe_mode", False) or getattr(self.health, "safe_mode_reason", ""):
                 return False
         except Exception:
             pass
-        try:
-            allowed = self.risk.entries_allowed
-            return bool(allowed() if callable(allowed) else allowed)
-        except Exception:
-            return True
+        # The breakers live on the risk SNAPSHOT the last cycle took (the
+        # RiskManager itself has no such flag). Closed until the first
+        # snapshot, and whenever the account could not be read.
+        snap = self._last_snapshot
+        return bool(snap is not None and snap.entries_allowed)
 
     def _bars_quietly(self, symbol: str, tf, count: int):
         try:
@@ -833,7 +894,8 @@ class Trader:
         spec = self.broker.spec(position.symbol)
         if spec is None:
             return [f"{position.symbol}: no contract specification"]
-        tracker = self.flowlock.adopt(position, position.sl, now)
+        tracker = (self.flowlock.trackers.get(position.ticket)
+                   or self.flowlock.adopt(position, self._original_stop(position), now))
 
         ctx = None
         state = None
@@ -1166,8 +1228,18 @@ class Trader:
                         state.symbol, state.side, 1.0, state.entry)
             except Exception:
                 margin_per_lot = None
+            # Highest opportunity (version 5): a segment that has earned it on
+            # its own record, never the raw score. Every cap and breaker holds.
+            top, top_why = False, ""
+            try:
+                top, top_why = self.risk.top_opportunity(
+                    state, self.risk.market_kind(spec, state.symbol), now)
+            except Exception as exc:
+                top, top_why = False, f"top opportunity not checked: {exc}"
+            if top_why:
+                reasons = tuple(reasons) + (top_why,)
             sizing = self.risk.size(state, spec, account, positions, risk_pct,
-                                    snapshot, margin_per_lot)
+                                    snapshot, margin_per_lot, top=top)
             if not sizing.ok:
                 blocked.append(f"{state.symbol}: {sizing.rejected}")
                 continue
@@ -1180,7 +1252,8 @@ class Trader:
                     "risk_pct": sizing.risk_pct,
                     "risk_money": sizing.risk_money,
                     "opportunity": state.opportunity, "tier": state.tier,
-                    "tactic": state.tactic,
+                    "tactic": state.tactic, "top_opportunity": top,
+                    "runner_feed": bool(getattr(state, "runner_feed", False)),
                 }
                 self.would_have_traded.append(intended)
                 blocked.append(
@@ -1217,6 +1290,8 @@ class Trader:
                     "INFO",
                     {"opportunity": state.opportunity, "tier": state.tier,
                      "tactic": state.tactic, "risk_pct": sizing.risk_pct,
+                     "top_opportunity": top,
+                     "runner_feed": bool(getattr(state, "runner_feed", False)),
                      "explain": state.explain(),
                      "sizing_reasons": list(reasons) + list(sizing.reasons),
                      "entry_timing": timing_note,

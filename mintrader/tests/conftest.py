@@ -66,6 +66,7 @@ def lifecycle_profile(c: Config) -> Config:
     c.scan.tier_normal = 58.0
     c.scan.disabled_tactics = ()
     c.scan.disabled_tactic_regimes = ()
+    c.scan.disabled_tactic_groups = ()      # version 5 switched momentum off on the FX majors the sim is made of
     c.universe.excluded_symbols = ()
     c.scan.tactic_min_score = {}
     c.scan.max_cost_fraction_of_stop = 0.30

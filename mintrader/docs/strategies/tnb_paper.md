@@ -28,14 +28,12 @@ wrapper (`mintel/broker/paper.py`, `PaperBroker`) around the real one:
   with a real ticket or another bot's paper tickets.
 - Only the running bot may write to that record. The wrapper has a
   read-only mode for reports run in other programs, which can never change
-  the record or book a trade twice. **The reports do not use it yet** (see
-  "Still to be wired" below): today the nightly upload, the day review and
-  the ledger check read Trend & Breakout's trades from the real broker
-  only, so they will show it with no trades.
-- Paper money never reaches the real account. **The status page does not
-  know that yet**: it still labels Trend & Breakout LIVE and adds its
-  results to Overall, so until the page is changed Overall would include
-  paper money (see "Still to be wired").
+  the record or book a trade twice. Every report reads the record that way
+  (step 3 of "The wiring" below), and so does the installer's check.
+- Paper money never reaches the real account. The status page labels
+  Trend & Breakout PAPER, shows its paper result as practice on its own
+  card and leaves it out of Overall and out of the Account figures, which
+  come from MetaTrader alone.
 
 ## How a paper trade is filled
 
@@ -133,14 +131,16 @@ before. The only difference is that the trade it rides is now a paper one.
 
 Two things keep this safe:
 
-1. The Runner must be given the **real** broker, not the paper wrapper.
-   **Today's trader code would give it the wrapper** (see "Still to be
-   wired", step 2), so this needs a change in the trader before the
-   switch. If it is ever given the wrapper by mistake, the wrapper refuses
-   its orders with a plain message and sends nothing; nothing is silently
+1. The Runner is given the **real** broker, never the paper wrapper: the
+   trader (`Trader._bot_kwargs`) hands every other bot
+   `real_broker(self.broker)`, the broker behind the wrapper (wired 9 Oct).
+   If it were ever given the wrapper by mistake, the wrapper would refuse
+   its orders with a plain message and send nothing; nothing is silently
    simulated, but the Runner would then stop entering, and its open real
    trades would no longer be trailed or closed at the 8-hour mark (only
-   their first stop would protect them).
+   their first stop would protect them). A test proves the trader itself
+   gives it the real broker, and that its order reaches the broker under
+   990511 while Trend & Breakout's side stays on paper.
 2. The wrapper shows Trend & Breakout only its own trades: its paper ones,
    and any real ones carrying its own number (990311). It never shows,
    moves or closes another bot's real position. Asking it for another bot's
@@ -167,50 +167,104 @@ A real Trend & Breakout trade that is still open when the switch happens
 stays on the real broker, with its own stop and target. Trend & Breakout can
 still see it.
 
-- **By default nothing is sent for it.** The wrapper refuses any change, and
-  the trade ends at its own stop or target. The journal then books the
-  broker's real figure.
-- **With `manage_leftovers` on,** Trend & Breakout winds it down normally at
-  the real broker: it can tighten the stop and close the trade, but it
-  never places a new order.
+- **As set up (`tnb.manage_leftovers`, default `true`),** Trend & Breakout
+  winds it down normally at the real broker to its natural end: it can
+  tighten the stop and close the trade, but it never places a new order.
+  The journal books the broker's real figure. (A test opens a real trade,
+  switches to paper, and follows it to its broker stop.)
+- **With `manage_leftovers` set to `false`,** nothing is sent for it. The
+  wrapper refuses any change, and the trade ends at its own stop or target.
+  (The wrapper's own default, used when it is built by hand, is this one.)
 
-## Still to be wired
+## The setting
 
-The wrapper and its tests are done. Switching Trend & Breakout to paper is
-**not** a one-line change. Each step below is in a file owned elsewhere,
-and all of them are needed together:
+```json
+"tnb": {"mode": "PAPER", "slippage_points": 1.0, "live_groups": [], "manage_leftovers": true}
+```
 
-1. **Where the wrapper goes: `mintel/run.py`, in `main()`,** at the line
-   `trader = Trader(broker, cfg)` (after `wait_for_broker`). Change it to
-   `trader = Trader(PaperBroker.from_config(broker, cfg), cfg)`. Wrap
-   there and nowhere else. **Never inside `build_broker()`:** Financial
-   Ian, the scalper and the ops tools (reconcile, day review, report
-   upload, ledger check, potential) all call it. Each would get its own
-   paper record writer on the same file: their real orders would be
+in `config.json` (`mintel/config.py`, `TnbConfig`). `mode` is `LIVE` (the
+default, so nothing changes until the installer's line-up step sets it)
+or `PAPER`. Anything else - a typo, a wrong type, a block that is not a
+table - is read as **LIVE**, with a warning in the log, and never stops the
+start; a bad number falls back to its default the same way. The other
+fields are the wrapper's settings (`PaperConfig` names: `slippage_points`,
+`live_groups`, `manage_leftovers`, `commission`, `fx_rates`,
+`max_tick_age_seconds`, `replay_*`); `PaperBroker.from_config` reads them
+through `cfg.tnb_paper`, which is the block while the mode is PAPER and
+nothing otherwise. Code that needs the mode reads `config.tnb_mode(cfg)`.
+
+At start the log says, in one line:
+
+    Trend & Breakout: PAPER - real prices, simulated orders; the Momentum Runner still rides its index entries with real orders
+
+(or `Trend & Breakout: LIVE - its orders go to the broker`). If the paper
+record cannot be opened, the bot does not start (exit code 6) rather than
+trade Trend & Breakout live.
+
+## The wiring
+
+All four steps were made on 9 October. One thing in step 3 is still not
+wired, and it is said there.
+
+1. **Done - where the wrapper goes: `mintel/run.py`, in `main()`,** at the
+   Trader's construction (after `wait_for_broker`):
+   `Trader(trend_and_breakout_broker(broker, cfg), cfg)`, which is
+   `PaperBroker.from_config(broker, cfg)` on PAPER and `broker` itself on
+   LIVE. There and nowhere else. **Never inside `build_broker()`:**
+   Financial Ian, the scalper and the ops tools (reconcile, day review,
+   report upload, ledger check, potential) all call it. Each would get its
+   own paper record writer on the same file: their real orders would be
    refused, and the same paper stop could be booked twice.
-2. **The other bots get the real broker: `mintel/engine/trader.py`,
-   `Trader._bot_kwargs`.** It hands `self.broker` to the Momentum Runner,
-   the Band Breaker and the Crowd Fader. It must hand them
-   `real_broker(self.broker)` (from `mintel/broker/paper.py`) instead.
-   Without this the LIVE Runner's orders are refused. A test in
-   `tests/test_paper_broker.py` is marked "expected to fail" until this
-   change is made.
-3. **The reports:**
-   - `mintel/ops/attribution.py`: `_all_live` marks Trend & Breakout LIVE,
-     and the Overall sums (`parts = [mi] + ...` in `build_strategies` and
-     in the period view) always add it in. Once the trader holds the
-     wrapper, its journal and the ledger in `mintel/run.py`
-     (`broker_ledger`) are paper figures. While it is on paper it must be
-     marked PAPER and left out of Overall.
-   - `mintel/ops/standing.py`, `bot_modes_and_magics`: says "LIVE" for
-     Trend & Breakout whatever the setting. It must say "PAPER".
+2. **Done - the other bots get the real broker: `mintel/engine/trader.py`.**
+   `Trader._bot_kwargs` hands the Momentum Runner, the Band Breaker and the
+   Crowd Fader `real_broker(self.broker)`, and the account health checks
+   and the broker's calendar get it too (`Trader.real_broker`). Trend &
+   Breakout's own executor and scanner keep the wrapper. The "expected to
+   fail" mark in `tests/test_paper_broker.py` is gone: the test passes.
+   While on paper the scanner may also offer the Runner's feed approaches
+   on indices (`runner.feed_tactics`, empty for now; see
+   docs/strategies/momentum_runner.md), tagged `runner_feed`.
+   A dry-run Trader (the installer's check, below) is given a read-only
+   view of the paper record instead (`dry_run_view`), and starts none of
+   the other bots.
+3. **Done - the reports.** Each reads Trend & Breakout's paper figures
+   from its record, read-only (`mintel.ops.standing.TnbPaperRecord`, which
+   opens `PaperBroker(..., read_only=True)`), and its real ones from the
+   real broker. Paper is never added to the account.
+   - `mintel/ops/attribution.py` (the strategy tabs): each Trend & Breakout
+     row is marked PAPER or LIVE by the paper record; the PAPER ones stay
+     on its own tab and are left out of Overall.
+   - `mintel/ops/standing.py` (the Account card and the bot cards): the
+     account's figures are MetaTrader's alone, read from the real broker
+     behind the wrapper; Trend & Breakout's card says PAPER and shows its
+     practice result apart.
    - `mintel/ops/day_review.py`, `mintel/ops/ledger_check.py` and
-     `mintel/ops/report_upload.py` read Trend & Breakout's deals from the
-     real broker only. They must read its figures through
-     `PaperBroker(real, cfg.ops.data_dir, magic=cfg.magic, read_only=True)`.
+     `mintel/ops/report_upload.py` (the nightly report): its real deals
+     from the broker, its practice from the record, each labelled.
+   - `mintel/ops/pulse.py` (the ten-minute pulse): `today_pnl` is the
+     account's result for the broker's day, `open_positions` every real
+     open position on the account, and on PAPER a separate
+     `tnb_practice_today` and `tnb_mode`.
    - `mintel/ops/reconcile.py` keeps the real broker alone: it checks the
      account itself.
-4. **The setting: `mintel/config.py`.** Something has to say that Trend &
-   Breakout is on paper, so the reports in step 3 can read it. Optionally
-   add a `tnb_paper` block whose names match `PaperConfig` (slippage, live
-   markets, and so on); `PaperBroker.from_config` reads it.
+   - **Not wired yet:** no report leaves out trades tagged `runner_feed`
+     (`mintel.runner.feed.is_feed_trade(row)` exists for it). With
+     `runner.feed_tactics` empty, as it is by default, no such trade is
+     made.
+4. **Done - the setting: `mintel/config.py`,** the `tnb` block above. The
+   Mac installer's one-time line-up step (marker `.lineup-2026-10-09`)
+   sets it to PAPER.
+
+## The installer's check
+
+`python -m mintel.verify` (run by the installers after the bots start)
+runs a dry-run Trader beside the running one, on the same journal. On PAPER
+it reads the paper record read-only and prints "Trend & Breakout on PAPER"
+with the number of paper trades open; it never books or writes anything
+there. It reads the paper record again once it has started up, so a paper
+trade the running bot opens in the meantime is never marked closed in the
+journal they share. On PAPER and on LIVE alike every call that would open, move or close
+a real position is refused before it reaches MetaTrader (on LIVE the dry
+run would otherwise manage Trend & Breakout's real trades too), and a
+trade the running bot already holds is never reported as "an order was
+sent".

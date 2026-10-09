@@ -11,6 +11,27 @@ dashboard.  Then it runs a **safe smoke test** that exercises the full decision
 path - sizing, stop calculation, order-request construction, idempotency - and
 deliberately stops short of sending an order.
 
+The smoke test runs beside the real trader, on the same account and the same
+journal, so it is kept away from anything real:
+
+* It is a dry-run Trader: an entry is worked out and never sent.
+* It is handed the broker through :class:`NoOrders`, which refuses every call
+  that would open, change or close a position. A dry run still manages the
+  open positions it can see (Trend & Breakout's own), and on LIVE it would
+  otherwise move or close them at the real broker.
+* With Trend & Breakout on PAPER (config.json "tnb" -> "mode") the Trader
+  reads its paper record through a READ-ONLY view (``dry_run_view`` in
+  ``mintel/engine/trader.py``): it never books a paper stop and never writes
+  the record; only the running trader does. It reads the record again once
+  it has started up, so a paper trade opened meanwhile by the running trader
+  is never marked closed in the journal they share.
+* The other bots (Momentum Runner, Band Breaker, Crowd Fader) are never
+  started by a dry run: they already run inside the real trader, and the
+  check says so.
+* A position found already open is adopted by reconciliation as
+  ``adopted:<ticket>``. That is a record of a trade the running trader holds,
+  never an order, and :func:`sent_any_order` does not count it.
+
 Exit code 0 means everything needed to trade is working.
 """
 from __future__ import annotations
@@ -21,11 +42,60 @@ import json
 import sys
 import urllib.request
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
-from .broker.base import Side
+from .broker.base import OrderResult, RetCode, Side
 from .clock import utcnow
 from .config import Config
+
+# The executor's record of a position reconciliation found already open (a
+# trade the running trader holds), keyed "adopted:<ticket>". Never an order.
+ADOPTED_PREFIX = "adopted:"
+
+# Broker names a dry run is never given: every call that could open, change
+# or close a position, and the MT5 adapter's raw MetaTrader5 module (which
+# could do any of them). The same list as the PAPER wrapper's.
+ORDER_CALLS = frozenset({"send", "modify_stops", "close", "order_send", "order_check", "cancel",
+                         "cancel_order", "close_by", "close_all", "positions_close", "mt5"})
+
+
+class NoOrders:
+    """The broker a dry-run Trader is handed: the real one for everything it
+    reads (prices, the account, positions, history, the calendar, the
+    connection), and a refusal for every call that could open, change or
+    close a position, which never reaches the broker. ``refused`` lists, in
+    plain words, what the dry run would have done."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.refused: list[str] = []
+
+    def _refusal(self, what: str, ticket: int = 0, req: Any = None) -> OrderResult:
+        self.refused.append(what)
+        return OrderResult(False, RetCode.REJECT.value, ticket=int(ticket or 0),
+                           requested_volume=float(getattr(req, "volume", 0.0) or 0.0),
+                           idempotency_key=str(getattr(req, "idempotency_key", "") or ""),
+                           comment="verification dry run: nothing is sent to the broker")
+
+    def send(self, req) -> OrderResult:
+        side = getattr(getattr(req, "side", None), "value", "")
+        return self._refusal(f"open {side} {float(getattr(req, 'volume', 0.0) or 0.0):g} lots of "
+                             f"{getattr(req, 'symbol', '?')}", req=req)
+
+    def modify_stops(self, ticket: int, sl: float, tp: float) -> OrderResult:
+        return self._refusal(f"set ticket {ticket}'s stop to {sl:g} and target to {tp:g}", ticket)
+
+    def close(self, ticket: int, volume: float = 0.0, comment: str = "") -> OrderResult:
+        return self._refusal(f"close ticket {ticket}" + (f" ({volume:g} lots)" if volume else ""), ticket)
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "inner":                       # not set yet (a copy being built): never recurse
+            raise AttributeError(name)
+        if name in ORDER_CALLS:
+            def refused(*args, **kwargs):
+                return self._refusal(f"call {name}")
+            return refused
+        return getattr(self.inner, name)
 
 
 class Report:
@@ -186,6 +256,9 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
     r.add("trade journal", journal.healthy())
 
     # ------------------------------------------------------- reconciliation --
+    # The REAL broker's positions under Trend & Breakout's number. On PAPER
+    # those are only real trades left open from LIVE; its paper trades are
+    # simulated and have no broker-side stop to check.
     positions = broker.positions(cfg.magic)
     naked = [p for p in positions if not p.sl]
     r.add("open positions protected", not naked,
@@ -197,53 +270,7 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
         print()
         print("SAFE SMOKE TEST (no order will be sent)")
         print("-" * 62)
-        from .engine.trader import Trader
-        # dry_run: the cycle below does everything a real cycle does EXCEPT
-        # send the order.  Without it this "safe smoke test" could open a
-        # position on a live account, which is the opposite of what it says on
-        # the tin.
-        trader = Trader(broker, cfg, journal=journal, news=news, dry_run=True)
-        # Intents restored from the journal belong to the LIVE trader running
-        # alongside; only intents created during this run would mean a leak.
-        intents_before = set(trader.executor.intents)
-        info = trader.bootstrap()
-        r.add("engine bootstrap", "universe" in info,
-              f"{len(info.get('universe', []))} instruments, "
-              f"{info.get('trackers_restored', 0)} tracked positions restored")
-
-        result = trader.cycle()
-        r.add("full decision cycle", result is not None, result.summary())
-        r.add("heartbeats written",
-              trader.hb_strategy.read() is not None)
-
-        states = list(trader.top_opportunities)
-        r.add("market scan produced rankings", bool(states),
-              f"best: {states[0].summary()}" if states else "nothing ranked")
-
-        # Exercise sizing and order construction without sending anything.
-        if states:
-            best = states[0]
-            spec = trader.scanner.universe.specs.get(best.symbol)
-            snapshot = trader.risk.snapshot(account, positions)
-            risk_pct, _ = trader.risk.risk_pct_for(best, 0.5)
-            margin = broker.calc_margin(best.symbol, best.side, 1.0, best.entry)
-            sizing = trader.risk.size(best, spec, account, positions,
-                                      max(risk_pct, cfg.risk.base_risk_pct),
-                                      snapshot, margin)
-            r.add("position sizing", sizing.volume > 0 or bool(sizing.rejected),
-                  f"{sizing.volume:g} lots risking {sizing.risk_pct:.2f}% "
-                  f"({sizing.stop_pips:.1f} pip stop)" if sizing.volume > 0
-                  else f"declined: {sizing.rejected}")
-            from .engine.execution import make_key
-            key = make_key(best, spec)
-            r.add("idempotency key generated", len(key) == 24, key)
-        if trader.would_have_traded:
-            intended = trader.would_have_traded[0]
-            print(f"  [ OK ] it would have opened {intended['side']} "
-                  f"{intended['volume']:g} lots of {intended['symbol']} "
-                  f"risking {intended['risk_pct']:.2f}% - not sent")
-        r.add("no order was sent", not sent_any_order(broker, trader, intents_before),
-              "the smoke test ran in dry-run mode")
+        smoke_test(r, broker, cfg, journal, news, account, positions)
 
     # ----------------------------------------------------------- dashboard --
     url = f"http://{cfg.ops.dashboard_host}:{cfg.ops.dashboard_port}/health"
@@ -276,16 +303,142 @@ def verify(config_path: str, *, smoke: bool = True) -> int:
     return 0
 
 
-def sent_any_order(broker, trader, intents_before=frozenset()) -> bool:
+def smoke_test(r: Report, broker, cfg: Config, journal, news, account, positions) -> None:
+    """The dry-run Trader beside the real one: one full decision cycle, the
+    sizing and the order key worked out, and proof that nothing was sent."""
+    from .broker.paper import PaperBroker
+    from .config import tnb_mode
+    from .engine.trader import Trader
+    paper = tnb_mode(cfg) == "PAPER"
+    guard = NoOrders(broker)
+    orders_before = len(getattr(broker, "order_log", None) or ())
+    # dry_run: the cycle below does everything a real cycle does EXCEPT
+    # send the order.  Without it this "safe smoke test" could open a
+    # position on a live account, which is the opposite of what it says on
+    # the tin.  NoOrders: the dry run also manages the positions it can see
+    # (Trend & Breakout's own), and on LIVE that would move or close them at
+    # the real broker; every such call is refused before it gets there.
+    try:
+        trader = Trader(guard, cfg, journal=journal, news=news, dry_run=True)
+    except Exception as exc:
+        r.add("dry-run trader", False, f"could not be built: {exc}")
+        return
+    try:
+        if paper:
+            # Built by the Trader itself (dry_run_view): a READ-ONLY view of
+            # the paper record, which never books a stop or writes the file.
+            view = trader.broker
+            ok = isinstance(view, PaperBroker) and view.read_only
+            try:
+                n = sum(1 for p in view.positions(cfg.magic) if view.is_paper(p.ticket)) if ok else 0
+                held = f"{n} paper trade{'' if n == 1 else 's'} open"
+            except Exception as exc:
+                held = f"its open paper trades could not be listed ({exc})"
+            r.add("Trend & Breakout on PAPER", ok,
+                  f"it only reads its paper record ({held}); nothing is booked or sent from here" if ok
+                  else "the dry run is not reading the paper record read-only")
+        started = [name for name, attr in (("Momentum Runner", "runner"), ("Band Breaker", "bandbreaker"),
+                                           ("Crowd Fader", "crowd"))
+                   if getattr(trader, attr, None) is not None]
+        r.add("other bots not started twice", not started,
+              "the Momentum Runner, Band Breaker and Crowd Fader run only inside the running trader"
+              if not started else f"a second copy of {', '.join(started)} was started by the dry run")
+
+        # Intents restored from the journal belong to the LIVE trader running
+        # alongside: those already in memory, and the unfinished ones the
+        # first reconciliation loads. Only intents created during this run
+        # would mean a leak.
+        intents_before = set(trader.executor.intents)
+        try:
+            intents_before |= {i.key for i in journal.unresolved_intents()}
+        except Exception:
+            pass
+        info = trader.bootstrap()
+        r.add("engine bootstrap", "universe" in info,
+              f"{len(info.get('universe', []))} instruments, "
+              f"{info.get('trackers_restored', 0)} tracked positions restored")
+
+        if paper and hasattr(trader.broker, "reload"):
+            # The view read the paper record when the Trader was built, but
+            # the trackers came from the shared journal only now, at start-up.
+            # A paper trade the running trader opened in between would have a
+            # tracker here and no position in the view, and the cycle below
+            # would mark it closed in the journal at a made-up loss. Reading
+            # the record again puts every tracked paper trade in view.
+            try:
+                trader.broker.reload()
+            except Exception as exc:
+                r.add("Trend & Breakout's paper record read again", False,
+                      f"it could not be read again ({exc}), so the decision cycle was skipped: "
+                      f"it could have marked an open paper trade as closed")
+                return
+
+        result = trader.cycle()
+        r.add("full decision cycle", result is not None,
+              result.summary() if result is not None else "no result")
+        r.add("heartbeats written",
+              trader.hb_strategy.read() is not None)
+
+        states = list(trader.top_opportunities)
+        r.add("market scan produced rankings", bool(states),
+              f"best: {states[0].summary()}" if states else "nothing ranked")
+
+        # Exercise sizing and order construction without sending anything,
+        # against the positions the trader itself sees (on PAPER: its paper
+        # trades and any real ones left from LIVE).
+        if states:
+            try:
+                own = trader.broker.positions(cfg.magic)
+            except Exception:
+                own = positions
+            best = states[0]
+            spec = trader.scanner.universe.specs.get(best.symbol)
+            snapshot = trader.risk.snapshot(account, own)
+            risk_pct, _ = trader.risk.risk_pct_for(best, 0.5)
+            margin = broker.calc_margin(best.symbol, best.side, 1.0, best.entry)
+            sizing = trader.risk.size(best, spec, account, own,
+                                      max(risk_pct, cfg.risk.base_risk_pct),
+                                      snapshot, margin)
+            r.add("position sizing", sizing.volume > 0 or bool(sizing.rejected),
+                  f"{sizing.volume:g} lots risking {sizing.risk_pct:.2f}% "
+                  f"({sizing.stop_pips:.1f} pip stop)" if sizing.volume > 0
+                  else f"declined: {sizing.rejected}")
+            from .engine.execution import make_key
+            key = make_key(best, spec)
+            r.add("idempotency key generated", len(key) == 24, key)
+        if trader.would_have_traded:
+            intended = trader.would_have_traded[0]
+            print(f"  [ OK ] it would have opened {intended['side']} "
+                  f"{intended['volume']:g} lots of {intended['symbol']} "
+                  f"risking {intended['risk_pct']:.2f}% - not sent")
+        for what in guard.refused[:5]:
+            print(f"  [ OK ] it would have asked the broker to {what} - not sent")
+        r.add("no order was sent", not sent_any_order(broker, trader, intents_before, orders_before),
+              "the smoke test ran in dry-run mode"
+              + ("; Trend & Breakout's paper record was only read" if paper else ""))
+    finally:
+        if trader.broker is not guard and hasattr(trader.broker, "close_db"):
+            trader.broker.close_db()              # the read-only paper view's file handle
+
+
+def sent_any_order(broker, trader, intents_before=frozenset(), orders_before: int = 0) -> bool:
     """Belt and braces: confirm the dry run really sent nothing.
 
     Only intents that appeared during this run count: the executor loads
     the journal's intents at start-up, and those are the live trader's.
+    An ``adopted:<ticket>`` record never counts: reconciliation makes one for
+    a position it found already open (a trade the running trader holds, real
+    or on Trend & Breakout's paper record), and no order is behind it. Any
+    order the dry run sent would carry its own intent, under its own key.
+
+    A broker that keeps a log of the orders it received (the simulator)
+    must have no more than the ``orders_before`` it had when the run began.
     """
-    if set(trader.executor.intents) - set(intents_before):
+    new = set(trader.executor.intents) - set(intents_before)
+    if any(not str(key).startswith(ADOPTED_PREFIX) for key in new):
         return True
     log = getattr(broker, "order_log", None)
-    return bool(log)
+    return bool(log) and len(log) > int(orders_before or 0)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

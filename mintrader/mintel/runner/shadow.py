@@ -68,7 +68,10 @@ CREATE TABLE IF NOT EXISTS skipped (
     symbol TEXT, when_utc TEXT, why TEXT
 );
 """
-ADDED_COLUMNS = {"mode": "TEXT", "source_ticket": "INTEGER"}     # older files gain these on open
+# Older files gain these on open. ``regime``: the real trade's market
+# condition (for a top-size segment narrowed to one); ``top_size``: 1 when the
+# ride was sized by the Runner's top size rather than copying the real volume.
+ADDED_COLUMNS = {"mode": "TEXT", "source_ticket": "INTEGER", "regime": "TEXT", "top_size": "INTEGER"}
 
 
 def _foreign_magics() -> set[int]:
@@ -100,6 +103,35 @@ class RunnerConfig:
     markets: tuple[str, ...] = ()       # empty = every index market the main bot trades
     max_entry_age_seconds: float = 120.0    # LIVE: a real trade older than this is not entered (too late)
     max_entry_drift_r: float = 0.5          # LIVE: nor one whose price has left the real entry by more than this many R
+    # 9 Oct (version 5): approaches not ridden. On the broker's minute bars the
+    # 3 R trail lost on momentum continuation (33 index trades, -14.4 R, down
+    # on 7 of 9 days) and earned on the rest (64 trades, +43.5 R); the
+    # Runner's own record: momentum continuation 7 trades -27.48, session
+    # expansion 1 trade +56.67. A trade whose approach is unknown is ridden.
+    skip_tactics: tuple[str, ...] = ("MOMENTUM_CONTINUATION",)
+    # 0 = enter with the real trade. Above 0: wait until the real trade is this
+    # many R ahead, then enter at that price with the stop one of the real
+    # trade's R behind the Runner's own entry (same size, same money at risk).
+    # NOT YET EVALUATED: `python -m mintel.ops.potential --runner` replays it.
+    confirm_r: float = 0.0
+    # Top size (LIVE only; see mintel/config.py RunnerConfig and
+    # docs/strategies/momentum_runner.md). A ride in a listed segment -
+    # (approach, kind of market[, market condition]) - is sized for
+    # top_risk_money at its own stop instead of copying the real trade's
+    # volume, never above account_max_risk_pct of the REAL account equity,
+    # the broker's volume limits and the margin checks; outside indices at
+    # most top_max_lots. Before each such order the Runner's own newest LIVE
+    # rides in the segment are re-checked: once there are top_recheck_rides
+    # of them and they are negative, it sizes normally and says why.
+    # Empty segments = off (the default: nothing qualified on 9 Oct).
+    top_size_enabled: bool = True
+    top_segments: tuple = ()
+    top_risk_money: float = 40.0
+    top_max_lots: float = 0.5
+    top_recheck_rides: int = 10
+    top_lookback_rides: int = 40
+    account_max_risk_pct: float = 1.5           # risk.max_risk_pct, handed over by the trader
+    account_min_margin_level_pct: float = 300.0  # risk.min_margin_level_pct, the same
 
 
 @dataclass
@@ -119,6 +151,8 @@ class Shadow:
     source_ticket: int = 0              # the real trade's ticket (PAPER: the same as ticket)
     mode: str = "PAPER"                 # how this row was opened; a LIVE row is managed at the broker
     misses: int = 0                     # LIVE: reads in a row that did not show the position (and no deal)
+    regime: str = ""                    # the real trade's market condition, when the journal has it
+    top: bool = False                   # LIVE: sized by the Runner's top size
 
     @property
     def risk_distance(self) -> float:
@@ -180,6 +214,7 @@ class MomentumRunner:
         self._last_status = 0.0
         self.last_note = ""
         self._why = ""                              # why the last adopt() said no, for the notes
+        self._size_note = ""                        # how the last LIVE ride was sized, when it was not a plain copy
         self._noted: set[tuple] = set()             # (source ticket, note) already written, so passes do not repeat it
         self._attempted: set[int] = set()           # LIVE: real trades said no to for good (refused or too late); never hammered
         self._refused: list[dt.datetime] = []
@@ -232,11 +267,14 @@ class MomentumRunner:
         self.db.commit()
 
     def _shadow_from_row(self, r) -> Shadow:
+        keys = set(r.keys())
         return Shadow(int(r["ticket"]), r["symbol"], Side(r["side"]), float(r["volume"]), float(r["entry"]),
                       float(r["initial_stop"]), to_utc(dt.datetime.fromisoformat(r["opened_utc"])),
                       tactic=r["tactic"] or "", stop=float(r["stop"] or 0.0), peak_price=float(r["peak_price"] or 0),
                       peak_r=float(r["peak_r"] or 0), source_ticket=int(r["source_ticket"] or r["ticket"]),
-                      mode=str(r["mode"] or "PAPER").upper())
+                      mode=str(r["mode"] or "PAPER").upper(),
+                      regime=str((r["regime"] if "regime" in keys else "") or ""),
+                      top=bool(r["top_size"]) if "top_size" in keys else False)
 
     def _restore(self) -> None:
         self._attempted = {int(r[0]) for r in self.db.execute("SELECT source_ticket FROM skipped")}
@@ -249,12 +287,13 @@ class MomentumRunner:
     def _save(self, s: Shadow) -> None:
         with self._lock:
             self.db.execute("""INSERT INTO trades (ticket, source_ticket, symbol, side, volume, entry, initial_stop,
-                               risk_distance, opened_utc, stop, peak_price, peak_r, mode, tactic)
-                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                               risk_distance, opened_utc, stop, peak_price, peak_r, mode, tactic, regime, top_size)
+                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                                ON CONFLICT(ticket) DO UPDATE SET stop=excluded.stop, peak_price=excluded.peak_price,
                                peak_r=excluded.peak_r""",
                             (s.ticket, s.source_ticket, s.symbol, s.side.value, s.volume, s.entry, s.initial_stop,
-                             s.risk_distance, s.opened.isoformat(), s.stop, s.peak_price, s.peak_r, s.mode, s.tactic))
+                             s.risk_distance, s.opened.isoformat(), s.stop, s.peak_price, s.peak_r, s.mode, s.tactic,
+                             s.regime, 1 if s.top else 0))
             self.db.commit()
 
     def _spec(self, symbol: str):
@@ -311,10 +350,12 @@ class MomentumRunner:
 
     # --------------------------------------------------------------- flow --
     def adopt(self, position, initial_stop: float, now: dt.datetime, tactic: str = "",
-              tick: Optional[Tick] = None) -> Optional[Shadow]:
+              tick: Optional[Tick] = None, regime: str = "") -> Optional[Shadow]:
         """Ride a real trade, once. PAPER starts a shadow of it; LIVE sends the
         Runner's own order at ``tick``. Returns the row, or None (``_why`` says why)."""
         self._why = ""
+        self._size_note = ""
+        regime = str(regime or "").upper()
         if not self.active or not self.wants(position.symbol):
             return None
         src = int(position.ticket)
@@ -327,17 +368,88 @@ class MomentumRunner:
         stop = float(initial_stop or position.sl or 0.0)
         if stop <= 0 or abs(position.entry_price - stop) <= 0:
             return None
+        skip = self._skipped_tactic(tactic)
+        if skip:
+            self._why = skip                             # said once per trade by observe(); nothing recorded
+            return None
+        confirm = self._confirm_r()
+        if confirm > 0:
+            ready = self._confirmed(position, stop, tick, confirm)
+            if ready is None:
+                return None                              # not proved yet (or no price): looked at again next pass
         if not self.entries_allowed():
             self._why = self.last_note = "entries paused by the account gate"
             return None
         if self.live:
-            return self._adopt_live(position, stop, now, tactic, tick)
-        s = Shadow(src, position.symbol, position.side, float(position.volume),
-                   float(position.entry_price), stop, to_utc(position.open_time or now), tactic=tactic, stop=stop,
-                   source_ticket=src, mode="PAPER")
+            return self._adopt_live(position, stop, now, tactic, tick, regime)
+        if confirm > 0:
+            # PAPER, confirmed: the shadow's own entry at the touch, one real R of stop behind it
+            entry, own_stop = self._confirm_levels(position, stop, tick)
+            s = Shadow(src, position.symbol, position.side, float(position.volume), entry, own_stop, to_utc(now),
+                       tactic=tactic, stop=own_stop, source_ticket=src, mode="PAPER", regime=regime)
+        else:
+            s = Shadow(src, position.symbol, position.side, float(position.volume),
+                       float(position.entry_price), stop, to_utc(position.open_time or now), tactic=tactic, stop=stop,
+                       source_ticket=src, mode="PAPER", regime=regime)
         self.open[s.ticket] = s
         self._save(s)
         return s
+
+    def _skipped_tactic(self, tactic: str) -> str:
+        """Why this approach is not ridden, or an empty string."""
+        name = str(tactic or "").upper()
+        if name.endswith("_2X"):
+            name = name[:-3]
+        if not name:
+            return ""
+        skip = {str(t).upper() for t in (getattr(self.cfg, "skip_tactics", ()) or ())}
+        if name in skip:
+            return (f"{name.replace('_', ' ').lower()} is not ridden: on the broker's minute bars the "
+                    f"{self.cfg.trail_r:g} R trail lost on it, and so did the Runner's own trades")
+        return ""
+
+    def _confirm_r(self) -> float:
+        try:
+            return max(0.0, float(getattr(self.cfg, "confirm_r", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _touch(side: Side, tick) -> float:
+        """The price a new order in this direction would get."""
+        return float(tick.ask if side is Side.BUY else tick.bid)
+
+    def _confirmed(self, position, stop: float, tick, confirm: float) -> Optional[float]:
+        """The real trade's R at the touch when it has proved itself (at least
+        ``confirm`` R ahead and no further than ``max_entry_drift_r`` past
+        that mark), else None. Past the mark the Runner waits for the price to
+        come back into the zone; it never chases."""
+        if tick is None:
+            return None
+        side = Side(position.side)
+        risk = abs(float(position.entry_price) - stop)
+        if risk <= 0:
+            return None
+        r_now = (self._touch(side, tick) - float(position.entry_price)) * side.sign / risk
+        if r_now < confirm:
+            return None
+        if r_now > confirm + float(self.cfg.max_entry_drift_r):
+            self._why = (f"waiting: the real trade is past the +{confirm:g} R mark by more than "
+                         f"{float(self.cfg.max_entry_drift_r):g} R; entering only back inside that zone")
+            return None
+        return r_now
+
+    def _confirm_levels(self, position, stop: float, tick) -> tuple[float, float]:
+        """(entry, stop) for a confirmed entry: the touch, and one of the real
+        trade's R behind it - the same distance, so the same money at risk."""
+        side = Side(position.side)
+        risk = abs(float(position.entry_price) - stop)
+        entry = self._touch(side, tick)
+        own_stop = entry - side.sign * risk
+        spec = self._spec(position.symbol)
+        if spec is not None and hasattr(spec, "normalise_price"):
+            own_stop = spec.normalise_price(own_stop)
+        return entry, own_stop
 
     def _too_late(self, position, side: Side, stop: float, now: dt.datetime, tick: Optional[Tick]) -> str:
         """Only a fresh entry is like for like with the real trade. Past a
@@ -345,6 +457,15 @@ class MomentumRunner:
         fraction of its risk, the Runner would be buying a different trade at
         the same size (a multiple of the money at risk, or a hair-trigger
         stop), so it says no for good. Empty when the entry is fine."""
+        if self._confirm_r() > 0:
+            # confirmed entries are judged at the +x R mark (adopt() checked the
+            # zone); only the stop's side is left to check
+            if tick is None:
+                return ""
+            entry, own_stop = self._confirm_levels(position, stop, tick)
+            if (entry - own_stop) * side.sign <= 0:
+                return f"too late to enter: the stop {own_stop} is not on the losing side of {entry}"
+            return ""
         opened = getattr(position, "open_time", None)
         age = 0.0
         if isinstance(opened, dt.datetime) and opened.tzinfo is not None:
@@ -366,7 +487,8 @@ class MomentumRunner:
                     f"the price {touch}")
         return ""
 
-    def _adopt_live(self, position, stop: float, now: dt.datetime, tactic: str, tick: Optional[Tick]) -> Optional[Shadow]:
+    def _adopt_live(self, position, stop: float, now: dt.datetime, tactic: str, tick: Optional[Tick],
+                    regime: str = "") -> Optional[Shadow]:
         src = int(position.ticket)
         side = Side(position.side)
         late = self._too_late(position, side, stop, now, tick)
@@ -378,19 +500,189 @@ class MomentumRunner:
         if tick is None or spec is None or not hasattr(spec, "normalise_price"):
             self._why = f"no price or contract details for {position.symbol}; not entering yet"
             return None                                  # not an attempt: tried again next pass (while still fresh)
-        fill = self.executor.open(position.symbol, side, float(position.volume), stop, 0.0, tick, spec,
+        if self._confirm_r() > 0:
+            _, stop = self._confirm_levels(position, stop, tick)
+        # The Runner copies the real trade's size and never exceeds it: when
+        # Trend & Breakout sizes up (a top-opportunity trade), so does the
+        # Runner, up to exactly that volume and no further - unless the ride
+        # is in one of the Runner's OWN top segments (see _ride_volume).
+        volume = float(position.volume)
+        if hasattr(spec, "normalise_volume"):
+            volume = min(volume, float(spec.normalise_volume(volume)) or volume)
+        if volume <= 0:
+            self._why = self.last_note = f"no volume to copy from real trade {src}"
+            self._skip(src, position.symbol, self._why, now)
+            return None
+        volume, top, self._size_note = self._ride_volume(position.symbol, side, stop, tick, spec, tactic,
+                                                         regime, volume)
+        fill = self.executor.open(position.symbol, side, volume, stop, 0.0, tick, spec,
                                   to_utc(now), comment=TAG)
         if not fill.ok:
             self._refused.append(to_utc(now))
             self._why = self.last_note = f"order refused: {fill.message}"
             self._skip(src, position.symbol, self._why, now)
             return None
-        s = Shadow(int(fill.ticket), position.symbol, side, float(fill.volume or position.volume), float(fill.price),
-                   stop, to_utc(now), tactic=tactic, stop=stop, source_ticket=src, mode="LIVE")
+        s = Shadow(int(fill.ticket), position.symbol, side, float(fill.volume or volume), float(fill.price),
+                   stop, to_utc(now), tactic=tactic, stop=stop, source_ticket=src, mode="LIVE", regime=regime, top=top)
         self.open[s.ticket] = s
         self._save(s)
         self.last_note = f"{s.symbol} {s.side.value} {s.volume} opened at {s.entry} (stop {s.stop}) beside real trade {src}"
+        if self._size_note:
+            self.last_note += f"; {self._size_note}"
         return s
+
+    # ------------------------------------------------------------ top size --
+    @staticmethod
+    def _base_name(tactic: str) -> str:
+        name = str(tactic or "").strip().upper()
+        return name[:-3] if name.endswith("_2X") else name
+
+    def _kind(self, symbol: str, spec=None) -> str:
+        """The kind of market, as the trader names it (contracts.infer_group,
+        else the spec's own group)."""
+        try:
+            g = infer_group(str(getattr(spec, "name", "") or symbol), getattr(spec, "base_currency", "") or "",
+                            getattr(spec, "profit_currency", "") or "", getattr(spec, "path", "") or "")
+        except Exception:
+            g = ""
+        if (not g or g == "UNKNOWN") and spec is not None:
+            g = str(getattr(spec, "asset_group", "") or g or "UNKNOWN")
+        return str(g or "UNKNOWN").upper()
+
+    def _segments(self) -> list[tuple[str, str, str]]:
+        out = []
+        for seg in getattr(self.cfg, "top_segments", ()) or ():
+            try:
+                t = str(seg[0]).strip().upper()
+                g = str(seg[1]).strip().upper()
+                c = str(seg[2]).strip().upper() if len(seg) > 2 and seg[2] else ""
+            except (TypeError, IndexError):
+                continue
+            if t and g:
+                out.append((t, g, c))
+        return out
+
+    def top_segment(self, symbol: str, tactic: str, regime: str = "", spec=None) -> Optional[tuple[str, str, str]]:
+        """The listed top segment this ride falls in, or None."""
+        if not getattr(self.cfg, "top_size_enabled", False) or float(getattr(self.cfg, "top_risk_money", 0.0) or 0.0) <= 0:
+            return None
+        name = self._base_name(tactic)
+        if not name:
+            return None
+        kind = self._kind(symbol, spec)
+        cond = str(regime or "").upper()
+        for t, g, c in self._segments():
+            if t == name and g == kind and (not c or c == cond):
+                return t, g, c
+        return None
+
+    @staticmethod
+    def _label(seg: tuple[str, str, str]) -> str:
+        t, g, c = seg
+        out = f"{t.replace('_', ' ').lower()} on {g.replace('_', ' ').lower()}"
+        return out + (f" in {c.replace('_', ' ').lower()}" if c else "")
+
+    def own_record(self, seg: tuple[str, str, str]) -> dict:
+        """The Runner's own newest closed LIVE rides in this segment (its own
+        orders, the broker's figures): count, net and R."""
+        t, g, c = seg
+        rows = self.db.execute("SELECT * FROM trades WHERE mode='LIVE' AND closed_utc IS NOT NULL "
+                               "AND net_pnl IS NOT NULL ORDER BY closed_utc DESC").fetchall()
+        picked = []
+        limit = max(1, int(getattr(self.cfg, "top_lookback_rides", 40) or 40))
+        for r in rows:
+            keys = set(r.keys())
+            if self._base_name(r["tactic"]) != t or self._kind(r["symbol"], self._spec(r["symbol"])) != g:
+                continue
+            if c and str((r["regime"] if "regime" in keys else "") or "").upper() != c:
+                continue
+            picked.append(r)
+            if len(picked) >= limit:
+                break
+        return {"rides": len(picked), "net": round(sum(float(r["net_pnl"] or 0.0) for r in picked), 2),
+                "r": round(sum(float(r["realised_r"] or 0.0) for r in picked), 2)}
+
+    def _account(self):
+        try:
+            return self.broker.account() if self.broker is not None else None
+        except Exception:
+            return None
+
+    def _margin_per_lot(self, symbol: str, side: Side, price: float, spec, account) -> float:
+        fn = getattr(self.broker, "calc_margin", None)
+        if callable(fn):
+            try:
+                m = fn(symbol, side, 1.0, price)
+                if m is not None and float(m) > 0:
+                    return float(m)
+            except Exception:
+                pass
+        if float(getattr(spec, "margin_initial", 0.0) or 0.0) > 0:
+            return float(spec.margin_initial)
+        # deliberately conservative without the broker's figure: over-estimating margin only makes it smaller
+        lev = max(int(getattr(account, "leverage", 0) or 30), 1)
+        return float(getattr(spec, "contract_size", 1.0) or 1.0) * float(price) / lev
+
+    def _ride_volume(self, symbol: str, side: Side, stop: float, tick, spec, tactic: str, regime: str,
+                     base: float) -> tuple[float, bool, str]:
+        """(volume, top size?, why) for a LIVE ride. Outside a listed top
+        segment: the real trade's volume, unchanged. Inside one: sized for
+        ``top_risk_money`` at the Runner's own stop, never above
+        ``account_max_risk_pct`` of the REAL account equity, the broker's
+        volume limits or the margin checks, and never below the real
+        trade's volume. Its own record is re-checked first: once it has
+        ``top_recheck_rides`` LIVE rides there and they are negative, the
+        normal volume is used and the note says why. A loss can only take
+        the size down (less equity, or the re-check), never up."""
+        seg = self.top_segment(symbol, tactic, regime, spec)
+        if seg is None:
+            return base, False, ""
+        label = self._label(seg)
+        need = max(1, int(getattr(self.cfg, "top_recheck_rides", 10) or 10))
+        try:
+            rec = self.own_record(seg)
+        except Exception as exc:
+            return base, False, f"normal size: its own record in {label} could not be read ({exc})"
+        if rec["rides"] >= need and (rec["net"] < 0 or rec["r"] < 0):
+            return base, False, (f"normal size: its own last {rec['rides']} live rides in {label} are negative "
+                                 f"({rec['net']:+.2f}, {rec['r']:+.2f} R), so it copies Trend & Breakout's volume")
+        if not all(hasattr(spec, n) for n in ("money_per_lot", "normalise_volume", "volume_step")):
+            return base, False, f"normal size: no contract details to size {label}"
+        account = self._account()
+        if account is None or float(getattr(account, "equity", 0.0) or 0.0) <= 0:
+            return base, False, f"normal size: the account could not be read to size {label}"
+        touch = float(tick.ask if side is Side.BUY else tick.bid)
+        dist = abs(touch - float(stop))
+        per_lot = float(spec.money_per_lot(dist)) if dist > 0 else 0.0
+        if per_lot <= 0:
+            return base, False, f"normal size: the stop could not be valued for {label}"
+        equity = float(account.equity)
+        ceiling = equity * float(getattr(self.cfg, "account_max_risk_pct", 1.5) or 0.0) / 100.0
+        money = min(float(self.cfg.top_risk_money), ceiling)
+        vol = float(spec.normalise_volume(money / per_lot))
+        while vol > 0 and per_lot * vol > ceiling + 1e-9:
+            vol = float(spec.normalise_volume(vol - float(spec.volume_step)))
+        notes = []
+        if money < float(self.cfg.top_risk_money) - 1e-9:
+            notes.append(f"{float(getattr(self.cfg, 'account_max_risk_pct', 1.5)):g}% of the account caps it at {ceiling:.2f}")
+        lot_cap = float(getattr(self.cfg, "top_max_lots", 0.0) or 0.0)
+        if lot_cap > 0 and vol > lot_cap + 1e-12 and self._kind(symbol, spec) != "INDEX":
+            vol = float(spec.normalise_volume(lot_cap))
+            notes.append(f"held to {lot_cap:g} lots outside indices")
+        m1 = self._margin_per_lot(symbol, side, touch, spec, account)
+        if m1 > 0 and vol > 0:
+            level_min = max(float(getattr(self.cfg, "account_min_margin_level_pct", 300.0) or 0.0), 100.0) / 100.0
+            cap = min(float(account.margin_free) * 0.8,
+                      max(0.0, equity / level_min - float(getattr(account, "margin", 0.0) or 0.0)))
+            if m1 * vol > cap:
+                vol = float(spec.normalise_volume(cap / m1))
+                notes.append("reduced to keep the margin level above its minimum")
+        if vol <= base + 1e-12:
+            why = "; ".join(notes) or "the limits leave no more than that"
+            return base, False, f"top size not used for {label} ({why}): Trend & Breakout's volume {base:g} is kept"
+        extra = f" ({'; '.join(notes)})" if notes else ""
+        return vol, True, (f"top size for {label}: {vol:g} lots risking {per_lot * vol:.2f} at its stop"
+                           f"{extra}, instead of Trend & Breakout's {base:g}")
 
     def _trail(self, s: Shadow, price: float) -> Optional[float]:
         """The best price is noted; past +trail_r the stop wants to sit trail_r
@@ -638,7 +930,7 @@ class MomentumRunner:
 
     # --------------------------------------------------------------- pass --
     def observe(self, positions: Sequence, initial_stops: dict, tick_fn: Callable[[str], object],
-                now: dt.datetime, tactics: Optional[dict] = None) -> list[str]:
+                now: dt.datetime, tactics: Optional[dict] = None, regimes: Optional[dict] = None) -> list[str]:
         """One pass: ride new index trades, then move every open one on."""
         notes: list[str] = []
         if self._pending_notes:
@@ -649,14 +941,17 @@ class MomentumRunner:
             return notes
         for p in positions:
             try:
-                tick = tick_fn(p.symbol) if self.live and self.wants(p.symbol) else None
+                tick = (tick_fn(p.symbol) if self.wants(p.symbol) and (self.live or self._confirm_r() > 0)
+                        else None)
                 s = self.adopt(p, float(initial_stops.get(p.ticket) or p.sl or 0.0), now,
-                               tactic=str((tactics or {}).get(p.ticket) or ""), tick=tick)
+                               tactic=str((tactics or {}).get(p.ticket) or ""), tick=tick,
+                               regime=str((regimes or {}).get(p.ticket) or ""))
                 if s is not None:
                     self._noted = {k for k in self._noted if k[0] != int(p.ticket)}
                     if s.mode == "LIVE":
                         notes.append(f"{STRATEGY_LABEL}: opened {s.symbol} {s.side.value} {s.volume} at {s.entry} "
-                                     f"(stop {s.stop}) beside real trade {s.source_ticket}")
+                                     f"(stop {s.stop}) beside real trade {s.source_ticket}"
+                                     + (f"; {self._size_note}" if self._size_note else ""))
                     else:
                         notes.append(f"{STRATEGY_LABEL}: shadowing {s.symbol} {s.side.value} from {s.entry} (stop {s.stop})")
                 elif self._why and (int(p.ticket), self._why) not in self._noted:
@@ -755,6 +1050,11 @@ class MomentumRunner:
                 "refused": self._refused_today(now), "skipped": self._skipped_today(now), "note": self.last_note,
                 "orphans": list(self.orphans[-10:]), "unmanaged": unmanaged,
                 "updated": now.isoformat(), "trail_r": self.cfg.trail_r, "window_hours": self.cfg.window_hours,
+                "skip_tactics": list(getattr(self.cfg, "skip_tactics", ()) or ()),
+                "confirm_r": self._confirm_r(),
+                "top_size": {"segments": [list(x) for x in self._segments()],
+                             "on": bool(getattr(self.cfg, "top_size_enabled", False) and self._segments()),
+                             "risk_money": float(getattr(self.cfg, "top_risk_money", 0.0) or 0.0)},
                 "markets": list(self.cfg.markets) or "every index market the main bot trades",
                 "open": self.open_rows()}
 

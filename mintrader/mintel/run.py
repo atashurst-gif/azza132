@@ -373,6 +373,14 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
     except Exception:
         positions = []
     report = trader.health.last_report
+    # Trend & Breakout's mode (config.json "tnb" -> "mode"; LIVE when it says
+    # nothing). On PAPER its own figures below are practice and the page
+    # says so; the account's figures stay MetaTrader's own.
+    try:
+        from .ops.standing import tnb_mode
+        tnb = tnb_mode(trader.cfg)
+    except Exception:
+        tnb = "LIVE"
     results = {}
     try:
         results = build_results(trader.journal,
@@ -427,6 +435,7 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "news_live": bool(news_check and news_check.ok),
             "watchdog_ok": watchdog_ok,
             "mode": trader.cfg.effective_mode,
+            "tnb_mode": tnb,
             "aggression": trader.cfg.aggression,
             "open_positions": len(positions),
             "equity": account.equity if account else 0.0,
@@ -489,16 +498,33 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
         if every_position is not None:
             state._open_tickets = tickets
         # a trade that just opened or closed: its money moves from "open" to "made" in the same refresh
+        # (account_standing reads the REAL broker behind a PAPER wrapper, and
+        # positions(None) is the real account through the wrapper too)
         standing = dict(account_standing(trader.broker, trader.cfg, now_, account, every_position,
                                          cache_seconds=0 if changed else 30.0))
         deals = standing.pop("deals", [])
         state.update(standing=standing, deals=deals, data_dir=str(trader.cfg.ops.data_dir),
                      open_live=open_rows(every_position, trader.cfg) if every_position is not None else None,
-                     open_at=now_.isoformat())
+                     open_at=now_.isoformat(), tnb_mode=tnb)
     except Exception as exc:
         log.debug("standing skipped: %s", exc)
+    # The Rapid Momentum Rider and Financial Ian run as their own processes:
+    # one plain line each for their cards, read from their own status files
+    # (read-only; the practice figures come from their sqlite files through
+    # the attribution, like every paper bot's). Never fatal.
+    try:
+        from .ops.modes import health_line
+        lines = {}
+        for bid, key in (("momentum_rider", "rider"), ("financial_ian", "ian")):
+            lines[bid] = health_line(trader.cfg.ops.data_dir, key, to_utc(trader.clock()))[1].split(" - ", 1)[-1]
+        state.update(bot_lines=lines, data_dir=str(trader.cfg.ops.data_dir))
+    except Exception as exc:
+        log.debug("rider and ian lines skipped: %s", exc)
     # Strategy attribution for the page: read-only, adds the Rapid Scalper's
     # own figures (from its status file) to this strategy's. Never fatal.
+    # On PAPER, Trend & Breakout's rows are split by its paper record and
+    # only its real ones reach Overall (the ledger, which then holds paper
+    # deals too, is not used for its tab).
     try:
         from .ops.attribution import build_strategies
         state.update(strategies=build_strategies(
@@ -506,7 +532,7 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             # broker's day, or the measuring start if that is later
             trader.journal, positions, trader._strategy_day_start(to_utc(trader.clock())),
             account.currency if account else "GBP", trader.cfg.ops.data_dir,
-            ledger.get("today") if ledger.get("source") == "broker" else None))
+            ledger.get("today") if ledger.get("source") == "broker" else None, tnb_mode=tnb), tnb_mode=tnb)
     except Exception as exc:
         log.debug("attribution skipped: %s", exc)
 
@@ -529,6 +555,25 @@ def build_broker(cfg: Config):
     return Mt5Broker(login=cfg.account_login, password=cfg.account_password,
                      server=cfg.account_server,
                      terminal_path=cfg.mt5_terminal_path, magic=cfg.magic)
+
+
+TNB_PAPER_LINE = ("Trend & Breakout: PAPER - real prices, simulated orders; "
+                  "the Momentum Runner still rides its index entries with real orders")
+
+
+def trend_and_breakout_broker(broker, cfg: Config):
+    """The broker the trader (Trend & Breakout) holds: on PAPER
+    ``PaperBroker.from_config(broker, cfg)`` - real prices and the real
+    account, every order of its own simulated - otherwise ``broker`` itself.
+    A malformed ``tnb.mode`` is LIVE (see ``config.tnb_mode``)."""
+    from .config import tnb_mode
+    if tnb_mode(cfg) == "PAPER":
+        from .broker.paper import PaperBroker
+        paper = PaperBroker.from_config(broker, cfg)
+        log.warning("%s", TNB_PAPER_LINE)
+        return paper
+    log.warning("Trend & Breakout: LIVE - its orders go to the broker")
+    return broker
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -587,7 +632,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 log.warning("stopped while waiting for MetaTrader")
                 return 0
             return 4
-        trader = Trader(broker, cfg)
+        # Trend & Breakout's own broker: the paper wrapper when it is on
+        # PAPER (here and only here - never inside build_broker(), which
+        # Financial Ian, the scalper and the ops tools also call). The trader
+        # hands the other bots the real broker behind it.
+        try:
+            tnb_broker = trend_and_breakout_broker(broker, cfg)
+        except Exception as exc:
+            log.error("Trend & Breakout is set to PAPER but its paper record could not be opened (%s). "
+                      "Not starting, so no real order is ever placed for it.", exc)
+            return 6
+        trader = Trader(tnb_broker, cfg)
         info = trader.bootstrap()
         log.info("bootstrap: %s", json.dumps(info, default=str)[:2000])
 

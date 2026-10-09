@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import math
 import sqlite3
 import threading
 from dataclasses import asdict
@@ -32,6 +33,52 @@ from .execution import Intent, IntentState
 from .flowlock import FlowState, TradeTracker
 
 log = logging.getLogger("mintel.journal")
+
+# The range an R is held to wherever an average of R steers the bot (the
+# calibrator, Kelly, the historical match). Same numbers as
+# opportunity.Calibrator: a stop cannot lose much more than 1 R, and nothing
+# this bot does banks more than a handful.
+R_FLOOR = -2.0
+R_CAP = 6.0
+# A planned stop closer than this fraction of the price is no stop at all
+# (0.001% - a tenth of a pip on EURUSD, half a point on US30).
+MIN_RISK_FRACTION = 1e-5
+
+
+def clip_r(value) -> Optional[float]:
+    """An R that can be averaged: None when it is not a number, else held to
+    [R_FLOOR, R_CAP]."""
+    try:
+        r = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(r):
+        return None
+    return max(R_FLOOR, min(R_CAP, r))
+
+
+def planned_r(side, entry, stop, exit_price) -> tuple[bool, Optional[float]]:
+    """(usable, R against the stop the trade was opened with).
+
+    usable is False when the planned stop says the trade risked (almost)
+    nothing, or sat on the profit side of the entry - its R is meaningless.
+    R is None (and usable True) when the row lacks what is needed to work it
+    out; the stored R is used then."""
+    try:
+        e = float(entry or 0.0)
+        st = float(stop or 0.0)
+        x = float(exit_price or 0.0)
+    except (TypeError, ValueError):
+        return True, None
+    if e <= 0 or st <= 0:
+        return True, None
+    sign = -1 if str(side or "").upper() in ("SELL", "SHORT") else 1
+    dist = (e - st) * sign                       # positive when the stop is on the losing side
+    if dist <= e * MIN_RISK_FRACTION:
+        return False, None
+    if x <= 0:
+        return True, None
+    return True, (x - e) * sign / dist
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS intents (
@@ -257,13 +304,54 @@ class Journal:
         return [dict(r) for r in (cur.fetchall() if cur else [])]
 
     def calibration_rows(self, limit: int = 3000) -> list[tuple[float, float]]:
+        """(opportunity, R) for every closed trade, R measured against the
+        stop the trade was OPENED with (this table's ``stop``), so a tracker
+        that was adopted after a restart with its stop already pulled up to
+        the entry cannot turn one trade into thousands of R. A trade whose
+        planned risk was (almost) nothing is left out: its R means nothing.
+        The calibrator also holds every R to a sane range."""
         cur = self._exec("""
-            SELECT opportunity, realised_r FROM trades
+            SELECT opportunity, realised_r, side, entry, stop, exit_price FROM trades
             WHERE closed_utc IS NOT NULL AND realised_r IS NOT NULL
             ORDER BY closed_utc DESC LIMIT ?
         """, (int(limit),))
-        return [(float(r[0] or 0.0), float(r[1] or 0.0))
-                for r in (cur.fetchall() if cur else [])]
+        out: list[tuple[float, float]] = []
+        for r in (cur.fetchall() if cur else []):
+            ok, planned = planned_r(r[2], r[3], r[4], r[5])
+            if not ok:
+                continue                                 # a near-zero or wrong-side planned stop
+            out.append((float(r[0] or 0.0), planned if planned is not None else float(r[1] or 0.0)))
+        return out
+
+    def opening_stop(self, ticket: int) -> Optional[float]:
+        """The stop recorded when the trade was opened, or None."""
+        cur = self._exec("SELECT stop FROM trades WHERE ticket=?", (int(ticket),))
+        row = cur.fetchone() if cur else None
+        try:
+            v = float(row[0]) if row and row[0] is not None else 0.0
+        except (TypeError, ValueError):
+            v = 0.0
+        return v if v > 0 else None
+
+    def segment_rows(self, tactic: str, limit: int = 500) -> list[dict]:
+        """Closed trades of one approach, newest first, with the money the
+        broker booked (``pnl_money``) and R against the planned stop - the
+        evidence the top-opportunity size is checked against."""
+        cur = self._exec("""
+            SELECT ticket, symbol, regime, tactic, closed_utc, pnl_money, realised_r,
+                   side, entry, stop, exit_price FROM trades
+            WHERE closed_utc IS NOT NULL AND (tactic=? OR tactic=?)
+            ORDER BY closed_utc DESC LIMIT ?
+        """, (tactic, f"{tactic}_2X", int(limit)))
+        out = []
+        for r in (cur.fetchall() if cur else []):
+            ok, planned = planned_r(r["side"], r["entry"], r["stop"], r["exit_price"])
+            if not ok:
+                continue
+            d = dict(r)
+            d["r"] = planned if planned is not None else float(r["realised_r"] or 0.0)
+            out.append(d)
+        return out
 
     def match_stats(self, symbol: str, regime: str, tactic: str,
                     side: Side) -> dict:
@@ -274,17 +362,19 @@ class Journal:
         between a precise-but-empty bucket and a broad-but-meaningless one.
         """
         out = {}
+        # R held to the calibrator's sane range inside the average (see clip_r)
+        avg = f"AVG(MAX({R_FLOOR}, MIN({R_CAP}, realised_r)))"
         queries = {
-            "exact": ("SELECT COUNT(*), AVG(realised_r), "
+            "exact": (f"SELECT COUNT(*), {avg}, "
                       "AVG(CASE WHEN realised_r>0 THEN 1.0 ELSE 0.0 END) "
                       "FROM trades WHERE closed_utc IS NOT NULL AND symbol=? "
                       "AND regime=? AND tactic=? AND side=?",
                       (symbol, regime, tactic, side.value)),
-            "tactic_regime": ("SELECT COUNT(*), AVG(realised_r), "
+            "tactic_regime": (f"SELECT COUNT(*), {avg}, "
                               "AVG(CASE WHEN realised_r>0 THEN 1.0 ELSE 0.0 END) "
                               "FROM trades WHERE closed_utc IS NOT NULL "
                               "AND regime=? AND tactic=?", (regime, tactic)),
-            "tactic": ("SELECT COUNT(*), AVG(realised_r), "
+            "tactic": (f"SELECT COUNT(*), {avg}, "
                        "AVG(CASE WHEN realised_r>0 THEN 1.0 ELSE 0.0 END) "
                        "FROM trades WHERE closed_utc IS NOT NULL AND tactic=?",
                        (tactic,)),
@@ -305,7 +395,8 @@ class Journal:
             WHERE closed_utc IS NOT NULL AND tactic=? AND regime=?
                   AND realised_r IS NOT NULL
         """, (tactic, regime))
-        rs = [float(r[0]) for r in (cur.fetchall() if cur else [])]
+        rs = [clip_r(r[0]) for r in (cur.fetchall() if cur else [])]
+        rs = [r for r in rs if r is not None]
         if len(rs) < 10:
             return None
         wins = [r for r in rs if r > 0]

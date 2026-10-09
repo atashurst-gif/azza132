@@ -76,6 +76,20 @@ BARS_NEEDED = {
 
 
 @dataclass
+class RunnerFeedState(MarketState):
+    """A setup offered by the runner feed (``mintel/runner/feed.py``): an
+    approach Trend & Breakout's own rules have off here, offered on an index
+    market only while it is on PAPER, so the Momentum Runner still receives
+    it. Tagged ``runner_feed`` in the journal (``entry_state_json``)."""
+    runner_feed: bool = True
+
+    def to_row(self) -> dict:
+        row = super().to_row()
+        row["runner_feed"] = True
+        return row
+
+
+@dataclass
 class Universe:
     symbols: tuple[str, ...]
     specs: dict[str, SymbolSpec]
@@ -555,7 +569,12 @@ class Scanner:
         return states
 
     def state_for(self, ctx: SymbolContext, side: int) -> Optional[MarketState]:
-        """Build the MarketState for one instrument and one direction."""
+        """Build the MarketState for one instrument and one direction.
+
+        Trend & Breakout's own rules choose the approach. Only when they give
+        nothing tradable here, and the runner feed is on (Trend & Breakout on
+        PAPER, an index market), may a feed approach be offered instead; it
+        must clear every other gate and is tagged ``runner_feed``."""
         regime = ctx.regime.regime if ctx.regime else rg.Regime.UNCLEAR
         from ..contracts import infer_group
         spec_ = ctx.spec
@@ -569,8 +588,55 @@ class Scanner:
                           disabled_in=getattr(self.cfg.scan, "disabled_tactic_regimes", ()) or (),
                           disabled_in_group=getattr(self.cfg.scan, "disabled_tactic_groups", ()) or (),
                           group=group)
-        if sig is None:
+        state = self._state_from(ctx, side, regime, sig) if sig is not None else None
+        if state is not None and state.tradable:
+            return state
+        feed_sig = self._runner_feed_signal(ctx, side, regime, group)
+        if feed_sig is not None:
+            fed = self._state_from(ctx, side, regime, feed_sig, runner_feed=True)
+            if fed is not None and fed.tradable:
+                return fed
+        return state
+
+    def _runner_feed_signal(self, ctx: SymbolContext, side: int, regime, group: str):
+        """The best signal among the runner feed's approaches for this market
+        condition, ignoring ONLY the approach-in-condition and
+        approach-in-kind-of-market switches (the same quality bars as
+        ``best_signal``). None when the feed is off or nothing qualifies."""
+        from ..runner import feed
+        try:
+            if not feed.active(self.cfg, self.broker) or not feed.market_wanted(self.cfg, ctx.symbol, group):
+                return None
+            names = feed.names_for(self.cfg, regime.value)
+        except Exception as exc:
+            log.debug("runner feed skipped for %s: %s", ctx.symbol, exc)
             return None
+        if not names:
+            return None
+        from .tactics import candidates_for
+        off = set(getattr(self.cfg.scan, "disabled_tactics", ()) or ())
+        best = None
+        for tactic in candidates_for(regime):
+            if tactic.name in off:
+                continue
+            try:
+                s = tactic.evaluate(ctx, side)
+            except Exception:
+                continue
+            if s is None or not s.valid or s.name not in names or s.name in off:
+                continue
+            if tactic.counter_trend and s.quality < 45.0:
+                continue
+            if s.quality < 25.0:
+                continue
+            if best is None or s.quality > best.quality:
+                best = s
+        return best
+
+    def _state_from(self, ctx: SymbolContext, side: int, regime, sig,
+                    runner_feed: bool = False) -> Optional[MarketState]:
+        """The MarketState for one signal: stop, target, score, tier and every
+        blocker, exactly as for any of Trend & Breakout's own signals."""
         ev = self.evidence_for(ctx, side)
 
         # Historical experience adds or removes confidence but never permission.
@@ -692,8 +758,13 @@ class Scanner:
             notes.append(sig.note)
         if sig.requires_confirmation:
             notes.append("waiting for confirmation of the turn")
+        kind = MarketState
+        if runner_feed:
+            from ..runner.feed import FEED_NOTE
+            notes.append(FEED_NOTE)
+            kind = RunnerFeedState
 
-        return MarketState(
+        return kind(
             symbol=ctx.symbol, as_of=ctx.as_of, regime=regime,
             regime_label=ctx.regime.label if ctx.regime else regime.value,
             direction=side, tactic=sig.name, evidence=ev,

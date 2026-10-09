@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
+import math
 import os
 from dataclasses import dataclass, field, asdict, fields
 from pathlib import Path
@@ -21,6 +23,8 @@ from typing import Any, Optional
 
 CONFIG_VERSION = 1
 LIVE_MARKER = "I-UNDERSTAND-THIS-TRADES-REAL-MONEY"
+
+log = logging.getLogger("mintel.config")
 
 
 @dataclass
@@ -35,6 +39,32 @@ class RiskConfig:
     # Smaller size, same stop: the chart decides where the idea is wrong.
     max_risk_money: float = 10.0
     min_risk_pct: float = 0.10
+    # --- top-opportunity size (version 5, 9 Oct) -----------------------------
+    # Aaron, 8 Oct: "increase their pip size to 0.5 maximum for trades showing
+    # the highest opportunity", read as up to 0.5 LOTS. A trade in a segment
+    # that has EARNED it (top_segments: an approach in one kind of market,
+    # as contracts.infer_group names it) risks up to top_risk_money instead
+    # of the 10 above, and on FX and metals carries at most top_max_lots
+    # (an index lot is a different thing, so indices get the money cap
+    # alone). Still under max_risk_pct of the account (1.5% = 30 on 2,000,
+    # which binds before 40), and the daily loss stop, the correlated and
+    # total exposure caps, the margin checks and every breaker apply as to
+    # any trade. The raw score plays no part: 82+ scores earned the least.
+    # Evidence (docs/strategies/v2-commission-first.md, version 5): momentum
+    # continuation on FX minor pairs, in the conditions it still trades
+    # (fast and news markets), 38 trades over 10 days, 8 days up and 2 down,
+    # +156.31 after 29.89 commission (+4.11 a trade, +0.82 R).
+    # Before every such trade the segment's own newest top_lookback_trades
+    # closed trades (journal; markets and conditions still on) must show at
+    # least top_min_trades over top_min_days days, positive after costs per
+    # trade and in R, and more days up than down - or it is sized as usual.
+    top_size_enabled: bool = True
+    top_risk_money: float = 40.0
+    top_max_lots: float = 0.5
+    top_segments: tuple[tuple[str, str], ...] = (("MOMENTUM_CONTINUATION", "FX_MINOR"),)
+    top_min_trades: int = 20
+    top_min_days: int = 4
+    top_lookback_trades: int = 40
     # --- portfolio limits ----------------------------------------------------
     max_total_risk_pct: float = 4.00     # sum of open risk
     max_correlated_risk_pct: float = 2.00
@@ -76,6 +106,8 @@ class RiskConfig:
             errs.append("max_total_risk_pct must be >= max_risk_pct")
         if not (0 < self.kelly_fraction <= 0.5):
             errs.append("kelly_fraction must be in (0, 0.5]")
+        if self.top_risk_money < 0 or self.top_max_lots < 0:
+            errs.append("top_risk_money and top_max_lots must not be negative")
         return errs
 
 
@@ -168,6 +200,13 @@ class ScanConfig:
         ("MOMENTUM_CONTINUATION", "GOLD"),
         ("MOMENTUM_CONTINUATION", "SILVER"),
         ("MOMENTUM_CONTINUATION", "METAL"),
+        # 9 Oct (version 5), same standing rule, record to 8 Oct: momentum
+        # continuation on the FX majors still traded (GBPUSD, EURUSD,
+        # AUDUSD, NZDUSD, USDCAD) negative on 5 of the 8 days it traded,
+        # 17 trades, net -13.87 after 17.48 commission (+3.61 before it:
+        # the fees ate it). On FX minor pairs the same approach is the
+        # best line on record (38 trades, +156.31) and stays on.
+        ("MOMENTUM_CONTINUATION", "FX_MAJOR"),
     )
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),
@@ -333,6 +372,194 @@ class RunnerConfig:
     trail_r: float = 3.0            # once +3 R, trail 3 R behind the best price
     window_hours: float = 8.0       # out at the price after 8 hours (the replay's window)
     markets: tuple[str, ...] = ()   # empty = every index market the main bot trades
+    # 9 Oct (version 5): approaches the Runner does not ride. Replaying every
+    # index trade to 7 Oct on the broker's minute bars, the 3 R trail LOST on
+    # momentum continuation (33 trades, -14.4 R; down on 7 of the 9 days it
+    # traded) and earned on everything else (64 trades, +43.5 R; down on 3
+    # of 13). The Runner's own record agrees: momentum continuation 7 trades,
+    # 1 win, -27.48; session expansion 1 trade, +56.67.
+    skip_tactics: tuple[str, ...] = ("MOMENTUM_CONTINUATION",)
+    # 0 = enter with the real trade (as always). Above 0: enter only once the
+    # real trade is this many R ahead, at that price, with the stop one of
+    # the real trade's R behind the Runner's own entry (same size, same money
+    # at risk). NOT YET EVALUATED - the data on hand cannot say whether it
+    # helps; `python -m mintel.ops.potential --runner` replays it on the
+    # broker's minute bars.
+    confirm_r: float = 0.0
+    # --- the runner feed (only while Trend & Breakout is on PAPER) ----------
+    # Approaches Trend & Breakout's scanner still OFFERS on index markets
+    # while it is on paper, even where its own rules (approach in a market
+    # condition, approach in a kind of market) have switched them off - so
+    # the Runner keeps receiving them. "APPROACH" (any condition) or
+    # "APPROACH:CONDITION" (e.g. "BREAKOUT_RETEST:TREND"). Everything else
+    # still applies to them: excluded markets, the score floor, news, spread,
+    # cost, risk, exposure caps, breakers and the daily loss stop. Such a
+    # paper trade is tagged runner_feed in the journal (entry_state_json),
+    # so Trend & Breakout's own record can leave it out. Never active in
+    # LIVE, nor when index orders are kept live (tnb.live_groups).
+    # EMPTY on evidence (9 Oct). The rule: positive under the 3 R trail on
+    # at least ~8 trades over at least 4 days, more days up than down,
+    # measured only on trades today's other rules would still allow. On the
+    # broker's minute-bar replay (16 Sep - 6 Oct, 97 index trades) that
+    # leaves 13 non-momentum index trades (score 70+, market not excluded),
+    # +12.8 R together but up on 3 days of 8; per approach in its
+    # condition: breakout retest in a trend 5 trades +7.1 R (2 days up, 3
+    # down), liquidity sweep reversal in a fast market 5 trades +3.5 R (1 up,
+    # 3 down), breakout retest in a fast market 1 trade -1.0 R. None
+    # qualifies. See docs/strategies/momentum_runner.md, "The runner feed".
+    feed_tactics: tuple[str, ...] = ()
+    # --- the Runner's top size (LIVE only) ----------------------------------
+    # A ride in a segment that has EARNED it on the Runner's own exit (the
+    # 3 R trail on the replay, plus its own live rides) is sized for
+    # top_risk_money at its stop instead of copying Trend & Breakout's
+    # volume - still never above risk.max_risk_pct of the REAL account
+    # equity (1.5% = 30 on 2,000), the broker's volume limits and the
+    # margin checks; FX and metals at most top_max_lots, indices no lot cap.
+    # Segments: (approach, kind of market[, condition]). The same evidence
+    # rule as Trend & Breakout's top size: at least 20 trades over at least
+    # 4 days, positive per trade and in R after costs, more days up than
+    # down. Before each top-size order the Runner re-checks its own newest
+    # LIVE rides there: once it has top_recheck_rides of them and they are
+    # negative, it sizes normally and says why. A loss never raises a size.
+    # EMPTY on evidence (9 Oct): on trades today's rules still allow, no
+    # index approach has 20 (breakout retest 6, liquidity sweep reversal 5,
+    # session expansion 2 with the Runner's own ride of 7 Oct, 3). Breakout
+    # retest only reaches 36 (+17.9 R) when trades scored under 70 and the
+    # excluded DE40 and UK100 are counted back in. So it is OFF.
+    top_size_enabled: bool = True
+    top_segments: tuple[tuple[str, ...], ...] = ()
+    top_risk_money: float = 40.0        # the same as risk.top_risk_money
+    top_max_lots: float = 0.5           # FX and metals only
+    top_recheck_rides: int = 10
+    top_lookback_rides: int = 40
+
+    def feed_entries(self) -> tuple[tuple[str, str], ...]:
+        """``feed_tactics`` as (APPROACH, CONDITION or "*") pairs. A malformed
+        entry is left out (and said once in the log), never a crash."""
+        out: list[tuple[str, str]] = []
+        for raw in getattr(self, "feed_tactics", ()) or ():
+            try:
+                if isinstance(raw, (list, tuple)):
+                    name = str(raw[0]).strip().upper()
+                    cond = str(raw[1]).strip().upper() if len(raw) > 1 and raw[1] else "*"
+                else:
+                    text = str(raw).strip().upper().replace("@", ":")
+                    name, _, cond = text.partition(":")
+                    name, cond = name.strip(), (cond.strip() or "*")
+            except Exception:
+                name, cond = "", ""
+            if not _word(name) or not (cond == "*" or _word(cond)):
+                _warn_once(f"runner.feed_tactics entry {raw!r} is not understood and is left out")
+                continue
+            out.append((name, cond))
+        return tuple(dict.fromkeys(out))
+
+
+def _word(text: str) -> bool:
+    """A setting name such as BREAKOUT_RETEST or HIGH_VOL."""
+    return bool(text) and text.replace("_", "").isalnum()
+
+
+_WARNED: set[str] = set()
+
+
+def _warn_once(message: str) -> None:
+    if message not in _WARNED:
+        _WARNED.add(message)
+        log.warning("%s", message)
+
+
+TNB_MODES = ("LIVE", "PAPER")
+
+
+@dataclass
+class TnbConfig:
+    """Trend & Breakout, the main trader (magic 990311): LIVE or PAPER.
+
+    PAPER: ``mintel/run.py`` ``main()`` hands the trader
+    ``PaperBroker.from_config(broker, cfg)`` (``mintel/broker/paper.py``):
+    the same code decides on REAL prices and the real account; every order
+    it sends is simulated. The other bots keep the real broker. LIVE (the
+    default, so nothing changes until the installer's line-up step flips it)
+    trades as before. See docs/strategies/tnb_paper.md.
+
+    The other fields are the paper settings ``PaperBroker.from_config``
+    reads (same names as ``PaperConfig``).
+    """
+    mode: str = "LIVE"                   # LIVE | PAPER; anything else is read as LIVE, with a warning
+    slippage_points: float = 1.0         # adverse, on every paper market fill (never on a target)
+    live_groups: tuple[str, ...] = ()    # kinds of market whose orders still go to the real broker; empty = all paper
+    # A REAL Trend & Breakout trade still open at the switch is wound down at
+    # the real broker (stop changes and closes, never a new order) to its
+    # natural end. False leaves it to its own broker stop and target.
+    manage_leftovers: bool = True
+    commission: dict = field(default_factory=dict)   # {kind: [per lot per side, currency]} over IC Markets Raw
+    fx_rates: dict = field(default_factory=dict)     # {"USD": 0.79}: account currency per unit, over the broker's
+    max_tick_age_seconds: float = 120.0
+    replay_ticks: bool = True
+    replay_min_seconds: float = 1.0
+    replay_chunk_minutes: float = 60.0
+    replay_max_hours: float = 72.0
+    replay_retry_seconds: float = 5.0
+    replay_give_up_seconds: float = 900.0
+
+    @property
+    def is_paper(self) -> bool:
+        return tnb_mode_of(self.mode) == "PAPER"
+
+    def normalise(self) -> list[str]:
+        """Put malformed values back to safe ones; returns what was fixed, in
+        plain English. A mode that is not LIVE or PAPER becomes LIVE."""
+        fixed: list[str] = []
+        mode = tnb_mode_of(self.mode)
+        if str(self.mode or "").strip().upper() != mode:
+            fixed.append(f"tnb.mode {self.mode!r} is not LIVE or PAPER: Trend & Breakout stays LIVE")
+        self.mode = mode
+        defaults = TnbConfig()
+        for name in ("slippage_points", "max_tick_age_seconds", "replay_min_seconds", "replay_chunk_minutes",
+                     "replay_max_hours", "replay_retry_seconds", "replay_give_up_seconds"):
+            val = getattr(self, name)
+            try:
+                ok = not isinstance(val, bool) and math.isfinite(float(val)) and float(val) >= 0
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                fixed.append(f"tnb.{name} {val!r} is not a number of zero or more: the default "
+                             f"{getattr(defaults, name)!r} is used")
+                setattr(self, name, getattr(defaults, name))
+        if not isinstance(self.live_groups, (list, tuple)):
+            fixed.append(f"tnb.live_groups {self.live_groups!r} is not a list: every market stays on paper")
+            self.live_groups = ()
+        self.live_groups = tuple(str(g) for g in self.live_groups)
+        for name in ("commission", "fx_rates"):
+            if not isinstance(getattr(self, name), dict):
+                fixed.append(f"tnb.{name} is not a table: the default is used")
+                setattr(self, name, {})
+        for name in ("manage_leftovers", "replay_ticks"):
+            if not isinstance(getattr(self, name), bool):
+                setattr(self, name, bool(getattr(self, name)))
+        return fixed
+
+
+def tnb_mode_of(value: Any) -> str:
+    """"PAPER" only for a clear PAPER; anything else (LIVE, empty, a typo, a
+    wrong type) is LIVE."""
+    try:
+        text = str(value or "").strip().upper()
+    except Exception:
+        text = ""
+    return text if text in TNB_MODES else "LIVE"
+
+
+def tnb_mode(cfg: Any) -> str:
+    """Trend & Breakout's mode from a Config: "LIVE" or "PAPER". Fail safe:
+    a missing or malformed setting is LIVE, said once in the log."""
+    block = getattr(cfg, "tnb", None)
+    raw = getattr(block, "mode", "LIVE") if block is not None else "LIVE"
+    mode = tnb_mode_of(raw)
+    if str(raw or "").strip().upper() != mode:
+        _warn_once(f"tnb.mode {raw!r} is not LIVE or PAPER: Trend & Breakout stays LIVE")
+    return mode
 
 
 @dataclass
@@ -414,7 +641,13 @@ STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, pap
 # Version 4 from 8 Oct: USDCHF and XAUJPY off (market rule), momentum
 # continuation off on gold and silver crosses (the approach rule applied per
 # kind of market). The measuring clock is unchanged: still from the reset.
-STRATEGY_NAME = "Commission First (version 4)"
+# Version 5 from 9 Oct: momentum continuation off on the FX majors (the
+# approach rule per kind of market), the top-opportunity size for momentum
+# continuation on FX minor pairs (risk.top_*), a calibration that one broken
+# trade can no longer poison, and the Momentum Runner no longer riding
+# momentum continuation. The measuring clock is unchanged: still from the
+# reset. See docs/strategies/v2-commission-first.md, "Version 5".
+STRATEGY_NAME = "Commission First (version 5)"
 
 
 @dataclass
@@ -468,6 +701,14 @@ class Config:
     runner: RunnerConfig = field(default_factory=RunnerConfig)
     bandbreaker: BandBreakerConfig = field(default_factory=BandBreakerConfig)
     crowd: CrowdConfig = field(default_factory=CrowdConfig)
+    tnb: TnbConfig = field(default_factory=TnbConfig)
+
+    # ------------------------------------------------------- Trend & Breakout --
+    @property
+    def tnb_paper(self) -> Optional[TnbConfig]:
+        """The paper settings while Trend & Breakout is on PAPER, else None.
+        ``PaperBroker.from_config`` reads its fields under this name."""
+        return self.tnb if tnb_mode(self) == "PAPER" else None
 
     # ------------------------------------------------------------- live gate --
     @property
@@ -517,6 +758,10 @@ class Config:
                         f"got {self.broker_mode!r}")
         if self.broker_mode == "bridge" and not (0 < self.bridge_port < 65536):
             errs.append("bridge_port must be a valid port number")
+        # Trend & Breakout's mode never stops the start: a malformed value is
+        # put back to a safe one (LIVE for the mode) and said in the log.
+        for fixed in self.tnb.normalise():
+            _warn_once(fixed)
         return errs
 
     @property
@@ -579,12 +824,17 @@ class Config:
         nested = {"risk": RiskConfig, "universe": UniverseConfig,
                   "scan": ScanConfig, "flowlock": FlowLockConfig,
                   "news": NewsConfig, "ops": OpsConfig, "runner": RunnerConfig,
-                  "bandbreaker": BandBreakerConfig, "crowd": CrowdConfig}
+                  "bandbreaker": BandBreakerConfig, "crowd": CrowdConfig,
+                  "tnb": TnbConfig}
         for f in fields(cls):
             if f.name in nested:
                 sub = raw.get(f.name)
+                if f.name == "tnb" and isinstance(sub, dict) and isinstance(sub.get("live_groups"), str):
+                    sub = dict(sub, live_groups=[sub["live_groups"]])     # "INDEX" means ["INDEX"]
                 if isinstance(sub, dict):
                     setattr(cfg, f.name, _build(nested[f.name], sub))
+                elif f.name == "tnb" and f.name in raw:
+                    _warn_once(f"the tnb block in {path.name} is not a table: Trend & Breakout stays LIVE")
             elif f.name in raw:
                 try:
                     setattr(cfg, f.name, type(getattr(cfg, f.name))(raw[f.name]))
@@ -604,6 +854,12 @@ class Config:
                                               cfg.account_password)
         if cfg.mode.upper() == "LIVE" and cfg.live_marker != LIVE_MARKER:
             cfg.mode = "DEMO"          # fail safe, loudly, downstream
+        try:
+            for fixed in cfg.tnb.normalise():     # never a crash: a bad value becomes a safe one
+                _warn_once(fixed)
+        except Exception as exc:
+            _warn_once(f"the tnb block could not be read ({exc}): Trend & Breakout stays LIVE")
+            cfg.tnb = TnbConfig()
         return cfg
 
 
