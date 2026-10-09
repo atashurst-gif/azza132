@@ -83,11 +83,10 @@
     "strategy_name": "Commission First (version 5)",
     "build": "218ad0c87a",
     "started": "2026-10-09 15:36 UTC",
-    "last_scan": "19:38:33 UTC",
+    "last_scan": "19:48:41 UTC",
     "last_trade": "EURCAD 2026-10-09T12:44",
     "not_trading_because": [
-      "DAILY_LOSS: down 3.41% today (limit 3.00%)",
-      "PROBLEM: this machine's clock is 33s out of step with the broker - session and news timing cannot be trusted"
+      "DAILY_LOSS: down 3.41% today (limit 3.00%)"
     ],
     "strategy_rules": {
       "entry_tier": "STRONG",
@@ -97,21 +96,21 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 2663,
-    "uptime_minutes": 241.7
+    "cycles": 2777,
+    "uptime_minutes": 251.9
   },
   "health": {
-    "as_of": "2026-10-09T19:38:33.127855+00:00",
+    "as_of": "2026-10-09T19:48:41.892631+00:00",
     "safe_mode": false,
-    "entries_allowed": false,
-    "summary": "1 problem(s) found; new trades are paused",
+    "entries_allowed": true,
+    "summary": "everything is healthy",
     "checks": [
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "41509 MB of disk space free",
+        "message": "41504 MB of disk space free",
         "detail": {
-          "free_mb": 41509.4
+          "free_mb": 41504.3
         }
       },
       {
@@ -119,15 +118,15 @@
         "severity": "OK",
         "message": "memory 84% used",
         "detail": {
-          "percent": 84.0
+          "percent": 83.7
         }
       },
       {
         "name": "CLOCK",
-        "severity": "FAIL",
-        "message": "this machine's clock is 33s out of step with the broker - session and news timing cannot be trusted",
+        "severity": "OK",
+        "message": "clock agrees with the broker (within 5s)",
         "detail": {
-          "skew_seconds": 33.1
+          "skew_seconds": 4.9
         }
       },
       {
@@ -161,9 +160,9 @@
       {
         "name": "MARKET_DATA",
         "severity": "OK",
-        "message": "live prices arriving (1s old)",
+        "message": "live prices arriving (0s old)",
         "detail": {
-          "freshest_age_seconds": 0.6,
+          "freshest_age_seconds": 0.2,
           "weekend": false
         }
       },
@@ -187,9 +186,9 @@
         "message": "3 supervising component(s) reporting",
         "detail": {
           "components": {
-            "watchdog": 14.8,
-            "ian": 0.3,
-            "rider": 0.2
+            "watchdog": 0.5,
+            "ian": 5.0,
+            "rider": 1.3
           }
         }
       },
@@ -198,7 +197,7 @@
         "severity": "OK",
         "message": "markets scanned 5s ago",
         "detail": {
-          "age_seconds": 5.3
+          "age_seconds": 5.2
         }
       },
       {
@@ -212,107 +211,140 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "XAGAUD",
-      "direction": "LONG",
-      "score": 40.8,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "XAGAUD: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Execution supports it (90/100; spread 15.0 pips (0.8x normal), commission 10.5 pips). Structure supports it (82/100; unclear structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Momentum supports it (68/100; efficiency 0.07, ADX 18). Room to the first obstacle is 62 pips, giving about 0.9 to 1 after 29.2 pips of cost. Blocked because: reward:risk only 0.87 after costs; costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.87 after costs",
-        "costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.874
-    },
-    {
-      "rank": 2,
-      "symbol": "JP225",
+      "symbol": "EURCAD",
       "direction": "SHORT",
-      "score": 32.06,
-      "tier": "NO_TRADE",
-      "tactic": "BREAKOUT_RETEST",
-      "regime": "UNCLEAR / NORMAL VOL",
-      "reason": "JP225: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout retest. Execution supports it (84/100; spread 400.0 pips (1.0x normal)). Session supports it (75/100; session: NEWYORK,US_CASH). Participation argues against it (31/100; 0.3x median tick volume). Multi Tf supports it (66/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1050 pips, giving about 1.2 to 1 after 500.0 pips of cost. Blocked because: reward:risk only 1.18 after costs.",
-      "blockers": [
-        "reward:risk only 1.18 after costs"
-      ],
-      "reward_risk": 1.181
-    },
-    {
-      "rank": 3,
-      "symbol": "GBPCAD",
-      "direction": "SHORT",
-      "score": 30.13,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "GBPCAD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Momentum supports it (84/100; efficiency 0.07, ADX 13). Structure supports it (76/100; range structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Multi Tf argues against it (33/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 0.9 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 0.93 after costs; costs would be 38% of the stop distance (limit 20%) - too small a trade to pay for itself; 2 losing trades here today - leaving this market alone until tomorrow.",
-      "blockers": [
-        "reward:risk only 0.93 after costs",
-        "costs would be 38% of the stop distance (limit 20%) - too small a trade to pay for itself",
-        "2 losing trades here today - leaving this market alone until tomorrow"
-      ],
-      "reward_risk": 0.932
-    },
-    {
-      "rank": 4,
-      "symbol": "NZDCAD",
-      "direction": "SHORT",
-      "score": 29.36,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / LOW VOL",
-      "reason": "NZDCAD: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Momentum supports it (85/100; efficiency 0.06, ADX 14). Structure supports it (76/100; range structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Execution supports it (73/100; spread 0.3 pips (1.5x normal), commission 1.0 pips). Room to the first obstacle is 0 pips, giving about 0.6 to 1 after 1.5 pips of cost. Blocked because: reward:risk only 0.59 after costs; costs would be 62% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-      "blockers": [
-        "reward:risk only 0.59 after costs",
-        "costs would be 62% of the stop distance (limit 20%) - too small a trade to pay for itself"
-      ],
-      "reward_risk": 0.593
-    },
-    {
-      "rank": 5,
-      "symbol": "EURUSD",
-      "direction": "LONG",
-      "score": 28.86,
+      "score": 35.97,
       "tier": "NO_TRADE",
       "tactic": "BREAKOUT_ACCEPTANCE",
       "regime": "SQUEEZE / NORMAL VOL",
-      "reason": "EURUSD: SQUEEZE / NORMAL VOL market. Best idea is buy using breakout acceptance. Execution argues against it (0/100; spread 0.1 pips (1.0x normal), commission 0.7 pips). Regime supports it (85/100; SQUEEZE / NORMAL VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 2 pips, giving about 1.6 to 1 after 0.8 pips of cost. Blocked because: price data is 33s old (limit 20s); reward:risk only 1.56 after costs; costs would be 27% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "reason": "EURCAD: SQUEEZE / NORMAL VOL market. Best idea is sell using breakout acceptance. Structure supports it (98/100; down structure on M5). Regime supports it (78/100; SQUEEZE / NORMAL VOL). Session supports it (75/100; session: NEWYORK,US_CASH). Momentum argues against it (33/100; efficiency 0.22, ADX 13). Room to the first obstacle is 4 pips, giving about 1.2 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 1.24 after costs; costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "price data is 33s old (limit 20s)",
-        "reward:risk only 1.56 after costs",
-        "costs would be 27% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 1.24 after costs",
+        "costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 1.558
+      "reward_risk": 1.236
+    },
+    {
+      "rank": 2,
+      "symbol": "AUDCHF",
+      "direction": "SHORT",
+      "score": 32.67,
+      "tier": "NO_TRADE",
+      "tactic": "SESSION_EXPANSION",
+      "regime": "TREND / NORMAL VOL",
+      "reason": "AUDCHF: TREND / NORMAL VOL market. Best idea is sell using session expansion. Execution supports it (92/100; spread 0.2 pips (0.7x normal), commission 0.6 pips). Structure argues against it (16/100; up structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Momentum supports it (70/100; efficiency 0.28, ADX 8). Room to the first obstacle is 0 pips, giving about 0.8 to 1 after 0.9 pips of cost. Blocked because: reward:risk only 0.77 after costs; costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.77 after costs",
+        "costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.772
+    },
+    {
+      "rank": 3,
+      "symbol": "NZDCAD",
+      "direction": "SHORT",
+      "score": 32.33,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / LOW VOL",
+      "reason": "NZDCAD: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Momentum supports it (82/100; efficiency 0.10, ADX 12). Structure supports it (76/100; range structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Execution supports it (72/100; spread 0.3 pips (1.5x normal), commission 1.0 pips). Room to the first obstacle is 1 pips, giving about 0.6 to 1 after 1.5 pips of cost. Blocked because: reward:risk only 0.65 after costs; costs would be 68% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.65 after costs",
+        "costs would be 68% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.647
+    },
+    {
+      "rank": 4,
+      "symbol": "NZDCHF",
+      "direction": "SHORT",
+      "score": 30.37,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / LOW VOL",
+      "reason": "NZDCHF: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Multi Tf supports it (91/100; 6 timeframes weighed, higher ones first). Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 0.6 pips). Regime supports it (85/100; SQUEEZE / LOW VOL). Structure supports it (82/100; unclear structure on M5). Room to the first obstacle is 0 pips, giving about 0.6 to 1 after 0.9 pips of cost. Blocked because: reward:risk only 0.60 after costs; costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.60 after costs",
+        "costs would be 32% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.596
+    },
+    {
+      "rank": 5,
+      "symbol": "EURJPY",
+      "direction": "LONG",
+      "score": 27.91,
+      "tier": "NO_TRADE",
+      "tactic": "SQUEEZE_RELEASE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "EURJPY: SQUEEZE / NORMAL VOL market. Best idea is buy using squeeze release. Structure supports it (82/100; unclear structure on M5). Session supports it (75/100; session: NEWYORK,US_CASH). Momentum argues against it (27/100; efficiency 0.20, ADX 12). Regime supports it (62/100; SQUEEZE / NORMAL VOL). Room to the first obstacle is 3 pips, giving about 0.9 to 1 after 3.2 pips of cost. Blocked because: reward:risk only 0.91 after costs; costs would be 51% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.91 after costs",
+        "costs would be 51% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.912
     },
     {
       "rank": 6,
-      "symbol": "BRENT_Z6",
+      "symbol": "EURGBP",
       "direction": "LONG",
-      "score": 27.67,
+      "score": 27.59,
       "tier": "NO_TRADE",
-      "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / LOW VOL",
-      "reason": "BRENT_Z6: TREND / LOW VOL market. Best idea is buy using session expansion. Structure argues against it (16/100; down structure on M5). Execution supports it (82/100; spread 2.0 pips (1.0x normal), commission 7.9 pips). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 12 pips, giving about 2.1 to 1 after 10.4 pips of cost. Blocked because: costs would be 44% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "EURGBP: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Session supports it (75/100; session: NEWYORK,US_CASH). Multi Tf argues against it (28/100; 6 timeframes weighed, higher ones first). Momentum supports it (71/100; efficiency 0.16, ADX 15). Execution supports it (70/100; spread 0.5 pips (1.7x normal), commission 0.6 pips). Room to the first obstacle is 0 pips, giving about 0.2 to 1 after 1.3 pips of cost. Blocked because: reward:risk only 0.19 after costs; costs would be 61% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "costs would be 44% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.19 after costs",
+        "costs would be 61% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 2.118
+      "reward_risk": 0.186
     },
     {
       "rank": 7,
-      "symbol": "XBRUSD",
+      "symbol": "EURCAD",
       "direction": "LONG",
-      "score": 26.4,
+      "score": 25.99,
+      "tier": "NO_TRADE",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "SQUEEZE / NORMAL VOL",
+      "reason": "EURCAD: SQUEEZE / NORMAL VOL market. Best idea is buy using breakout acceptance. Structure argues against it (16/100; down structure on M5). Regime supports it (78/100; SQUEEZE / NORMAL VOL). Multi Tf supports it (75/100; 6 timeframes weighed, higher ones first). Session supports it (75/100; session: NEWYORK,US_CASH). Room to the first obstacle is 2 pips, giving about 1.1 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 1.11 after costs; costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.11 after costs",
+        "costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.112
+    },
+    {
+      "rank": 8,
+      "symbol": "AUDNZD",
+      "direction": "SHORT",
+      "score": 25.3,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "AUDNZD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Session supports it (75/100; session: NEWYORK,US_CASH). Regime supports it (74/100; RANGE / NORMAL VOL). Momentum supports it (72/100; efficiency 0.10, ADX 19). Structure supports it (70/100; range structure on M5). Room to the first obstacle is 0 pips, giving about 0.0 to 1 after 2.1 pips of cost. Blocked because: reward:risk only 0.02 after costs; costs would be 91% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 0.02 after costs",
+        "costs would be 91% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 0.018
+    },
+    {
+      "rank": 9,
+      "symbol": "AUDCAD",
+      "direction": "LONG",
+      "score": 16.08,
       "tier": "NO_TRADE",
       "tactic": "SESSION_EXPANSION",
-      "regime": "TREND / LOW VOL",
-      "reason": "XBRUSD: TREND / LOW VOL market. Best idea is buy using session expansion. Structure argues against it (16/100; down structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Session supports it (75/100; session: NEWYORK,US_CASH). Regime supports it (74/100; TREND / LOW VOL). Room to the first obstacle is 13 pips, giving about 2.2 to 1 after 9.2 pips of cost. Blocked because: costs would be 38% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "AUDCAD: UNCLEAR / NORMAL VOL market. Best idea is buy using session expansion. Execution argues against it (0/100; spread 0.3 pips (3.0x normal), commission 1.0 pips). Multi Tf supports it (80/100; 6 timeframes weighed, higher ones first). Session supports it (75/100; session: NEWYORK,US_CASH). Momentum argues against it (27/100; efficiency 0.12, ADX 19). Room to the first obstacle is 0 pips, giving about 0.3 to 1 after 1.7 pips of cost. Blocked because: spread is 3.0x its normal size; reward:risk only 0.32 after costs; costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 3.4 ATR from the level that invalidates this idea - the move has been missed.",
       "blockers": [
-        "costs would be 38% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "spread is 3.0x its normal size",
+        "reward:risk only 0.32 after costs",
+        "costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "entry is 3.4 ATR from the level that invalidates this idea - the move has been missed"
       ],
-      "reward_risk": 2.175
+      "reward_risk": 0.318
     }
   ],
   "results": {
@@ -3665,7 +3697,7 @@
       "strategy_id": "rapid_scalper",
       "label": "Rapid Scalper",
       "tagline": "High-Velocity Session Rider (version 3): seconds-level acceleration in a scalpable market; cut failed scalps fast, protect winners, give exceptional winners room.",
-      "status": "NOT RUNNING (last seen 652 min ago)",
+      "status": "NOT RUNNING (last seen 662 min ago)",
       "mode": "PAPER",
       "build": "3635e80773",
       "updated": "2026-10-09T08:46:48.494685+00:00",
@@ -4092,7 +4124,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 39107.542315
+      "age_seconds": 39716.686236
     },
     "runner": {
       "strategy_id": "momentum_runner",
@@ -4108,7 +4140,7 @@
       "note": "",
       "orphans": [],
       "unmanaged": [],
-      "updated": "2026-10-09T19:38:33.122897+00:00",
+      "updated": "2026-10-09T19:48:41.745544+00:00",
       "trail_r": 3.0,
       "window_hours": 8.0,
       "skip_tactics": [
@@ -4123,7 +4155,7 @@
       "markets": "every index market the main bot trades",
       "open": [],
       "present": true,
-      "age_seconds": 2.9
+      "age_seconds": 3.4
     },
     "bandbreaker": {
       "strategy_id": "band_breaker",
@@ -4135,7 +4167,7 @@
       "executor_error": "",
       "refused": 0,
       "status": "WATCHING",
-      "updated": "2026-10-09T19:38:33.122897+00:00",
+      "updated": "2026-10-09T19:48:41.745544+00:00",
       "markets": [
         "US500",
         "US30",
@@ -4144,9 +4176,9 @@
       "session": "09:30-16:00 New York, flat by 15:55",
       "rule": "average noise of the last 14 sessions; checks every 30 min from 10:00; at most 3 entries a day per market; 10 at the stop",
       "markets_now": {
-        "US500": "band 7741.11 - 7812.86 (noise 0.33% by 15:30 NY), VWAP 7796.76, price 7815.25",
-        "US30": "band 51068.10 - 51385.81 (noise 0.31% by 15:30 NY), VWAP 51509.08, price 51732.85",
-        "USTEC": "band 30553.01 - 31113.24 (noise 0.59% by 15:30 NY), VWAP 30844.45, price 30869.35"
+        "US500": "band 7741.11 - 7812.86 (noise 0.33% by 15:30 NY), VWAP 7797.04, price 7813.55",
+        "US30": "band 51068.10 - 51385.81 (noise 0.31% by 15:30 NY), VWAP 51513.28, price 51713.85",
+        "USTEC": "band 30553.01 - 31113.24 (noise 0.59% by 15:30 NY), VWAP 30844.94, price 30869.05"
       },
       "open": [],
       "unmanaged": [],
@@ -4468,7 +4500,7 @@
         }
       ],
       "present": true,
-      "age_seconds": 2.9
+      "age_seconds": 3.4
     },
     "crowd": {
       "strategy_id": "crowd_fader",
@@ -4481,7 +4513,7 @@
       "refused": 0,
       "estimated_rows": 0,
       "status": "WATCHING",
-      "updated": "2026-10-09T19:38:33.122897+00:00",
+      "updated": "2026-10-09T19:48:41.745544+00:00",
       "key_present": true,
       "markets": [
         "XAUUSD",
@@ -4494,133 +4526,133 @@
         "XBRUSD"
       ],
       "rule": "crowd 50% net one way and the winners not with them; score 60+; entry on a 15-min close beyond the last 8; stop beyond the last 4 bars; target the nearest cluster or 2 R; out after 24 h; at most 2 a day per market; 10 at the stop (the smallest size up to 30); reads every 10 min",
-      "last_poll": "2026-10-09T19:31:46.366856+00:00",
-      "polls": 24,
+      "last_poll": "2026-10-09T19:41:58.974072+00:00",
+      "polls": 25,
       "poll_error": "",
-      "api_calls": 384,
+      "api_calls": 400,
       "api_remaining": 49,
       "markets_now": {
-        "XAUUSD": "crowd 82% long (2,398 wallets); Apex and Sharps 16% short by money; 2.1m of longs liquidate below vs 13.8m of shorts above; lean SHORT, score 52/100",
+        "XAUUSD": "crowd 82% long (2,401 wallets); Apex and Sharps 16% short by money; 2.1m of longs liquidate below vs 13.8m of shorts above; lean SHORT, score 52/100",
         "XAGUSD": "entries paused by the account gate",
-        "US500": "crowd 62% long (2,341 wallets); Apex and Sharps 17% long by money; 27.7m of longs liquidate below vs 47.9m of shorts above; not stretched: nothing to fade",
+        "US500": "crowd 61% long (2,336 wallets); Apex and Sharps 17% long by money; 27.8m of longs liquidate below vs 47.8m of shorts above; not stretched: nothing to fade",
         "JP225": "too few crowd wallets to read (147 < 200)",
-        "EURUSD": "crowd 51% short (215 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade",
+        "EURUSD": "crowd 51% short (213 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade",
         "GBPUSD": "too few crowd wallets to read (49 < 200)",
-        "XTIUSD": "crowd 69% long (1,145 wallets); Apex and Sharps 20% short by money; 2.4m of longs liquidate below vs 241k of shorts above; not stretched: nothing to fade",
-        "XBRUSD": "crowd 54% long (1,094 wallets); Apex and Sharps balanced by money; 6.0m of longs liquidate below vs 2.8m of shorts above; not stretched: nothing to fade"
+        "XTIUSD": "crowd 69% long (1,150 wallets); Apex and Sharps 20% short by money; 1.9m of longs liquidate below vs 494k of shorts above; not stretched: nothing to fade",
+        "XBRUSD": "crowd 54% long (1,093 wallets); Apex and Sharps balanced by money; 6.0m of longs liquidate below vs 2.8m of shorts above; not stretched: nothing to fade"
       },
       "reads": {
         "XAUUSD": {
           "coin": "xyz:GOLD",
-          "at": "2026-10-09T19:31:46.366856+00:00",
+          "at": "2026-10-09T19:41:58.974072+00:00",
           "crowd_long_pct": 82.2,
-          "crowd_wallets": 2398,
+          "crowd_wallets": 2401,
           "crowd_bias": 0.64,
           "winners_bias": -0.16,
-          "fuel_below": 2093268,
-          "fuel_above": 13751895,
+          "fuel_below": 2093120,
+          "fuel_above": 13768307,
           "direction": -1,
-          "score": 52.1,
-          "reason": "crowd 82% long (2,398 wallets); Apex and Sharps 16% short by money; 2.1m of longs liquidate below vs 13.8m of shorts above; lean SHORT, score 52/100",
+          "score": 52.2,
+          "reason": "crowd 82% long (2,401 wallets); Apex and Sharps 16% short by money; 2.1m of longs liquidate below vs 13.8m of shorts above; lean SHORT, score 52/100",
           "hl_price": 4195.9
         },
         "XAGUSD": {
           "coin": "xyz:SILVER",
-          "at": "2026-10-09T19:31:46.366856+00:00",
+          "at": "2026-10-09T19:41:58.974072+00:00",
           "crowd_long_pct": 82.7,
           "crowd_wallets": 1159,
           "crowd_bias": 0.65,
-          "winners_bias": -0.16,
-          "fuel_below": 1560798,
-          "fuel_above": 155718,
+          "winners_bias": -0.17,
+          "fuel_below": 1642989,
+          "fuel_above": 155652,
           "direction": -1,
           "score": 73.2,
-          "reason": "crowd 83% long (1,159 wallets); Apex and Sharps 16% short by money; 1.6m of longs liquidate below vs 156k of shorts above; lean SHORT, score 73/100",
-          "hl_price": 60.805
+          "reason": "crowd 83% long (1,159 wallets); Apex and Sharps 17% short by money; 1.6m of longs liquidate below vs 156k of shorts above; lean SHORT, score 73/100",
+          "hl_price": 60.788
         },
         "US500": {
           "coin": "xyz:SP500",
-          "at": "2026-10-09T19:31:46.366856+00:00",
-          "crowd_long_pct": 61.6,
-          "crowd_wallets": 2341,
+          "at": "2026-10-09T19:41:58.974072+00:00",
+          "crowd_long_pct": 61.4,
+          "crowd_wallets": 2336,
           "crowd_bias": 0.23,
           "winners_bias": 0.17,
-          "fuel_below": 27715835,
-          "fuel_above": 47853744,
+          "fuel_below": 27756813,
+          "fuel_above": 47829352,
           "direction": 0,
-          "score": 14.4,
-          "reason": "crowd 62% long (2,341 wallets); Apex and Sharps 17% long by money; 27.7m of longs liquidate below vs 47.9m of shorts above; not stretched: nothing to fade",
-          "hl_price": 7814.900000000001
+          "score": 14.3,
+          "reason": "crowd 61% long (2,336 wallets); Apex and Sharps 17% long by money; 27.8m of longs liquidate below vs 47.8m of shorts above; not stretched: nothing to fade",
+          "hl_price": 7811.8
         },
         "JP225": {
           "coin": "xyz:JP225",
-          "at": "2026-10-09T19:31:46.366856+00:00",
+          "at": "2026-10-09T19:41:58.974072+00:00",
           "crowd_long_pct": 61.9,
           "crowd_wallets": 147,
           "crowd_bias": 0.24,
           "winners_bias": 0.21,
-          "fuel_below": 90112,
-          "fuel_above": 248778,
+          "fuel_below": 88426,
+          "fuel_above": 248738,
           "direction": 0,
           "score": 0.0,
           "reason": "too few crowd wallets to read (147 < 200)",
-          "hl_price": 68931.0
+          "hl_price": 68880.0
         },
         "EURUSD": {
           "coin": "xyz:EUR",
-          "at": "2026-10-09T19:31:46.366856+00:00",
+          "at": "2026-10-09T19:41:58.974072+00:00",
           "crowd_long_pct": 48.8,
-          "crowd_wallets": 215,
+          "crowd_wallets": 213,
           "crowd_bias": -0.02,
           "winners_bias": 0.59,
-          "fuel_below": 2069385,
-          "fuel_above": 3345591,
+          "fuel_below": 2068805,
+          "fuel_above": 3345424,
           "direction": 0,
           "score": 1.5,
-          "reason": "crowd 51% short (215 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade",
+          "reason": "crowd 51% short (213 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade",
           "hl_price": 1.1205
         },
         "GBPUSD": {
           "coin": "xyz:GBP",
-          "at": "2026-10-09T19:31:46.366856+00:00",
+          "at": "2026-10-09T19:41:58.974072+00:00",
           "crowd_long_pct": 49.0,
           "crowd_wallets": 49,
           "crowd_bias": -0.02,
           "winners_bias": -0.58,
-          "fuel_below": 269702,
-          "fuel_above": 351989,
+          "fuel_below": 269717,
+          "fuel_above": 351998,
           "direction": 0,
           "score": 0.0,
           "reason": "too few crowd wallets to read (49 < 200)",
-          "hl_price": 1.3241
+          "hl_price": 1.3242
         },
         "XTIUSD": {
           "coin": "xyz:CL",
-          "at": "2026-10-09T19:31:46.366856+00:00",
-          "crowd_long_pct": 69.4,
-          "crowd_wallets": 1145,
-          "crowd_bias": 0.39,
+          "at": "2026-10-09T19:41:58.974072+00:00",
+          "crowd_long_pct": 69.1,
+          "crowd_wallets": 1150,
+          "crowd_bias": 0.38,
           "winners_bias": -0.2,
-          "fuel_below": 2441629,
-          "fuel_above": 241121,
+          "fuel_below": 1940613,
+          "fuel_above": 494057,
           "direction": 0,
-          "score": 24.3,
-          "reason": "crowd 69% long (1,145 wallets); Apex and Sharps 20% short by money; 2.4m of longs liquidate below vs 241k of shorts above; not stretched: nothing to fade",
-          "hl_price": 90.584
+          "score": 23.9,
+          "reason": "crowd 69% long (1,150 wallets); Apex and Sharps 20% short by money; 1.9m of longs liquidate below vs 494k of shorts above; not stretched: nothing to fade",
+          "hl_price": 90.832
         },
         "XBRUSD": {
           "coin": "xyz:BRENTOIL",
-          "at": "2026-10-09T19:31:46.366856+00:00",
-          "crowd_long_pct": 54.2,
-          "crowd_wallets": 1094,
-          "crowd_bias": 0.08,
+          "at": "2026-10-09T19:41:58.974072+00:00",
+          "crowd_long_pct": 54.3,
+          "crowd_wallets": 1093,
+          "crowd_bias": 0.09,
           "winners_bias": -0.03,
-          "fuel_below": 5995500,
-          "fuel_above": 2810420,
+          "fuel_below": 5979826,
+          "fuel_above": 2800847,
           "direction": 0,
           "score": 5.3,
-          "reason": "crowd 54% long (1,094 wallets); Apex and Sharps balanced by money; 6.0m of longs liquidate below vs 2.8m of shorts above; not stretched: nothing to fade",
-          "hl_price": 101.96
+          "reason": "crowd 54% long (1,093 wallets); Apex and Sharps balanced by money; 6.0m of longs liquidate below vs 2.8m of shorts above; not stretched: nothing to fade",
+          "hl_price": 101.97
         }
       },
       "open": [],
@@ -4630,7 +4662,7 @@
         "XAUUSD": 1
       },
       "present": true,
-      "age_seconds": 2.9
+      "age_seconds": 3.4
     },
     "rider": {
       "strategy_id": "momentum_rider",
@@ -4638,16 +4670,16 @@
       "tagline": "Finds the FX market that has just started running, gets on early with a real stop at the broker, rides it while it is strong and gets out fast when the move dies (FlowLock X).",
       "magic": 990811,
       "mode": "LIVE",
-      "updated_utc": "2026-10-09T19:38:35.122940+00:00",
+      "updated_utc": "2026-10-09T19:48:44.824301+00:00",
       "pid": 30518,
       "user_pip_value_gbp": 1.0,
       "tick_feed": "every tick",
       "tick_history": {
         "setting": "every tick",
-        "from_history": 11127,
+        "from_history": 10471,
         "latest_fed_instead": 0,
         "minutes": 10,
-        "verdict": "working: 11,127 prices came from the tick history in the last 10 min"
+        "verdict": "working: 10,471 prices came from the tick history in the last 10 min"
       },
       "order_flow": "not available on retail MetaTrader FX - never faked",
       "health": {
@@ -4676,7 +4708,7 @@
             "name": "fresh_ticks",
             "ok": true,
             "critical": true,
-            "message": "prices are fresh (1 s old)"
+            "message": "prices are fresh (0 s old)"
           },
           {
             "name": "symbols",
@@ -4688,7 +4720,7 @@
             "name": "spread_valid",
             "ok": true,
             "critical": true,
-            "message": "24 of 28 markets have a valid bid/ask"
+            "message": "28 of 28 markets have a valid bid/ask"
           },
           {
             "name": "execution",
@@ -4718,317 +4750,317 @@
             "name": "disk_memory",
             "ok": true,
             "critical": true,
-            "message": "43,526 MB free on disk; 1,368 MB memory free"
+            "message": "43,524 MB free on disk; 1,394 MB memory free"
           }
         ]
       },
       "scanner": [
         {
-          "market": "EURNZD",
-          "direction": "SHORT",
-          "score": 29.5,
-          "state": "WATCHING",
-          "reason": "Spread too wide right now",
-          "family": "session_breakout",
-          "cost_ratio": 23.47,
-          "headroom_atr": 0.08,
-          "held_back": ""
-        },
-        {
-          "market": "EURJPY",
-          "direction": "SHORT",
-          "score": 28.2,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 2.846,
-          "headroom_atr": 0.5,
-          "held_back": ""
-        },
-        {
-          "market": "EURAUD",
-          "direction": "NONE",
-          "score": 25.8,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst",
-          "cost_ratio": 0.44,
-          "headroom_atr": 34.41,
-          "held_back": ""
-        },
-        {
-          "market": "CADJPY",
-          "direction": "SHORT",
-          "score": 22.8,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 2.627,
-          "headroom_atr": 0.82,
-          "held_back": ""
-        },
-        {
-          "market": "CHFJPY",
-          "direction": "SHORT",
-          "score": 22.4,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 4.879,
-          "headroom_atr": 0.27,
-          "held_back": ""
-        },
-        {
-          "market": "GBPCHF",
-          "direction": "SHORT",
-          "score": 20.8,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 23.618,
-          "headroom_atr": 0.07,
-          "held_back": ""
-        },
-        {
-          "market": "EURUSD",
-          "direction": "SHORT",
-          "score": 20.5,
-          "state": "WATCHING",
-          "reason": "Hardly any price updates - market too thin",
-          "family": "sweep",
-          "cost_ratio": 24.0,
-          "headroom_atr": 0.07,
-          "held_back": ""
-        },
-        {
-          "market": "EURGBP",
-          "direction": "SHORT",
-          "score": 20.1,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 3.715,
-          "headroom_atr": 0.57,
-          "held_back": ""
-        },
-        {
-          "market": "EURCHF",
-          "direction": "NONE",
-          "score": 20.0,
-          "state": "WATCHING",
-          "reason": "Spread too wide right now",
-          "family": "velocity_burst",
-          "cost_ratio": 99.0,
-          "headroom_atr": 0.0,
-          "held_back": ""
-        },
-        {
-          "market": "GBPAUD",
-          "direction": "NONE",
-          "score": 17.8,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst",
-          "cost_ratio": 99.0,
-          "headroom_atr": 0.0,
-          "held_back": ""
-        },
-        {
-          "market": "GBPJPY",
-          "direction": "SHORT",
-          "score": 17.7,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 8.031,
-          "headroom_atr": 0.16,
-          "held_back": ""
-        },
-        {
-          "market": "AUDNZD",
-          "direction": "LONG",
-          "score": 16.8,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "session_breakout",
-          "cost_ratio": 6.49,
-          "headroom_atr": 0.38,
-          "held_back": ""
-        },
-        {
-          "market": "AUDCAD",
-          "direction": "NONE",
-          "score": 16.2,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst",
-          "cost_ratio": 99.0,
-          "headroom_atr": 0.0,
-          "held_back": ""
-        },
-        {
-          "market": "USDJPY",
-          "direction": "NONE",
-          "score": 15.9,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst",
-          "cost_ratio": 99.0,
-          "headroom_atr": 0.0,
-          "held_back": ""
-        },
-        {
-          "market": "NZDJPY",
-          "direction": "SHORT",
-          "score": 15.6,
-          "state": "WATCHING",
-          "reason": "Spread too wide right now",
-          "family": "sweep",
-          "cost_ratio": 1.659,
-          "headroom_atr": 1.55,
-          "held_back": ""
-        },
-        {
-          "market": "AUDJPY",
-          "direction": "SHORT",
-          "score": 15.5,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 1.891,
-          "headroom_atr": 0.96,
-          "held_back": ""
-        },
-        {
-          "market": "NZDUSD",
-          "direction": "LONG",
-          "score": 15.0,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "session_breakout",
-          "cost_ratio": 3.0,
-          "headroom_atr": 0.9,
-          "held_back": ""
-        },
-        {
-          "market": "NZDCAD",
-          "direction": "LONG",
-          "score": 14.3,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "pullback",
-          "cost_ratio": 33.971,
-          "headroom_atr": 0.08,
-          "held_back": ""
-        },
-        {
-          "market": "USDCAD",
-          "direction": "LONG",
-          "score": 14.1,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 7.993,
-          "headroom_atr": 0.25,
-          "held_back": ""
-        },
-        {
           "market": "GBPUSD",
           "direction": "SHORT",
-          "score": 13.9,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
+          "score": 55.9,
+          "state": "BUILDING",
+          "reason": "Fast clean downward momentum, but costs would eat the move",
           "family": "sweep",
-          "cost_ratio": 2.167,
-          "headroom_atr": 0.67,
-          "held_back": ""
-        },
-        {
-          "market": "AUDUSD",
-          "direction": "LONG",
-          "score": 13.4,
-          "state": "WATCHING",
-          "reason": "Slow ragged upward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 3.667,
-          "headroom_atr": 0.66,
-          "held_back": ""
-        },
-        {
-          "market": "AUDCHF",
-          "direction": "NONE",
-          "score": 13.2,
-          "state": "WATCHING",
-          "reason": "Quiet - nothing moving",
-          "family": "velocity_burst",
-          "cost_ratio": 10.809,
-          "headroom_atr": 0.26,
-          "held_back": ""
-        },
-        {
-          "market": "GBPCAD",
-          "direction": "SHORT",
-          "score": 12.2,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 11.99,
-          "headroom_atr": 0.12,
+          "cost_ratio": 8.0,
+          "headroom_atr": 0.19,
           "held_back": ""
         },
         {
           "market": "GBPNZD",
           "direction": "SHORT",
-          "score": 12.2,
-          "state": "WATCHING",
-          "reason": "Slow ragged downward momentum, but costs would eat the move",
-          "family": "sweep",
-          "cost_ratio": 2.225,
-          "headroom_atr": 0.66,
+          "score": 54.0,
+          "state": "BUILDING",
+          "reason": "Fast downward momentum, but costs would eat the move",
+          "family": "first_retest",
+          "cost_ratio": 8.988,
+          "headroom_atr": 0.17,
           "held_back": ""
         },
         {
-          "market": "EURCAD",
+          "market": "EURUSD",
+          "direction": "SHORT",
+          "score": 49.8,
+          "state": "BUILDING",
+          "reason": "Steady clean downward momentum, but costs would eat the move",
+          "family": "first_retest",
+          "cost_ratio": 0.828,
+          "headroom_atr": 2.34,
+          "held_back": ""
+        },
+        {
+          "market": "GBPAUD",
+          "direction": "SHORT",
+          "score": 39.7,
+          "state": "BUILDING",
+          "reason": "Steady ragged downward momentum, but costs would eat the move",
+          "family": "breakout",
+          "cost_ratio": 2.773,
+          "headroom_atr": 0.56,
+          "held_back": ""
+        },
+        {
+          "market": "EURAUD",
+          "direction": "SHORT",
+          "score": 38.3,
+          "state": "BUILDING",
+          "reason": "Spread too wide right now",
+          "family": "pullback",
+          "cost_ratio": 0.549,
+          "headroom_atr": 35.62,
+          "held_back": ""
+        },
+        {
+          "market": "GBPCHF",
+          "direction": "SHORT",
+          "score": 37.4,
+          "state": "WATCHING",
+          "reason": "Steady ragged downward momentum, but costs would eat the move",
+          "family": "session_breakout",
+          "cost_ratio": 12.809,
+          "headroom_atr": 0.16,
+          "held_back": ""
+        },
+        {
+          "market": "EURNZD",
+          "direction": "SHORT",
+          "score": 37.2,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "session_breakout",
+          "cost_ratio": 3.611,
+          "headroom_atr": 0.53,
+          "held_back": ""
+        },
+        {
+          "market": "USDJPY",
           "direction": "LONG",
-          "score": 10.9,
+          "score": 35.6,
           "state": "WATCHING",
           "reason": "Slow ragged upward momentum, but costs would eat the move",
           "family": "sweep",
-          "cost_ratio": 7.194,
-          "headroom_atr": 0.28,
+          "cost_ratio": 2.474,
+          "headroom_atr": 0.6,
+          "held_back": ""
+        },
+        {
+          "market": "USDCHF",
+          "direction": "LONG",
+          "score": 34.0,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 2.702,
+          "headroom_atr": 0.81,
+          "held_back": ""
+        },
+        {
+          "market": "USDCAD",
+          "direction": "LONG",
+          "score": 33.7,
+          "state": "WATCHING",
+          "reason": "Slow clean upward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 3.197,
+          "headroom_atr": 0.69,
+          "held_back": ""
+        },
+        {
+          "market": "NZDJPY",
+          "direction": "LONG",
+          "score": 30.8,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 0.745,
+          "headroom_atr": 10.95,
+          "held_back": ""
+        },
+        {
+          "market": "GBPCAD",
+          "direction": "SHORT",
+          "score": 26.9,
+          "state": "WATCHING",
+          "reason": "Steady ragged downward momentum, but costs would eat the move",
+          "family": "velocity_burst",
+          "cost_ratio": 6.394,
+          "headroom_atr": 0.22,
+          "held_back": ""
+        },
+        {
+          "market": "AUDCHF",
+          "direction": "LONG",
+          "score": 26.8,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep",
+          "cost_ratio": 1.708,
+          "headroom_atr": 1.9,
+          "held_back": ""
+        },
+        {
+          "market": "EURCHF",
+          "direction": "NONE",
+          "score": 24.8,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "pullback",
+          "cost_ratio": 2.116,
+          "headroom_atr": 1.59,
+          "held_back": ""
+        },
+        {
+          "market": "CHFJPY",
+          "direction": "LONG",
+          "score": 24.7,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 0.481,
+          "headroom_atr": 7.79,
+          "held_back": ""
+        },
+        {
+          "market": "AUDJPY",
+          "direction": "LONG",
+          "score": 23.8,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "squeeze_release",
+          "cost_ratio": 2.127,
+          "headroom_atr": 0.88,
+          "held_back": ""
+        },
+        {
+          "market": "NZDCHF",
+          "direction": "LONG",
+          "score": 23.4,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep",
+          "cost_ratio": 23.618,
+          "headroom_atr": 0.16,
+          "held_back": ""
+        },
+        {
+          "market": "GBPJPY",
+          "direction": "SHORT",
+          "score": 21.7,
+          "state": "WATCHING",
+          "reason": "Slow ragged downward momentum, but costs would eat the move",
+          "family": "velocity_burst",
+          "cost_ratio": 10.04,
+          "headroom_atr": 0.12,
           "held_back": ""
         },
         {
           "market": "CADCHF",
           "direction": "LONG",
-          "score": 10.5,
+          "score": 20.5,
           "state": "WATCHING",
           "reason": "Spread too wide right now",
           "family": "sweep",
-          "cost_ratio": 3.374,
-          "headroom_atr": 0.97,
+          "cost_ratio": 23.618,
+          "headroom_atr": 0.14,
           "held_back": ""
         },
         {
-          "market": "NZDCHF",
+          "market": "CADJPY",
+          "direction": "LONG",
+          "score": 19.9,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 6.832,
+          "headroom_atr": 0.29,
+          "held_back": ""
+        },
+        {
+          "market": "EURJPY",
+          "direction": "LONG",
+          "score": 18.4,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep",
+          "cost_ratio": 3.44,
+          "headroom_atr": 0.53,
+          "held_back": ""
+        },
+        {
+          "market": "NZDCAD",
           "direction": "NONE",
-          "score": 8.6,
+          "score": 18.2,
           "state": "WATCHING",
           "reason": "Spread too wide right now",
           "family": "velocity_burst",
-          "cost_ratio": 11.809,
-          "headroom_atr": 0.3,
+          "cost_ratio": 99.0,
+          "headroom_atr": 0.0,
           "held_back": ""
         },
         {
-          "market": "USDCHF",
+          "market": "AUDCAD",
           "direction": "NONE",
-          "score": 7.9,
+          "score": 17.6,
           "state": "WATCHING",
           "reason": "Quiet - nothing moving",
           "family": "velocity_burst",
-          "cost_ratio": 19.618,
-          "headroom_atr": 0.1,
+          "cost_ratio": 99.0,
+          "headroom_atr": 0.0,
+          "held_back": ""
+        },
+        {
+          "market": "EURGBP",
+          "direction": "LONG",
+          "score": 16.4,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep",
+          "cost_ratio": 28.574,
+          "headroom_atr": 0.13,
+          "held_back": ""
+        },
+        {
+          "market": "AUDUSD",
+          "direction": "SHORT",
+          "score": 14.8,
+          "state": "WATCHING",
+          "reason": "Slow ragged downward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 12.0,
+          "headroom_atr": 0.23,
+          "held_back": ""
+        },
+        {
+          "market": "EURCAD",
+          "direction": "LONG",
+          "score": 14.1,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "sweep",
+          "cost_ratio": 11.99,
+          "headroom_atr": 0.17,
+          "held_back": ""
+        },
+        {
+          "market": "NZDUSD",
+          "direction": "LONG",
+          "score": 12.6,
+          "state": "WATCHING",
+          "reason": "Slow ragged upward momentum, but costs would eat the move",
+          "family": "session_breakout",
+          "cost_ratio": 2.4,
+          "headroom_atr": 1.24,
+          "held_back": ""
+        },
+        {
+          "market": "AUDNZD",
+          "direction": "SHORT",
+          "score": 9.0,
+          "state": "WATCHING",
+          "reason": "Spread too wide right now",
+          "family": "sweep",
+          "cost_ratio": 6.134,
+          "headroom_atr": 0.45,
           "held_back": ""
         }
       ],
@@ -5045,13 +5077,13 @@
       "why_no_trade": {
         "window_minutes": 60,
         "covers": "the last 60 minutes",
-        "from_utc": "2026-10-09T18:39:00+00:00",
-        "to_utc": "2026-10-09T19:38:35.122940+00:00",
+        "from_utc": "2026-10-09T18:49:00+00:00",
+        "to_utc": "2026-10-09T19:48:44.824301+00:00",
         "trigger_score": 60.0,
-        "summary": "In the last 60 minutes: 3285 scans of 28 markets, 0 triggers, 0 entries. Best score 76.8 (USDJPY SHORT at 18:49:55 UTC); the trigger score is 60. 601 near-miss scans with no entry, held back most by: costs too big for the expected move (318), spread too wide (174), too choppy (109).",
-        "last_trade": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (4.1 h ago), LIVE, closed STOP",
+        "summary": "In the last 60 minutes: 3293 scans of 28 markets, 0 triggers, 0 entries. Best score 76.8 (USDJPY SHORT at 18:49:55 UTC); the trigger score is 60. 324 near-miss scans with no entry, held back most by: costs too big for the expected move (214), spread too wide (110).",
+        "last_trade": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (4.3 h ago), LIVE, closed STOP",
         "last_trade_detail": {
-          "line": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (4.1 h ago), LIVE, closed STOP",
+          "line": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (4.3 h ago), LIVE, closed STOP",
           "time_utc": "2026-10-09T15:32:23.030950+00:00",
           "market": "EURNZD",
           "side": "SELL",
@@ -5061,27 +5093,22 @@
         },
         "last_trigger": "last trigger: none since the Rider started at 15:36:52 UTC",
         "last_trigger_detail": null,
-        "scans": 3285,
+        "scans": 3293,
         "failed_scans": 0,
         "triggers": 0,
         "entries": 0,
-        "near_miss_scans": 601,
+        "near_miss_scans": 324,
         "near_miss_means": "a scan whose score reached the trigger score, or that was READY or TRIGGER, with no entry; counted once per scan, against the first rule that held it back",
         "blocked_by": [
           {
             "gate": "cost",
             "what": "costs too big for the expected move",
-            "scans": 318
+            "scans": 214
           },
           {
             "gate": "spread",
             "what": "spread too wide",
-            "scans": 174
-          },
-          {
-            "gate": "chop",
-            "what": "too choppy",
-            "scans": 109
+            "scans": 110
           }
         ],
         "best": {
@@ -5092,16 +5119,16 @@
         },
         "ticks": {
           "markets": 28,
-          "newest_age_seconds": 1.0,
-          "oldest_age_seconds": 35.0,
+          "newest_age_seconds": 0.2,
+          "oldest_age_seconds": 7.0,
           "no_price_yet": [],
           "older_than_60s": []
         },
         "markets": {
           "AUDCAD": {
             "scans": {
-              "WATCHING": 3110,
-              "BUILDING": 175
+              "WATCHING": 3140,
+              "BUILDING": 153
             },
             "best": {
               "score": 71.0,
@@ -5109,33 +5136,31 @@
               "time_utc": "2026-10-09T18:50:45.665944+00:00"
             },
             "blocked_by": {
-              "cost": 9,
-              "spread": 1
+              "cost": 1
             },
-            "tick_age_seconds": 2.5,
-            "ticks_per_minute": 38.0
+            "tick_age_seconds": 4.6,
+            "ticks_per_minute": 42.0
           },
           "AUDCHF": {
             "scans": {
-              "WATCHING": 3215,
-              "BUILDING": 70
+              "WATCHING": 3217,
+              "BUILDING": 76
             },
             "best": {
-              "score": 64.6,
+              "score": 61.2,
               "direction": "LONG",
-              "time_utc": "2026-10-09T18:47:32.949279+00:00"
+              "time_utc": "2026-10-09T19:47:17.558869+00:00"
             },
             "blocked_by": {
-              "cost": 4,
-              "spread": 2
+              "cost": 1
             },
-            "tick_age_seconds": 3.3,
-            "ticks_per_minute": 27.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 35.0
           },
           "AUDJPY": {
             "scans": {
-              "WATCHING": 3158,
-              "BUILDING": 127
+              "WATCHING": 3124,
+              "BUILDING": 169
             },
             "best": {
               "score": 63.7,
@@ -5143,15 +5168,16 @@
               "time_utc": "2026-10-09T18:56:06.864406+00:00"
             },
             "blocked_by": {
-              "cost": 2
+              "cost": 6,
+              "spread": 1
             },
-            "tick_age_seconds": 1.0,
-            "ticks_per_minute": 41.0
+            "tick_age_seconds": 2.8,
+            "ticks_per_minute": 42.0
           },
           "AUDNZD": {
             "scans": {
-              "WATCHING": 3197,
-              "BUILDING": 88
+              "WATCHING": 3209,
+              "BUILDING": 84
             },
             "best": {
               "score": 65.7,
@@ -5161,13 +5187,13 @@
             "blocked_by": {
               "spread": 8
             },
-            "tick_age_seconds": 2.5,
-            "ticks_per_minute": 36.0
+            "tick_age_seconds": 4.8,
+            "ticks_per_minute": 44.0
           },
           "AUDUSD": {
             "scans": {
-              "WATCHING": 3040,
-              "BUILDING": 245
+              "WATCHING": 3072,
+              "BUILDING": 221
             },
             "best": {
               "score": 72.4,
@@ -5175,47 +5201,45 @@
               "time_utc": "2026-10-09T18:50:50.916552+00:00"
             },
             "blocked_by": {
-              "cost": 27,
-              "chop": 21,
-              "spread": 2
+              "cost": 22
             },
-            "tick_age_seconds": 2.5,
-            "ticks_per_minute": 26.0
+            "tick_age_seconds": 5.2,
+            "ticks_per_minute": 24.0
           },
           "CADCHF": {
             "scans": {
-              "WATCHING": 3232,
-              "BUILDING": 53
+              "WATCHING": 3226,
+              "BUILDING": 67
             },
             "best": {
               "score": 55.5,
               "direction": "LONG",
               "time_utc": "2026-10-09T19:05:24.920089+00:00"
             },
-            "tick_age_seconds": 2.9,
-            "ticks_per_minute": 16.0
+            "tick_age_seconds": 1.8,
+            "ticks_per_minute": 31.0
           },
           "CADJPY": {
             "scans": {
-              "WATCHING": 3022,
-              "BUILDING": 263
+              "WATCHING": 3033,
+              "BUILDING": 260
             },
             "best": {
-              "score": 63.7,
-              "direction": "SHORT",
-              "time_utc": "2026-10-09T18:47:29.685902+00:00"
+              "score": 63.6,
+              "direction": "LONG",
+              "time_utc": "2026-10-09T19:22:13.509164+00:00"
             },
             "blocked_by": {
-              "cost": 6,
+              "cost": 4,
               "spread": 2
             },
-            "tick_age_seconds": 1.0,
-            "ticks_per_minute": 28.0
+            "tick_age_seconds": 2.8,
+            "ticks_per_minute": 53.0
           },
           "CHFJPY": {
             "scans": {
-              "WATCHING": 3178,
-              "BUILDING": 107
+              "BUILDING": 90,
+              "WATCHING": 3203
             },
             "best": {
               "score": 68.2,
@@ -5223,65 +5247,55 @@
               "time_utc": "2026-10-09T19:22:13.509164+00:00"
             },
             "blocked_by": {
-              "spread": 7,
-              "cost": 1
+              "spread": 9,
+              "cost": 2
             },
-            "tick_age_seconds": 1.0,
-            "ticks_per_minute": 33.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 49.0
           },
           "EURAUD": {
             "scans": {
-              "WATCHING": 3115,
-              "BUILDING": 170
-            },
-            "best": {
-              "score": 66.5,
-              "direction": "SHORT",
-              "time_utc": "2026-10-09T18:47:15.355966+00:00"
-            },
-            "blocked_by": {
-              "spread": 11,
-              "cost": 6
-            },
-            "tick_age_seconds": 2.5,
-            "ticks_per_minute": 29.0
-          },
-          "EURCAD": {
-            "scans": {
-              "WATCHING": 3192,
-              "BUILDING": 93
-            },
-            "best": {
-              "score": 63.4,
-              "direction": "NONE",
-              "time_utc": "2026-10-09T18:47:49.246039+00:00"
-            },
-            "blocked_by": {
-              "chop": 2
-            },
-            "tick_age_seconds": 2.9,
-            "ticks_per_minute": 22.0
-          },
-          "EURCHF": {
-            "scans": {
-              "WATCHING": 3144,
+              "WATCHING": 3152,
               "BUILDING": 141
             },
             "best": {
-              "score": 66.0,
-              "direction": "LONG",
-              "time_utc": "2026-10-09T18:40:34.929332+00:00"
+              "score": 57.7,
+              "direction": "SHORT",
+              "time_utc": "2026-10-09T18:50:45.665944+00:00"
             },
-            "blocked_by": {
-              "spread": 4
+            "tick_age_seconds": 5.2,
+            "ticks_per_minute": 35.0
+          },
+          "EURCAD": {
+            "scans": {
+              "WATCHING": 3212,
+              "BUILDING": 81
             },
-            "tick_age_seconds": 3.9,
-            "ticks_per_minute": 13.0
+            "best": {
+              "score": 55.7,
+              "direction": "SHORT",
+              "time_utc": "2026-10-09T19:03:08.807434+00:00"
+            },
+            "tick_age_seconds": 4.4,
+            "ticks_per_minute": 41.0
+          },
+          "EURCHF": {
+            "scans": {
+              "WATCHING": 3206,
+              "BUILDING": 87
+            },
+            "best": {
+              "score": 54.6,
+              "direction": "SHORT",
+              "time_utc": "2026-10-09T18:49:51.837369+00:00"
+            },
+            "tick_age_seconds": 0.6,
+            "ticks_per_minute": 22.0
           },
           "EURGBP": {
             "scans": {
-              "WATCHING": 3095,
-              "BUILDING": 190
+              "WATCHING": 3148,
+              "BUILDING": 145
             },
             "best": {
               "score": 63.2,
@@ -5289,16 +5303,15 @@
               "time_utc": "2026-10-09T19:26:16.713722+00:00"
             },
             "blocked_by": {
-              "spread": 1,
               "cost": 1
             },
-            "tick_age_seconds": 2.9,
-            "ticks_per_minute": 34.0
+            "tick_age_seconds": 0.8,
+            "ticks_per_minute": 39.0
           },
           "EURJPY": {
             "scans": {
-              "WATCHING": 3029,
-              "BUILDING": 256
+              "WATCHING": 2998,
+              "BUILDING": 295
             },
             "best": {
               "score": 67.1,
@@ -5309,12 +5322,12 @@
               "spread": 8,
               "cost": 3
             },
-            "tick_age_seconds": 3.7,
-            "ticks_per_minute": 26.0
+            "tick_age_seconds": 3.0,
+            "ticks_per_minute": 38.0
           },
           "EURNZD": {
             "scans": {
-              "WATCHING": 3075,
+              "WATCHING": 3083,
               "BUILDING": 210
             },
             "best": {
@@ -5323,16 +5336,16 @@
               "time_utc": "2026-10-09T18:50:45.665944+00:00"
             },
             "blocked_by": {
-              "spread": 28,
-              "cost": 6
+              "spread": 22,
+              "cost": 5
             },
-            "tick_age_seconds": 4.1,
-            "ticks_per_minute": 14.0
+            "tick_age_seconds": 4.8,
+            "ticks_per_minute": 39.0
           },
           "EURUSD": {
             "scans": {
-              "WATCHING": 3059,
-              "BUILDING": 226
+              "WATCHING": 3122,
+              "BUILDING": 171
             },
             "best": {
               "score": 68.0,
@@ -5340,32 +5353,28 @@
               "time_utc": "2026-10-09T18:50:50.916552+00:00"
             },
             "blocked_by": {
-              "cost": 35,
-              "chop": 33
+              "cost": 23
             },
-            "tick_age_seconds": 35.0,
-            "ticks_per_minute": 5.0
+            "tick_age_seconds": 7.0,
+            "ticks_per_minute": 16.0
           },
           "GBPAUD": {
             "scans": {
-              "WATCHING": 3086,
-              "BUILDING": 199
+              "WATCHING": 3130,
+              "BUILDING": 163
             },
             "best": {
-              "score": 63.6,
+              "score": 58.2,
               "direction": "SHORT",
-              "time_utc": "2026-10-09T18:47:15.355966+00:00"
+              "time_utc": "2026-10-09T18:50:45.665944+00:00"
             },
-            "blocked_by": {
-              "spread": 10
-            },
-            "tick_age_seconds": 2.5,
-            "ticks_per_minute": 56.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 58.0
           },
           "GBPCAD": {
             "scans": {
-              "WATCHING": 3067,
-              "BUILDING": 218
+              "WATCHING": 3097,
+              "BUILDING": 196
             },
             "best": {
               "score": 64.3,
@@ -5373,16 +5382,15 @@
               "time_utc": "2026-10-09T19:01:40.054088+00:00"
             },
             "blocked_by": {
-              "spread": 2,
               "cost": 2
             },
-            "tick_age_seconds": 2.9,
-            "ticks_per_minute": 47.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 61.0
           },
           "GBPCHF": {
             "scans": {
-              "WATCHING": 3131,
-              "BUILDING": 154
+              "BUILDING": 115,
+              "WATCHING": 3178
             },
             "best": {
               "score": 62.4,
@@ -5392,13 +5400,13 @@
             "blocked_by": {
               "spread": 2
             },
-            "tick_age_seconds": 3.3,
-            "ticks_per_minute": 38.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 52.0
           },
           "GBPJPY": {
             "scans": {
-              "WATCHING": 3119,
-              "BUILDING": 166
+              "WATCHING": 3112,
+              "BUILDING": 181
             },
             "best": {
               "score": 60.4,
@@ -5408,13 +5416,13 @@
             "blocked_by": {
               "cost": 2
             },
-            "tick_age_seconds": 1.1,
-            "ticks_per_minute": 50.0
+            "tick_age_seconds": 0.2,
+            "ticks_per_minute": 62.0
           },
           "GBPNZD": {
             "scans": {
-              "WATCHING": 3168,
-              "BUILDING": 117
+              "WATCHING": 3181,
+              "BUILDING": 112
             },
             "best": {
               "score": 68.3,
@@ -5422,15 +5430,15 @@
               "time_utc": "2026-10-09T18:50:49.905555+00:00"
             },
             "blocked_by": {
-              "spread": 11
+              "spread": 8
             },
-            "tick_age_seconds": 3.9,
-            "ticks_per_minute": 41.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 62.0
           },
           "GBPUSD": {
             "scans": {
-              "WATCHING": 3024,
-              "BUILDING": 261
+              "WATCHING": 3107,
+              "BUILDING": 186
             },
             "best": {
               "score": 72.4,
@@ -5438,17 +5446,15 @@
               "time_utc": "2026-10-09T18:50:49.905555+00:00"
             },
             "blocked_by": {
-              "cost": 48,
-              "chop": 10,
-              "spread": 4
+              "cost": 22
             },
-            "tick_age_seconds": 10.1,
-            "ticks_per_minute": 35.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 44.0
           },
           "NZDCAD": {
             "scans": {
-              "WATCHING": 3088,
-              "BUILDING": 197
+              "WATCHING": 3104,
+              "BUILDING": 189
             },
             "best": {
               "score": 74.5,
@@ -5456,17 +5462,16 @@
               "time_utc": "2026-10-09T18:50:50.916552+00:00"
             },
             "blocked_by": {
-              "spread": 20,
-              "cost": 3,
-              "chop": 1
+              "spread": 17,
+              "cost": 3
             },
-            "tick_age_seconds": 2.9,
-            "ticks_per_minute": 26.0
+            "tick_age_seconds": 4.4,
+            "ticks_per_minute": 47.0
           },
           "NZDCHF": {
             "scans": {
-              "WATCHING": 3061,
-              "BUILDING": 224
+              "WATCHING": 3124,
+              "BUILDING": 169
             },
             "best": {
               "score": 72.9,
@@ -5474,32 +5479,32 @@
               "time_utc": "2026-10-09T18:50:49.905555+00:00"
             },
             "blocked_by": {
-              "spread": 18
+              "spread": 10
             },
-            "tick_age_seconds": 3.9,
-            "ticks_per_minute": 13.0
+            "tick_age_seconds": 0.4,
+            "ticks_per_minute": 33.0
           },
           "NZDJPY": {
             "scans": {
-              "WATCHING": 3194,
-              "BUILDING": 91
+              "WATCHING": 3166,
+              "BUILDING": 127
             },
             "best": {
-              "score": 62.1,
+              "score": 68.9,
               "direction": "LONG",
-              "time_utc": "2026-10-09T18:50:51.932090+00:00"
+              "time_utc": "2026-10-09T19:47:17.558869+00:00"
             },
             "blocked_by": {
-              "spread": 1,
+              "spread": 5,
               "cost": 1
             },
-            "tick_age_seconds": 3.9,
-            "ticks_per_minute": 27.0
+            "tick_age_seconds": 2.7,
+            "ticks_per_minute": 49.0
           },
           "NZDUSD": {
             "scans": {
-              "WATCHING": 2883,
-              "BUILDING": 402
+              "WATCHING": 2942,
+              "BUILDING": 351
             },
             "best": {
               "score": 76.8,
@@ -5507,17 +5512,16 @@
               "time_utc": "2026-10-09T18:50:50.916552+00:00"
             },
             "blocked_by": {
-              "spread": 29,
-              "cost": 18,
-              "chop": 10
+              "spread": 18,
+              "cost": 16
             },
-            "tick_age_seconds": 4.1,
-            "ticks_per_minute": 10.0
+            "tick_age_seconds": 4.8,
+            "ticks_per_minute": 26.0
           },
           "USDCAD": {
             "scans": {
-              "WATCHING": 2922,
-              "BUILDING": 363
+              "WATCHING": 2998,
+              "BUILDING": 295
             },
             "best": {
               "score": 72.8,
@@ -5525,15 +5529,15 @@
               "time_utc": "2026-10-09T19:03:04.331125+00:00"
             },
             "blocked_by": {
-              "cost": 49
+              "cost": 25
             },
-            "tick_age_seconds": 2.9,
-            "ticks_per_minute": 20.0
+            "tick_age_seconds": 4.6,
+            "ticks_per_minute": 31.0
           },
           "USDCHF": {
             "scans": {
-              "WATCHING": 2895,
-              "BUILDING": 390
+              "WATCHING": 2980,
+              "BUILDING": 313
             },
             "best": {
               "score": 74.2,
@@ -5541,16 +5545,15 @@
               "time_utc": "2026-10-09T18:49:55.213701+00:00"
             },
             "blocked_by": {
-              "cost": 50,
-              "chop": 6
+              "cost": 25
             },
-            "tick_age_seconds": 3.3,
-            "ticks_per_minute": 11.0
+            "tick_age_seconds": 0.6,
+            "ticks_per_minute": 24.0
           },
           "USDJPY": {
             "scans": {
-              "WATCHING": 2994,
-              "BUILDING": 291
+              "WATCHING": 2977,
+              "BUILDING": 316
             },
             "best": {
               "score": 76.8,
@@ -5558,244 +5561,242 @@
               "time_utc": "2026-10-09T18:49:55.213701+00:00"
             },
             "blocked_by": {
-              "cost": 45,
-              "chop": 26,
-              "spread": 3
+              "cost": 50
             },
-            "tick_age_seconds": 1.1,
-            "ticks_per_minute": 23.0
+            "tick_age_seconds": 0.2,
+            "ticks_per_minute": 27.0
           }
         },
         "near_misses": [
           {
-            "time_utc": "2026-10-09T19:21:18.770062+00:00",
-            "last_utc": "2026-10-09T19:21:24.049447+00:00",
-            "market": "NZDUSD",
-            "direction": "SHORT",
-            "score": 64.8,
-            "state": "BUILDING",
-            "gate": "cost",
-            "what": "costs too big for the expected move",
-            "detail": "costs 1.3 pips against an expected move of 0.5 pips (289% of it; the limit is 15%)",
-            "numbers": {
-              "cost_ratio": 2.889,
-              "cost_pips": 1.3,
-              "expected_move_pips": 0.5,
-              "headroom_atr": 0.77,
-              "chop": 0.0,
-              "spread_pips": 0.2,
-              "atr_pips": 0.58,
-              "ticks_per_minute": 46.0,
-              "confirmed": true
-            },
-            "scans": 3
-          },
-          {
-            "time_utc": "2026-10-09T19:21:24.049447+00:00",
-            "last_utc": "2026-10-09T19:21:29.647367+00:00",
-            "market": "AUDUSD",
-            "direction": "SHORT",
-            "score": 61.1,
-            "state": "BUILDING",
-            "gate": "cost",
-            "what": "costs too big for the expected move",
-            "detail": "costs 1.2 pips against an expected move of 0.5 pips (218% of it; the limit is 15%)",
-            "numbers": {
-              "cost_ratio": 2.182,
-              "cost_pips": 1.2,
-              "expected_move_pips": 0.5,
-              "headroom_atr": 0.97,
-              "chop": 0.0,
-              "spread_pips": 0.1,
-              "atr_pips": 0.57,
-              "ticks_per_minute": 33.0,
-              "confirmed": true
-            },
-            "scans": 3
-          },
-          {
-            "time_utc": "2026-10-09T19:21:25.178634+00:00",
-            "last_utc": "2026-10-09T19:21:27.348191+00:00",
-            "market": "NZDUSD",
-            "direction": "SHORT",
-            "score": 67.8,
+            "time_utc": "2026-10-09T19:46:45.235713+00:00",
+            "last_utc": "2026-10-09T19:46:45.235713+00:00",
+            "market": "AUDJPY",
+            "direction": "LONG",
+            "score": 61.8,
             "state": "BUILDING",
             "gate": "spread",
             "what": "spread too wide",
-            "detail": "spread 0.6 pips, over the 0.3-pip limit (0.5 ATR)",
+            "detail": "spread 0.5 pips, over the 0.4-pip limit (0.5 ATR)",
             "numbers": {
-              "cost_ratio": 11.333,
-              "cost_pips": 1.7,
-              "expected_move_pips": 0.2,
-              "headroom_atr": 0.26,
-              "chop": 0.0,
-              "spread_pips": 0.6,
-              "atr_pips": 0.58,
-              "ticks_per_minute": 45.0,
-              "confirmed": true
-            },
-            "scans": 3
-          },
-          {
-            "time_utc": "2026-10-09T19:22:09.125773+00:00",
-            "last_utc": "2026-10-09T19:22:22.256380+00:00",
-            "market": "USDJPY",
-            "direction": "LONG",
-            "score": 72.8,
-            "state": "BUILDING",
-            "gate": "cost",
-            "what": "costs too big for the expected move",
-            "detail": "costs 1.7 pips against an expected move of 0.7 pips (244% of it; the limit is 15%)",
-            "numbers": {
-              "cost_ratio": 2.44,
-              "cost_pips": 1.71,
-              "expected_move_pips": 0.7,
-              "headroom_atr": 0.69,
-              "chop": 0.0,
-              "spread_pips": 0.2,
-              "atr_pips": 1.01,
-              "ticks_per_minute": 44.0,
-              "confirmed": true
-            },
-            "scans": 13
-          },
-          {
-            "time_utc": "2026-10-09T19:22:09.125773+00:00",
-            "last_utc": "2026-10-09T19:22:09.125773+00:00",
-            "market": "CHFJPY",
-            "direction": "LONG",
-            "score": 61.1,
-            "state": "BUILDING",
-            "gate": "cost",
-            "what": "costs too big for the expected move",
-            "detail": "costs 1.8 pips against an expected move of 4.6 pips (39% of it; the limit is 15%)",
-            "numbers": {
-              "cost_ratio": 0.39,
-              "cost_pips": 1.81,
-              "expected_move_pips": 4.6,
-              "headroom_atr": 9.37,
-              "chop": 0.38,
-              "spread_pips": 0.3,
-              "atr_pips": 1.27,
-              "ticks_per_minute": 74.0,
+              "cost_ratio": 1.746,
+              "cost_pips": 2.01,
+              "expected_move_pips": 1.1,
+              "headroom_atr": 1.35,
+              "chop": 0.11,
+              "spread_pips": 0.5,
+              "atr_pips": 0.85,
+              "ticks_per_minute": 70.0,
               "confirmed": true
             },
             "scans": 1
           },
           {
-            "time_utc": "2026-10-09T19:22:11.279878+00:00",
-            "last_utc": "2026-10-09T19:22:17.906988+00:00",
+            "time_utc": "2026-10-09T19:46:45.235713+00:00",
+            "last_utc": "2026-10-09T19:46:45.235713+00:00",
             "market": "CHFJPY",
             "direction": "LONG",
-            "score": 68.2,
+            "score": 61.8,
+            "state": "BUILDING",
+            "gate": "cost",
+            "what": "costs too big for the expected move",
+            "detail": "costs 1.9 pips against an expected move of 4.1 pips (46% of it; the limit is 15%)",
+            "numbers": {
+              "cost_ratio": 0.46,
+              "cost_pips": 1.91,
+              "expected_move_pips": 4.1,
+              "headroom_atr": 7.95,
+              "chop": 0.16,
+              "spread_pips": 0.4,
+              "atr_pips": 1.27,
+              "ticks_per_minute": 40.0,
+              "confirmed": true
+            },
+            "scans": 1
+          },
+          {
+            "time_utc": "2026-10-09T19:46:46.385768+00:00",
+            "last_utc": "2026-10-09T19:46:47.450100+00:00",
+            "market": "CHFJPY",
+            "direction": "LONG",
+            "score": 62.8,
             "state": "BUILDING",
             "gate": "spread",
             "what": "spread too wide",
             "detail": "spread 0.7 pips, over the 0.6-pip limit (0.5 ATR)",
             "numbers": {
-              "cost_ratio": 0.476,
+              "cost_ratio": 0.533,
               "cost_pips": 2.21,
-              "expected_move_pips": 4.6,
-              "headroom_atr": 8.81,
-              "chop": 0.25,
+              "expected_move_pips": 4.1,
+              "headroom_atr": 7.91,
+              "chop": 0.15,
               "spread_pips": 0.7,
               "atr_pips": 1.27,
-              "ticks_per_minute": 75.0,
+              "ticks_per_minute": 41.0,
               "confirmed": true
             },
-            "scans": 7
+            "scans": 2
           },
           {
-            "time_utc": "2026-10-09T19:22:11.279878+00:00",
-            "last_utc": "2026-10-09T19:22:15.744150+00:00",
-            "market": "CADJPY",
+            "time_utc": "2026-10-09T19:46:46.385768+00:00",
+            "last_utc": "2026-10-09T19:47:17.558869+00:00",
+            "market": "AUDJPY",
             "direction": "LONG",
-            "score": 63.6,
+            "score": 63.4,
             "state": "BUILDING",
             "gate": "cost",
             "what": "costs too big for the expected move",
-            "detail": "costs 1.9 pips against an expected move of 3.4 pips (56% of it; the limit is 15%)",
+            "detail": "costs 1.8 pips against an expected move of 0.2 pips (723% of it; the limit is 15%)",
             "numbers": {
-              "cost_ratio": 0.556,
-              "cost_pips": 1.91,
-              "expected_move_pips": 3.4,
-              "headroom_atr": 3.99,
-              "chop": 0.25,
-              "spread_pips": 0.4,
-              "atr_pips": 0.9,
-              "ticks_per_minute": 68.0,
+              "cost_ratio": 7.231,
+              "cost_pips": 1.81,
+              "expected_move_pips": 0.2,
+              "headroom_atr": 0.26,
+              "chop": 0.1,
+              "spread_pips": 0.3,
+              "atr_pips": 0.95,
+              "ticks_per_minute": 57.0,
               "confirmed": true
             },
             "scans": 4
           },
           {
-            "time_utc": "2026-10-09T19:26:16.713722+00:00",
-            "last_utc": "2026-10-09T19:26:16.713722+00:00",
-            "market": "EURGBP",
+            "time_utc": "2026-10-09T19:47:02.395494+00:00",
+            "last_utc": "2026-10-09T19:47:02.395494+00:00",
+            "market": "GBPUSD",
             "direction": "SHORT",
-            "score": 63.2,
+            "score": 61.0,
             "state": "BUILDING",
             "gate": "cost",
             "what": "costs too big for the expected move",
-            "detail": "costs 1.0 pips against an expected move of 0.2 pips (412% of it; the limit is 15%)",
+            "detail": "costs 1.2 pips against an expected move of 1.1 pips (114% of it; the limit is 15%)",
             "numbers": {
-              "cost_ratio": 4.115,
-              "cost_pips": 1.03,
-              "expected_move_pips": 0.2,
-              "headroom_atr": 0.58,
-              "chop": 0.04,
+              "cost_ratio": 1.143,
+              "cost_pips": 1.2,
+              "expected_move_pips": 1.1,
+              "headroom_atr": 1.34,
+              "chop": 0.2,
               "spread_pips": 0.1,
-              "atr_pips": 0.43,
-              "ticks_per_minute": 43.0,
+              "atr_pips": 0.78,
+              "ticks_per_minute": 39.0,
               "confirmed": true
             },
             "scans": 1
           },
           {
-            "time_utc": "2026-10-09T19:37:05.744621+00:00",
-            "last_utc": "2026-10-09T19:37:09.039801+00:00",
-            "market": "EURJPY",
-            "direction": "SHORT",
+            "time_utc": "2026-10-09T19:47:06.697796+00:00",
+            "last_utc": "2026-10-09T19:47:16.409075+00:00",
+            "market": "USDJPY",
+            "direction": "LONG",
             "score": 64.1,
             "state": "BUILDING",
             "gate": "cost",
             "what": "costs too big for the expected move",
-            "detail": "costs 2.1 pips against an expected move of 0.7 pips (301% of it; the limit is 15%)",
+            "detail": "costs 1.7 pips against an expected move of 0.2 pips (854% of it; the limit is 15%)",
             "numbers": {
-              "cost_ratio": 3.011,
-              "cost_pips": 2.11,
-              "expected_move_pips": 0.7,
-              "headroom_atr": 0.57,
-              "chop": 0.14,
-              "spread_pips": 0.6,
-              "atr_pips": 1.22,
-              "ticks_per_minute": 39.0,
+              "cost_ratio": 8.539,
+              "cost_pips": 1.71,
+              "expected_move_pips": 0.2,
+              "headroom_atr": 0.19,
+              "chop": 0.07,
+              "spread_pips": 0.2,
+              "atr_pips": 1.07,
+              "ticks_per_minute": 28.0,
+              "confirmed": true
+            },
+            "scans": 10
+          },
+          {
+            "time_utc": "2026-10-09T19:47:06.697796+00:00",
+            "last_utc": "2026-10-09T19:47:08.861474+00:00",
+            "market": "USDCAD",
+            "direction": "LONG",
+            "score": 66.4,
+            "state": "BUILDING",
+            "gate": "cost",
+            "what": "costs too big for the expected move",
+            "detail": "costs 1.7 pips against an expected move of 0.8 pips (226% of it; the limit is 15%)",
+            "numbers": {
+              "cost_ratio": 2.265,
+              "cost_pips": 1.7,
+              "expected_move_pips": 0.8,
+              "headroom_atr": 1.06,
+              "chop": 0.0,
+              "spread_pips": 0.3,
+              "atr_pips": 0.71,
+              "ticks_per_minute": 36.0,
               "confirmed": true
             },
             "scans": 3
           },
           {
-            "time_utc": "2026-10-09T19:37:05.744621+00:00",
-            "last_utc": "2026-10-09T19:37:06.833364+00:00",
-            "market": "CADJPY",
-            "direction": "SHORT",
-            "score": 61.8,
+            "time_utc": "2026-10-09T19:47:17.558869+00:00",
+            "last_utc": "2026-10-09T19:47:20.752026+00:00",
+            "market": "NZDJPY",
+            "direction": "LONG",
+            "score": 68.9,
             "state": "BUILDING",
             "gate": "spread",
             "what": "spread too wide",
-            "detail": "spread 0.4 pips, over the 0.4-pip limit (0.5 ATR)",
+            "detail": "spread 1.0 pips, over the 0.4-pip limit (0.5 ATR)",
             "numbers": {
-              "cost_ratio": 2.935,
-              "cost_pips": 1.91,
+              "cost_ratio": 1.033,
+              "cost_pips": 2.51,
+              "expected_move_pips": 2.4,
+              "headroom_atr": 10.78,
+              "chop": 0.04,
+              "spread_pips": 1.0,
+              "atr_pips": 0.7,
+              "ticks_per_minute": 56.0,
+              "confirmed": true
+            },
+            "scans": 4
+          },
+          {
+            "time_utc": "2026-10-09T19:47:17.558869+00:00",
+            "last_utc": "2026-10-09T19:47:17.558869+00:00",
+            "market": "AUDCHF",
+            "direction": "LONG",
+            "score": 61.2,
+            "state": "BUILDING",
+            "gate": "cost",
+            "what": "costs too big for the expected move",
+            "detail": "costs 1.1 pips against an expected move of 0.6 pips (166% of it; the limit is 15%)",
+            "numbers": {
+              "cost_ratio": 1.663,
+              "cost_pips": 1.08,
               "expected_move_pips": 0.6,
-              "headroom_atr": 0.82,
-              "chop": 0.28,
-              "spread_pips": 0.4,
-              "atr_pips": 0.79,
+              "headroom_atr": 1.71,
+              "chop": 0.11,
+              "spread_pips": 0.1,
+              "atr_pips": 0.38,
               "ticks_per_minute": 48.0,
               "confirmed": true
             },
-            "scans": 2
+            "scans": 1
+          },
+          {
+            "time_utc": "2026-10-09T19:48:42.747617+00:00",
+            "last_utc": "2026-10-09T19:48:42.747617+00:00",
+            "market": "GBPUSD",
+            "direction": "SHORT",
+            "score": 61.4,
+            "state": "BUILDING",
+            "gate": "cost",
+            "what": "costs too big for the expected move",
+            "detail": "costs 1.2 pips against an expected move of 0.1 pips (2400% of it; the limit is 15%)",
+            "numbers": {
+              "cost_ratio": 24.0,
+              "cost_pips": 1.2,
+              "expected_move_pips": 0.1,
+              "headroom_atr": 0.06,
+              "chop": 0.07,
+              "spread_pips": 0.1,
+              "atr_pips": 0.8,
+              "ticks_per_minute": 40.0,
+              "confirmed": true
+            },
+            "scans": 1
           }
         ]
       },
@@ -5825,42 +5826,40 @@
         "CAD/CHF broke above the edge of where it had been stuck and was moving fast, so the bot bought it. But the move did not carry on - it turned back - so the bot got out quickly. It closed at -0.9 pips (-\u00a31.50)."
       ],
       "currency_strength": {
-        "JPY": {
-          "strength": 0.663,
-          "pairs": 7
-        },
-        "NZD": {
-          "strength": 0.162,
-          "pairs": 7
-        },
         "USD": {
-          "strength": 0.135,
-          "pairs": 7
-        },
-        "CHF": {
-          "strength": 0.032,
+          "strength": 0.754,
           "pairs": 7
         },
         "AUD": {
-          "strength": -0.035,
+          "strength": 0.516,
+          "pairs": 7
+        },
+        "NZD": {
+          "strength": 0.296,
           "pairs": 7
         },
         "CAD": {
-          "strength": -0.12,
-          "pairs": 7
-        },
-        "GBP": {
-          "strength": -0.285,
+          "strength": 0.122,
           "pairs": 7
         },
         "EUR": {
-          "strength": -0.552,
+          "strength": -0.232,
+          "pairs": 7
+        },
+        "CHF": {
+          "strength": -0.322,
+          "pairs": 7
+        },
+        "JPY": {
+          "strength": -0.535,
+          "pairs": 7
+        },
+        "GBP": {
+          "strength": -0.598,
           "pairs": 7
         }
       },
       "notes": [
-        "18:27:10 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
-        "18:32:11 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "18:37:12 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "18:42:12 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "18:47:13 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
@@ -5873,11 +5872,13 @@
         "19:22:17 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "19:27:17 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
         "19:32:18 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
-        "19:37:19 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
+        "19:37:19 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+        "19:42:20 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+        "19:47:20 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
       ],
-      "cycle_ms": 128.3,
+      "cycle_ms": 135.8,
       "present": true,
-      "age_seconds": 0.9
+      "age_seconds": 0.4
     },
     "ian": {
       "strategy_id": "financial_ian",
@@ -5886,7 +5887,7 @@
       "magic": 990911,
       "mode": "LIVE",
       "running": true,
-      "updated": "2026-10-09T19:38:34.727567+00:00",
+      "updated": "2026-10-09T19:48:44.063577+00:00",
       "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
       "data_source": "LIVE FEED",
       "data_label": "LIVE",
@@ -5910,7 +5911,7 @@
         },
         "data_class": "EXCHANGE",
         "synthetic": false,
-        "events": 1222476,
+        "events": 1270929,
         "subscribed": [
           "BTCUSDT",
           "ETHUSDT"
@@ -5920,8 +5921,8 @@
           "ETHUSDT": "LIVE"
         },
         "latency_ms": {
-          "BTCUSDT": 64.4,
-          "ETHUSDT": 66.0
+          "BTCUSDT": 52.2,
+          "ETHUSDT": 54.5
         }
       },
       "mt5": {
@@ -5933,13 +5934,13 @@
         "instrument": "BTCUSDT",
         "root": "BTCUSDT",
         "spot_symbol": "BTCUSD",
-        "ts": "2026-10-09T19:38:34.727567+00:00",
-        "direction": -1,
-        "spot_direction": -1,
-        "spot_side": "SELL",
-        "score": 55.3,
-        "confidence": 0.553,
-        "strength": 0.249,
+        "ts": "2026-10-09T19:48:44.063577+00:00",
+        "direction": 1,
+        "spot_direction": 1,
+        "spot_side": "BUY",
+        "score": 15.3,
+        "confidence": 0.153,
+        "strength": 0.069,
         "regime": {
           "regime": "BALANCED",
           "reasons": [
@@ -5954,51 +5955,51 @@
         "components": [
           {
             "name": "order_flow",
-            "value": -0.649,
+            "value": 0.746,
             "weight": 0.8,
             "group": "FLOW",
             "source": "EXCHANGE",
-            "note": "OFI -0.74 (5 s), -1.61 (30 s) touch-depths"
+            "note": "OFI +0.77 (5 s), +2.47 (30 s) touch-depths"
           },
           {
             "name": "aggressive",
-            "value": -0.398,
+            "value": 0.571,
             "weight": 1.2,
             "group": "FLOW",
             "source": "EXCHANGE",
-            "note": "aggression +0.95 (5 s) -0.49 (30 s), intensity 0.3x, large prints -0.61"
+            "note": "aggression +0.91 (5 s) +0.86 (30 s), intensity 0.1x, large prints +0.30"
           },
           {
             "name": "delta_footprint",
-            "value": -0.295,
+            "value": 0.197,
             "weight": 0.6,
             "group": "FLOW",
             "source": "EXCHANGE",
-            "note": "no stacked imbalance, delta slope -0.45"
+            "note": "no stacked imbalance, delta slope +0.18"
           },
           {
             "name": "book_pressure",
-            "value": 0.049,
+            "value": -0.168,
             "weight": 1.44,
             "group": "BOOK",
             "source": "EXCHANGE",
-            "note": "imbalance +0.05 now, -0.10 over 30 s, microprice +0.21"
+            "note": "imbalance -0.10 now, -0.20 over 30 s, microprice -0.25"
           },
           {
             "name": "liquidity_ahead",
-            "value": 0.071,
+            "value": -0.134,
             "weight": 0.5,
             "group": "BOOK",
             "source": "EXCHANGE",
-            "note": "near depth bid 110% / offer 105% of normal"
+            "note": "near depth bid 99% / offer 108% of normal"
           },
           {
             "name": "consumption",
-            "value": -0.069,
+            "value": 0.16,
             "weight": 1.0,
             "group": "CONSUMPTION",
             "source": "EXCHANGE",
-            "note": "consumed-vs-replenished -0.12, pulling -0.07, walls +0.00, sweep +0"
+            "note": "consumed-vs-replenished +0.20, pulling +0.27, walls +0.00, sweep +0"
           },
           {
             "name": "absorption",
@@ -6014,11 +6015,11 @@
             "weight": 0.4,
             "group": "CONTEXT",
             "source": "EXCHANGE",
-            "note": "BELOW VALUE, -14.1 ticks from VWAP"
+            "note": "BELOW VALUE, -14.6 ticks from VWAP"
           },
           {
             "name": "chart",
-            "value": -0.738,
+            "value": -0.585,
             "weight": 0.7,
             "group": "CHART",
             "source": "RETAIL",
@@ -6026,48 +6027,50 @@
           }
         ],
         "groups": {
-          "FLOW": -0.451,
-          "BOOK": 0.055,
-          "CONSUMPTION": -0.069,
+          "FLOW": 0.538,
+          "BOOK": -0.159,
+          "CONSUMPTION": 0.16,
           "ABSORPTION": 0.0,
           "CONTEXT": -0.75,
-          "CHART": -0.738
+          "CHART": -0.585
         },
         "agree": [
           "FLOW",
+          "CONSUMPTION"
+        ],
+        "against": [
           "CONTEXT",
           "CHART"
         ],
-        "against": [],
         "tradeable": false,
-        "why_not": "score 55 below 70; 3 independent groups agree (1 from the book); 3 (2) needed",
-        "reasoning": "The order flow at the top of the book favours sellers, the BTCUSD chart is falling, and large sellers are repeatedly hitting the available BTC bids. Binance's public BTCUSDT order book points to BTC falling, so BTCUSD SELL (the broker's CFD).",
+        "why_not": "score 15 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT, CHART",
+        "reasoning": "Large buyers are repeatedly taking the available BTC offers, the order flow at the top of the book favours buyers, and liquidity on the offer is being consumed. Binance's public BTCUSDT order book points to BTC rising, so BTCUSD BUY (the broker's CFD). Against it: context, chart.",
         "data_class": "EXCHANGE"
       },
-      "reasoning": "The order flow at the top of the book favours sellers, the BTCUSD chart is falling, and large sellers are repeatedly hitting the available BTC bids. Binance's public BTCUSDT order book points to BTC falling, so BTCUSD SELL (the broker's CFD).",
+      "reasoning": "Large buyers are repeatedly taking the available BTC offers, the order flow at the top of the book favours buyers, and liquidity on the offer is being consumed. Binance's public BTCUSDT order book points to BTC rising, so BTCUSD BUY (the broker's CFD). Against it: context, chart.",
       "opportunities": {
         "BTCUSDT": {
-          "score": 55.3,
-          "direction": -1,
+          "score": 15.3,
+          "direction": 1,
           "spot": "BTCUSD",
-          "spot_side": "SELL",
+          "spot_side": "BUY",
           "regime": "BALANCED",
           "tradeable": false,
-          "why_not": "score 55 below 70; 3 independent groups agree (1 from the book); 3 (2) needed"
+          "why_not": "score 15 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT, CHART"
         },
         "ETHUSDT": {
-          "score": 10.2,
+          "score": 5.7,
           "direction": 0,
           "spot": "ETHUSD",
           "spot_side": "",
           "regime": "BALANCED",
           "tradeable": false,
-          "why_not": "no side has the advantage; score 10 below 70; 0 independent groups agree (0 from the book); 3 (2) needed"
+          "why_not": "no side has the advantage; score 6 below 70; 0 independent groups agree (0 from the book); 3 (2) needed"
         }
       },
       "markets_now": {
-        "BTCUSDT": "BALANCED: score 55 below 70; 3 independent groups agree (1 from the book); 3 (2) needed",
-        "ETHUSDT": "BALANCED: no side has the advantage; score 10 below 70; 0 independent groups agree (0 from the book); 3 (2) needed"
+        "BTCUSDT": "BALANCED: score 15 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT, CHART",
+        "ETHUSDT": "BALANCED: no side has the advantage; score 6 below 70; 0 independent groups agree (0 from the book); 3 (2) needed"
       },
       "open_positions": [],
       "today": {
@@ -6103,7 +6106,7 @@
         "data_source": "LIVE FEED"
       },
       "last_report": {
-        "signal_id": "1a1b02ab031a59de0fef",
+        "signal_id": "fea173331a3252fc5c06",
         "status": "REFUSED",
         "ok": false,
         "message": "IC Markets ETHUSD: costs too high - spread 2.96 would eat 33% of the 8.88 target move (1 x the stop distance); the most allowed is 30%",
@@ -6114,32 +6117,23 @@
         "mode": "LIVE",
         "risk_money": 0.0,
         "latency": {
-          "data_received": "2026-10-09T19:37:40.281966+00:00",
-          "signal": "2026-10-09T19:37:40.517699+00:00"
+          "data_received": "2026-10-09T19:48:39.568705+00:00",
+          "signal": "2026-10-09T19:48:39.749113+00:00"
         }
       },
       "ladder": {
         "instrument": "BTCUSDT",
         "data_class": "EXCHANGE",
         "tick": 20.0,
-        "bid": 82400.0,
-        "ask": 82420.0,
-        "mid": 82410.0,
-        "imbalance": 0.055,
-        "pressure": "sellers (book -0.10, aggression -0.49)",
+        "bid": 82380.0,
+        "ask": 82400.0,
+        "mid": 82390.0,
+        "imbalance": -0.1,
+        "pressure": "buyers (book -0.20, aggression +0.86)",
         "rows": [
           {
-            "price": 82600.0,
-            "ask": 5.5875,
-            "bid": 0.0,
-            "bought": 0.0,
-            "sold": 0.0,
-            "delta": 0.0,
-            "flags": []
-          },
-          {
             "price": 82580.0,
-            "ask": 5.04734,
+            "ask": 0.73051,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -6148,7 +6142,7 @@
           },
           {
             "price": 82560.0,
-            "ask": 4.35952,
+            "ask": 5.06032,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -6157,7 +6151,7 @@
           },
           {
             "price": 82540.0,
-            "ask": 3.68238,
+            "ask": 7.45006,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -6166,7 +6160,7 @@
           },
           {
             "price": 82520.0,
-            "ask": 13.64199,
+            "ask": 9.05464,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -6175,18 +6169,16 @@
           },
           {
             "price": 82500.0,
-            "ask": 23.28778,
+            "ask": 13.56578,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
-            "flags": [
-              "HVN"
-            ]
+            "flags": []
           },
           {
             "price": 82480.0,
-            "ask": 22.5728,
+            "ask": 19.37833,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -6195,7 +6187,7 @@
           },
           {
             "price": 82460.0,
-            "ask": 24.43077,
+            "ask": 18.24673,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -6204,44 +6196,44 @@
           },
           {
             "price": 82440.0,
-            "ask": 20.68719,
+            "ask": 19.22544,
             "bid": 0.0,
-            "bought": 0.07934999999999999,
-            "sold": 0.0,
-            "delta": 0.07934999999999999,
-            "flags": []
-          },
-          {
-            "price": 82420.0,
-            "ask": 8.72046,
-            "bid": 0.0,
-            "bought": 0.42544,
-            "sold": 0.3831,
-            "delta": 0.04233999999999999,
-            "flags": []
-          },
-          {
-            "price": 82400.0,
-            "ask": 0.0,
-            "bid": 13.486,
-            "bought": 0.0,
-            "sold": 1.0810300000000006,
-            "delta": -1.0810300000000006,
-            "flags": []
-          },
-          {
-            "price": 82380.0,
-            "ask": 0.0,
-            "bid": 19.22026,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
+            "price": 82420.0,
+            "ask": 25.82186,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82400.0,
+            "ask": 16.38708,
+            "bid": 0.0,
+            "bought": 0.66224,
+            "sold": 0.0,
+            "delta": 0.66224,
+            "flags": []
+          },
+          {
+            "price": 82380.0,
+            "ask": 0.0,
+            "bid": 9.78166,
+            "bought": 0.0,
+            "sold": 0.04918999999999999,
+            "delta": -0.04918999999999999,
+            "flags": []
+          },
+          {
             "price": 82360.0,
             "ask": 0.0,
-            "bid": 24.245,
+            "bid": 15.54674,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6250,7 +6242,7 @@
           {
             "price": 82340.0,
             "ask": 0.0,
-            "bid": 22.68766,
+            "bid": 19.83514,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6259,7 +6251,7 @@
           {
             "price": 82320.0,
             "ask": 0.0,
-            "bid": 22.71904,
+            "bid": 27.55206,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6268,7 +6260,7 @@
           {
             "price": 82300.0,
             "ask": 0.0,
-            "bid": 16.64748,
+            "bid": 26.9962,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6277,7 +6269,7 @@
           {
             "price": 82280.0,
             "ask": 0.0,
-            "bid": 12.07486,
+            "bid": 17.5528,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6286,7 +6278,7 @@
           {
             "price": 82260.0,
             "ask": 0.0,
-            "bid": 9.24969,
+            "bid": 15.89453,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6295,7 +6287,7 @@
           {
             "price": 82240.0,
             "ask": 0.0,
-            "bid": 9.70446,
+            "bid": 9.28704,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6304,7 +6296,16 @@
           {
             "price": 82220.0,
             "ask": 0.0,
-            "bid": 6.01424,
+            "bid": 8.9977,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82200.0,
+            "ask": 0.0,
+            "bid": 5.14193,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -6313,7 +6314,7 @@
         ]
       },
       "present": true,
-      "age_seconds": 1.3
+      "age_seconds": 1.1
     },
     "labels": {
       "overall": "Overall",
@@ -6449,10 +6450,10 @@
     "unknown_magics": []
   },
   "open_live": [],
-  "open_at": "2026-10-09T19:38:36.010988+00:00",
+  "open_at": "2026-10-09T19:48:45.138155+00:00",
   "bot_lines": {
     "momentum_rider": "HEALTHY, LIVE, scanning 28 markets, GBP 1.00 per pip",
     "financial_ian": "HEALTHY, LIVE, feed LIVE"
   },
-  "updated": "2026-10-09T19:38:36.046953+00:00"
+  "updated": "2026-10-09T19:48:45.190176+00:00"
 }
