@@ -6,7 +6,7 @@ import { createTeacherStage, GUITAR } from '../teacher3d.js';
 window.__stringY=(s)=>GUITAR.stringY(s,0.535);
 const M=window.FRETWISE_MUSIC,P=window.FRETWISE_PERFORMANCE;
 try{
-const stage=await createTeacherStage(document.getElementById('stage'),{modelUrl:'../assets/models/teacher.glb',preserveDrawingBuffer:true});
+const stage=await createTeacherStage(document.getElementById('stage'),{modelUrl:'../assets/models/teacher.glb',preserveDrawingBuffer:true,originalHands:location.hash==='#original'});
 window.stage=stage;
 window.shape=(id,capo=0)=>{const l={id:'x',kind:'chord',steps:[{chord:id}]};const p=P.compile(l,{capo,tempo:80});stage.setCapo(capo);stage.setShape(p.steps[0].shape,true);return stage.fingertipErrors();};
 window.note=(s,f,capo=0)=>{const p=P.compile({id:'y',kind:'melody',steps:[{string:s,fret:f}]},{capo,tempo:80});stage.setCapo(capo);stage.setShape(p.steps[0].shape,true);return stage.fingertipErrors();};

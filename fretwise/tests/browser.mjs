@@ -82,6 +82,10 @@ await test('1 the 3D teacher is the main stage, plays from real finger positions
   assert(got === 'true:4:1 true:2:2 true:3:2', 'Am fingering wrong on the teacher hand: ' + got);
   assert(!targets[4].pressed, 'little finger should be relaxed for Am');
   for (const [n, e] of Object.entries(errors)) assert(e.mm < 6, `finger ${n} is ${e.mm} mm from its fret`);
+  // human finger proportions: base segment longest, tip segment about 40% of it, whole finger roughly as long as the palm
+  const hands = await page.evaluate(() => window.FretwiseDebug.stage.handReport());
+  for (const f of ['LeftIndex', 'LeftMiddle', 'LeftRing', 'LeftPinky']) { const [a, b, c] = hands[f].after; assert(b / a < 0.72 && c / a < 0.5, `${f} segments not human-proportioned: ${hands[f].after}`); }
+  const mid = hands.LeftMiddle.after.reduce((x, y) => x + y, 0); assert(mid > 70 && mid < 85, 'middle finger length ' + mid + ' mm');
   assert(await page.evaluate(() => window.FretwiseDebug.stage.cameraName()) === 'wide', 'default camera should show the teacher');
   await shot('01-studio');
 });

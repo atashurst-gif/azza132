@@ -20,5 +20,27 @@ window.__shot=async(view)=>{const views={front:[0,0,1],side:[1,0,0]};const v=vie
 // close-up of the left hand
 const lh=new THREE.Vector3();bones.LeftHand.getWorldPosition(lh);window.__hand=()=>{cam.position.set(lh.x,lh.y+0.1,lh.z+0.5);cam.lookAt(lh);renderer.render(scene,cam);};
 window.__face=()=>{const h=new THREE.Vector3();bones.Head.getWorldPosition(h);cam.position.set(h.x,h.y+0.08,h.z+0.6);cam.lookAt(h.x,h.y+0.08,h.z);renderer.render(scene,cam);};
+window.__measure=()=>{const P=(n)=>{const v=new THREE.Vector3();bones[n].getWorldPosition(v);return v;};const d=(a,b)=>+(P(a).distanceTo(P(b))*1000).toFixed(1);const o={};
+for(const side of ['Left']){o.palm_wrist_to_middleMCP=d(side+'Hand',side+'HandMiddle1');
+ for(const f of ['Thumb','Index','Middle','Ring','Pinky']){o[f]={seg1:d(side+'Hand'+f+'1',side+'Hand'+f+'2'),seg2:d(side+'Hand'+f+'2',side+'Hand'+f+'3'),seg3:d(side+'Hand'+f+'3',side+'Hand'+f+'4'),total:d(side+'Hand'+f+'1',side+'Hand'+f+'4')};}
+ o.handLength_wrist_to_middleTipBone=+(o.palm_wrist_to_middleMCP+o.Middle.total).toFixed(1);
+ o.height=+(new THREE.Box3().setFromObject(root).max.y*1000).toFixed(0);
+ o.forearm=d(side+'ForeArm',side+'Hand'); o.upperArm=d(side+'Arm',side+'ForeArm');}
+// fingertip mesh extent beyond the tip bone: furthest skinned vertex along +x of the left hand in T-pose
+let maxX=-1;root.traverse(m=>{if(m.isSkinnedMesh){const pos=m.geometry.attributes.position;const v=new THREE.Vector3();for(let i=0;i<pos.count;i++){m.getVertexPosition(i,v);v.applyMatrix4(m.matrixWorld);if(v.x>maxX)maxX=v.x;}}});
+o.meshFingertipBeyondMiddleTipBone=+((maxX-P('LeftHandMiddle4').x)*1000).toFixed(1);
+// finger thickness at the middle finger's middle segment: vertices within 6 mm of the PIP-DIP midpoint plane
+const mid=P('LeftHandMiddle2').clone().lerp(P('LeftHandMiddle3'),0.5);let minY=1,maxY=-1,minZ=1,maxZ=-1;root.traverse(m=>{if(m.isSkinnedMesh){const pos=m.geometry.attributes.position;const v=new THREE.Vector3();for(let i=0;i<pos.count;i++){m.getVertexPosition(i,v);v.applyMatrix4(m.matrixWorld);if(Math.abs(v.x-mid.x)<0.003&&Math.abs(v.z-mid.z)<0.012&&Math.abs(v.y-mid.y)<0.015){minY=Math.min(minY,v.y);maxY=Math.max(maxY,v.y);minZ=Math.min(minZ,v.z);maxZ=Math.max(maxZ,v.z);}}}});
+o.middleFingerThickness=+((maxY-minY)*1000).toFixed(1); o.middleFingerWidth=+((maxZ-minZ)*1000).toFixed(1);
+return o;};
+window.__skinDebug=()=>{let mesh;root.traverse(o=>{if(o.isSkinnedMesh)mesh=o;});const sk=mesh.skeleton;const o={bindMode:mesh.bindMode,bindMatrixIsIdentity:mesh.bindMatrix.equals(new THREE.Matrix4()),meshWorldScale:new THREE.Vector3().setFromMatrixScale(mesh.matrixWorld).toArray().map(x=>+x.toFixed(4)),bindScale:new THREE.Vector3().setFromMatrixScale(mesh.bindMatrix).toArray().map(x=>+x.toFixed(4))};
+const bi=sk.bones.indexOf(bones.LeftHandIndex2);const boneWorld=new THREE.Vector3();bones.LeftHandIndex2.getWorldPosition(boneWorld);const invIBM=sk.boneInverses[bi].clone().invert();const ibmPos=new THREE.Vector3().setFromMatrixPosition(invIBM);
+o.boneWorld=boneWorld.toArray().map(x=>+x.toFixed(4));o.invIBMpos=ibmPos.toArray().map(x=>+x.toFixed(4));o.invIBMposTimesBind=ibmPos.clone().applyMatrix4(mesh.bindMatrix).toArray().map(x=>+x.toFixed(4));
+// find a vertex fully weighted to Index2
+const si=mesh.geometry.attributes.skinIndex,sw=mesh.geometry.attributes.skinWeight,pos=mesh.geometry.attributes.position;let vi=-1;let best=0;for(let i=0;i<pos.count;i++){for(let c=0;c<4;c++){if(si.getComponent(i,c)===bi&&sw.getComponent(i,c)>best){best=sw.getComponent(i,c);vi=i;}}}o.bestWeight=best;
+const raw=new THREE.Vector3().fromBufferAttribute(pos,vi);const skinnedObj=new THREE.Vector3();mesh.getVertexPosition(vi,skinnedObj);const rendered=skinnedObj.clone().applyMatrix4(mesh.matrixWorld);
+o.vertex={raw:raw.toArray().map(x=>+x.toFixed(4)),bindTimesRaw:raw.clone().applyMatrix4(mesh.bindMatrix).toArray().map(x=>+x.toFixed(4)),meshWorldTimesRaw:raw.clone().applyMatrix4(mesh.matrixWorld).toArray().map(x=>+x.toFixed(4)),rendered:rendered.toArray().map(x=>+x.toFixed(4))};
+o.boneMatrixIsIdentity=(()=>{const m=bones.LeftHandIndex2.matrixWorld.clone().multiply(sk.boneInverses[bi]);return m.toArray().map(x=>+x.toFixed(3));})();
+return o;};
 window.__ready=true;
 </script></body></html>

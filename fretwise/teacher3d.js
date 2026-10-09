@@ -30,8 +30,8 @@ const stringY = (s, x) => span(x) / 2 * (-1 + 2 * s / 5);         // s: 0 = low 
 const stringZ = (x) => 0.0088 + 0.0027 * (x / GUITAR.scale);       // nut 8.8 mm → saddle 11.5 mm above the top
 GUITAR.stringY = stringY; GUITAR.stringZ = stringZ;
 /* Where a fingertip presses: just behind the fret wire (a quarter of the way back into the fret space). */
-export function pressPoint(s, physFret) {
-  const x = physFret <= 0 ? 0 : fretX(physFret) - 0.26 * (fretX(physFret) - fretX(physFret - 1));
+export function pressPoint(s, physFret, back = 0.26) {
+  const x = physFret <= 0 ? 0 : fretX(physFret) - back * (fretX(physFret) - fretX(physFret - 1));
   return V(x, stringY(s, x), GUITAR.fretTop + 0.0068);
 }
 
@@ -249,6 +249,76 @@ function solveFinger(chain, rest, target, palmN, opts = {}) {
   return { spread, flex, bend, reach: L[0] + L[1] + L[2] };
 }
 
+/* Curl a finger by fixed joint angles (radians) towards the palm — used for fingers that are not pressing a string. */
+function curlFinger(chain, rest, palmN, flex, bend, coupling = 0.75) {
+  chain.forEach((bone, i) => { if (i < 3) bone.quaternion.copy(rest[i]); }); chain[0].updateMatrixWorld(true);
+  const P0 = wpos(chain[0]), P3 = wpos(chain[3]); const d = P3.sub(P0).normalize(); const n = palmN.clone().sub(d.clone().multiplyScalar(palmN.dot(d))).normalize();
+  const axis = new THREE.Vector3().crossVectors(d, n).normalize();
+  rotateWorld(chain[0], new THREE.Quaternion().setFromAxisAngle(axis, flex));
+  rotateWorld(chain[1], new THREE.Quaternion().setFromAxisAngle(axis, bend));
+  rotateWorld(chain[2], new THREE.Quaternion().setFromAxisAngle(axis, bend * coupling));
+}
+
+/* ------------------------------------------------------------------ hand proportions ------------------------------------------------------------------ */
+/* The stylised character has fingers whose middle and tip segments are almost as long as the base segment (human ratio is
+   roughly 1 : 0.64 : 0.41). Re-proportion each finger at load time, in the rest (T) pose:
+   - every skinned vertex is moved along its own segment's axis, scaled to the new segment length (weights respected);
+   - the child bones are moved to the new joint positions; the skeleton's inverse bind matrices are recalculated.
+   Segment ratios follow human hand anthropometry (Buchholz, Armstrong & Goldstein 1992). `shorten` is the overall finger
+   length relative to the original model. */
+export const HAND_PROPORTIONS = {
+  Index: { ratios: [1, 0.58, 0.40], shorten: 0.86 },
+  Middle: { ratios: [1, 0.64, 0.41], shorten: 0.84 },
+  Ring: { ratios: [1, 0.68, 0.44], shorten: 0.85 },
+  Pinky: { ratios: [1, 0.57, 0.46], shorten: 0.86 },
+  Thumb: { ratios: [1, 0.78, 0.63], shorten: 0.90 },
+};
+export function reproportionHands(root, bones, props = HAND_PROPORTIONS) {
+  root.updateMatrixWorld(true);
+  const meshes = []; root.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); });
+  const report = {};
+  for (const side of ['Left', 'Right']) for (const [f, cfg] of Object.entries(props)) {
+    const ch = [1, 2, 3, 4].map(i => bones[`${side}Hand${f}${i}`]); if (ch.some(b => !b)) continue;
+    // segment lengths come from the loaded (node) pose; both poses share bone lengths
+    const Jn = ch.map(b => b.getWorldPosition(new THREE.Vector3()));
+    const L = [Jn[0].distanceTo(Jn[1]), Jn[1].distanceTo(Jn[2]), Jn[2].distanceTo(Jn[3])];
+    const total = (L[0] + L[1] + L[2]) * cfg.shorten; const rs = cfg.ratios.reduce((a, b) => a + b, 0);
+    const L2 = cfg.ratios.map(r => total * r / rs);
+    report[`${side}${f}`] = { before: L.map(x => +(x * 1000).toFixed(1)), after: L2.map(x => +(x * 1000).toFixed(1)) };
+    for (const mesh of meshes) {
+      const skel = mesh.skeleton; const idx = ch.map(b => skel.bones.indexOf(b)); if (idx.some(i => i < 0)) continue;
+      // work in BIND space: bone bind matrices are the inverses of skeleton.boneInverses; vertices are bindMatrix × position
+      const bindW = idx.map(i => skel.boneInverses[i].clone().invert());
+      const J = bindW.map(m => new THREE.Vector3().setFromMatrixPosition(m));
+      const U = [0, 1, 2].map(k => J[k + 1].clone().sub(J[k]).normalize());
+      const Lb = [J[0].distanceTo(J[1]), J[1].distanceTo(J[2]), J[2].distanceTo(J[3])];
+      const J2 = [J[0].clone()]; for (let k = 0; k < 3; k++) J2.push(J2[k].clone().addScaledVector(U[k], L2[k] * (Lb[k] / L[k])));
+      const pos = mesh.geometry.attributes.position, si = mesh.geometry.attributes.skinIndex, sw = mesh.geometry.attributes.skinWeight;
+      // note: in 'attached' bind mode three.js overwrites bindMatrixInverse every frame, so invert bindMatrix ourselves
+      const toBind = mesh.bindMatrix, fromBind = mesh.bindMatrix.clone().invert(); const v = new THREE.Vector3(), out = new THREE.Vector3(), rel = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        let wSum = 0; out.set(0, 0, 0);
+        for (let c = 0; c < 4; c++) {
+          const w = sw.getComponent(i, c); if (!w) continue; const k = idx.slice(0, 3).indexOf(si.getComponent(i, c)); if (k < 0) continue;
+          if (!wSum) v.fromBufferAttribute(pos, i).applyMatrix4(toBind);
+          // slide the vertex along its own segment, scaled to the new segment length; its distance from the bone axis is kept
+          rel.copy(v).sub(J[k]); const a = rel.dot(U[k]); rel.addScaledVector(U[k], -a);
+          out.addScaledVector(J2[k].clone().addScaledVector(U[k], a * (L2[k] * (Lb[k] / L[k])) / Lb[k]).add(rel), w); wSum += w;
+        }
+        if (!wSum) continue;
+        out.addScaledVector(v, 1 - wSum).applyMatrix4(fromBind); pos.setXYZ(i, out.x, out.y, out.z);
+      }
+      pos.needsUpdate = true; mesh.geometry.computeBoundingSphere();
+      // the moved joints get new bind matrices (same orientation, new origin); nothing else in the skeleton changes
+      for (let k = 1; k < 4; k++) { const m = bindW[k].clone(); m.setPosition(J2[k]); skel.boneInverses[idx[k]].copy(m.invert()); }
+    }
+    // and the child bones move to the new joints in the loaded pose (local offsets point along the finger)
+    for (let k = 1; k < 4; k++) ch[k].position.multiplyScalar(L2[k - 1] / L[k - 1]);
+  }
+  root.updateMatrixWorld(true);
+  return report;
+}
+
 /* ------------------------------------------------------------------ the stage ------------------------------------------------------------------ */
 export async function createTeacherStage(container, options = {}) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: !!options.preserveDrawingBuffer, powerPreference: 'high-performance' });
@@ -278,6 +348,7 @@ export async function createTeacherStage(container, options = {}) {
   const person = gltf.scene; scene.add(person);
   person.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; if (o.material) { o.material.envMapIntensity = 0.6; } } });
   const B = {}; person.traverse(o => { if (o.isBone) B[o.name.replace(/^mixamorig:?/, '')] = o; });
+  const handReport = options.originalHands ? null : reproportionHands(person, B);
   const restQ = {}; for (const [n, b] of Object.entries(B)) restQ[n] = b.quaternion.clone();
   person.updateMatrixWorld(true);
   // palm normals (T-pose palms face down) and finger chains
@@ -344,8 +415,19 @@ export async function createTeacherStage(container, options = {}) {
     let anchor = used.length ? Math.round(used.reduce((a, b) => a + b, 0) / used.length) : capo + 1; if (barre) anchor = barre.fret + capo;
     anchor = clamp(anchor, capo + 1, 15);
     for (let n = 1; n <= 4; n++) {
-      if (barre && n === 1) { const x = pressPoint(0, barre.fret + capo).x; out[1] = { p: V(x, stringY(Math.max(-0.6, barre.from - 0.75), x), GUITAR.fretTop + 0.0075), barre: true, pressed: true, s: barre.from, phys: barre.fret + capo }; continue; }
-      if (pressed[n]) { out[n] = { p: pressPoint(pressed[n].s, pressed[n].phys), pressed: true, ...pressed[n] }; continue; }
+      if (barre && n === 1) {
+        // a barre lays the first finger flat along the fret: its knuckle sits at the treble edge and, for a full barre,
+        // the fingertip only just clears the bass edge; a partial barre ends just beyond its last string
+        const x = pressPoint(0, barre.fret + capo).x; const full = barre.from === 0;
+        const y = full ? -boardWidth(x) / 2 - 0.004 : stringY(barre.from - 0.7, x);
+        out[1] = { p: V(x, y, GUITAR.fretTop + 0.0072), barre: true, pressed: true, s: barre.from, phys: barre.fret + capo }; continue;
+      }
+      if (pressed[n]) {
+        // fingers sharing a fret line up diagonally (lowest-numbered finger furthest from the fret), as in an A chord
+        const same = Object.entries(pressed).filter(([, q]) => q.phys === pressed[n].phys).map(([m]) => Number(m)).sort((a, b) => a - b);
+        const backs = same.length >= 3 ? [0.5, 0.33, 0.16] : same.length === 2 ? [0.36, 0.2] : [0.26];
+        out[n] = { p: pressPoint(pressed[n].s, pressed[n].phys, backs[same.indexOf(n)] ?? 0.26), pressed: true, ...pressed[n] }; continue;
+      }
       // relaxed finger: hovers ~12 mm above the treble strings over its natural fret
       const phys = clamp(anchor + n - 1, 1, 19); const x = pressPoint(4, phys).x; out[n] = { p: V(x, stringY(4.6, x), GUITAR.fretTop + 0.016), pressed: false, phys };
     }
@@ -372,17 +454,21 @@ export async function createTeacherStage(container, options = {}) {
     const palmNow = palmLocal[L].clone().applyQuaternion(wquat(B.LeftHand));
     let err = 0;
     for (let n = 1; n <= 4; n++) {
-      const tgt = toWorld(t[n].p); const j = solveFinger(chain(L, names[n]), restOf(L, names[n]), tgt, palmNow, { straight: !!t[n].barre, maxCurl: 1.85 });
-      const tip = wpos(B[`LeftHand${names[n]}4`]); const e = tip.distanceToSquared(tgt); err += (t[n].pressed ? 1 : 0.15) * e;
+      // a finger that is not pressing a string relaxes into a loose curl beside the others (no target)
+      if (!t[n].pressed) { curlFinger(chain(L, names[n]), restOf(L, names[n]), palmNow, n === 4 ? 0.75 : 0.6, 1.25); continue; }
+      const tgt = toWorld(t[n].p); const j = solveFinger(chain(L, names[n]), restOf(L, names[n]), tgt, palmNow, t[n].barre ? { maxCurl: 0.22, coupling: 0.4 } : { maxCurl: 1.85 });  // a barre finger is nearly straight, with a slight natural bend
+      const tip = wpos(B[`LeftHand${names[n]}4`]); const e = tip.distanceToSquared(tgt); err += e;
       // a fretting finger arches: middle joint ~65–100°, knuckle bent forward; straight 'sticks' are penalised
-      if (t[n].pressed && !t[n].barre) err += 1.6e-4 * (Math.pow(Math.max(0, 1.3 - j.bend), 2) + 0.5 * Math.pow(Math.max(0, 0.45 - j.flex), 2) + 0.4 * j.spread * j.spread);
+      // a fretting finger arches over the board and lands on its tip: middle joint ~80–100°, knuckle bent forward
+      if (t[n].pressed && !t[n].barre) err += 2.5e-4 * (Math.pow(Math.max(0, 1.45 - j.bend), 2) + 0.5 * Math.pow(Math.max(0, 0.5 - j.flex), 2) + 0.4 * j.spread * j.spread);
       if (t[n].barre) { // the whole first finger must lie across the strings: penalise the middle of the finger lifting off
         const mid = wpos(B.LeftHandIndex2); const want = toWorld(V(t[n].p.x, stringY(Math.min(5, t[n].s + 2.5), t[n].p.x), GUITAR.fretTop + 0.0075)); err += 0.5 * mid.distanceToSquared(want);
       }
     }
     solveFinger(chain(L, 'Thumb'), restOf(L, 'Thumb'), toWorld(t.thumb), palmNow, { coupling: 0.5, maxCurl: 1.0 });
     // keep the knuckles close under the treble edge, as a real player does
-    err += 0.06 * Math.pow(Math.max(0, hp.ky - 0.018), 2) + 0.03 * Math.pow(Math.max(0, -hp.kz - 0.006), 2);
+    // knuckles sit at the treble edge, level with the board or slightly in front of it, as a real player's do
+    err += 0.12 * Math.pow(Math.max(0, hp.ky - 0.012), 2) + 0.06 * Math.pow(Math.max(0, 0.004 - hp.kz), 2);
     return err;
   }
   /* Find the hand placement that lets every pressed fingertip reach its fret (coordinate descent, ~60 solves). */
@@ -390,8 +476,8 @@ export async function createTeacherStage(container, options = {}) {
   function optimiseLeft(t) {
     const key = [1, 2, 3, 4].map(n => `${t[n].pressed ? 1 : 0}:${t[n].p.x.toFixed(4)}:${t[n].p.y.toFixed(4)}:${t[n].barre ? 1 : 0}`).join('|');
     if (placementCache.has(key)) return placementCache.get(key);
-    let hp = { ky: 0.02, kz: -0.002, pitch: 0, slide: 0 }; let best = solveLeft(t, hp);
-    const steps = { ky: 0.012, kz: 0.01, pitch: 0.25, slide: 0.012 }; const lim = { ky: [0.0, 0.06], kz: [-0.035, 0.025], pitch: [-1.0, 1.0], slide: [-0.035, 0.035] };
+    let hp = { ky: 0.008, kz: 0.012, pitch: 0, slide: 0 }; let best = solveLeft(t, hp);
+    const steps = { ky: 0.012, kz: 0.01, pitch: 0.25, slide: 0.012 }; const lim = { ky: [-0.006, 0.03], kz: [-0.006, 0.032], pitch: [-1.0, 1.0], slide: [-0.035, 0.035] };
     for (let round = 0; round < 7; round++) {
       for (const k of Object.keys(steps)) for (const dir of [1, -1]) {
         const trial = { ...hp, [k]: clamp(hp[k] + dir * steps[k], lim[k][0], lim[k][1]) }; const e = solveLeft(t, trial);
@@ -571,6 +657,7 @@ export async function createTeacherStage(container, options = {}) {
     pickPathY: (t) => pickAt(t).y,
     fingerTargets: () => { const o = {}; if (!leftTargets) return o; for (let n = 1; n <= 4; n++) { const t = leftTargets[n]; o[n] = { pressed: !!t.pressed, barre: !!t.barre, string: t.s, phys: t.phys }; } return o; },
     frameStats: () => ({ ...frameStats, quality }),
+    handReport: () => handReport,
     placement: () => lastPlacement, rightDebug: () => rightDebug,
     debugRight: () => { const sh = wpos(B.RightArm), el = wpos(B.RightForeArm), wr = wpos(B.RightHand); return { reach: +(sh.distanceTo(el) + el.distanceTo(wr)).toFixed(3), shoulderToTarget: +sh.distanceTo(lastPickTarget).toFixed(3), wristToTarget: +wr.distanceTo(lastPickTarget).toFixed(3) }; },
     pickWorld: () => pick ? pick.localToWorld(V(0, -0.012, 0)) : null,
