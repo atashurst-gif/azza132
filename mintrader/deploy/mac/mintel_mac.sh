@@ -132,7 +132,7 @@ copy_program() {
   if source_changed "$source_dir"; then
     CODE_CHANGED="yes"
   fi
-  for item in mintel tests deploy tools pytest.ini requirements.txt \
+  for item in mintel tests deploy tools docs pytest.ini requirements.txt \
               requirements-dev.txt README.md config; do
     if [[ -e "$source_dir/$item" ]]; then
       rm -rf "$APP_DIR/${item:?}"

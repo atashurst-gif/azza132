@@ -243,7 +243,7 @@ class TestTheSilverShortIsYesterday:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            page = get("/")
+            page = get("/details")
             acct = account_card(page)
             assert '<div class="fk">Today</div><div class="fv ok">+£21.83</div>' in acct
             assert '<div class="fk">Overall</div><div class="fv ok">+£12.42</div>' in acct          # balance less 2,000
@@ -252,7 +252,7 @@ class TestTheSilverShortIsYesterday:
             assert '<div class="fk">Today (practice)</div>' in crowd                                # PAPER: practice leads
             assert "Real money from its LIVE days (in the account): overall -£9.36" in crowd         # nothing real today
             assert "Days are UK days, midnight to midnight." in page and page.count("Days are UK days") == 1
-            yesterday = get("/?period=yesterday")
+            yesterday = get("/details?period=yesterday")
             assert '<div class="fk">Yesterday</div><div class="fv bad">-£9.36</div>' in account_card(yesterday)
             assert "yesterday -£9.36 &middot; overall -£9.36" in card_of(yesterday, "Crowd Fader")
             assert "1 trade yesterday (0 won, 1 lost)" in card_of(yesterday, "Crowd Fader")
@@ -295,7 +295,7 @@ class TestAPositionAcrossPeriods:
         assert d.sd["open"] == 1.40 and {b["id"]: b for b in d.sd["bots"]}["momentum_rider"]["open"] == 1.40
         httpd, get = serve(d)
         try:
-            page = get("/")
+            page = get("/details")
             assert "Open trades right now - 1 open" in page
             assert "£0.05 has already been taken from the balance for these open trades" in page
             assert "open now <b class=\"ok\">+£1.40</b>" in card_of(page, "Rapid Momentum Rider")
@@ -333,7 +333,7 @@ class TestTheRiderAgreesEverywhere:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            page, rider_page, mine = get("/"), get("/rider"), get("/?bot=momentum_rider")
+            page, rider_page, mine = get("/details"), get("/rider"), get("/details?bot=momentum_rider")
         finally:
             httpd.shutdown()
         card = card_of(page, "Rapid Momentum Rider")
@@ -393,22 +393,22 @@ class TestTheBotButtons:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            page = get("/?period=yesterday")
+            page = get("/details?period=yesterday")
             bar = page.split('<div class="botbar">')[1].split("</div>")[0]
             for lbl in self.LABELS:
                 assert f">{lbl}</a>" in bar, lbl
             assert "Rapid Scalper" not in bar                                   # no real money of its own in the period
-            assert page.index('class="tab p on" href="/?period=yesterday"') < page.index('<div class="botbar">')
+            assert page.index('class="tab p on" href="/details?period=yesterday"') < page.index('<div class="botbar">')
             assert page.index('<div class="botbar">') < page.index('class="cards"')
-            assert '<a class="tab on" href="/?period=yesterday">All bots</a>' in bar
-            assert 'href="/?period=yesterday&bot=crowd_fader">Crowd Fader</a>' in bar
-            crowd = get("/?period=yesterday&bot=crowd_fader")
-            assert 'class="tab p on" href="/?period=yesterday&bot=crowd_fader"' in crowd   # the period stays chosen
-            assert 'href="/?period=today&bot=crowd_fader"' in crowd                        # and the bot, on every period
+            assert '<a class="tab on" href="/details?period=yesterday">All bots</a>' in bar
+            assert 'href="/details?period=yesterday&bot=crowd_fader">Crowd Fader</a>' in bar
+            crowd = get("/details?period=yesterday&bot=crowd_fader")
+            assert 'class="tab p on" href="/details?period=yesterday&bot=crowd_fader"' in crowd   # the period stays chosen
+            assert 'href="/details?period=today&bot=crowd_fader"' in crowd                        # and the bot, on every period
             assert '<input type="hidden" name="bot" value="crowd_fader">' in crowd         # the custom dates too
-            assert '<a class="tab on" href="/?period=yesterday&bot=crowd_fader">Crowd Fader</a>' in crowd
-            custom = get("/?period=custom&from=2026-10-08&to=2026-10-08&bot=crowd_fader")
-            assert 'href="/?period=custom&from=2026-10-08&to=2026-10-08&bot=momentum_rider"' in custom
+            assert '<a class="tab on" href="/details?period=yesterday&bot=crowd_fader">Crowd Fader</a>' in crowd
+            custom = get("/details?period=custom&from=2026-10-08&to=2026-10-08&bot=crowd_fader")
+            assert 'href="/details?period=custom&from=2026-10-08&to=2026-10-08&bot=momentum_rider"' in custom
         finally:
             httpd.shutdown()
 
@@ -416,11 +416,11 @@ class TestTheBotButtons:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            crowd = get("/?period=yesterday&bot=crowd_fader")
-            rider = get("/?bot=momentum_rider")
-            ian = get("/?bot=financial_ian")
-            tnb = get("/?bot=market_intelligence")
-            band = get("/?bot=band_breaker")
+            crowd = get("/details?period=yesterday&bot=crowd_fader")
+            rider = get("/details?bot=momentum_rider")
+            ian = get("/details?bot=financial_ian")
+            tnb = get("/details?bot=market_intelligence")
+            band = get("/details?bot=band_breaker")
         finally:
             httpd.shutdown()
         top = crowd.split('id="more"')[0]
@@ -454,13 +454,13 @@ class TestTheBotButtons:
             for bot in ("market_intelligence", "momentum_rider", "momentum_runner", "band_breaker", "crowd_fader",
                         "financial_ian", "rapid_scalper", "nonsense<script>"):
                 for period in ("today", "yesterday", "total"):
-                    page = get(f"/?bot={bot}&period={period}")
+                    page = get(f"/details?bot={bot}&period={period}")
                     assert "BOT: RUNNING" in page and "dashboard error" not in page, (bot, period)
                     assert "<script>alert" not in page
-            assert "Rapid Momentum Rider: not started yet." in get("/?bot=momentum_rider")
-            assert "Financial Ian: not started yet." in get("/?bot=financial_ian")
-            assert "NOT RUNNING" in get("/?bot=band_breaker")
-            assert '<a class="tab on" href="/?period=today">All bots</a>' in get("/?bot=nonsense")
+            assert "Rapid Momentum Rider: not started yet." in get("/details?bot=momentum_rider")
+            assert "Financial Ian: not started yet." in get("/details?bot=financial_ian")
+            assert "NOT RUNNING" in get("/details?bot=band_breaker")
+            assert '<a class="tab on" href="/details?period=today">All bots</a>' in get("/details?bot=nonsense")
         finally:
             httpd.shutdown()
         # and before MetaTrader has been heard from at all
@@ -769,7 +769,7 @@ class TestEveryCardSaysWhatItsBotIsDoing:
         d = quiet_day(tmp_path)
         httpd, get = serve(d, LATER, thinking=THINKING, status={"bot": "RUNNING", "tnb_mode": "PAPER"})
         try:
-            page, runner = get("/"), get("/?bot=momentum_runner")
+            page, runner = get("/details"), get("/details?bot=momentum_runner")
         finally:
             httpd.shutdown()
         assert page.count(NOW_TAG) == 6
@@ -829,8 +829,8 @@ class TestTheQuietBanner:
         d = quiet_day(tmp_path / "b")
         httpd, get = serve(d, LATER)
         try:
-            assert '<div class="quiet">' in get("/") and '<div class="quiet">' in get("/?period=yesterday")
-            assert '<div class="quiet">' not in get("/?bot=momentum_rider")
+            assert '<div class="quiet">' in get("/details") and '<div class="quiet">' in get("/details?period=yesterday")
+            assert '<div class="quiet">' not in get("/details?bot=momentum_rider")
         finally:
             httpd.shutdown()
 

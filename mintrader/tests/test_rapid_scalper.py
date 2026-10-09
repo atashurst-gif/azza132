@@ -653,9 +653,9 @@ class TestPeriodFilter:
         httpd = start_dashboard(state, "127.0.0.1", 0)
         port = httpd.server_address[1]
         try:
-            today = urllib.request.urlopen(f"http://127.0.0.1:{port}/?strategy=overall").read().decode()
-            week = urllib.request.urlopen(f"http://127.0.0.1:{port}/?strategy=overall&period=week").read().decode()
-            custom = urllib.request.urlopen(f"http://127.0.0.1:{port}/?strategy=rapid_scalper&period=custom"
+            today = urllib.request.urlopen(f"http://127.0.0.1:{port}/details?strategy=overall").read().decode()
+            week = urllib.request.urlopen(f"http://127.0.0.1:{port}/details?strategy=overall&period=week").read().decode()
+            custom = urllib.request.urlopen(f"http://127.0.0.1:{port}/details?strategy=rapid_scalper&period=custom"
                                             f"&from={(now - dt.timedelta(days=2)).date()}&to={now.date()}").read().decode()
         finally:
             httpd.shutdown()

@@ -255,18 +255,18 @@ class TestPeriodsAndOpenTrades:
         httpd = start_dashboard(state, "127.0.0.1", 0)
         try:
             port = httpd.server_address[1]
-            page = urllib.request.urlopen(f"http://127.0.0.1:{port}/").read().decode()
+            page = urllib.request.urlopen(f"http://127.0.0.1:{port}/details").read().decode()
             for lbl in ("Today", "Yesterday", "This week", "This month", "Last 6 months", "Last year", "Total", "Custom"):
                 assert f">{lbl}<" in page, lbl
-            assert 'class="tab p on" href="/?period=today"' in page                   # Today by default
+            assert 'class="tab p on" href="/details?period=today"' in page                   # Today by default
             assert "Open trades right now - 3 open" in page and "Crowd Fader" in page and "Placed by hand" in page
             assert page.index('class="cards"') < page.index("Open trades right now")
-            week = urllib.request.urlopen(f"http://127.0.0.1:{port}/?period=week").read().decode()
-            assert '<div class="fk">This week</div>' in week and 'class="tab p on" href="/?period=week"' in week
-            total = urllib.request.urlopen(f"http://127.0.0.1:{port}/?period=total").read().decode()
+            week = urllib.request.urlopen(f"http://127.0.0.1:{port}/details?period=week").read().decode()
+            assert '<div class="fk">This week</div>' in week and 'class="tab p on" href="/details?period=week"' in week
+            total = urllib.request.urlopen(f"http://127.0.0.1:{port}/details?period=total").read().decode()
             assert '<div class="fk">Today</div>' not in total and '<div class="fk">Overall</div>' in total
             custom = urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/?period=custom&from=2026-10-05&to=2026-10-05").read().decode()
+                f"http://127.0.0.1:{port}/details?period=custom&from=2026-10-05&to=2026-10-05").read().decode()
             assert "+£21.30" in custom
         finally:
             httpd.shutdown()

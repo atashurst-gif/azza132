@@ -377,10 +377,10 @@ class TestTheAttribution:
         state.update(status={"bot": "RUNNING"}, tnb_mode="PAPER")
         httpd = start_dashboard(state, "127.0.0.1", 0)
         try:
-            urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/?period=week").read()
+            urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/details?period=week").read()
             state.period_resolver = lambda period, date_from="", date_to="": calls.append((period, "three args")) or \
                 resolver(period)
-            urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/?period=week").read()
+            urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/details?period=week").read()
         finally:
             httpd.shutdown()
         assert calls[0] == ("week", "PAPER") and ("week", "three args") in calls

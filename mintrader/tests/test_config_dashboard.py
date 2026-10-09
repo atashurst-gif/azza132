@@ -325,7 +325,7 @@ class TestDashboardServer:
         httpd = start_dashboard(state, "127.0.0.1", 0)
         port = httpd.server_address[1]
         try:
-            for path, needle in (("/", "BOT:"), ("/results", "Today"),
+            for path, needle in (("/details", "BOT:"), ("/results", "Today"),
                                  ("/health", "entries_allowed")):
                 with urllib.request.urlopen(
                         f"http://127.0.0.1:{port}{path}", timeout=5) as r:
