@@ -128,7 +128,9 @@ calls (see ``_BLOCKED``).
   daily-loss stop and the page read a paper trade exactly as a real one.
   Like the adapter, ``closed_deal`` sums the CLOSING deals only (the entry
   half of the commission sits on the entry deal, which ``deals_since`` with
-  ``closing_only=False`` includes).
+  ``closing_only=False`` includes). From 9 Oct the trader adds that entry
+  half to its journal itself (``Trader._opening_commission``), for paper and
+  real trades alike.
 
 Whose positions are shown (``positions(magic)``)
 ------------------------------------------------
@@ -157,7 +159,10 @@ Kinds of market (``contracts.infer_group``, e.g. ``("INDEX",)``) whose
 orders go straight to the real broker unchanged. Default: empty, everything
 on paper. Orders, stop changes and closes are routed by where the ticket was
 born: a paper ticket never reaches ``inner``; a real one in a live group
-always does.
+always does. Read from config.json (``tnb.live_groups``) when the trader
+starts, so a change applies on the next start. 9 Oct 2026 (Aaron, "Just
+Formula 1"): ``("FX_MINOR",)``, set with ``python -m mintel.ops.modes
+--tnb-live-groups FX_MINOR``, which also records ``tnb.live_since_utc``.
 
 Tickets
 -------

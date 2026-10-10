@@ -27,7 +27,8 @@ $colour = if ($b.Code -eq 0) { "Green" } elseif ($b.Code -eq 2) { "Gray" } else 
 Write-Host ""
 Write-Host "  $($b.Line)" -ForegroundColor $colour
 if ((Get-BotFileMode $P "rider") -eq "OFF") {
-    Write-Host "  It is switched OFF. Run SETUP-RAPID-RIDER.cmd to put it on LIVE."
+    # 9 Oct, Aaron: "Sack the rider off" - OFF is his choice, not a fault
+    Write-Host "  It is switched OFF on purpose (9 Oct: its own test on real prices found no edge). Nothing is wrong."
 }
 Write-Host "  Its page: http://127.0.0.1:8787/rider"
 Write-Host ""

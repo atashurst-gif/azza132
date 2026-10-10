@@ -18,6 +18,15 @@ prices. Real-tick research is a separate piece of work
 (`mintel/rider/research/`), and its figures go in its own reports, each
 labelled with where the data came from.
 
+**9 October, about 19:30 UK: switched OFF.** Aaron: *"Sack the rider
+off"*. Its own 10-day test on the broker's real ticks
+(`rider-research/2026-10-09/summary.json`) found no edge: 1,073 trades, it
+lost 1.33 pips a trade after costs, and every version tested lost. The
+installers switch it OFF once (marker `.formula1-2026-10-09`); its records,
+its magic number and its real trades are kept and still count in the
+account's figures. The page says it is switched off and binned, never that
+it is waiting to trade; its daily research no longer runs while it is OFF.
+
 ## What it does, in one breath
 
 Every second it looks at every liquid FX pair the broker offers. Those are
@@ -640,3 +649,9 @@ synthetic runs, not a measurement on real ticks.
   commission.
 - **Fills:** real fills, especially around news, can be worse than
   modelled.
+
+## Daily record
+
+| Day | Mode | Trades | Wins | Net (the broker's figure) | Notes |
+|---|---|---|---|---|---|
+| 9 Oct | LIVE (GBP 1 a pip) | 62 | 21 | -50.16 (commission 60.48; +10.32 before fees) | Its only live day. Average win +3.77 vs loss -3.16 (needed about 46% winners, got 34%); kept 5.8% of the best price; breakouts -59.07 on 23, pullbacks/sweeps/first retests +36.69 on 17; idea-gone exits 29 trades -88.50. Five sells at 13:13 UK all lost (-17.36) before the one-per-currency guard arrived at 16:36 UK; no trade after. Its 10-day real-price test: no edge (1,073 trades, -1.33 pips a trade). Sacked by Aaron that evening: PAPER from the terminal, OFF from the next build |

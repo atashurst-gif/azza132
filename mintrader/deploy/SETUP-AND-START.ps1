@@ -28,9 +28,13 @@
     1 a pip, in place of the retired Rapid Scalper) and Financial Ian (it
     trades only once a CME data feed is configured); PAPER - Trend &
     Breakout (real prices, simulated orders; the Momentum Runner still rides
-    its index entries), the Band Breaker and the Crowd Fader. It prints
-    which bots are LIVE and which are PAPER. A later choice made with the
-    modes command is never undone by running this again.
+    its index entries), the Band Breaker and the Crowd Fader. Then, last,
+    Aaron's 9 Oct evening decision ("Just Formula 1", "About GBP 13 a
+    trade"): the Rapid Momentum Rider OFF; Trend & Breakout's minor currency
+    pair trades LIVE (Formula 1), the rest still on PAPER; 0.7% of the
+    balance a trade, at most GBP 13. It prints which bots are LIVE and which
+    are PAPER. A later choice made with the modes command is never undone by
+    running this again.
 
     Running it again later is safe: it keeps your settings (and every saved
     key) unless you choose to change them, copies in the new program files
@@ -256,7 +260,8 @@ if ($reconfigure -match "^[Yy]") {
         }
     }
     Say ""
-    $baseRisk = Ask "    Normal risk per trade, in percent of the account" "0.5"
+    # 9 Oct, Aaron: "About GBP 13 a trade" - 0.7% of the balance (was 0.5%), at most GBP 13 a trade (max_risk_money).
+    $baseRisk = Ask "    Normal risk per trade, in percent of the account" "0.7"
     $maxRisk  = Ask "    MAXIMUM risk per trade, in percent (never exceeded)" "1.5"
     $dailyMax = Ask "    Stop trading for the day after losing this percent" "3.0"
     $aggr     = Ask "    Aggression: CONSERVATIVE / NORMAL / AGGRESSIVE / MAXIMUM" "NORMAL"
@@ -274,6 +279,7 @@ if ($reconfigure -match "^[Yy]") {
         risk = [ordered]@{
             base_risk_pct           = [double]$baseRisk
             max_risk_pct            = [double]$maxRisk
+            max_risk_money          = 13.0
             min_risk_pct            = 0.1
             max_total_risk_pct      = [math]::Max([double]$maxRisk * 3, 4.0)
             max_correlated_risk_pct = [math]::Max([double]$maxRisk * 1.5, 2.0)
@@ -371,6 +377,7 @@ $P = Get-MintelPaths $InstallDir
 if (Test-MintelInstalled $P) {
     [void](Invoke-LineUpOnce $P)
     [void](Set-IanBinanceOnce $P)      # after the line-up: Binance's public crypto book unless a Databento key is saved
+    [void](Set-Formula1Once $P)        # 9 Oct evening, last: the Rider OFF, Formula 1 LIVE, 0.7% / GBP 13 a trade
     Good "The bots as they are set now:"
     Write-LineUp $P
 } else {

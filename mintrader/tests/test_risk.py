@@ -379,16 +379,26 @@ class TestCircuitBreakers:
 
 class TestMoneyCap:
     """7 Oct: no trade risks more than 10 GBP at its stop, whatever the
-    percentages say. Smaller size, same stop."""
+    percentages say. Smaller size, same stop. 9 Oct (Aaron, "About £13 a
+    trade"): the cap is 13 from then."""
 
-    def test_the_default_caps_a_trade_at_ten(self):
+    def test_the_default_caps_a_trade_at_thirteen(self):
         cfg = Config()
-        assert cfg.risk.max_risk_money == 10.0
+        assert cfg.risk.max_risk_money == 13.0
+        rm = RiskManager(cfg)
+        acct = account(2_000)
+        r = rm.size(state(), spec(), acct, [], 0.85, rm.snapshot(acct, []), margin_per_lot=3000.0)
+        assert r.ok and r.risk_money <= 13.0 + 1e-9
+        assert r.stop_distance == pytest.approx(0.0020)            # the stop did not move
+        assert any("capped at 13.00" in x for x in r.reasons)
+
+    def test_the_cap_mechanics_at_ten(self):
+        cfg = Config()
+        cfg.risk.max_risk_money = 10.0                             # the 7 Oct number, pinned for the mechanics
         rm = RiskManager(cfg)
         acct = account(2_000)
         r = rm.size(state(), spec(), acct, [], 0.85, rm.snapshot(acct, []), margin_per_lot=3000.0)
         assert r.ok and r.risk_money <= 10.0 + 1e-9
-        assert r.stop_distance == pytest.approx(0.0020)            # the stop did not move
         assert any("capped at 10.00" in x for x in r.reasons)
 
     def test_under_the_cap_nothing_changes(self):
@@ -403,4 +413,4 @@ class TestMoneyCap:
         import json
         p = tmp_path / "config.json"
         p.write_text(json.dumps({"risk": {"base_risk_pct": 0.5, "max_risk_pct": 1.5}}))
-        assert Config.load(p).risk.max_risk_money == 10.0
+        assert Config.load(p).risk.max_risk_money == 13.0

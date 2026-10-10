@@ -105,7 +105,9 @@ class TestRules:
 
     def test_the_new_settings_and_their_defaults(self):
         r = Config().risk
-        assert r.max_risk_money == 10.0 and r.top_risk_money == 40.0 and r.top_max_lots == 0.5
+        # 9 Oct (Aaron, "About £13 a trade"): 0.7% and 13, up from 0.5% and 10; the top size is unchanged
+        assert r.base_risk_pct == 0.7 and r.max_risk_money == 13.0
+        assert r.top_risk_money == 40.0 and r.top_max_lots == 0.5
         assert r.top_size_enabled and ("MOMENTUM_CONTINUATION", "FX_MINOR") in r.top_segments
         assert (r.top_min_trades, r.top_min_days) == (20, 4)
         assert not Config().validate()
@@ -117,7 +119,7 @@ class TestRules:
         p.write_text(json.dumps({"risk": {"top_risk_money": 25.0, "top_segments": [["SESSION_EXPANSION", "INDEX"]]},
                                  "runner": {"skip_tactics": [], "confirm_r": 1.0}}))
         c = Config.load(p)
-        assert c.risk.top_risk_money == 25.0 and c.risk.max_risk_money == 10.0
+        assert c.risk.top_risk_money == 25.0 and c.risk.max_risk_money == 13.0
         assert [tuple(x) for x in c.risk.top_segments] == [("SESSION_EXPANSION", "INDEX")]
         assert tuple(c.runner.skip_tactics) == () and c.runner.confirm_r == 1.0
 
@@ -417,14 +419,15 @@ class TestInsideTheTrader:
         tr.last_entry_utc = None
         tr.act([self._state(b, "EURUSD")], acct, snap, [], NOW)
         normal = tr.would_have_traded[-1]
-        assert normal["symbol"] == "EURUSD" and normal["top_opportunity"] is False and normal["risk_money"] <= 10.0
+        # a normal trade keeps the normal cap (13 from 9 Oct, 10 before)
+        assert normal["symbol"] == "EURUSD" and normal["top_opportunity"] is False and normal["risk_money"] <= 13.0
 
     def test_without_a_record_the_trader_sizes_as_before(self, tmp_path):
         tr, b = self._trader(tmp_path, record=None)
         acct = b.account()
         tr.act([self._state(b, "EURGBP")], acct, tr.risk.snapshot(acct, [], NOW), [], NOW)
         t = tr.would_have_traded[-1]
-        assert t["top_opportunity"] is False and t["risk_money"] <= 10.0
+        assert t["top_opportunity"] is False and t["risk_money"] <= 13.0
 
 
 # --------------------------------------------------- the Momentum Runner --

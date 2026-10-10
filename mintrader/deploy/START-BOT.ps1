@@ -185,9 +185,14 @@ try {
     Say ""
     Say "    Mode        : $($health.status.mode)"
     $tnbPaper = ("$($health.status.tnb_mode)".ToUpper() -eq "PAPER")
-    if ($tnbPaper) { Say "    Trend & Breakout: PAPER - real prices, simulated orders (never in the account)" }
+    $tnbWords = Get-TnbModeWords $P
+    $tnbMixed = $tnbPaper -and "$tnbWords".StartsWith("PAPER - ")      # 9 Oct: some kinds of market still trade for real
+    if ($tnbMixed) { Say "    Trend & Breakout: $tnbWords - real orders there, everything else simulated" }
+    elseif ($tnbPaper) { Say "    Trend & Breakout: PAPER - real prices, simulated orders (never in the account)" }
     Say "    Open trades : $($health.status.open_positions)"
-    $todayNote = if ($tnbPaper) { " (Trend & Breakout's practice, not money)" } else { "" }
+    $todayNote = ""
+    if ($tnbMixed) { $todayNote = " (Trend & Breakout's own count, practice included: the page shows real money and practice apart)" }
+    elseif ($tnbPaper) { $todayNote = " (Trend & Breakout's practice, not money)" }
     Say "    Today       : $($health.status.today_pnl) $($health.status.currency)$todayNote"
     Say "    Last scan   : $($health.status.last_scan)"
     if ($health.thinking) {

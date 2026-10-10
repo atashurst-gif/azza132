@@ -460,6 +460,13 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "watchdog_ok": watchdog_ok,
             "mode": trader.cfg.effective_mode,
             "tnb_mode": tnb,
+            # 9 Oct: the kinds of market Trend & Breakout keeps LIVE while on
+            # PAPER (Formula 1: FX_MINOR), as this run routes them, and since
+            # when (config.json tnb.live_since_utc); "PAPER (FX_MINOR live)"
+            "tnb_mode_detail": getattr(trader, "tnb_mode_detail", tnb),
+            "tnb_live_groups": list(getattr(trader, "tnb_live_groups", ()) or ()),
+            "tnb_live_since_utc": (str(getattr(trader.cfg.tnb, "live_since_utc", "") or "")
+                                   if getattr(trader, "tnb_live_groups", ()) else ""),
             "aggression": trader.cfg.aggression,
             "open_positions": len(positions),
             "equity": account.equity if account else 0.0,
@@ -618,6 +625,11 @@ def trend_and_breakout_broker(broker, cfg: Config):
         from .broker.paper import PaperBroker
         paper = PaperBroker.from_config(broker, cfg)
         log.warning("%s", TNB_PAPER_LINE)
+        if paper.live_groups:
+            # 9 Oct (Formula 1): these kinds of market are REAL orders under Trend & Breakout's magic
+            log.warning("Trend & Breakout: orders on %s go to the REAL broker (tnb.live_groups, since %s); "
+                        "everything else is simulated", ", ".join(sorted(paper.live_groups)),
+                        getattr(cfg.tnb, "live_since_utc", "") or "a time not recorded")
         return paper
     log.warning("Trend & Breakout: LIVE - its orders go to the broker")
     return broker

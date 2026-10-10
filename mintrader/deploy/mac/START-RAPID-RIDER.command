@@ -35,7 +35,8 @@ step "Rapid Momentum Rider"
 LINE="$(wait_bot_line rider 150)"
 say "  ${BOLD}${LINE}${RESET}"
 if [[ "$(bot_file_mode rider)" == "OFF" ]]; then
-  say "  It is switched OFF. Double-click SETUP-RAPID-RIDER to put it on LIVE."
+  # 9 Oct, Aaron: "Sack the rider off" - OFF is his choice, not a fault
+  say "  It is switched OFF on purpose (9 Oct: its own test on real prices found no edge). Nothing is wrong."
 fi
 say "  Its page: http://127.0.0.1:$DASH_PORT/rider"
 say ""

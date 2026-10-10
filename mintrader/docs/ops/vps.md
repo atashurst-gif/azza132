@@ -100,6 +100,13 @@ everything after a reboot) - say yes. Then it:
   - **PAPER**: Trend & Breakout (real prices, simulated orders; the Momentum
     Runner still rides its index entries with its own real orders), the
     Band Breaker and the Crowd Fader;
+  - then, last (9 Oct evening, Aaron: "Just Formula 1", "About £13 a
+    trade"; once, marker `.formula1-2026-10-09`, written only when every
+    call worked): the Rapid Momentum Rider **OFF**; Trend & Breakout's
+    minor currency pair trades **LIVE** (`--tnb-live-groups FX_MINOR`), the
+    rest still on PAPER; **0.7%** of the balance a trade, at most **GBP 13**
+    (`--risk-pct 0.7 --risk-money 13`). A fresh install asks 0.7% as the
+    normal risk;
 - registers the scheduled tasks:
   - **MintelTrader** - at every boot, starts everything;
   - **MintelKeepAlive** - every 5 minutes, starts whatever has stopped (it
@@ -122,13 +129,14 @@ Nothing. The scheduled tasks keep it running. To check on it, double-click:
 | `START-BOT.cmd` | starts whatever is not running, prints the health |
 | `START-RAPID-RIDER.cmd` | the same, then one line: `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets` |
 | `START-FINANCIAL-IAN.cmd` | the same, then one line: `FINANCIAL IAN - HEALTHY, PAPER, feed NOT CONFIGURED` |
-| `SETUP-RAPID-RIDER.cmd` | puts the Rider back on LIVE (GBP 1 a pip unless a figure is set) and checks it |
+| `SETUP-RAPID-RIDER.cmd` | puts the Rider back on LIVE (GBP 1 a pip unless a figure is set) and checks it - since 9 Oct the Rider is OFF by Aaron's choice, so only run this to undo that |
 | `STOP-BOT.cmd` | stops everything; open trades keep their broker stops |
 
 Once a day, `START-BOT` (and the scheduled tasks that run it) also starts the
 Rapid Momentum Rider's research on the last ten days of real ticks, in the
 background, on one worker process at Windows' lowest priority (Idle), so it
-never slows the bots. Its log is `C:\mintel\logs\rider-research.log`.
+never slows the bots. Its log is `C:\mintel\logs\rider-research.log`. While the Rider is
+OFF (since 9 Oct) the research does not run.
 
 To see or change the line-up later (Trend & Breakout is `tnb`, LIVE or
 PAPER only):

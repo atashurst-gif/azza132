@@ -69,6 +69,7 @@ def make(tmp_path, *, tnb="PAPER", wrap=True, live_groups=(), symbols=("EURUSD",
     cfg.tnb.mode = tnb
     cfg.tnb.live_groups = tuple(live_groups)
     cfg.runner.mode = "LIVE"
+    cfg.runner.max_risk_money = 0.0          # the feed's mechanics, without the 9 Oct cap on a copied ride
     cfg.scan.tier_normal, cfg.scan.tier_strong, cfg.scan.tier_exceptional = 1.0, 2.0, 3.0
     cfg.scan.min_reward_risk = 0.1
     cfg.scan.max_cost_fraction_of_stop = 1.0
@@ -320,6 +321,7 @@ def index_sim(balance=2_000.0, symbols=("US500",)):
 
 def live(tmp_path, broker, **kw):
     kw.setdefault("top_segments", SEGMENT)
+    kw.setdefault("max_risk_money", 0.0)     # the top size's mechanics, without the 9 Oct cap on a copied ride
     return MomentumRunner(tmp_path, RunnerConfig(mode="LIVE", **kw), spec_fn=broker.spec, clock=lambda: broker.now,
                           broker=broker)
 

@@ -605,8 +605,10 @@ class TestThePlan:
         assert plan["focus"]["name"] == "Formula 1" and plan["focus"]["bot"] == "market_intelligence"
         assert "must" in plan["focus"]["caution"] or "prove itself" in plan["focus"]["caution"]
         steps = [s["text"] for s in plan["steps"]]
-        assert len(steps) == 5 and steps[0].startswith("Rapid Momentum Rider back to PAPER")
-        assert "20 live trades" in steps[2] and "30 trades" in steps[3]
+        # 9 Oct evening, Aaron's decision: Formula 1 live (judged after 20 live trades), the Rider switched off
+        assert len(steps) == 5 and steps[0].startswith("Formula 1 live - judge it after 20 live trades")
+        assert steps[1].startswith("Rapid Momentum Rider switched OFF") and "30 trades" in steps[3]
+        assert plan["focus"]["judge_after"] == 20 and plan["focus"]["live_group"] == "FX_MINOR"
         ids = {"market_intelligence", "momentum_rider", "momentum_runner", "band_breaker", "crowd_fader",
                "financial_ian"}
         for bucket in ("bin", "change", "keep"):
@@ -647,7 +649,11 @@ class TestThePlan:
             assert f"<h3>{title}</h3>" in raw
         for item in plan["bin"] + plan["change"] + plan["keep"]:
             assert item["text"] in box and item["why"] in box
-        assert "Going forward since 09 Oct: no trades in it yet" in box
+        # this made-up day has no config.json saying Trend & Breakout's minor pairs are LIVE: it says so, no count
+        # (the live count itself, from MetaTrader's records only: tests/test_formula1_page.py)
+        assert ("Live so far: not live on this computer yet - Trend & Breakout's minor currency pairs are still on "
+                "PAPER here, so there are no live trades to count.") in box
+        assert "Going forward since" not in box                          # never the journal's count
         assert "The plan is docs/plan.json, updated 09 Oct 2026." in box
         assert "Its figures come from: " + "; ".join(plan["sources"]) in box
         assert "Check:" not in box                                       # nothing disagrees on this made-up day

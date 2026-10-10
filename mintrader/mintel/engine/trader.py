@@ -35,7 +35,7 @@ from typing import Callable, Optional, Sequence
 from ..broker.base import Bar, Broker, Position, Side, TF, Tick
 from ..broker.paper import PaperBroker, real_broker
 from ..clock import to_utc, utcnow
-from ..config import Config, tnb_mode
+from ..config import Config, tnb_live_groups, tnb_mode, tnb_mode_detail
 from ..data.series import atr
 from ..news.adapters import AdapterRegistry, ForexFactoryAdapter, Mt5CalendarAdapter, StoreBackedAdapter
 from ..news.calendar_store import CalendarStore
@@ -138,6 +138,13 @@ class Trader:
         # bots, the account health checks - is given the broker behind it.
         self.real_broker = real_broker(broker)
         self.cfg = cfg
+        # Trend & Breakout's mode as THIS run trades it, with the kinds of
+        # market kept LIVE on PAPER (what the wrapper it holds really routes;
+        # config.json is read at start, so a restart applies a change), for
+        # the heartbeat, the page's status and the pulse: "PAPER (FX_MINOR live)".
+        self.tnb_live_groups = (tuple(sorted(broker.live_groups)) if isinstance(broker, PaperBroker)
+                                else tnb_live_groups(cfg))
+        self.tnb_mode_detail = tnb_mode_detail(tnb_mode(cfg), self.tnb_live_groups)
         self.clock = clock
         # In dry-run everything is evaluated exactly as normal - regime,
         # tactics, scoring, sizing, stop placement, idempotency - and the
@@ -182,6 +189,10 @@ class Trader:
                                history_match=self.matcher)
         self.risk = RiskManager(cfg, self.journal)
         self.risk.realised_today = self.realised_today
+        # The top-opportunity check counts the WHOLE commission: what older
+        # journal rows left out is estimated at the broker's own rate per lot
+        # (learned from its deals, refresh_commissions). 9 Oct.
+        self.risk.round_turn_commission = self.scanner.commission_money_per_lot
         self._last_snapshot = None               # the newest cycle's RiskSnapshot (None: not taken, or unreadable)
         self.last_entry_utc: Optional[dt.datetime] = None
         self._entry_times: list[dt.datetime] = []
@@ -515,7 +526,10 @@ class Trader:
             try:
                 start = dt.datetime.combine(today, dt.time(0, 0), tzinfo=dt.timezone.utc)
                 for t in self.journal.closed_trades(limit=1000, since=start):
-                    if (t.get("pnl_money") or 0.0) < 0:
+                    # the closing deals' figure, as before 9 Oct: the opening
+                    # commission now in pnl_money (entry_commission) is not a
+                    # reason to count a winner as a loss (see _finalise)
+                    if (t.get("pnl_money") or 0.0) - (t.get("entry_commission") or 0.0) < 0:
                         counts[t["symbol"]] = counts.get(t["symbol"], 0) + 1
             except Exception:
                 counts = {}
@@ -616,7 +630,7 @@ class Trader:
         # its own heartbeat should reflect that.  Real liveness testing of this
         # process is the independent watchdog's job precisely because a hung
         # process cannot be trusted to report its own hang.
-        self.hb_strategy.beat({"cycle": self.cycles})
+        self.hb_strategy.beat({"cycle": self.cycles, "tnb_mode": self.tnb_mode_detail})
         report = self.health.run_checks(
             positions=positions, risk_snapshot=snapshot,
             last_scan=self.scanner.last_scan_utc,
@@ -818,8 +832,10 @@ class Trader:
                 rows = self._open_journal_rows()
                 tactics = {int(r["ticket"]): r.get("tactic") for r in rows}
                 regimes = {int(r["ticket"]): r.get("regime") for r in rows}
+                copies = {int(r["ticket"]): float(r["runner_volume"]) for r in rows
+                          if r.get("runner_volume") is not None}
                 for note in self.runner.observe(positions, stops, self._tick_quietly, now, tactics,
-                                                regimes=regimes):
+                                                regimes=regimes, copy_volumes=copies):
                     log.info("%s", note)
             except Exception as exc:
                 log.debug("Momentum Runner skipped this pass: %s", exc)
@@ -1089,19 +1105,35 @@ class Trader:
         moved = (exit_price - tracker.entry) * tracker.side.sign
         if spec is not None:
             pnl_pips = moved / max(spec.pip_size, 1e-12)
+        # How many sides of the broker's commission pnl_money holds: 2 the
+        # opening and closing deals, 1 the closing ones only, 0 none (worked
+        # out from prices). See _opening_commission.
+        entry_fee: Optional[float] = None
+        sides = 0
         if deal and deal.get("pnl") is not None:
             pnl_money = float(deal["pnl"])
+            entry_fee = self._opening_commission(ticket, tracker)
+            if entry_fee is not None:
+                pnl_money += entry_fee
+                sides = 2
+            else:
+                sides = 1
         elif spec is not None and tracker.volume > 0:
             pnl_money = spec.money(moved, tracker.volume)
         learned = self._lesson(tracker, stats, reason, thesis)
-        self._after_close(tracker, pnl_money, now)
+        # The loss cool-down and the day's losses on a market read the
+        # closing deals' figure, as they did before 9 Oct: adding the opening
+        # commission above is for honest records, not a reason for those two
+        # limits (Aaron did not change them) to trip on a small winner.
+        self._after_close(tracker, pnl_money - (entry_fee or 0.0), now)
         try:
             self.journal.close_trade(
                 ticket, exit_price=exit_price, closed_utc=now,
                 pnl_money=pnl_money, pnl_pips=round(pnl_pips, 2),
                 exit_reason=reason or "broker stop or target",
                 stats=stats, tracker=tracker, exit_state=state,
-                learned=learned)
+                learned=learned, entry_commission=entry_fee,
+                commission_sides=sides)
             self.calibrator.load(self.journal.calibration_rows())
         except Exception as exc:
             log.warning("could not finalise trade %s: %s", ticket, exc)
@@ -1121,6 +1153,37 @@ class Trader:
         # No instrument moves by more than a quarter of its price between
         # entry and exit within one trade; anything like that is a mix-up.
         return abs(exit_price - tracker.entry) / tracker.entry < 0.25
+
+    def _opening_commission(self, ticket: int, tracker) -> Optional[float]:
+        """The commission the broker charged on this position's OPENING deal
+        (negative, 0 on indices), from its deal history; None when that
+        cannot be read or holds no opening deal for it.
+
+        ``closed_deal`` sums the CLOSING deals only (the MT5 adapter, the
+        bridge and the paper wrapper alike), so until 9 Oct the journal's
+        pnl_money left out about half the commission on FX and metals - and
+        the top-opportunity check reads that figure as "after costs". It is
+        added here rather than inside ``closed_deal`` because the other bots'
+        LIVE executor (mintel/botexec.py, ``_with_entry_commission``) already
+        adds the opening half to the same ``closed_deal``: changing it there
+        would count it twice for the Momentum Runner, the Rider and Ian. On
+        PAPER the wrapper's deal history holds the paper opening deal (its
+        simulated commission) and, for a market kept LIVE, the real one."""
+        fn = getattr(self.broker, "deals_since", None)
+        if fn is None:
+            return None
+        try:
+            opened = getattr(tracker, "opened_utc", None)
+            since = (to_utc(opened) if isinstance(opened, dt.datetime) else to_utc(self.clock())
+                     - dt.timedelta(days=7)) - dt.timedelta(hours=1)
+            rows = [r for r in (fn(since, self.cfg.magic, False) or [])
+                    if r.get("is_entry") and int(r.get("position") or 0) == int(ticket)]
+        except Exception as exc:
+            log.debug("opening commission for %s could not be read: %s", ticket, exc)
+            return None
+        if not rows:
+            return None
+        return round(sum(float(r.get("commission") or 0.0) for r in rows), 2)
 
     def _recover_exit_price(self, tracker) -> float:
         """Ask the broker what actually happened, do not assume the stop price."""
@@ -1263,6 +1326,11 @@ class Trader:
                 log.warning("DRY RUN: would have opened %s", intended)
                 continue
 
+            # what the Momentum Runner copies from this trade: its size at the
+            # Runner's copy settings (10 Oct; see _runner_copy_volume), worked
+            # out before this trade's own risk is booked, as T&B's was
+            runner_volume = self._runner_copy_volume(state, spec, account, positions, conf, kelly,
+                                                     snapshot, margin_per_lot, top)
             state, twin = apply_twin(state, self.cfg.scan, self._twin_counts)
             report = self.executor.submit(state, spec, sizing.volume)
             if not report.ok:
@@ -1282,7 +1350,8 @@ class Trader:
                 self.journal.open_trade(
                     position, state, report.intent.key, sizing.risk_pct,
                     sizing.risk_money, account.equity, account.currency,
-                    self.cfg.aggression, self.cfg.effective_mode)
+                    self.cfg.aggression, self.cfg.effective_mode,
+                    runner_volume=runner_volume)
                 self.journal.save_tracker(tracker)
                 self.journal.log_event(
                     "ENTRY",
@@ -1305,6 +1374,31 @@ class Trader:
             self._note_entry(now)
             return state, msg, blocked
         return None, "", blocked
+
+    def _runner_copy_volume(self, state: MarketState, spec, account, positions, conf: float, kelly,
+                            snapshot, margin_per_lot, top: bool) -> Optional[float]:
+        """The volume the Momentum Runner copies from this trade: its size
+        at runner.copy_risk_pct of the account and at most
+        runner.max_risk_money (RiskManager.copy_size; the same tier,
+        confidence and limits). 10 Oct: until 9 Oct the Runner copied Trend &
+        Breakout's own volume, sized at 0.5% and at most 10; Aaron moved Trend
+        & Breakout to 0.7% and 13 and did not change the Runner's money per
+        ride, so it copies this instead. None when there is no Runner, for a
+        top-opportunity trade (its size did not change on 9 Oct), when
+        copy_risk_pct is 0, or when it cannot be worked out (the Runner then
+        holds the copy to runner.max_risk_money at its own stop); 0 when at
+        those settings the trade would not have been opened."""
+        rc = getattr(self.cfg, "runner", None)
+        pct = float(getattr(rc, "copy_risk_pct", 0.0) or 0.0)
+        if self.runner is None or top or pct <= 0:
+            return None
+        try:
+            sized = self.risk.copy_size(state, spec, account, positions, conf, kelly, snapshot, margin_per_lot,
+                                        base_pct=pct, money_cap=float(getattr(rc, "max_risk_money", 0.0) or 0.0))
+        except Exception as exc:
+            log.debug("the Momentum Runner's copy of %s could not be sized: %s", state.symbol, exc)
+            return None
+        return float(sized.volume) if sized.ok else 0.0
 
     def _add_model_evidence(self, state: MarketState) -> MarketState:
         """Fold the calibrated model in as one more evidence family.

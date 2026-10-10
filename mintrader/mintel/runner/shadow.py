@@ -114,6 +114,13 @@ class RunnerConfig:
     # trade's R behind the Runner's own entry (same size, same money at risk).
     # NOT YET EVALUATED: `python -m mintel.ops.potential --runner` replays it.
     confirm_r: float = 0.0
+    # 9 Oct: a copied ride risks at most this much at the Runner's own stop
+    # (account money; 0 = no cap). Trend & Breakout went to about 13 a trade
+    # that day ("risking 0.2 higher"); the Runner's money per ride was not
+    # part of that decision, so its copy is scaled DOWN to the lot step to
+    # stay at the old 10, never up. Even the broker's smallest size over it:
+    # not taken, and said (Band Breaker's rule). See _cap_copy.
+    max_risk_money: float = 10.0
     # Top size (LIVE only; see mintel/config.py RunnerConfig and
     # docs/strategies/momentum_runner.md). A ride in a listed segment -
     # (approach, kind of market[, market condition]) - is sized for
@@ -350,9 +357,13 @@ class MomentumRunner:
 
     # --------------------------------------------------------------- flow --
     def adopt(self, position, initial_stop: float, now: dt.datetime, tactic: str = "",
-              tick: Optional[Tick] = None, regime: str = "") -> Optional[Shadow]:
+              tick: Optional[Tick] = None, regime: str = "",
+              copy_volume: Optional[float] = None) -> Optional[Shadow]:
         """Ride a real trade, once. PAPER starts a shadow of it; LIVE sends the
-        Runner's own order at ``tick``. Returns the row, or None (``_why`` says why)."""
+        Runner's own order at ``tick``. Returns the row, or None (``_why`` says why).
+        ``copy_volume``: what the trader worked out for the Runner to copy
+        (Trend & Breakout's size at the Runner's copy settings, 10 Oct);
+        None copies Trend & Breakout's volume (see _copy_base)."""
         self._why = ""
         self._size_note = ""
         regime = str(regime or "").upper()
@@ -381,14 +392,27 @@ class MomentumRunner:
             self._why = self.last_note = "entries paused by the account gate"
             return None
         if self.live:
-            return self._adopt_live(position, stop, now, tactic, tick, regime)
+            return self._adopt_live(position, stop, now, tactic, tick, regime, copy_volume)
         if confirm > 0:
             # PAPER, confirmed: the shadow's own entry at the touch, one real R of stop behind it
             entry, own_stop = self._confirm_levels(position, stop, tick)
-            s = Shadow(src, position.symbol, position.side, float(position.volume), entry, own_stop, to_utc(now),
+        else:
+            entry, own_stop = float(position.entry_price), stop
+        # the same size and cap as a LIVE ride, so the shadow's money is what a LIVE ride would risk
+        base, base_note = self._copy_base(position, copy_volume)
+        if base <= 0:
+            self._why = self.last_note = base_note
+            return None                                  # said once per trade by observe(); nothing recorded
+        volume, self._size_note = self._cap_copy(entry, own_stop, self._spec(position.symbol), base)
+        if volume <= 0:
+            self._why = self.last_note = self._size_note
+            return None                                  # said once per trade by observe(); nothing recorded
+        self._size_note = "; ".join(x for x in (base_note, self._size_note) if x)
+        if confirm > 0:
+            s = Shadow(src, position.symbol, position.side, volume, entry, own_stop, to_utc(now),
                        tactic=tactic, stop=own_stop, source_ticket=src, mode="PAPER", regime=regime)
         else:
-            s = Shadow(src, position.symbol, position.side, float(position.volume),
+            s = Shadow(src, position.symbol, position.side, volume,
                        float(position.entry_price), stop, to_utc(position.open_time or now), tactic=tactic, stop=stop,
                        source_ticket=src, mode="PAPER", regime=regime)
         self.open[s.ticket] = s
@@ -488,7 +512,7 @@ class MomentumRunner:
         return ""
 
     def _adopt_live(self, position, stop: float, now: dt.datetime, tactic: str, tick: Optional[Tick],
-                    regime: str = "") -> Optional[Shadow]:
+                    regime: str = "", copy_volume: Optional[float] = None) -> Optional[Shadow]:
         src = int(position.ticket)
         side = Side(position.side)
         late = self._too_late(position, side, stop, now, tick)
@@ -506,15 +530,31 @@ class MomentumRunner:
         # Trend & Breakout sizes up (a top-opportunity trade), so does the
         # Runner, up to exactly that volume and no further - unless the ride
         # is in one of the Runner's OWN top segments (see _ride_volume).
-        volume = float(position.volume)
-        if hasattr(spec, "normalise_volume"):
+        # From 9 Oct a copy is also held to max_risk_money at the Runner's
+        # own stop (_cap_copy): Trend & Breakout's 13 a trade is not the
+        # Runner's. From 10 Oct it copies the size Trend & Breakout would
+        # have had at its old settings (_copy_base), so a normal ride stays
+        # at about 0.5% of the balance, as before.
+        volume, base_note = self._copy_base(position, copy_volume)
+        if hasattr(spec, "normalise_volume") and volume > 0:
             volume = min(volume, float(spec.normalise_volume(volume)) or volume)
         if volume <= 0:
-            self._why = self.last_note = f"no volume to copy from real trade {src}"
+            self._why = self.last_note = base_note or f"no volume to copy from real trade {src}"
             self._skip(src, position.symbol, self._why, now)
             return None
         volume, top, self._size_note = self._ride_volume(position.symbol, side, stop, tick, spec, tactic,
                                                          regime, volume)
+        if not top and base_note:
+            self._size_note = "; ".join(x for x in (base_note, self._size_note) if x)
+        if not top:
+            capped, why = self._cap_copy(self._touch(side, tick), stop, spec, volume)
+            if capped <= 0:
+                self._why = self.last_note = why
+                self._skip(src, position.symbol, why, now)
+                return None
+            if why:
+                volume = capped
+                self._size_note = "; ".join(x for x in (self._size_note, why) if x)
         fill = self.executor.open(position.symbol, side, volume, stop, 0.0, tick, spec,
                                   to_utc(now), comment=TAG)
         if not fill.ok:
@@ -530,6 +570,64 @@ class MomentumRunner:
         if self._size_note:
             self.last_note += f"; {self._size_note}"
         return s
+
+    # ----------------------------------------------------------- the cap --
+    @staticmethod
+    def _copy_base(position, copy_volume: Optional[float]) -> tuple[float, str]:
+        """(volume, why) the Runner copies: Trend & Breakout's volume, or the
+        smaller ``copy_volume`` the trader worked out at the Runner's copy
+        settings (runner.copy_risk_pct, runner.max_risk_money: Trend &
+        Breakout's size before 9 Oct), with why. (0, why) when at those
+        settings the trade would not have been opened at all."""
+        vol = float(position.volume)
+        if copy_volume is None:
+            return vol, ""
+        cv = float(copy_volume)
+        if cv <= 0:
+            return 0.0, ("not taken: at the Runner's own money a ride (runner.copy_risk_pct, "
+                         "runner.max_risk_money) the trade is under the broker's smallest size")
+        if cv < vol - 1e-12:
+            return cv, (f"sized as before 9 Oct: {cv:g} lots (Trend & Breakout's {vol:g} is sized at its "
+                        f"new money a trade; runner.copy_risk_pct)")
+        return vol, ""
+
+    @staticmethod
+    def _money_per_lot(spec, dist: float) -> float:
+        """What one lot loses over ``dist`` in account money (0 when unknown)."""
+        try:
+            if hasattr(spec, "money_per_lot"):
+                return abs(float(spec.money_per_lot(dist)))
+            if hasattr(spec, "money"):
+                return abs(float(spec.money(dist, 1.0)))
+        except Exception:
+            pass
+        return 0.0
+
+    def _cap_copy(self, entry: float, stop: float, spec, base: float) -> tuple[float, str]:
+        """(volume, why) for a ride that copies Trend & Breakout's volume
+        ``base``: scaled DOWN onto the broker's lot step until it risks at
+        most ``max_risk_money`` between ``entry`` and the Runner's own
+        ``stop``, never up. (0, why) when even the broker's smallest size
+        risks more (the Band Breaker's rule: not taken, and said). ``base``
+        and no reason when it is within the cap already, the cap is 0, or the
+        contract cannot be valued or put on the lot grid."""
+        cap = float(getattr(self.cfg, "max_risk_money", 0.0) or 0.0)
+        dist = abs(float(entry) - float(stop))
+        if cap <= 0 or dist <= 0 or base <= 0 or spec is None or not hasattr(spec, "normalise_volume"):
+            return base, ""
+        per_lot = self._money_per_lot(spec, dist)
+        if per_lot <= 0 or per_lot * base <= cap + 1e-9:
+            return base, ""
+        step = float(getattr(spec, "volume_step", 0.0) or 0.0)
+        vol = min(float(spec.normalise_volume(cap / per_lot) or 0.0), base)
+        while vol > 0 and per_lot * vol > cap + 1e-9 and step > 0:
+            vol = float(spec.normalise_volume(vol - step) or 0.0)
+        if vol <= 0 or per_lot * vol > cap + 1e-9:
+            vmin = float(getattr(spec, "volume_min", 0.0) or 0.0) or step
+            return 0.0, (f"not taken: the smallest size the broker allows ({vmin:g} lots) would risk "
+                         f"{per_lot * vmin:.2f} at the Runner's stop, over its cap of {cap:.2f} (runner.max_risk_money)")
+        return vol, (f"held to {vol:g} lots, risking {per_lot * vol:.2f} at its stop, under its cap of {cap:.2f} "
+                     f"(Trend & Breakout's {base:g} would risk {per_lot * base:.2f})")
 
     # ------------------------------------------------------------ top size --
     @staticmethod
@@ -930,8 +1028,11 @@ class MomentumRunner:
 
     # --------------------------------------------------------------- pass --
     def observe(self, positions: Sequence, initial_stops: dict, tick_fn: Callable[[str], object],
-                now: dt.datetime, tactics: Optional[dict] = None, regimes: Optional[dict] = None) -> list[str]:
-        """One pass: ride new index trades, then move every open one on."""
+                now: dt.datetime, tactics: Optional[dict] = None, regimes: Optional[dict] = None,
+                copy_volumes: Optional[dict] = None) -> list[str]:
+        """One pass: ride new index trades, then move every open one on.
+        ``copy_volumes``: {ticket: volume to copy} from the trader (10 Oct;
+        see adopt)."""
         notes: list[str] = []
         if self._pending_notes:
             notes.extend(self._pending_notes)
@@ -945,7 +1046,8 @@ class MomentumRunner:
                         else None)
                 s = self.adopt(p, float(initial_stops.get(p.ticket) or p.sl or 0.0), now,
                                tactic=str((tactics or {}).get(p.ticket) or ""), tick=tick,
-                               regime=str((regimes or {}).get(p.ticket) or ""))
+                               regime=str((regimes or {}).get(p.ticket) or ""),
+                               copy_volume=(copy_volumes or {}).get(p.ticket))
                 if s is not None:
                     self._noted = {k for k in self._noted if k[0] != int(p.ticket)}
                     if s.mode == "LIVE":
@@ -953,7 +1055,8 @@ class MomentumRunner:
                                      f"(stop {s.stop}) beside real trade {s.source_ticket}"
                                      + (f"; {self._size_note}" if self._size_note else ""))
                     else:
-                        notes.append(f"{STRATEGY_LABEL}: shadowing {s.symbol} {s.side.value} from {s.entry} (stop {s.stop})")
+                        notes.append(f"{STRATEGY_LABEL}: shadowing {s.symbol} {s.side.value} from {s.entry} (stop {s.stop})"
+                                     + (f"; {self._size_note}" if self._size_note else ""))
                 elif self._why and (int(p.ticket), self._why) not in self._noted:
                     self._noted.add((int(p.ticket), self._why))
                     notes.append(f"{STRATEGY_LABEL}: {p.symbol} not entered: {self._why}")
@@ -1052,6 +1155,8 @@ class MomentumRunner:
                 "updated": now.isoformat(), "trail_r": self.cfg.trail_r, "window_hours": self.cfg.window_hours,
                 "skip_tactics": list(getattr(self.cfg, "skip_tactics", ()) or ()),
                 "confirm_r": self._confirm_r(),
+                # 9 Oct: the most a copied ride risks at its own stop (0 = no cap)
+                "max_risk_money": float(getattr(self.cfg, "max_risk_money", 0.0) or 0.0),
                 "top_size": {"segments": [list(x) for x in self._segments()],
                              "on": bool(getattr(self.cfg, "top_size_enabled", False) and self._segments()),
                              "risk_money": float(getattr(self.cfg, "top_risk_money", 0.0) or 0.0)},

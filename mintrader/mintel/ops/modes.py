@@ -9,6 +9,9 @@
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --check rider
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --paper tnb
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --check tnb
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-groups FX_MINOR
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-groups none
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --risk-pct 0.7 --risk-money 13
 
 Bots: rider (Rapid Momentum Rider), runner (Momentum Runner), bandbreaker
 (Band Breaker), crowd (Crowd Fader), ian (Financial Ian), or all - "all" is
@@ -52,6 +55,29 @@ setting; the bot itself never changes it), and --ian-feed names Financial
 Ian's institutional data feed (ian.json "feed" -> "vendor": none or
 databento; the key itself lives in secrets.json, never here).
 
+Trend & Breakout on PAPER can keep some kinds of market LIVE:
+--tnb-live-groups FX_MINOR (9 Oct, Aaron: "Just Formula 1") sends its orders
+on minor currency pairs (EURGBP, AUDJPY and the like) to the real broker
+under its own magic number, while everything else stays on paper and still
+feeds the Momentum Runner. It writes config.json "tnb" -> "live_groups" and,
+when the set of kinds changes, "live_since_utc" (now, UTC); the same set
+again keeps its time. The kinds are the ones the trader sorts markets into
+(FX_MINOR, FX_MAJOR, FX_EXOTIC, INDEX, GOLD, SILVER, METAL, ENERGY, EQUITY,
+CRYPTO; FX, METALS and INDICES name several). It puts Trend & Breakout on
+PAPER when given alone, and is refused with --live tnb (LIVE already sends
+everything). --tnb-live-groups none clears both keys: every order on paper.
+The trader reads them at its start, so a restart applies them.
+
+--risk-pct and --risk-money set what a Trend & Breakout trade risks:
+config.json "risk" -> "base_risk_pct" (percent of the account at normal
+confidence; it must sit between risk.min_risk_pct and risk.max_risk_pct) and
+"max_risk_money" (the most any one trade may lose at its stop, more than 0).
+9 Oct, Aaron: "About £13 a trade" - 0.7 and 13. Each can be given alone; no
+other risk setting is ever touched. Only Trend & Breakout sizes from these
+two: the Momentum Runner copies the size Trend & Breakout would have had
+at its old 0.5% (runner.copy_risk_pct, 10 Oct), held to its own
+runner.max_risk_money, and the other bots size from their own settings.
+
 --check BOT prints that bot's health in one plain line from its own status
 file, for the one-click scripts: exit 0 when it is running and reporting,
 2 when its file says OFF, 1 otherwise. For tnb the line names its mode and
@@ -68,6 +94,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Optional
@@ -114,6 +141,18 @@ RESTART = "Restart the bot for this to take effect (Stop Trading Bot, then Start
 MAX_GBP_PER_PIP = 10.0                                      # a typo guard; the file can still be edited by hand
 IAN_FEEDS = ("none", "databento")
 STATUS_STALE_SECONDS = 120.0
+# The kinds of market the trader sorts every market into (contracts.infer_group,
+# as broker.paper.market_kind and RiskManager.market_kind read it) that can be
+# kept LIVE while Trend & Breakout is on PAPER; plain names for the output.
+LIVE_KINDS = {"FX_MINOR": "minor currency pairs", "FX_MAJOR": "major currency pairs",
+              "FX_EXOTIC": "exotic currency pairs", "INDEX": "indices", "GOLD": "gold", "SILVER": "silver",
+              "METAL": "other metals", "ENERGY": "oil and energy", "EQUITY": "shares", "CRYPTO": "crypto"}
+NO_LIVE_GROUPS = "none"
+# 9 Oct, Aaron: "Just Formula 1" - T&B's momentum continuation on FX minor
+# pairs; every T&B trade on a minor pair goes live, whatever its approach.
+FORMULA_1 = frozenset({"FX_MINOR"})
+TNB_LIVE_WITH_LIVE_REFUSAL = ("--tnb-live-groups keeps some markets LIVE while Trend & Breakout is on PAPER; "
+                              "with --live tnb every order is real already, so say one or the other")
 
 
 class PartialWrite(OSError):
@@ -294,9 +333,154 @@ def _check_gbp_per_pip(value) -> float:
     return v
 
 
+# -------------------------------------------- Trend & Breakout's live kinds --
+def check_live_kinds(names) -> tuple[str, ...]:
+    """The kinds of market named for --tnb-live-groups, each checked and
+    spelled as the trader spells it (FX, METALS and INDICES name several, as
+    the paper broker reads them), in the order given, once each; () for
+    "none". A kind the trader never uses is refused, so nothing is written."""
+    from ..broker.paper import GROUP_ALIASES
+    words = [str(n).strip().upper().replace("-", "_").replace(" ", "_") for n in (names or ())]
+    words = [w for w in words if w]
+    if not words:
+        raise ValueError("name at least one kind of market for --tnb-live-groups (FX_MINOR for Formula 1), or none")
+    if NO_LIVE_GROUPS.upper() in words:
+        if len(words) > 1:
+            raise ValueError("--tnb-live-groups none puts every market back on paper; name it on its own")
+        return ()
+    out: list[str] = []
+    bad: list[str] = []
+    for w in words:
+        kinds = GROUP_ALIASES.get(w, (w,))
+        if any(k not in LIVE_KINDS for k in kinds):
+            bad.append(w)
+            continue
+        out += [k for k in kinds if k not in out]
+    if bad:
+        raise ValueError(f"unknown kind of market {', '.join(bad)}: choose from {', '.join(LIVE_KINDS)} "
+                         f"(FX, METALS or INDICES for several), or none")
+    return tuple(out)
+
+
+def tnb_live_of(raw: dict) -> tuple[tuple[str, ...], str]:
+    """(kinds, since) from config.json's object: the kinds of market
+    Trend & Breakout keeps LIVE while on PAPER, spelled as the trader reads
+    them (an alias expanded, a kind it does not know kept as written), and
+    when they were switched on (ISO UTC, or "" when not recorded)."""
+    from ..broker.paper import GROUP_ALIASES
+    from ..config import utc_iso_or_blank
+    block = raw.get(TNB) if isinstance(raw, dict) else None
+    block = block if isinstance(block, dict) else {}
+    groups = block.get("live_groups")
+    if isinstance(groups, str):
+        groups = [groups]
+    out: list[str] = []
+    for g in groups if isinstance(groups, (list, tuple)) else ():
+        key = str(g or "").strip().upper()
+        out += [k for k in GROUP_ALIASES.get(key, (key,) if key else ()) if k not in out]
+    since = utc_iso_or_blank(block.get("live_since_utc")) if out else ""
+    return tuple(out), since or ""
+
+
+def kinds_in_words(kinds) -> str:
+    """"minor currency pairs", "indices and gold", ... for the output."""
+    words = [LIVE_KINDS.get(k, k.lower().replace("_", " ")) for k in kinds]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def to_utc_seconds(now: Optional[dt.datetime] = None) -> str:
+    """``now`` (or the clock) as ISO UTC to the second, as tnb.live_since_utc holds it."""
+    t = now or dt.datetime.now(dt.timezone.utc)
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return t.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _since_words(since: str) -> str:
+    try:
+        return "since " + dt.datetime.fromisoformat(since).astimezone(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    except (TypeError, ValueError):
+        return "since a time not recorded"
+
+
+def tnb_live_phrase(kinds, since: str = "") -> str:
+    """"minor currency pairs LIVE (Formula 1) since 2026-10-09 18:45 UTC"."""
+    f1 = " (Formula 1)" if frozenset(kinds) == FORMULA_1 else ""
+    return f"{kinds_in_words(kinds)} LIVE{f1} {_since_words(since)}"
+
+
+def tnb_paper_live_meaning(kinds, since: str = "") -> str:
+    """What PAPER with live kinds means, for --show."""
+    runner = ("its index orders are real, so the Momentum Runner gets no runner feed" if "INDEX" in kinds else
+              "the Momentum Runner still rides its index entries")
+    return (f"{tnb_live_phrase(kinds, since)}: real orders under its own magic number, the broker's figures are "
+            f"the record; every other market simulated (tnb_paper.sqlite), practice only, never in Overall; {runner}")
+
+
+# ------------------------------------------- Trend & Breakout's risk per trade --
+def _a_number(value, what: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{what} must be a number, not {value!r}")
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what} must be a number, not {value!r}") from None
+    if not math.isfinite(v):
+        raise ValueError(f"{what} must be a number, not {value!r}")
+    return v
+
+
+def check_risk(raw: dict, risk_pct=None, risk_money=None) -> tuple[Optional[float], Optional[float]]:
+    """(base_risk_pct, max_risk_money) as they will be written, each None
+    when not given, checked by RiskConfig's own rules against what
+    config.json already says: the percent between risk.min_risk_pct and
+    risk.max_risk_pct, the money more than 0. A refusal writes nothing."""
+    from ..config import RiskConfig, _build
+    block = raw.get("risk") if isinstance(raw.get("risk"), dict) else {}
+    rc = _build(RiskConfig, block)
+    pct = money = None
+    if risk_pct is not None:
+        pct = _a_number(risk_pct, "--risk-pct")
+        lo, hi = float(rc.min_risk_pct), float(rc.max_risk_pct)
+        if not (pct > 0 and lo <= pct <= hi):
+            raise ValueError(f"--risk-pct must be between {lo:g} (risk.min_risk_pct) and {hi:g} (risk.max_risk_pct), "
+                             f"not {pct:g}")
+    if risk_money is not None:
+        money = _a_number(risk_money, "--risk-money")
+        if money <= 0:
+            raise ValueError(f"--risk-money must be more than 0, not {money:g}")
+    return pct, money
+
+
+def risk_lines(raw: dict) -> list[str]:
+    """What a Trend & Breakout trade risks now, from config.json, and who
+    else these two numbers touch (nobody: checked 9 Oct, every reader of
+    risk.base_risk_pct and risk.max_risk_money is Trend & Breakout's own -
+    mintel/engine/risk.py, mintel/verify.py's check, mintel/research)."""
+    from ..config import RiskConfig, RunnerConfig, _build
+    rc = _build(RiskConfig, raw.get("risk") if isinstance(raw.get("risk"), dict) else {})
+    run = _build(RunnerConfig, raw.get("runner") if isinstance(raw.get("runner"), dict) else {})
+    cap = float(getattr(run, "max_risk_money", 0.0) or 0.0)
+    copy = float(getattr(run, "copy_risk_pct", 0.0) or 0.0)
+    # 10 Oct: the Runner copies the size Trend & Breakout would have had at its old percent (runner.copy_risk_pct)
+    sized = (f"the size it would have had at {copy:g}% of the account (runner.copy_risk_pct, as before 9 Oct)"
+             if copy > 0 else "its size")
+    runner = (f"the Momentum Runner copies {sized} and each ride is held to at most {cap:.2f} at its own stop "
+              f"(runner.max_risk_money)" if cap > 0 else
+              f"the Momentum Runner copies {sized} (runner.max_risk_money is 0: no cap of its own)")
+    return [f"Trend & Breakout's risk per trade: {rc.base_risk_pct:g}% of the account and never more than "
+            f"{rc.max_risk_money:.2f} at its stop (config.json: risk.base_risk_pct, risk.max_risk_money). A stronger "
+            f"setup may take a higher percent, never past the {rc.max_risk_pct:g}% ceiling, and still never past "
+            f"{rc.max_risk_money:.2f}. A top-opportunity trade keeps its own limit (risk.top_risk_money "
+            f"{rc.top_risk_money:.2f}, at most {rc.max_risk_pct:g}% of the account).",
+            f"Only Trend & Breakout sizes from these two numbers: {runner}; the Band Breaker, Crowd Fader, Rapid "
+            f"Momentum Rider and Financial Ian size from their own settings."]
+
+
 def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: Optional[float] = None,
-              ian_feed: Optional[str] = None) -> dict[str, str]:
-    """Write the modes in `changes` ({bot: mode}), and the two settings when
+              ian_feed: Optional[str] = None, tnb_live_groups=None, risk_pct=None, risk_money=None,
+              now: Optional[dt.datetime] = None) -> dict[str, str]:
+    """Write the modes in `changes` ({bot: mode}), and the settings when
     given, and return every bot's resulting mode. Only those keys change;
     everything else in config.json, rider.json, ian.json and scalper.json
     is kept.
@@ -306,7 +490,13 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
     whichever bot is named (the bots' own files live in the folder it
     names); a bot's own file, when it is named, must be readable; the
     retired scalper can only go OFF; Trend & Breakout can only be LIVE or
-    PAPER; and a bot going LIVE must carry its own magic number."""
+    PAPER; and a bot going LIVE must carry its own magic number.
+
+    ``tnb_live_groups`` (a list of kinds, or ["none"]) sets tnb.live_groups
+    and, when the live set changes, tnb.live_since_utc (``now``); live kinds
+    need Trend & Breakout on PAPER, so it is put there (refused with LIVE).
+    ``risk_pct`` and ``risk_money`` set risk.base_risk_pct and
+    risk.max_risk_money and nothing else in the risk block."""
     cfg_path = Path(config_path)
     unknown = [b for b in changes if b not in BOTS]
     if unknown:
@@ -319,6 +509,11 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
         raise ValueError(RETIRED_REFUSAL)
     if TNB in modes and modes[TNB] not in TNB_MODES:
         raise ValueError(TNB_OFF_REFUSAL)
+    live_kinds = check_live_kinds(tnb_live_groups) if tnb_live_groups is not None else None
+    if live_kinds:
+        if modes.get(TNB) == "LIVE":
+            raise ValueError(TNB_LIVE_WITH_LIVE_REFUSAL)
+        modes[TNB] = "PAPER"                                 # live kinds only mean something on PAPER
     pip = _check_gbp_per_pip(gbp_per_pip) if gbp_per_pip is not None else None
     feed = None
     if ian_feed is not None:
@@ -328,16 +523,21 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
     # read and check everything first ...
     raw = _read_config(cfg_path)
     data = _data_dir(raw, cfg_path)
+    pct, money = check_risk(raw, risk_pct, risk_money)
     own: dict[str, dict] = {}
     for bot in FILES:
         if bot in modes or (bot == "rider" and pip is not None) or (bot == "ian" and feed is not None):
             own[bot] = _read_json(data / FILES[bot])
     going_live = [b for b, m in modes.items() if m == "LIVE"]
+    if live_kinds and TNB not in going_live:
+        going_live.append(TNB)                               # its orders there are real: its own magic, checked
     if going_live:
         problems = magic_problems(magics(cfg_path, data / FILES["scalper"]), going_live)
         if problems:
             raise ValueError("; ".join(problems))
     # ... then write
+    was_paper = tnb_mode_of(raw) == "PAPER"
+    old_kinds, _old_since = tnb_live_of(raw)
     in_config = {b: m for b, m in modes.items() if b in CONFIG_BOTS or b == TNB}
     for bot, mode in in_config.items():
         block = raw.get(bot)
@@ -345,6 +545,29 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
             block = {}
             raw[bot] = block
         block["mode"] = mode
+    stamp = to_utc_seconds(now)
+    if live_kinds is not None:
+        block = raw.get(TNB)
+        if not isinstance(block, dict):
+            block = {}
+            raw[TNB] = block
+        if not live_kinds:
+            block["live_groups"], block["live_since_utc"] = [], ""
+        elif set(live_kinds) != set(old_kinds) or not was_paper:
+            # a new set (or one that only now takes effect, from LIVE): live from now
+            block["live_groups"], block["live_since_utc"] = list(live_kinds), stamp
+        # the same set while already on PAPER: both keys exactly as they were
+    elif old_kinds and not was_paper and modes.get(TNB) == "PAPER":
+        raw[TNB]["live_since_utc"] = stamp                   # LIVE -> PAPER: the kept live kinds take effect now
+    if pct is not None or money is not None:
+        risk = raw.get("risk")
+        if not isinstance(risk, dict):
+            risk = {}
+            raw["risk"] = risk
+        if pct is not None:
+            risk["base_risk_pct"] = pct
+        if money is not None:
+            risk["max_risk_money"] = money
     for bot, obj in own.items():
         if bot in modes:
             obj["mode"] = modes[bot]
@@ -356,7 +579,7 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
         f["vendor"] = feed
         own["ian"]["feed"] = f
     todo: list[tuple[Path, dict]] = []
-    if in_config:
+    if in_config or live_kinds is not None or pct is not None or money is not None:
         todo.append((cfg_path, raw))
     todo += [(data / FILES[bot], obj) for bot, obj in own.items()]
     written: list[Path] = []
@@ -374,11 +597,18 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
 
 
 def describe(modes: dict[str, str], magic: Optional[dict[str, int]] = None,
-             scalper_file: Optional[Path] = None, files: Optional[dict[str, Path]] = None) -> str:
+             scalper_file: Optional[Path] = None, files: Optional[dict[str, Path]] = None,
+             tnb_live: Optional[tuple] = None) -> str:
     """One plain line per bot: its mode, what that means, its magic number
-    when known, and where it is set."""
+    when known, and where it is set. ``tnb_live`` is (kinds, since) from
+    ``tnb_live_of``: Trend & Breakout's markets kept LIVE while on PAPER."""
     names = labels()
     where = {bot: f"config.json: {bot}.mode" for bot in CONFIG_BOTS + (TNB,)}
+    kinds, since = (tuple(tnb_live[0]), str(tnb_live[1] or "")) if tnb_live else ((), "")
+    if str(modes.get(TNB) or "").upper() != "PAPER":
+        kinds, since = (), ""                                # on LIVE every order is real: the kinds mean nothing
+    if kinds:
+        where[TNB] += ", tnb.live_groups"
     for bot, name in FILES.items():
         path = (files or {}).get(bot) or (scalper_file if bot == "scalper" else None)
         where[bot] = f"{path}: mode" if path else f"{name}: mode"
@@ -391,6 +621,8 @@ def describe(modes: dict[str, str], magic: Optional[dict[str, int]] = None,
         name = names[bot]
         if bot == TNB:
             meaning = TNB_WHAT.get(mode, TNB_WHAT[TNB_DEFAULT])
+            if mode == "PAPER" and kinds:
+                meaning = tnb_paper_live_meaning(kinds, since)
         if bot in RETIRED:
             name, meaning = f"{name} (retired)", RETIRED_WHAT
         tag = f"magic {magic[bot]}; " if magic and bot in magic else ""
@@ -442,10 +674,15 @@ def tnb_line(data_dir: str | Path, raw: dict, now: Optional[dt.datetime] = None)
     if runner.get("enabled") is False:
         runner_mode = "OFF"
     what = "real prices, simulated orders" if mode == "PAPER" else "real orders on the account"
+    kinds, since = tnb_live_of(raw) if mode == "PAPER" else ((), "")
+    if kinds:
+        what += f"; {tnb_live_phrase(kinds, since)}"          # e.g. minor currency pairs LIVE (Formula 1) since ...
     if runner_mode == "OFF":
         rides = "the Momentum Runner is OFF"
     else:
         rides = "the Momentum Runner rides its index entries" + ("" if runner_mode == "LIVE" else f" ({runner_mode})")
+        if "INDEX" in kinds:
+            rides += " (no runner feed: its index orders are real)"
     line = f"{labels()[TNB].upper()} - {mode} ({what}), {rides}"
     beat = _heartbeat(Path(data_dir), "strategy")
     age = _age_seconds(beat.get("ts_utc"), now) if beat else None
@@ -542,6 +779,13 @@ def main(argv=None) -> int:
                     help="the Rapid Momentum Rider's exposure in GBP per pip (rider.json user_pip_value_gbp)")
     ap.add_argument("--ian-feed", default=None, choices=IAN_FEEDS,
                     help="Financial Ian's institutional data feed (the key itself goes in secrets.json)")
+    ap.add_argument("--tnb-live-groups", nargs="+", default=None, metavar="KIND",
+                    help="kinds of market whose Trend & Breakout orders stay REAL while it is on PAPER: FX_MINOR "
+                         "(Formula 1), FX_MAJOR, INDEX, GOLD, ...; none = every order on paper (tnb.live_groups)")
+    ap.add_argument("--risk-pct", type=float, default=None, metavar="PCT",
+                    help="Trend & Breakout's risk per trade, percent of the account (risk.base_risk_pct)")
+    ap.add_argument("--risk-money", type=float, default=None, metavar="MONEY",
+                    help="the most one Trend & Breakout trade may lose at its stop (risk.max_risk_money)")
     ap.add_argument("--show", action="store_true", help="print every bot's mode and change nothing")
     ap.add_argument("--check", default="", metavar="BOT",
                     help="one line on how tnb, rider or ian is doing; changes nothing")
@@ -559,15 +803,19 @@ def main(argv=None) -> int:
     except ValueError as exc:
         print(f"Nothing changed: {exc}", file=sys.stderr)
         return 2
-    settings = a.gbp_per_pip is not None or a.ian_feed is not None
+    risk_given = a.risk_pct is not None or a.risk_money is not None
+    settings = (a.gbp_per_pip is not None or a.ian_feed is not None or a.tnb_live_groups is not None
+                or risk_given)
     if not changes and not settings and not a.show:
         ap.print_help()
         return 2
     try:
         if changes or settings:
-            modes = set_modes(a.config, changes, gbp_per_pip=a.gbp_per_pip, ian_feed=a.ian_feed)
+            modes = set_modes(a.config, changes, gbp_per_pip=a.gbp_per_pip, ian_feed=a.ian_feed,
+                              tnb_live_groups=a.tnb_live_groups, risk_pct=a.risk_pct, risk_money=a.risk_money)
         else:
             modes = read_modes(a.config)
+        raw = _read_config(Path(a.config))
         files = {bot: bot_file(a.config, bot) for bot in FILES}
         mg = magics(a.config, files["scalper"])
     except PartialWrite as exc:
@@ -576,11 +824,26 @@ def main(argv=None) -> int:
     except (OSError, ValueError) as exc:
         print(f"Nothing changed: {exc}", file=sys.stderr)
         return 1
-    print(describe(modes, mg, files=files))
+    live = tnb_live_of(raw)
+    print(describe(modes, mg, files=files, tnb_live=live))
     if a.gbp_per_pip is not None:
         print(f"Rapid Momentum Rider exposure: GBP {a.gbp_per_pip:.2f} per pip ({files['rider']}: user_pip_value_gbp)")
     if a.ian_feed is not None:
         print(f"Financial Ian data feed: {a.ian_feed} ({files['ian']}: feed.vendor)")
+    if a.tnb_live_groups is not None:
+        if live[0]:
+            rest = ("every other market stays on paper; its index orders are real, so the Momentum Runner rides "
+                    "those and gets no runner feed" if "INDEX" in live[0] else
+                    "every other market stays on paper and still feeds the Momentum Runner")
+            print(f"Trend & Breakout: {modes.get(TNB, TNB_DEFAULT)}, {tnb_live_phrase(*live)}. Its orders on "
+                  f"{kinds_in_words(live[0])} go to the real broker; {rest} "
+                  f"(config.json: tnb.live_groups, tnb.live_since_utc).")
+        else:
+            print("Trend & Breakout: no market kept LIVE - on PAPER every order is simulated "
+                  "(config.json: tnb.live_groups and tnb.live_since_utc cleared).")
+    if risk_given:
+        for line in risk_lines(raw):
+            print(line)
     if changes or settings:
         print(RESTART)
     else:

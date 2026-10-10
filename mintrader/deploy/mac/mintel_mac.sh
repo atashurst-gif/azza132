@@ -140,6 +140,7 @@ copy_program() {
     fi
   done
   mkdir -p "$DATA_DIR"
+  remember_restart                           # before app.version: a run cut short still restarts next time
   code_hash "$source_dir" > "$DATA_DIR/app.version"
   if [[ -n "$CODE_CHANGED" ]]; then
     good "Program files installed to $APP_DIR (new version)"
@@ -170,6 +171,21 @@ source_changed() {
   [[ "$(code_hash "$dir")" != "$have" ]]
 }
 CODE_CHANGED=""
+
+# remember_restart - 10 Oct: when this run has something the running bots
+# must restart to read (CODE_CHANGED: a new version, or a mode or risk set
+# by a one-time step - the Rider switched OFF on 9 Oct evening), say so in a
+# marker file until start_everything has restarted them. A run cut short
+# before that (the window closed while MetaTrader starts) then never takes
+# the fast path next time, so the sacked Rider cannot keep trading LIVE.
+RESTART_MARKER_NAME=".restart-pending"
+remember_restart() {
+  if [[ -n "$CODE_CHANGED" ]]; then
+    mkdir -p "$DATA_DIR"
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$DATA_DIR/$RESTART_MARKER_NAME"
+  fi
+  return 0
+}
 
 # ------------------------------------------------------------ native python --
 NATIVE_PY=""
@@ -795,11 +811,12 @@ write_config() {
     mode="DEMO"; marker=""
   fi
   say ""
-  read -r -p "    Normal risk per trade, % of the account [0.5]: " base_risk </dev/tty
+  # 9 Oct, Aaron: "About £13 a trade" - 0.7% of the balance (was 0.5%), at most GBP 13 a trade (max_risk_money).
+  read -r -p "    Normal risk per trade, % of the account [0.7]: " base_risk </dev/tty
   read -r -p "    MAXIMUM risk per trade, % (never exceeded) [1.5]: " max_risk </dev/tty
   read -r -p "    Stop for the day after losing this % [3.0]: " daily </dev/tty
   read -r -p "    Aggression CONSERVATIVE/NORMAL/AGGRESSIVE/MAXIMUM [NORMAL]: " aggr </dev/tty
-  base_risk="${base_risk:-0.5}"; max_risk="${max_risk:-1.5}"
+  base_risk="${base_risk:-0.7}"; max_risk="${max_risk:-1.5}"
   daily="${daily:-3.0}"; aggr="$(echo "${aggr:-NORMAL}" | tr '[:lower:]' '[:upper:]')"
 
   MINTEL_LOGIN="$login" MINTEL_SERVER="$server" MINTEL_MODE="$mode" \
@@ -843,8 +860,9 @@ cfg = {
     "wine_binary": os.environ.get("MINTEL_WINEBIN", ""),
     "aggression": os.environ.get("MINTEL_AGGR", "NORMAL"),
     "risk": {
-        "base_risk_pct": f("MINTEL_BASE", 0.5),
+        "base_risk_pct": f("MINTEL_BASE", 0.7),
         "max_risk_pct": max_risk,
+        "max_risk_money": 13.0,             # 9 Oct, Aaron: "About £13 a trade" (was 10)
         "min_risk_pct": 0.1,
         "max_total_risk_pct": max(max_risk * 3, 4.0),
         "max_correlated_risk_pct": max(max_risk * 1.5, 2.0),
@@ -965,7 +983,7 @@ apply_bot_modes() {
     CODE_CHANGED="yes"                       # the bots read their mode at start: restart them
     good "Trend & Breakout, Momentum Runner, Band Breaker and Crowd Fader trade LIVE"
   else
-    warn "Could not switch the bots to LIVE. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live all"
+    warn "Could not switch the bots to LIVE. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live runner bandbreaker crowd"
   fi
   return 0
 }
@@ -991,7 +1009,7 @@ apply_rider_live() {
   local marker="$DATA_DIR/.rider-live-2026-10-09"
   [[ -f "$marker" ]] && return 0
   [[ -f "$CONFIG" ]] || return 0
-  if lineup_done; then                       # the line-up already did this (and more): never undo it
+  if lineup_done || formula1_done; then      # the line-up already did this, or the Rider is sacked: never undo it
     date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
     return 0
   fi
@@ -1040,6 +1058,14 @@ lineup_done() {
   [[ -f "$DATA_DIR/$LINEUP_MARKER_NAME" ]]
 }
 
+# formula1_done - has Aaron's 9 Oct evening decision (the Rider OFF,
+# Formula 1 live) been set on this Mac? (apply_formula1's marker) 10 Oct:
+# the older steps that switch the Rider on read it, so a step that failed
+# before and only runs now never puts the sacked Rider back on LIVE.
+formula1_done() {
+  [[ -f "$DATA_DIR/$FORMULA1_MARKER_NAME" ]]
+}
+
 # rider_pip_value - the Rapid Momentum Rider's GBP per pip from
 # data/rider.json, as 1.00; empty when the file names no figure.
 rider_pip_value() {
@@ -1070,7 +1096,13 @@ apply_lineup() {
   step "The bots' line-up"
   local ok
   ok=1
-  if [[ -n "$(rider_pip_value)" ]]; then
+  if formula1_done; then
+    # 10 Oct: Formula 1 is already set (this line-up failed on an earlier
+    # run): the line-up as it was, except that the Rider stays OFF - Aaron
+    # sacked it on 9 Oct evening, after the line-up was decided.
+    (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper rider \
+        --paper tnb bandbreaker crowd --live runner ian 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /' || ok=0
+  elif [[ -n "$(rider_pip_value)" ]]; then
     (cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" --off scalper \
         --paper tnb bandbreaker crowd --live runner rider ian 2>&1) | sed -e '/Restart the bot/d' -e 's/^/  /' || ok=0
   else
@@ -1083,6 +1115,8 @@ apply_lineup() {
     CODE_CHANGED="yes"                       # the bots read their mode at start: restart them
     good "The line-up is set:"
     print_lineup
+  elif formula1_done; then
+    warn "Could not set the line-up. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --off scalper rider --paper tnb bandbreaker crowd --live runner ian"
   else
     warn "Could not set the line-up. Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper tnb bandbreaker crowd --live runner rider ian"
   fi
@@ -1131,6 +1165,128 @@ apply_ian_binance() {
   return 0
 }
 
+FORMULA1_MARKER_NAME=".formula1-2026-10-09"
+
+# formula1_modes ARGS... - one call of the modes command for apply_formula1:
+# quiet when it works; when it does not, its own words and a [WARN] with the
+# exact command to type by hand. Exit 0 when it changed what was asked.
+formula1_modes() {
+  local out
+  local code
+  out="$(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" "$@" 2>&1)"
+  code=$?
+  if (( code == 0 )); then
+    return 0
+  fi
+  printf '%s\n' "$out" | sed -e '/Restart the bot/d' -e 's/^/      /'
+  warn "Could not run: $*. Run it by hand: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG $*"
+  return 1
+}
+
+# apply_formula1 - 9 Oct, about 19:30 UK, Aaron: "Sack the rider off and
+# let's get trend and breakout live risking 0.2 higher pip average per
+# trade", then "Just Formula 1" and "About £13 a trade". So: the Rapid
+# Momentum Rider is switched OFF (its own 10-day test on real prices found no
+# edge); Trend & Breakout stays on PAPER except its minor currency pair
+# trades (EURGBP, AUDJPY and similar: Formula 1), which go to the account
+# with real money - the rest stays on paper and still feeds the Momentum
+# Runner, so no idea is traded twice; and the money a trade becomes 0.7% of
+# the balance (was 0.5%), at most GBP 13 (was 10). No other risk limit and no
+# other bot's money a trade is touched. It runs after every other 9 Oct
+# one-time step, so on a fresh install it has the last word; once only
+# (marker, written only when every call worked), so a later choice made with
+# the modes command is never undone by a reinstall.
+apply_formula1() {
+  local marker="$DATA_DIR/$FORMULA1_MARKER_NAME"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  step "Formula 1 live, the Rapid Momentum Rider off"
+  local done_n
+  local fails
+  done_n=0
+  fails=0
+  if formula1_modes --off rider; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
+  if formula1_modes --tnb-live-groups FX_MINOR; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
+  if formula1_modes --risk-pct 0.7 --risk-money 13; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
+  if (( done_n )); then
+    # the bots read their mode and risk at start: restart them, even when a
+    # call failed, so a Rider already switched off stops trading now
+    CODE_CHANGED="yes"
+  fi
+  if (( fails )); then
+    warn "Formula 1 is not fully set ($fails of 3 steps failed, see above). Double-click Start Trading Bot again, or run the command shown."
+    return 0
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  good "Rapid Momentum Rider: OFF. Trend & Breakout: minor currency pairs LIVE (Formula 1), the rest on PAPER. Risk: 0.7% of the balance a trade, at most GBP 13"
+  print_lineup
+  return 0
+}
+
+# tnb_live_groups - the kinds of market whose Trend & Breakout orders go to
+# the account while it is on PAPER (config.json "tnb" -> "live_groups"), as
+# FX_MINOR or FX_MINOR,INDEX; empty when it is LIVE or none are set.
+tnb_live_groups() {
+  local py=""
+  if [[ -x "$VENV_DIR/bin/python" ]]; then
+    py="$VENV_DIR/bin/python"
+  else
+    py="$(command -v python3 2>/dev/null || true)"
+  fi
+  [[ -n "$py" && -f "$CONFIG" ]] || return 0
+  "$py" -c 'import json, sys
+try:
+    b = json.load(open(sys.argv[1])).get("tnb") or {}
+    g = b.get("live_groups") or []
+    g = [g] if isinstance(g, str) else list(g)
+    if str(b.get("mode") or "").strip().upper() == "PAPER":
+        print(",".join(str(x).strip().upper() for x in g if str(x).strip()))
+except Exception:
+    pass' "$CONFIG" 2>/dev/null || true
+}
+
+# tnb_mode_words - Trend & Breakout's mode in plain words: LIVE, PAPER, or
+# "PAPER - minor currency pairs LIVE (Formula 1)" when some kinds of market
+# still trade for real (9 Oct: never plain PAPER while some orders are real).
+tnb_mode_words() {
+  local mode
+  local groups
+  local g
+  local w
+  local words=""
+  local f1=""
+  mode="$(bot_mode tnb LIVE)"
+  groups="$(tnb_live_groups)"
+  if [[ "$mode" != "PAPER" || -z "$groups" ]]; then
+    printf '%s\n' "$mode"
+    return 0
+  fi
+  for g in $(printf '%s' "$groups" | tr ',' ' '); do
+    case "$g" in
+      FX_MINOR) w="minor currency pairs"; f1=" (Formula 1)" ;;
+      FX_MAJOR) w="major currency pairs" ;;
+      INDEX) w="indices" ;;
+      *) w="$(printf '%s' "$g" | tr '[:upper:]' '[:lower:]' | tr '_' ' ')" ;;
+    esac
+    words="${words:+$words, }$w"
+  done
+  printf '%s\n' "PAPER - $words LIVE$f1"
+}
+
+# risk_words - the money a trade from config.json's risk block, as
+# "0.7% of the balance a trade, at most GBP 13"; empty when it says nothing.
+risk_words() {
+  [[ -x "$VENV_DIR/bin/python" && -f "$CONFIG" ]] || return 0
+  "$VENV_DIR/bin/python" -c 'import json, sys
+try:
+    r = json.load(open(sys.argv[1])).get("risk") or {}
+    pct, cap = r.get("base_risk_pct"), r.get("max_risk_money")
+    if pct is not None:
+        print("%g%% of the balance a trade" % float(pct) + (", at most GBP %g" % float(cap) if cap else ""))
+except Exception:
+    pass' "$CONFIG" 2>/dev/null || true
+}
+
 # print_lineup - which bots are LIVE and which are PAPER, in plain English,
 # read back from the files the bots themselves read.
 print_lineup() {
@@ -1139,10 +1295,13 @@ print_lineup() {
   local label
   local mode
   local pip
+  local tnb_words
+  local risk
   local live=""
   local paper=""
   local off=""
   pip="$(rider_pip_value)"
+  tnb_words="$(tnb_mode_words)"
   for entry in "tnb|Trend & Breakout" "runner|Momentum Runner" "rider|Rapid Momentum Rider" \
                "bandbreaker|Band Breaker" "crowd|Crowd Fader" "ian|Financial Ian"; do
     key="${entry%%|*}"
@@ -1152,7 +1311,10 @@ print_lineup() {
       tnb) mode="$(bot_mode tnb LIVE)" ;;
       *) mode="$(bot_mode "$key")" ;;
     esac
-    if [[ "$key" == "rider" && -n "$pip" ]]; then
+    if [[ "$key" == "tnb" && "$tnb_words" == PAPER\ -* ]]; then
+      continue                                 # part LIVE, part PAPER: its own line below
+    fi
+    if [[ "$key" == "rider" && -n "$pip" && "$mode" != "OFF" ]]; then
       label="$label (GBP $pip a pip)"
     fi
     case "$mode" in
@@ -1163,13 +1325,23 @@ print_lineup() {
   done
   say "    LIVE  - real orders on the account: ${live:-none}"
   say "    PAPER - real prices, simulated orders, never in the account: ${paper:-none}"
+  if [[ "$tnb_words" == PAPER\ -* ]]; then
+    say "    Trend & Breakout: $tnb_words - those trades are real orders on the account; the rest is simulated."
+  fi
   if [[ -n "$off" ]]; then
     say "    OFF   - not started: $off"
+  fi
+  if [[ "$(bot_file_mode rider)" == "OFF" ]]; then
+    say "    The Rapid Momentum Rider is switched off (9 Oct: its own test on real prices found no edge)."
   fi
   case "$(bot_mode runner)" in
     LIVE) say "    The Momentum Runner rides Trend & Breakout's index entries with its own real orders." ;;
     PAPER) say "    The Momentum Runner rides Trend & Breakout's index entries on paper." ;;
   esac
+  risk="$(risk_words)"
+  if [[ -n "$risk" ]]; then
+    say "    Trend & Breakout's money a trade: $risk."
+  fi
   say "    The Rapid Scalper stays retired (OFF)."
   if [[ "$(bot_file_mode ian)" == "LIVE" ]]; then
     say "    Financial Ian can only trade once a CME data feed is configured (INSTALL-FINANCIAL-IAN)."
@@ -1331,6 +1503,9 @@ start_rider_research() {
   local today
   today="$(date -u +%Y-%m-%d)"
   [[ -x "$VENV_DIR/bin/python" && -f "$CONFIG" ]] || return 0
+  # 9 Oct: the Rider is switched OFF (its own test found no edge): no more
+  # research runs for it, and nothing to say about that
+  [[ "$(bot_file_mode rider)" == "OFF" ]] && return 0
   if [[ ! -f "$APP_DIR/mintel/rider/research.py" && ! -f "$APP_DIR/mintel/rider/research/__main__.py" ]]; then
     return 0                                 # not in this version
   fi
@@ -1627,6 +1802,9 @@ start_everything() {
   # A new version must replace EVERYTHING that is running, whether or not
   # the supervisor looks alive: an older supervisor does not stop its
   # children when replaced, and the old trader would carry on unwatched.
+  if [[ -f "$DATA_DIR/$RESTART_MARKER_NAME" ]]; then
+    CODE_CHANGED="yes"                       # 10 Oct: a restart still owed by a run cut short (remember_restart)
+  fi
   if [[ -n "$CODE_CHANGED" ]]; then
     say "    A new version was installed. Restarting the bot so it runs it."
     launchctl unload "$PLIST_PATH" >/dev/null 2>&1
@@ -1644,6 +1822,7 @@ start_everything() {
     pkill -f "mintel.ian.run --config" 2>/dev/null || true
     sleep 2
     launchctl load "$PLIST_PATH" >/dev/null 2>&1
+    rm -f "$DATA_DIR/$RESTART_MARKER_NAME"   # done: the bots run what this run set
   fi
   # The Rapid Scalper is retired: its last report must not sit on disk
   # looking like a part of the system that has stopped.
@@ -1693,10 +1872,21 @@ show_health() {
     warn "The status page has not come up yet. Try http://127.0.0.1:$DASH_PORT in a minute."
     return 0
   fi
-  printf '%s' "$body" | "$VENV_DIR/bin/python" - <<'PYEOF'
-import json, sys
+  # 10 Oct: the page's answer goes through a file. Piped in, it was never
+  # read: the heredoc below is Python's stdin (the script itself), so the
+  # window always said "still starting".
+  local page
+  page="$(mktemp "${TMPDIR:-/tmp}/mintel-health.XXXXXX" 2>/dev/null)" || page=""
+  if [[ -z "$page" ]]; then
+    warn "Could not read the status page just now. Open http://127.0.0.1:$DASH_PORT to see it."
+    return 0
+  fi
+  printf '%s' "$body" > "$page"
+  MINTEL_TNB_WORDS="$(tnb_mode_words)" "$VENV_DIR/bin/python" - "$page" <<'PYEOF'
+import json, os, sys
 try:
-    snap = json.load(sys.stdin)
+    with open(sys.argv[1]) as f:
+        snap = json.load(f)
 except Exception:
     print("    The status page is still starting. Open http://127.0.0.1:8787 in a minute.")
     sys.exit(0)
@@ -1709,11 +1899,16 @@ for check in health.get("checks", []):
         print(f"           {check['severity']}: {check['message']}")
 print(f"    Mode        : {status.get('mode', '?')}")
 paper = str(status.get("tnb_mode") or "").upper() == "PAPER"
-if paper:
+words = os.environ.get("MINTEL_TNB_WORDS", "")
+mixed = paper and words.startswith("PAPER - ")      # 9 Oct: some kinds of market still trade for real
+if mixed:
+    print(f"    Trend & Breakout: {words} - real orders there, everything else simulated")
+elif paper:
     print("    Trend & Breakout: PAPER - real prices, simulated orders (never in the account)")
 print(f"    Open trades : {status.get('open_positions', 0)}")
 print(f"    Today       : {status.get('today_pnl', 0)} {status.get('currency', '')}"
-      + (" (Trend & Breakout's practice, not money)" if paper else ""))
+      + (" (Trend & Breakout's own count, practice included: the page shows real money and practice apart)"
+         if mixed else " (Trend & Breakout's practice, not money)" if paper else ""))
 print(f"    Last scan   : {status.get('last_scan', 'never')}")
 thinking = snap.get("thinking") or []
 if thinking:
@@ -1722,6 +1917,7 @@ if thinking:
         print(f"      {item['rank']}. {item['symbol']:<9}{item['direction']:<6}"
               f"{item['score']:>5.0f}  {item['tier']}")
 PYEOF
+  rm -f "$page"
   # the two bots that run as their own processes, one line each
   local b
   for b in rider ian; do
@@ -1772,16 +1968,22 @@ final_report() {
   # Every bot's mode, read from the files the bots themselves read: the
   # Rapid Momentum Rider and Financial Ian from data/rider.json and
   # data/ian.json, the other three from config.json.
-  say "  Trend & Breakout: ${BOLD}$(bot_mode tnb LIVE)${RESET} the main trader; on PAPER: real prices, simulated orders (its own tab)"
-  say "  Rapid Momentum Rider: ${BOLD}$(bot_file_mode rider)${RESET} rides the FX market that has just started running (data/rider.json; page /rider)"
+  say "  Trend & Breakout: ${BOLD}$(tnb_mode_words)${RESET} - the main trader; what is on PAPER: real prices, simulated orders (its own tab)"
+  if [[ "$(bot_file_mode rider)" == "OFF" ]]; then
+    say "  Rapid Momentum Rider: ${BOLD}OFF${RESET} switched off 9 Oct: its own test on real prices found no edge (its records are kept)"
+  else
+    say "  Rapid Momentum Rider: ${BOLD}$(bot_file_mode rider)${RESET} rides the FX market that has just started running (data/rider.json; page /rider)"
+  fi
   say "  Momentum Runner: ${BOLD}$(bot_mode runner)${RESET} rides Trend & Breakout's index entries with a 3 R trail (its own tab on the page)"
   say "  Band Breaker:    ${BOLD}$(bot_mode bandbreaker)${RESET} intraday index momentum, New York session (its own tab)"
   say "  Crowd Fader:     ${BOLD}$(bot_mode crowd)${RESET} positioning from Coinversa, faded once the price turns (its own tab)"
   say "  Financial Ian:   ${BOLD}$(bot_file_mode ian)${RESET} the CME futures order book, traded on the spot pair (data/ian.json; page /ian)"
-  say "  Rapid Scalper:   retired 9 Oct, replaced by the Rapid Momentum Rider (its records are kept)"
+  say "  Rapid Scalper:   retired 9 Oct (its records are kept)"
   say "  LIVE places real orders under the bot's own magic number; PAPER simulates and is never in Overall."
-  say "  To switch any bot: $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --live all"
-  say "  (or --paper / --off, then Stop Trading Bot and Start Trading Bot; Trend & Breakout by name: --paper tnb)"
+  # 10 Oct: no "--live all" here any more - it would put the Rider, off on purpose, back on real money
+  say "  To see every bot: $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --show"
+  say "  To switch one bot: the same with --live, --paper or --off and its name (for example --paper crowd),"
+  say "  then Stop Trading Bot and Start Trading Bot. Trend & Breakout by name: --paper tnb."
   if [[ -f "$CONFIG" ]]; then
     if ! "$VENV_DIR/bin/python" -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('coinversa_api_key') else 1)" "$DATA_DIR/secrets.json" 2>/dev/null; then
       say "  ${RED}No Coinversa key saved: the Crowd Fader cannot read anything.${RESET}"

@@ -74,6 +74,23 @@ the Runner's size follows it, up to exactly that volume. With version 5's
 defaults the top segment is momentum continuation on FX minor pairs, which
 the Runner never rides, so today the two never meet.
 
+*9 October, evening:* Trend & Breakout's normal money a trade went from
+0.5% to 0.7% of the balance, at most GBP 13 (Aaron: "About £13 a trade",
+for Formula 1). The Runner's rides stay at about GBP 10: its own cap,
+`runner.max_risk_money` 10, limits what it copies. It still rides Trend &
+Breakout's index entries, which stay on paper (only minor currency pairs
+went live).
+
+*10 October:* a review found that a normal ride still grew a little (on
+1,877 from 9.30 to 9.90 at a 30-point stop, and more as the balance falls),
+because Trend & Breakout's normal trade was 0.5% of the balance, under the
+old 10. Now the trader works out the size Trend & Breakout would have had at
+0.5% (`runner.copy_risk_pct`) and at most 10, with the same tier and limits,
+and the Runner copies that (never more than Trend & Breakout's own volume).
+So the Runner's money a ride is what it was before 9 October. A ride that
+starts later than Trend & Breakout's entry is still held to 10 at its own
+stop.
+
 ## 9 October: Trend & Breakout on PAPER, the Runner LIVE
 
 Aaron's line-up: the Runner (the winner) stays LIVE; Trend & Breakout goes
@@ -321,3 +338,4 @@ to be looked at together.
 |---|---|---|---|---|---|
 | 7 Oct | 5 | 1 | +20.14 | +1.50 on the same five (JP225 +5.12, US30 +10.43, US30 -8.39, JP225 -9.52, JP225 +3.86) | four shadows to the full stop (-10.06, -8.36, -9.35, -8.76; two of them where the ladder had kept +5.12 and +3.86), one ridden to +7.67 R (+56.67, peak +10.67 R) where the ladder kept +10.43. The shape the replay predicted |
 | 8 Oct | 3 | 1 | +9.05 (paper +17.83 on 2; LIVE -8.78 on 1, the broker's figure) | -1.59 on the same three (US30 +4.47, US30 +3.25, US500 -9.31) | all three momentum continuation: US30 ridden to +2.57 R (+24.96, peak +5.57 R) where the ladder kept +4.47; US30 to the full stop (-7.13) after a +1.86 R peak, where the ladder kept +3.25; the first LIVE trade, US500, stopped in four minutes (-8.78). Seven momentum trades in two days: one win. From 9 Oct momentum continuation is not ridden (version 5) |
+| 9 Oct | 1 (LIVE) | 0 | -5.50 LIVE (the broker's figure) | +2.50 practice on the same trade (US30, trailed out at +0.47 R) | US30 SELL 0.4 lots at 11:42 UK riding the paper session expansion 960000001: peaked +1.50 R, stopped at -1.00 R (about 5.49 at risk). The shared daily stop was shut 13:46-21:49 UK by Trend & Breakout's practice loss, so no later ride was possible. All 9 rides: +3.23 R against the ladder's +0.72 R (live 2: -2.02 R vs -0.54 R) |

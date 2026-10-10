@@ -174,6 +174,7 @@ class TestInsideTheTrader:
         cfg = Config()
         cfg.ops.data_dir = str(tmp_path)
         cfg.mode = "DEMO"
+        cfg.runner.max_risk_money = 0.0          # the shadowing path, without the 9 Oct cap on a copied ride
         broker = sim.SimBroker(["US30", "EURUSD"], start=T0 - dt.timedelta(days=2), history_bars=500)
         broker.connect()
         tr = Trader(broker, cfg, enable_model=False)
@@ -199,6 +200,9 @@ def sim(symbols=("US500",)):
 
 
 def live_runner(tmp_path, broker, entries_allowed=None, **kw):
+    # the copying mechanics, without the 9 Oct cap on a copied ride (0 = no
+    # cap); the cap has its own tests in tests/test_formula1_core.py
+    kw.setdefault("max_risk_money", 0.0)
     return MomentumRunner(tmp_path, RunnerConfig(mode="LIVE", **kw), spec_fn=broker.spec, clock=lambda: T0,
                           broker=broker, entries_allowed=entries_allowed)
 

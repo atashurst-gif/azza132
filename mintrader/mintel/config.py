@@ -30,14 +30,21 @@ log = logging.getLogger("mintel.config")
 @dataclass
 class RiskConfig:
     # --- operator-owned boundaries -------------------------------------------
-    base_risk_pct: float = 0.50          # risk at NORMAL confidence
+    # 9 Oct, Aaron: "let's get trend and breakout live risking 0.2 higher",
+    # read with him as about 13 a trade: 0.7% of the balance instead of 0.5%,
+    # and the money cap below 13 instead of 10. Only Trend & Breakout sizes
+    # from these two numbers (the Momentum Runner copies its volume but is
+    # held to runner.max_risk_money; the other bots have their own settings).
+    base_risk_pct: float = 0.70          # risk at NORMAL confidence (0.50 until 9 Oct)
     max_risk_pct: float = 1.50           # hard ceiling; never exceeded
     # A cap in MONEY (account currency) on what any one trade may lose at its
     # stop, on top of the percentages. 0 = no cap. 7 Oct, Aaron: "stick with
     # your advice" - every trade risks at most 10 GBP until two weeks of
     # results can be trusted (5-6 Oct STRONG setups were sized at 13-18).
     # Smaller size, same stop: the chart decides where the idea is wrong.
-    max_risk_money: float = 10.0
+    # 9 Oct, Aaron: "About £13 a trade" - 13 from the day Trend & Breakout's
+    # minor currency pair trades (Formula 1) went live.
+    max_risk_money: float = 13.0
     min_risk_pct: float = 0.10
     # --- top-opportunity size (version 5, 9 Oct) -----------------------------
     # Aaron, 8 Oct: "increase their pip size to 0.5 maximum for trades showing
@@ -386,6 +393,26 @@ class RunnerConfig:
     # helps; `python -m mintel.ops.potential --runner` replays it on the
     # broker's minute bars.
     confirm_r: float = 0.0
+    # 9 Oct: the most a copied ride may lose at the Runner's OWN stop (account
+    # money). The Runner copies Trend & Breakout's volume; when Aaron moved
+    # Trend & Breakout to about 13 a trade ("risking 0.2 higher") the Runner's
+    # rides would have grown from about 10 to about 13 too - he did not
+    # decide that. So a copied volume is scaled DOWN to the broker's lot step
+    # until the ride risks at most this much (never up); if even the broker's
+    # smallest size risks more, the ride is not taken and the reason is said
+    # (Band Breaker's rule). The Runner's top size below is not affected.
+    # 0 = no cap (copy the volume as it is).
+    max_risk_money: float = 10.0
+    # 10 Oct: the percent of the account a copied ride is sized at - Trend &
+    # Breakout's normal percent before 9 Oct. The trader works out the size
+    # Trend & Breakout would have had at this percent and at most
+    # max_risk_money above (same tier, confidence and limits;
+    # RiskManager.copy_size) and the Runner copies that, never more than
+    # Trend & Breakout's own volume. So a normal ride stays at about 0.5% of
+    # the balance as before, rather than growing to the full 10 (or more as
+    # the balance falls). 0 = copy Trend & Breakout's volume, held only by
+    # max_risk_money.
+    copy_risk_pct: float = 0.50
     # --- the runner feed (only while Trend & Breakout is on PAPER) ----------
     # Approaches Trend & Breakout's scanner still OFFERS on index markets
     # while it is on paper, even where its own rules (approach in a market
@@ -489,6 +516,12 @@ class TnbConfig:
     mode: str = "LIVE"                   # LIVE | PAPER; anything else is read as LIVE, with a warning
     slippage_points: float = 1.0         # adverse, on every paper market fill (never on a target)
     live_groups: tuple[str, ...] = ()    # kinds of market whose orders still go to the real broker; empty = all paper
+    # When the live_groups above were switched on (ISO UTC, e.g.
+    # "2026-10-09T18:45:00+00:00"); "" when none are, or the time is not
+    # known. Written by `python -m mintel.ops.modes --tnb-live-groups` when
+    # the set changes, so the page and the nightly review can count the live
+    # trades from then (9 Oct: Formula 1, FX_MINOR, judged after 20 of them).
+    live_since_utc: str = ""
     # A REAL Trend & Breakout trade still open at the switch is wound down at
     # the real broker (stop changes and closes, never a new order) to its
     # natural end. False leaves it to its own broker stop and target.
@@ -531,6 +564,12 @@ class TnbConfig:
             fixed.append(f"tnb.live_groups {self.live_groups!r} is not a list: every market stays on paper")
             self.live_groups = ()
         self.live_groups = tuple(str(g) for g in self.live_groups)
+        since = utc_iso_or_blank(self.live_since_utc)
+        if since is None:
+            fixed.append(f"tnb.live_since_utc {self.live_since_utc!r} is not a time (ISO UTC): it is left blank")
+            since = ""
+        # "" when no market is live: a time with nothing live means nothing
+        self.live_since_utc = since if self.live_groups else ""
         for name in ("commission", "fx_rates"):
             if not isinstance(getattr(self, name), dict):
                 fixed.append(f"tnb.{name} is not a table: the default is used")
@@ -539,6 +578,23 @@ class TnbConfig:
             if not isinstance(getattr(self, name), bool):
                 setattr(self, name, bool(getattr(self, name)))
         return fixed
+
+
+def utc_iso_or_blank(value: Any) -> Optional[str]:
+    """An ISO time as UTC to the second ("2026-10-09T18:45:00+00:00"), ""
+    for an empty value, or None when it is not a time (a time without a zone
+    is read as UTC)."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return ""
+    if not isinstance(value, str):
+        return None
+    try:
+        t = dt.datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return t.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
 def tnb_mode_of(value: Any) -> str:
@@ -560,6 +616,24 @@ def tnb_mode(cfg: Any) -> str:
     if str(raw or "").strip().upper() != mode:
         _warn_once(f"tnb.mode {raw!r} is not LIVE or PAPER: Trend & Breakout stays LIVE")
     return mode
+
+
+def tnb_live_groups(cfg: Any) -> tuple[str, ...]:
+    """The kinds of market Trend & Breakout keeps LIVE while on PAPER, as the
+    paper broker reads them (FX, METALS, INDICES expanded), sorted; () on
+    LIVE or when none are set."""
+    if tnb_mode(cfg) != "PAPER":
+        return ()
+    from .broker.paper import _groups               # the paper broker's own reading of the setting
+    return tuple(sorted(_groups(getattr(getattr(cfg, "tnb", None), "live_groups", ()) or ())))
+
+
+def tnb_mode_detail(mode: str, live_groups=()) -> str:
+    """Trend & Breakout's mode with its live markets, for status files and
+    the nightly review: "LIVE", "PAPER" or "PAPER (FX_MINOR live)"."""
+    mode = tnb_mode_of(mode)
+    groups = sorted({str(g).upper() for g in (live_groups or ()) if str(g).strip()})
+    return f"PAPER ({', '.join(groups)} live)" if mode == "PAPER" and groups else mode
 
 
 @dataclass
@@ -831,6 +905,9 @@ class Config:
                 sub = raw.get(f.name)
                 if f.name == "tnb" and isinstance(sub, dict) and isinstance(sub.get("live_groups"), str):
                     sub = dict(sub, live_groups=[sub["live_groups"]])     # "INDEX" means ["INDEX"]
+                if f.name == "tnb" and isinstance(sub, dict) and "live_since_utc" in sub \
+                        and sub["live_since_utc"] is None:
+                    sub = dict(sub, live_since_utc="")                    # null means not known
                 if isinstance(sub, dict):
                     setattr(cfg, f.name, _build(nested[f.name], sub))
                 elif f.name == "tnb" and f.name in raw:

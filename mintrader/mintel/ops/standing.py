@@ -103,6 +103,25 @@ def tnb_mode(cfg=None, data_dir=None) -> str:
         return "LIVE"
 
 
+def tnb_live_words(cfg) -> tuple[str, str, tuple]:
+    """Trend & Breakout on PAPER with kinds of market kept LIVE
+    (tnb.live_groups; 9 Oct, Formula 1), in words for the reports:
+    ("minor currency pairs (Formula 1)", "minor currency pairs LIVE (Formula
+    1) since 2026-10-09 18:45 UTC", ("FX_MINOR",)). ("", "", ()) on LIVE or
+    when none are kept. Never raises."""
+    try:
+        from ..config import tnb_live_groups
+        from .modes import FORMULA_1, kinds_in_words, tnb_live_phrase
+        kinds = tuple(tnb_live_groups(cfg))
+        if not kinds:
+            return "", "", ()
+        since = str(getattr(getattr(cfg, "tnb", None), "live_since_utc", "") or "")
+        f1 = " (Formula 1)" if frozenset(kinds) == FORMULA_1 else ""
+        return kinds_in_words(kinds) + f1, tnb_live_phrase(kinds, since), kinds
+    except Exception:
+        return "", "", ()
+
+
 def real_broker_of(broker):
     """The REAL broker behind the PAPER wrapper (or ``broker`` itself)."""
     try:

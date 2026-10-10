@@ -18,6 +18,8 @@ DATE_ARG=()
 [[ -n "${1:-}" ]] && DATE_ARG=(--date "$1")
 cd "$HOME_DIR/app" || exit 1
 echo
-"$HOME_DIR/venv/bin/python" -m mintel.ops.day_review --config "$HOME_DIR/data/config.json" "${DATE_ARG[@]}"
+# ${A[@]+"${A[@]}"}: an empty array under set -u is an "unbound variable" error in the
+# bash 3.2 macOS ships (fixed only in bash 4.4), so a double-click with no date would fail
+"$HOME_DIR/venv/bin/python" -m mintel.ops.day_review --config "$HOME_DIR/data/config.json" ${DATE_ARG[@]+"${DATE_ARG[@]}"}
 echo
 read -r -p "Press Enter to close. " _

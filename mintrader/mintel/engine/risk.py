@@ -40,6 +40,7 @@ storm.  A breaker stops new entries; it never stops managing existing risk.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import logging
 import math
@@ -48,7 +49,7 @@ from typing import Callable, Optional, Sequence
 
 from ..broker.base import AccountInfo, Position, Side
 from ..clock import to_utc, utcnow
-from ..config import Config
+from ..config import Config, RiskConfig
 from ..contracts import SymbolSpec, classify_fx, infer_group
 from .evidence import MarketState
 
@@ -155,6 +156,11 @@ class RiskManager:
         self._manual_halt = ""
         self._open_risk: dict[int, tuple[str, Side, float]] = {}
         self._top_cache: dict = {}            # tactic -> (checked at, verdict, why)
+        # callable(symbol) -> ROUND-TURN commission per 1.0 lot in account
+        # money, as learned from the broker's own deals (the trader hands over
+        # Scanner.commission_money_per_lot). Without it: risk.commission_per_lot,
+        # else risk.commission_fallback_per_lot, nothing on indices.
+        self.round_turn_commission: Optional[Callable[[str], float]] = None
 
     # -------------------------------------------------------------- bookkeeping
     def register_open_risk(self, ticket: int, symbol: str, side: Side,
@@ -290,9 +296,55 @@ class RiskManager:
                 return t, g
         return None
 
+    def commission_per_side(self, symbol: str) -> float:
+        """One side of the commission per 1.0 lot on ``symbol``, in account
+        money: half the round turn (IC Markets Raw charges the same on the
+        opening and the closing deal), from the broker's own deals when the
+        trader has handed them over; the configured or fallback rate if not."""
+        fn = self.round_turn_commission
+        if callable(fn):
+            try:
+                return max(0.0, float(fn(symbol) or 0.0)) / 2.0
+            except Exception:
+                pass
+        r = self.cfg.risk
+        configured = float(getattr(r, "commission_per_lot", 0.0) or 0.0)
+        if configured > 0:
+            return configured / 2.0
+        if self.market_kind(None, symbol) == "INDEX":
+            return 0.0                    # no commission on indices at this broker
+        return max(0.0, float(getattr(r, "commission_fallback_per_lot", 0.0) or 0.0)) / 2.0
+
+    def row_net(self, row: dict) -> tuple[float, float]:
+        """(net after the WHOLE round-turn commission, the part of it that
+        was estimated) for one journal row. Until 9 Oct the journal's
+        pnl_money held only the closing deals' commission (``closed_deal``
+        sums those), so it was not "after costs": a row that does not say it
+        holds both sides (``commission_sides`` 2) has the missing side(s)
+        taken off - one side per lot at the broker's own rate, both for a
+        row worked out from prices (0). A row recorded complete is never
+        adjusted again. A row with no volume cannot be estimated (none
+        written by the trader lacks one)."""
+        net = float(row.get("pnl_money") or 0.0)
+        try:
+            sides = int(row.get("commission_sides")) if row.get("commission_sides") is not None else 1
+        except (TypeError, ValueError):
+            sides = 1
+        missing = max(0, 2 - max(0, sides))
+        if missing == 0:
+            return net, 0.0
+        try:
+            volume = max(0.0, float(row.get("volume") or 0.0))
+        except (TypeError, ValueError):
+            volume = 0.0
+        est = round(missing * self.commission_per_side(str(row.get("symbol") or "")) * volume, 2)
+        return net - est, est
+
     def segment_record(self, tactic: str, kind: str) -> dict:
         """The segment's own closed trades in the journal, in the conditions
-        and markets it can still trade: the newest ``top_lookback_trades``."""
+        and markets it can still trade: the newest ``top_lookback_trades``.
+        Money is after the whole commission (``row_net``): what an older row
+        left out is estimated and said (``estimated_commission``)."""
         r = self.cfg.risk
         scan = getattr(self.cfg, "scan", None)
         off_regimes = {str(rg).upper() for t, rg in (getattr(scan, "disabled_tactic_regimes", ()) or ())
@@ -308,7 +360,9 @@ class RiskManager:
             rows.append(row)
             if len(rows) >= max(1, int(getattr(r, "top_lookback_trades", 40) or 40)):
                 break
-        money = [float(x.get("pnl_money") or 0.0) for x in rows]
+        nets = [self.row_net(x) for x in rows]
+        money = [n for n, _ in nets]
+        estimated = round(sum(e for _, e in nets), 2)
         rs = [max(-2.0, min(6.0, float(x.get("r") or 0.0))) for x in rows]
         days: dict[str, float] = {}
         for x, m in zip(rows, money):
@@ -319,7 +373,9 @@ class RiskManager:
                 "down_days": sum(1 for v in days.values() if v < 0),
                 "net": round(sum(money), 2),
                 "per_trade": round(sum(money) / len(money), 2) if money else 0.0,
-                "mean_r": round(sum(rs) / len(rs), 3) if rs else 0.0}
+                "mean_r": round(sum(rs) / len(rs), 3) if rs else 0.0,
+                "estimated_commission": estimated,
+                "estimated_rows": sum(1 for _, e in nets if e > 0)}
 
     def top_opportunity(self, state: MarketState, kind: str,
                         now: Optional[dt.datetime] = None) -> tuple[bool, str]:
@@ -352,7 +408,9 @@ class RiskManager:
             return False, f"{label}: its record could not be read ({exc})"
         need_n = int(getattr(r, "top_min_trades", 20) or 20)
         need_d = int(getattr(r, "top_min_days", 4) or 4)
-        facts = (f"{rec['trades']} trades over {rec['days']} days, {rec['net']:+.2f} after costs "
+        est = (f", including {rec['estimated_commission']:.2f} of opening commission the older records left out "
+               f"(estimated on {rec['estimated_rows']} trades)" if rec.get("estimated_commission") else "")
+        facts = (f"{rec['trades']} trades over {rec['days']} days, {rec['net']:+.2f} after costs{est} "
                  f"({rec['per_trade']:+.2f} a trade, {rec['mean_r']:+.2f} R), "
                  f"{rec['up_days']} days up and {rec['down_days']} down")
         if rec["trades"] < need_n or rec["days"] < need_d:
@@ -376,7 +434,14 @@ class RiskManager:
         blends the raw score with what that score band has actually delivered.
         ``kelly_stats`` is (samples, win_rate, payoff_ratio) when available.
         """
-        r = self.cfg.risk
+        return self._risk_pct_with(self.cfg.risk, state, calibrated_confidence, kelly_stats)
+
+    def _risk_pct_with(self, r: RiskConfig, state: MarketState, calibrated_confidence: float,
+                       kelly_stats: Optional[tuple[int, float, float]] = None
+                       ) -> tuple[float, tuple[str, ...]]:
+        """:meth:`risk_pct_for` with the risk settings ``r`` (Trend &
+        Breakout's own, or the Momentum Runner's copy settings in
+        :meth:`copy_size`). Settings only: still nothing about past outcomes."""
         reasons: list[str] = []
         base = r.base_risk_pct
         if state.tier == "NO_TRADE":
@@ -430,7 +495,7 @@ class RiskManager:
              positions: Sequence[Position], risk_pct: float,
              snapshot: Optional[RiskSnapshot] = None,
              margin_per_lot: Optional[float] = None, *,
-             top: bool = False) -> SizingResult:
+             top: bool = False, risk: Optional[RiskConfig] = None) -> SizingResult:
         """Convert a risk percentage into a broker-legal volume.
 
         Everything that turns price into money is applied: tick value, tick
@@ -441,8 +506,11 @@ class RiskManager:
         the trade aims at ``top_risk_money`` - still under ``max_risk_pct`` of
         the account - in place of the normal money cap, and outside indices
         carries at most ``top_max_lots``. Nothing else changes.
+
+        ``risk``: other risk settings to size with (see :meth:`copy_size`);
+        Trend & Breakout's own ``cfg.risk`` when None.
         """
-        r = self.cfg.risk
+        r = risk if risk is not None else self.cfg.risk
         reasons: list[str] = []
         stop_distance = abs(state.entry - state.stop)
         pip = max(spec.pip_size, 1e-12)
@@ -585,3 +653,23 @@ class RiskManager:
             stop_distance=stop_distance, stop_pips=round(stop_distance / pip, 2),
             money_per_lot_at_stop=round(money_per_lot, 4),
             reasons=tuple(reasons))
+
+    def copy_size(self, state: MarketState, spec: SymbolSpec, account: AccountInfo,
+                  positions: Sequence[Position], calibrated_confidence: float,
+                  kelly_stats: Optional[tuple[int, float, float]], snapshot: Optional[RiskSnapshot],
+                  margin_per_lot: Optional[float], *, base_pct: float, money_cap: float) -> SizingResult:
+        """The size this trade would have had with ``base_pct`` as the
+        normal percent and ``money_cap`` as the money cap, every other limit
+        as it is (the same tier, confidence, Kelly, caps and margin).
+
+        10 Oct: what the Momentum Runner copies. It rode Trend & Breakout's
+        volume as sized at 0.5% and at most 10 a trade; Aaron moved Trend &
+        Breakout to 0.7% and 13 on 9 Oct ("risking 0.2 higher") and the
+        Runner's money per ride was not part of that, so the Runner copies
+        this size (runner.copy_risk_pct, runner.max_risk_money) instead of
+        the new one - the same money per ride as before."""
+        r = dataclasses.replace(self.cfg.risk, base_risk_pct=float(base_pct), max_risk_money=float(money_cap))
+        pct, _ = self._risk_pct_with(r, state, calibrated_confidence, kelly_stats)
+        if pct <= 0:
+            return SizingResult(0, 0, 0, 0, 0, 0, rejected="opportunity does not clear the NORMAL tier")
+        return self.size(state, spec, account, positions, pct, snapshot, margin_per_lot, risk=r)

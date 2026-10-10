@@ -100,7 +100,8 @@ fi
 if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
    && [[ -f "$DATA_DIR/.all-bots-live-2026-10-08" ]] && [[ -f "$DATA_DIR/.scalper-paper-2026-10-08" ]] \
    && [[ -f "$DATA_DIR/.rider-live-2026-10-09" ]] && [[ -f "$DATA_DIR/.ian-enabled-2026-10-09" ]] \
-   && [[ -f "$DATA_DIR/.lineup-2026-10-09" ]] && [[ -f "$DATA_DIR/.ian-binance-2026-10-09" ]]; then
+   && [[ -f "$DATA_DIR/.lineup-2026-10-09" ]] && [[ -f "$DATA_DIR/.ian-binance-2026-10-09" ]] \
+   && [[ -f "$DATA_DIR/.formula1-2026-10-09" ]] && [[ ! -f "$DATA_DIR/.restart-pending" ]]; then
   say ""
   say "  ${GREEN}It is already running.${RESET} Checking it over..."
   # Keep these cheap and idempotent, so a routine double-click stays fast.
@@ -140,6 +141,8 @@ apply_rider_live
 apply_ian_enabled
 apply_lineup
 apply_ian_binance
+apply_formula1       # 9 Oct evening: last, so on a fresh install it has the final word
+remember_restart     # 10 Oct: until the bots are restarted below, the next double-click never takes the fast path
 install_launch_agent
 install_desktop_icon
 prevent_idle_sleep

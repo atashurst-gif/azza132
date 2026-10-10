@@ -290,7 +290,13 @@ class TestPaperTrader:
         tr.cycle()                                            # the full cycle books the closed trade
         closed = [t for t in tr.journal.closed_trades() if t["ticket"] == mine[0].ticket]
         paper_net = sum(d["pnl"] for d in pb.closed if d["ticket"] == mine[0].ticket)
-        assert closed and closed[0]["pnl_money"] == pytest.approx(pb.closed_deal(mine[0].ticket)["pnl"])
+        # 9 Oct: the journal holds the WHOLE commission - the closing deal's (inside closed_deal's pnl) and
+        # the opening deal's, which closed_deal leaves out
+        opening = sum(d["commission"] for d in pb.paper_deals_since(MID_LONDON - dt.timedelta(days=1), False)
+                      if d["position"] == mine[0].ticket and d["is_entry"])
+        assert opening < 0
+        assert closed and closed[0]["pnl_money"] == pytest.approx(pb.closed_deal(mine[0].ticket)["pnl"] + opening)
+        assert closed[0]["commission_sides"] == 2 and closed[0]["entry_commission"] == pytest.approx(opening)
         assert paper_net < 0                                  # gapped through its stop: a paper loss, never real money
         # a few full cycles on top: still nothing for 990311 at the real broker
         for _ in range(5):
@@ -310,7 +316,10 @@ class TestPaperTrader:
         runner = sim.positions(MAGIC_RUNNER)
         assert len(runner) == 1 and runner[0].magic == MAGIC_RUNNER and runner[0].comment == "RUNNER"
         assert runner[0].symbol == "US500" and runner[0].side is Side.BUY and runner[0].sl == pytest.approx(paper_trade.sl)
-        assert runner[0].volume == pytest.approx(paper_trade.volume)    # top size off by default: the copied volume
+        # top size off by default: the copied volume - held, from 9 Oct, to the Runner's own 10 at its stop
+        # (runner.max_risk_money) while Trend & Breakout sizes at up to 13: scaled down, never up
+        per_lot = sim.spec("US500").money_per_lot(abs(runner[0].entry_price - runner[0].sl))
+        assert runner[0].volume <= paper_trade.volume and per_lot * runner[0].volume <= 10.0 + 1e-9
         assert [int(o["req"].magic) for o in sim.order_log] == [MAGIC_RUNNER]
         assert sim.positions(TNB) == [] and pb.is_paper(paper_trade.ticket)   # Trend & Breakout's side stays paper
         s = next(iter(tr.runner.open.values()))

@@ -7,7 +7,9 @@ what the broker's deal history returns for today and for this strategy, and
 what the status page will therefore show. Read-only.
 
 When Trend & Breakout is on PAPER (config.json "tnb" -> "mode") its own
-line is its REAL deals only (positions left from LIVE: real money), and a
+line is its REAL deals only (the kinds of market it keeps LIVE - 9 Oct:
+its minor currency pairs, Formula 1 - and positions left from LIVE: real
+money), and a
 line under it gives its practice deals since midnight from its paper record
 (data/tnb_paper.sqlite, read through ``PaperBroker(..., read_only=True)``):
 not money, never in the account.
@@ -55,14 +57,18 @@ def main(argv=None) -> int:
     cfg = Config.load(args.config)
     from ..run import build_broker
     from ..broker.stamp import code_stamp
-    from .standing import tnb_mode
+    from .standing import tnb_live_words, tnb_mode
     broker = build_broker(cfg)
     mode = tnb_mode(cfg)
+    kinds, phrase, _ = tnb_live_words(cfg)            # 9 Oct: e.g. its minor currency pairs LIVE (Formula 1)
     print(f"Installed bridge code stamp : {code_stamp()}")
     print(f"Measuring from              : {cfg.tracking_start_utc or '(midnight)'}  "
           f"[{cfg.tracking_strategy or 'no strategy stamp'}]")
     print(f"Bot's magic number          : {cfg.magic}")
-    if mode == "PAPER":
+    if mode == "PAPER" and phrase:
+        print(f"Trend & Breakout            : PAPER, with its {phrase} - real orders, real money; everything "
+              f"else real prices, simulated orders, its practice never in the account")
+    elif mode == "PAPER":
         print("Trend & Breakout            : PAPER - real prices, simulated orders; its practice is never in "
               "the account")
     if not broker.connect():
@@ -77,7 +83,8 @@ def main(argv=None) -> int:
             print("Bridge up to date           : " + ("yes" if not why else "NO - " + why))
         now = to_utc(utcnow())
         day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        bot_label = ("Trend & Breakout's REAL trades (left from LIVE)" if mode == "PAPER"
+        bot_label = (f"Trend & Breakout's REAL trades ({kinds} LIVE, and any left from LIVE)" if kinds else
+                     "Trend & Breakout's REAL trades (left from LIVE)" if mode == "PAPER"
                      else "the bot's trades only")
         for label, magic in (("all trades on the account", 0),
                              (bot_label, cfg.magic)):

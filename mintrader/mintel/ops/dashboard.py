@@ -878,7 +878,11 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
     ``now_line``: what it is doing now (``bot_now_lines``), shown as "Now: ..."."""
     e = html.escape
     bid, label, mode = b.get("id"), str(b.get("label")), str(b.get("mode") or "")
-    live = mode == "LIVE"
+    # 9 Oct evening: Trend & Breakout on PAPER with some kinds of market LIVE (Formula 1: its minor pairs) leads
+    # with its real money, as a LIVE card does; its practice follows, labelled. Never plain "PAPER".
+    groups = ((snap.get("tnb_live") or {}).get("groups") or ()) if bid == "market_intelligence" else ()
+    mixed = bool(groups) and mode != "LIVE"
+    live = mode == "LIVE" or mixed
     show_sel = sel.get("key") != "total"
     sel_label = str(sel.get("label") or "Today")
     vs = (sel.get("bots") or {}).get(bid) or {}
@@ -922,7 +926,10 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
     line = (snap.get("bot_lines") or {}).get(bid)
     if line:
         bits.append(e(str(line)))
-    if bid == "market_intelligence" and mode == "PAPER":
+    if mixed:
+        from .verdicts import live_kinds
+        bits.append(f"{e(live_kinds(groups))} LIVE (real money); the rest real prices, simulated orders")
+    elif bid == "market_intelligence" and mode == "PAPER":
         bits.append("real prices, simulated orders")
     if bid == "momentum_runner":
         bits.append("rides Trend &amp; Breakout's index entries")
@@ -933,10 +940,18 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
                     + (f'{e(sel_label.lower())} {m(real_sel)} &middot; '
                        if real_sel is not None and abs(float(real_sel)) >= 0.005 else "")
                     + f'overall {m(vt.get("made"))}</div>')
+    elif mixed and pt is not None:
+        practice = ('<div class="pr">The rest is practice (PAPER), not real money: '
+                    + (f'{e(sel_label.lower())} {m(ps)} &middot; ' if show_sel and ps is not None else "")
+                    + f'overall {m(pt)}</div>')
     elif show_sel and ps is not None and abs(float(ps)) >= 0.005:
         practice = (f'<div class="pr">Practice only, not real money: '
                     + f'{e(sel_label.lower())} {m(ps)} &middot; overall {m(pt)}</div>')
-    pill = f'<span class="pill {"ok" if live else ""}">{e(mode)}</span>'
+    if mixed:
+        from .verdicts import live_words
+        pill = f'<span class="pill ok">{e(live_words(groups))}</span>'
+    else:
+        pill = f'<span class="pill {"ok" if live else ""}">{e(mode)}</span>'
     now_html = f'<div class="now"><b>Now:</b> {e(str(now_line))}</div>' if now_line else ""
     return (f'<div class="hc{"" if live else " paper"}"><div class="nm">{e(label)} {pill}</div>'
             f'<div class="figs">{figs}</div><div class="ft">{" &middot; ".join(bits)}</div>{practice}{now_html}</div>')
@@ -1320,9 +1335,11 @@ def _tnb_now(snap: dict) -> str:
         said = "safe mode" if (health.get("safe_mode") or state == "SAFE MODE") else state.lower()
         bits.append(f"{said}: {health.get('summary') or 'no new entries'}")
     paper = str(st.get("tnb_mode") or "").upper() == "PAPER"
+    mixed = paper and bool((snap.get("tnb_live") or {}).get("groups"))
     pos = [p for p in (snap.get("positions") or []) if isinstance(p, dict)]
     if pos:
-        bits.append(("trades open (practice, and any left from LIVE): " if paper else "trades open: ")
+        bits.append(("trades open (real on its LIVE markets, practice on the rest): " if mixed else
+                     "trades open (practice, and any left from LIVE): " if paper else "trades open: ")
                     + ", ".join(f"{p.get('symbol')} {str(p.get('side') or '').lower()}" for p in pos[:4]))
     think = [t for t in (snap.get("thinking") or []) if isinstance(t, dict)]
     if think:
@@ -1357,6 +1374,8 @@ def bot_now_lines(snap: dict, top: Optional[dict] = None, only: Optional[str] = 
     began = _uk(sd.get("start") or "", "%a %d %b")
     makers = {"momentum_rider": _rider_now, "momentum_runner": _runner_now, "band_breaker": _band_now,
               "crowd_fader": _crowd_now, "financial_ian": _ian_now}
+    groups = (snap.get("tnb_live") or {}).get("groups") or ()    # Trend & Breakout's kinds of market kept LIVE
+    from .verdicts import live_words
     out: dict = {}
     for b in sd.get("bots") or ():
         bid = b.get("id")
@@ -1383,7 +1402,10 @@ def bot_now_lines(snap: dict, top: Optional[dict] = None, only: Optional[str] = 
         except Exception as exc:
             log.warning("last trade of %s: %s", bid, exc)
             last = f"its last trade could not be read just now ({exc})"
-        out[bid] = f"PAPER - {last}; {doing}" if mode == "PAPER" else f"{doing}; {last}"
+        if mode == "PAPER" and bid == "market_intelligence" and groups:
+            out[bid] = f"{live_words(groups)} - {last}; {doing}"   # 9 Oct: part LIVE, never plain PAPER
+        else:
+            out[bid] = f"PAPER - {last}; {doing}" if mode == "PAPER" else f"{doing}; {last}"
     return out
 
 
@@ -1401,7 +1423,11 @@ def render_quiet_banner(snap: dict, top: Optional[dict], lines: dict) -> str:
         return ""
     if snap.get("open_live") is None or snap.get("open_live"):
         return ""
-    live = [b for b in sd.get("bots") or () if str(b.get("mode") or "") == "LIVE" and not b.get("retired")]
+    # 10 Oct: Trend & Breakout on PAPER with kinds of market kept LIVE (Formula 1) places real trades too
+    groups = (snap.get("tnb_live") or {}).get("groups") or ()
+    live = [b for b in sd.get("bots") or () if not b.get("retired")
+            and (str(b.get("mode") or "") == "LIVE"
+                 or (groups and b.get("id") == "market_intelligence" and str(b.get("mode") or "") == "PAPER"))]
     tot = top.get("tot") if isinstance(top.get("tot"), dict) else None
     if not live or tot is None or not isinstance(tot.get("closed"), list):
         return ""
@@ -1673,9 +1699,16 @@ def _bot_live_view(snap: dict, bot: str, data_dir: str, mode: str, now: Optional
     try:
         now = to_utc(now or utcnow())
         if bot == "market_intelligence":
-            what = ("It is on PAPER: it decides on real prices and its orders are simulated, while the Momentum Runner "
-                    "rides its index entries with real orders." if mode == "PAPER" else
-                    "It is LIVE: its orders go to MetaTrader, and the Momentum Runner rides its index entries.")
+            groups = (snap.get("tnb_live") or {}).get("groups") or ()
+            if mode != "LIVE" and groups:              # 9 Oct evening: Formula 1 LIVE, the rest on PAPER
+                from .verdicts import live_kinds
+                what = (f"It is on PAPER except its {live_kinds(groups)}: those orders go to MetaTrader with real "
+                        f"money; everything else is decided on real prices and simulated, and the Momentum Runner "
+                        f"rides its index entries with real orders.")
+            else:
+                what = ("It is on PAPER: it decides on real prices and its orders are simulated, while the Momentum "
+                        "Runner rides its index entries with real orders." if mode == "PAPER" else
+                        "It is LIVE: its orders go to MetaTrader, and the Momentum Runner rides its index entries.")
             return f'<div class="card small">{e(what)}</div>' + render_thinking(snap)
         if bot == "momentum_rider":
             return _rider_live_html(data_dir, now)
@@ -1773,7 +1806,15 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
                       f'Compare this code with the one in the latest message from the installer. ')
     src = str(st.get("pnl_source") or "")
     src_warn = ""
-    if str(st.get("tnb_mode") or "").upper() == "PAPER":
+    kept = (snap.get("tnb_live") or {}).get("groups") or ()
+    if str(st.get("tnb_mode") or "").upper() == "PAPER" and kept:
+        from .verdicts import live_kinds              # 9 Oct: its minor pairs (Formula 1) trade for real
+        src_html = (f'Trend &amp; Breakout is on PAPER except its {html.escape(live_kinds(kept))}, which trade LIVE '
+                    f'with real money: Today, Win rate today, This strategy and Open trades are its real trades '
+                    f'there and its practice together (the practice on real prices with simulated orders, never '
+                    f'added to the account; its real money alone is on the main page and in Overall); Equity is '
+                    f'the real account.')
+    elif str(st.get("tnb_mode") or "").upper() == "PAPER":
         src_html = ('Trend &amp; Breakout is on PAPER: Today, Win rate today, This strategy and Open trades are '
                     'its practice on real prices with simulated orders (and any real trade left from LIVE), never '
                     'added to the account; Equity is the real account.')
@@ -2059,6 +2100,47 @@ def _home_account(snap: dict, top: dict, cur: str) -> str:
             f'<p class="s-note">{e(" ".join(notes))}</p></section>')
 
 
+def formula1_line(v: Optional[dict], focus: Optional[dict] = None) -> str:
+    """Formula 1's LIVE progress in one plain line, from Trend & Breakout's
+    verdict (``verdicts.formula1_live``: MetaTrader's deal records only -
+    never its journal, never practice): trades closed since it went live,
+    won, money after all costs, days up and down, and how many of the
+    plan's ``judge_after`` (20) it has. Says plainly when it cannot count."""
+    from .verdicts import FORMULA1_JUDGE_AFTER
+    v = v or {}
+    try:
+        judge = int((focus or {}).get("judge_after") or FORMULA1_JUDGE_AFTER)
+    except (TypeError, ValueError):
+        judge = FORMULA1_JUDGE_AFTER
+    f1 = v.get("formula1")
+    if v.get("error"):
+        return "its records could not be read just now - no live figure is shown rather than a wrong one."
+    if not isinstance(f1, dict):
+        if str(v.get("mode") or "").upper() == "LIVE":
+            return ("Trend & Breakout is fully LIVE on this computer, so Formula 1's trades are not counted apart "
+                    "from the rest.")
+        return ("not live on this computer yet - Trend & Breakout's minor currency pairs are still on PAPER here, so "
+                "there are no live trades to count.")
+    if not f1.get("readable", True):
+        return "MetaTrader's records could not be read just now - no live figure is shown rather than a wrong one."
+    since = f1.get("since")
+    if since is None:
+        return "its live start time is not recorded, so its live trades are not counted yet."
+    when = _uk(since.isoformat(), "%d %b %H:%M") + " UK"
+    s = f1.get("stats") or {}
+    n, k = int(s.get("trades") or 0), int(f1.get("open") or 0)
+    still = (f" {k} open now, not counted until {'it closes' if k == 1 else 'they close'}." if k else "")
+    if not n:
+        return f"no live trades yet (live since {when}) - 0 of {judge} toward the judgement.{still}"
+    up, down = int(s.get("up_days") or 0), int(s.get("down_days") or 0)
+    toward = (f"{n} of {judge} toward the judgement" if n < judge else
+              f"its {judge} live trades are in: time to judge it")
+    return (f"{n} trade{'' if n == 1 else 's'} closed since {when}, {s.get('wins', 0)} won, "
+            f"{_fmt_money(float(s.get('net') or 0.0), 'GBP')} after all costs "
+            f"({_fmt_money(float(s.get('costs') or 0.0), 'GBP').lstrip('+')} of commission); "
+            f"{up} day{'' if up == 1 else 's'} up, {down} down - {toward}. From MetaTrader's records.{still}")
+
+
 def _plan_html(plan: Optional[dict], plan_error: str, verdicts: dict) -> str:
     """The plan: the aim, the focus, the next three steps, BIN / CHANGE / KEEP
     (one short line each; the reason folds open under it), any bot whose
@@ -2072,19 +2154,9 @@ def _plan_html(plan: Optional[dict], plan_error: str, verdicts: dict) -> str:
     out = [f'<section class="s-card"><h2>The plan</h2><p class="s-aim">{e(str(plan.get("aim") or ""))}</p>']
     f = plan.get("focus") if isinstance(plan.get("focus"), dict) else None
     if f:
-        fwd = ""
-        tnb = verdicts.get(str(f.get("bot") or "")) or {}
-        forward = tnb.get("forward")
-        if isinstance(forward, dict):
-            when = _uk(forward["since"].isoformat(), "%d %b") if forward.get("since") else ""
-            bits = []
-            for kind, word in (("real", "real"), ("practice", "practice, not money")):
-                st = forward.get(kind) or {}
-                if st.get("trades"):
-                    bits.append(f"{st['trades']} {kind} trade{'' if st['trades'] == 1 else 's'}, "
-                                f"{_fmt_money(float(st['net']), 'GBP')} ({word})")
-            fwd = (f'<div class="s-small"><b>Going forward since {e(when)}:</b> '
-                   f'{e("; ".join(bits) if bits else "no trades in it yet")} - from its own records.</div>')
+        # 9 Oct evening: Formula 1 is LIVE - its progress is its live trades from MetaTrader's records only
+        # (verdicts.formula1_live), never the journal and never practice
+        fwd = f'<div class="s-small"><b>Live so far:</b> {e(formula1_line(verdicts.get(str(f.get("bot") or "")), f))}</div>'
         out.append(f'<div class="s-focus"><div class="s-k">The focus now</div><b>{e(str(f.get("name") or ""))}</b>: '
                    f'{e(str(f.get("what") or ""))}<div class="s-small">{e(str(f.get("evidence") or ""))} '
                    f'{e(str(f.get("caution") or ""))}</div>{fwd}</div>')
@@ -2126,7 +2198,11 @@ def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
     one-line headline. The whole row opens the bot."""
     e = html.escape
     bid, label, mode = b.get("id"), str(b.get("label") or v.get("label") or ""), str(b.get("mode") or v.get("mode") or "")
-    live = mode == "LIVE"
+    # 9 Oct evening: Trend & Breakout on PAPER with its minor currency pairs LIVE (Formula 1) is part real money:
+    # its real money leads, as a LIVE bot's, and its practice follows in grey, labelled - never plain "PAPER"
+    mixed = bool(v.get("live_groups")) and mode != "LIVE"
+    off = mode == "OFF"                         # switched off (the Rider, 9 Oct): its real money still counts
+    live = mode == "LIVE" or mixed or off
     sel, tot = top.get("sel") or {}, top.get("tot") or {}
     total = (view or {}).get("key") == "total"
     plabel = str((view or {}).get("label") or "Today")
@@ -2142,7 +2218,7 @@ def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
             figs.append(fig(plabel, vs.get("made")))
         figs.append(fig("Overall", vt.get("made")))
         n, w = vs.get("trades"), vs.get("wins")
-        kind = ""
+        kind = "real " if (mixed or off) else ""
     else:
         p_sel, p_tot = top.get("p_sel") or {}, top.get("p_tot") or {}
         if not total:
@@ -2160,7 +2236,22 @@ def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
     figs.append(f'<div{"" if live else " class=s-prac"}><div class="s-k">'
                 f'{e("Trades " + _in_period(view or {}))}</div><div class="s-m0">{e(trades)}</div></div>')
     extra = ""
-    if not live:
+    if mixed:
+        p_sel, p_tot = top.get("p_sel") or {}, top.get("p_tot") or {}
+        pn = int(((v.get("period") or {}).get("practice") or {}).get("trades") or 0)
+        bits = []
+        if not total and p_sel.get(bid) is not None:
+            bits.append(f"{plabel.lower()} {_fmt_money(float(p_sel[bid]), cur)} ({pn} trade{'' if pn == 1 else 's'})")
+        if p_tot.get(bid) is not None:
+            bits.append(f"overall {_fmt_money(float(p_tot[bid]), cur)}")
+        extra = (f'<div class="s-extra">The money above is real (MetaTrader\'s): its '
+                 f'{e(str(v.get("live_kinds") or "chosen markets"))} trade LIVE. The rest is practice (PAPER), not real '
+                 f'money' + (f": {e(', '.join(bits))}." if bits else ".") + '</div>')
+    elif off:
+        why = f"; binned: {v.get('why')}" if v.get("code") == "NO EDGE" and v.get("why") else ""
+        extra = (f'<div class="s-extra">Switched off - it places no trades{e(why)}. Its real money from its LIVE days '
+                 f'still counts in the account\'s figures.</div>')
+    elif not live:
         real_t = vt.get("made")
         if real_t is not None and abs(float(real_t)) >= 0.005:
             real_p = vs.get("made") if not total else None
@@ -2173,7 +2264,8 @@ def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
         else:
             extra = '<div class="s-extra">Practice only (PAPER), not real money.</div>'
     chip = f'<span class="s-chip {e(str(v.get("colour") or "grey"))}">{e(str(v.get("code") or ""))}</span>'
-    pill = f'<span class="s-mode{" live" if live else ""}">{e(mode or "-")}</span>'
+    words = str(v.get("mode_words") or "") if mixed else mode
+    pill = f'<span class="s-mode{" live" if (mode == "LIVE" or mixed) else ""}">{e(words or "-")}</span>'
     return (f'<a class="s-bot" href="/{_home_query(view, bid)}"><div><span class="s-name">{e(label)}</span>{pill}'
             f'{chip}<div class="s-hl">{e(str(v.get("headline") or ""))}</div>'
             + (f'<div class="s-rec"><b>What to do:</b> {e(str(v.get("recommendation")))}</div>'
@@ -2265,11 +2357,12 @@ def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, 
     v = verdict or {}
     label = str(v.get("label") or bot)
     mode = str(v.get("mode") or "")
-    live = mode == "LIVE"
+    mixed = bool(v.get("live_groups")) and mode != "LIVE"     # 9 Oct: Trend & Breakout's minor pairs LIVE
+    live = mode == "LIVE" or mixed
     head = (f'<div class="s-head"><a href="/{_home_query(view, "all")}">&larr; All bots</a><span class="s-upd">'
             f'{e(_uk(str(snap.get("updated") or ""), "%a %d %b, %H:%M UK"))}</span></div>')
     chip = f'<span class="s-chip {e(str(v.get("colour") or "grey"))}">{e(str(v.get("code") or ""))}</span>'
-    pill = f'<span class="s-mode{" live" if live else ""}">{e(mode or "-")}</span>'
+    pill = f'<span class="s-mode{" live" if live else ""}">{e((v.get("mode_words") if mixed else mode) or "-")}</span>'
     flags = "".join(f'<div class="s-flag"><b>Check:</b> {e(d["text"])}</div>'
                     for d in plan_disagreements(plan, verdicts or {bot: v}) if d.get("bot") == bot)
     ev = "".join(f'<li><b>{e(str(x.get("label") or ""))}</b><div>{e(str(x.get("facts") or ""))}</div>'
@@ -3057,6 +3150,11 @@ class _Handler(BaseHTTPRequestHandler):
         snap = dict(snap)
         snap["standing"] = sd
         snap["bot_selected"] = bot
+        try:                                     # 9 Oct: which of Trend & Breakout's markets trade for real
+            from .verdicts import tnb_live_setting
+            snap["tnb_live"] = tnb_live_setting(data_dir)
+        except Exception as exc:                 # never a reason to fail the page
+            log.warning("Trend & Breakout's live markets: %s", exc)
         if sd.get("start") and sd.get("made") is not None:
             try:
                 from .standing import bot_view, open_charged, period_view, practice_figures

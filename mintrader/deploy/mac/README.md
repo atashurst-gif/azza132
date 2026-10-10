@@ -45,8 +45,8 @@ Four more icons, placed on your Desktop once:
 
 | Icon | What it does |
 |---|---|
-| **SETUP-RAPID-RIDER** | Rider on LIVE (GBP 1 a pip unless you have set a figure), Rapid Scalper OFF, then starts or checks everything and prints one line, e.g. `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets` |
-| **START-RAPID-RIDER** | Starts the bot if it is stopped, changes nothing, prints the Rider's line |
+| **SETUP-RAPID-RIDER** | Rider on LIVE (GBP 1 a pip unless you have set a figure), Rapid Scalper OFF, then starts or checks everything and prints one line, e.g. `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets`. Since 9 Oct the Rider is OFF by Aaron's choice: only use this to undo that |
+| **START-RAPID-RIDER** | Starts the bot if it is stopped, changes nothing, prints the Rider's line (OFF since 9 Oct, on purpose: "Nothing is wrong") |
 | **INSTALL-FINANCIAL-IAN** | Asks once for a Databento API key (not shown as you type; press Enter to skip), saves it in `data/secrets.json`, installs the `databento` package only when a key is saved, switches Ian on (PAPER unless it is already LIVE, as the line-up below sets it), prints e.g. `FINANCIAL IAN - HEALTHY, LIVE, feed NOT CONFIGURED` |
 | **START-FINANCIAL-IAN** | Starts the bot if it is stopped, changes nothing, prints Ian's line |
 
@@ -95,6 +95,30 @@ only between LIVE and PAPER:
 While Trend & Breakout is on PAPER its card on the page says PAPER and shows
 its practice result in grey; it is never added to the account. A real trade
 of its own left open from LIVE is still real money and still counts.
+
+## Formula 1 live, the Rider off (9 October, about 19:30 UK)
+
+Aaron: *"Sack the rider off and let's get trend and breakout live risking
+0.2 higher pip average per trade"* - then *"Just Formula 1"* and *"About £13
+a trade"*. The next **Start Trading Bot** does it once (marker
+`data/.formula1-2026-10-09`), after every other one-time step, with three
+calls of the modes command: `--off rider`; `--tnb-live-groups FX_MINOR`
+(Trend & Breakout stays on PAPER, but its minor currency pair trades -
+EURGBP, AUDJPY and similar - go to the account with real money; the rest
+stays on paper and still feeds the Momentum Runner); `--risk-pct 0.7
+--risk-money 13` (0.7% of the balance a trade, at most GBP 13; nothing else
+changes). If a call fails it says so with the exact command to type, and the
+marker is written only when all three worked. The line-up then reads
+`Trend & Breakout: PAPER - minor currency pairs LIVE (Formula 1)` and the
+Rider `OFF`; its daily research no longer runs. A fresh install asks 0.7% as
+the normal risk and writes `max_risk_money` 13.
+
+*10 October, after a review:* once that step is done, the 9 Oct line-up (if
+it failed earlier and only runs now) keeps the Rider OFF too, so nothing
+puts the sacked Rider back on LIVE. And while the bots still have to be
+restarted to read a change, `data/.restart-pending` says so: if the window
+is closed before they restart, the next double-click does the full start
+(not the quick "already running" check) and restarts them.
 
 **To trade with the Mac closed, move to a Windows VPS:** see
 [docs/ops/vps.md](../../docs/ops/vps.md).

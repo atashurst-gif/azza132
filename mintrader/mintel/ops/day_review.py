@@ -192,11 +192,22 @@ TNB_PAPER_NOTE = ("Trend & Breakout is on PAPER: it decides on real prices and i
                   "Its practice result is not money and is never in the account.")
 
 
+def tnb_paper_note(phrase: str) -> str:
+    """TNB_PAPER_NOTE, or - with kinds of market kept LIVE (``phrase``,
+    e.g. "minor currency pairs LIVE (Formula 1) since ...", 9 Oct) - what is
+    real and what is practice."""
+    if not phrase:
+        return TNB_PAPER_NOTE
+    return (f"Trend & Breakout is on PAPER, with its {phrase}: those trades are real orders and real money, "
+            f"in the account. Everything else it decides on real prices with simulated orders: that practice "
+            f"result is not money and is never in the account.")
+
+
 def build_day_review(cfg: Config, broker, day: dt.datetime) -> tuple[str, list[dict], list[dict]]:
     """(review text, positions, journal rows) for the UTC day starting at
     ``day``. Each position carries its ``mode``: LIVE (the broker's deals)
     or PAPER (Trend & Breakout's paper record)."""
-    from .standing import TnbPaperRecord, real_broker_of, tnb_mode
+    from .standing import TnbPaperRecord, real_broker_of, tnb_live_words, tnb_mode
     end = day + dt.timedelta(days=1)
     real = real_broker_of(broker)                    # the broker's own record, never the PAPER wrapper's
     record = TnbPaperRecord(cfg.ops.data_dir, cfg.magic)
@@ -215,8 +226,11 @@ def build_day_review(cfg: Config, broker, day: dt.datetime) -> tuple[str, list[d
     paper = [dict(p, mode="PAPER") for p in group_positions(paper_rows)]
     parts = []
     if mode == "PAPER":
-        parts += [TNB_PAPER_NOTE, "", review(paper, journal_rows, currency, practice=True), ""]
-        parts.append("REAL MONEY: positions of Trend & Breakout's left from LIVE, from the broker's records")
+        kinds, phrase, _ = tnb_live_words(cfg)       # 9 Oct: e.g. its minor currency pairs LIVE (Formula 1)
+        parts += [tnb_paper_note(phrase), "", review(paper, journal_rows, currency, practice=True), ""]
+        parts.append(f"REAL MONEY: Trend & Breakout's LIVE trades on {kinds} and any position left from LIVE, "
+                     f"from the broker's records" if kinds else
+                     "REAL MONEY: positions of Trend & Breakout's left from LIVE, from the broker's records")
         parts.append(review(positions, journal_rows, currency) if positions else
                      "No real Trend & Breakout trade closed that day.")
     else:

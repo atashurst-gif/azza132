@@ -589,7 +589,9 @@ class TestTheMacLineUp:
         for step in ("apply_bot_modes() {", "apply_rider_live() {", "apply_ian_enabled() {"):
             assert "lineup_done" in lib.split(step)[1].split("\n}\n")[0], step
         final = lib.split("final_report() {")[1].split("\n}\n")[0]
-        assert "$(bot_mode tnb LIVE)" in final and "rides Trend & Breakout's index entries" in final
+        # (since Formula 1, 9 Oct evening: tnb_mode_words, which reads bot_mode tnb LIVE and its live groups)
+        assert "$(tnb_mode_words)" in final and "rides Trend & Breakout's index entries" in final
+        assert 'mode="$(bot_mode tnb LIVE)"' in lib.split("tnb_mode_words() {")[1].split("\n}\n")[0]
         for path in (MAC / "mintel_mac.sh", MAC / "Start Trading Bot.command"):
             r = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
             assert r.returncode == 0, (path, r.stderr)
@@ -619,3 +621,509 @@ class TestTheWindowsLineUp:
         carry = text.split("foreach ($key in @(")[1].split("))")[0]
         assert '"tnb"' in carry
         assert text.index("Invoke-LineUpOnce $P") < text.index("Write-LineUp $P") < text.index("-FromSetup -Restart")
+
+
+# ================================== 9 Oct evening: Formula 1, the Rider off --
+# Aaron, 9 Oct about 19:30 UK: "Sack the rider off and let's get trend and breakout live risking 0.2 higher pip
+# average per trade" - "Just Formula 1", "About £13 a trade". One one-time step on the Mac (apply_formula1, marker
+# .formula1-2026-10-09): the Rider OFF; Trend & Breakout's minor currency pairs LIVE, the rest on PAPER
+# (--tnb-live-groups FX_MINOR); 0.7% of the balance a trade, at most GBP 13 (--risk-pct 0.7 --risk-money 13).
+FORMULA1 = ".formula1-2026-10-09"
+F1_CALLS = ["--off rider", "--tnb-live-groups FX_MINOR", "--risk-pct 0.7 --risk-money 13"]
+
+
+def _fake_python_home(tmp_path: Path, fail: str = "") -> NS:
+    """A MarketBot folder whose venv Python is a MADE-UP stand-in for the commands the one-time steps run:
+    every ``-m mintel.ops.modes`` call is written to a log (its arguments after --config) and answered 0, or 1
+    with a made-up refusal when its arguments contain ``fail``; every other ``-m`` module is logged apart and
+    answered 0 (``mintel.ian`` says "binance"), so nothing is changed and nothing starts. Everything else - the
+    installer's own JSON reads with ``-c`` - is this Python."""
+    home = _home(tmp_path)
+    py = home / "venv" / "bin" / "python"
+    py.unlink()
+    log, other = tmp_path / "modes.log", tmp_path / "other.log"
+    py.write_text(
+        "#!/bin/bash\n"
+        'if [[ "${1:-}" == "-m" && "${2:-}" == "mintel.ops.modes" ]]; then\n'
+        "  shift 4\n"
+        f'  printf \'%s\\n\' "$*" >> "{log}"\n'
+        f'  fail="{fail}"\n'
+        '  if [[ -n "$fail" && "$*" == *"$fail"* ]]; then echo "Nothing changed: a made-up refusal" >&2; exit 1; fi\n'
+        '  echo "made-up modes output"; exit 0\n'
+        "fi\n"
+        'if [[ "${1:-}" == "-m" ]]; then\n'
+        f'  printf \'%s\\n\' "$*" >> "{other}"\n'
+        '  [[ "${2:-}" == "mintel.ian" ]] && echo binance\n'
+        "  exit 0\n"
+        "fi\n"
+        f'exec "{sys.executable}" "$@"\n')
+    py.chmod(0o755)
+    return NS(home=home, data=home / "data", log=log, other=other)
+
+
+def _calls(path: Path) -> list:
+    return path.read_text().splitlines() if path.exists() else []
+
+
+def _bash_env(snippet: str, home: Path, **env):
+    import os
+    full = {**os.environ, "MINTEL_HOME": str(home), "MINTEL_NO_PIP": "1", **env}
+    return subprocess.run(["bash", "-c", f'set -uo pipefail; source "{MAC / "mintel_mac.sh"}"; {snippet}'],
+                          capture_output=True, text=True, env=full, timeout=120)
+
+
+F1_STEP = 'apply_formula1; echo "CODE=${CODE_CHANGED:-none}"'
+
+
+class TestTheMacFormula1Step:
+    def test_it_runs_once_after_the_line_up_with_the_three_calls(self, tmp_path):
+        f = _fake_python_home(tmp_path)
+        r = _bash_env("apply_lineup; apply_ian_binance; " + F1_STEP, f.home)
+        assert r.returncode == 0, r.stderr
+        calls = _calls(f.log)
+        assert calls[0].startswith("--off scalper --paper tnb bandbreaker crowd --live runner rider ian")  # the line-up
+        assert calls[-3:] == F1_CALLS                                          # then Formula 1, last
+        assert (f.data / FORMULA1).exists() and (f.data / ".lineup-2026-10-09").exists()
+        assert "CODE=yes" in r.stdout                                          # the bots restart to read it
+        assert "Formula 1 live, the Rapid Momentum Rider off" in r.stdout
+        assert r.stdout.index("The bots' line-up") < r.stdout.index("Formula 1 live")
+        assert "[WARN]" not in r.stdout
+        # once only: a second run calls nothing and changes nothing
+        again = _bash_env(F1_STEP, f.home)
+        assert again.returncode == 0 and "CODE=none" in again.stdout and "Formula 1" not in again.stdout
+        assert _calls(f.log)[-3:] == F1_CALLS and len(_calls(f.log)) == len(calls)
+
+    def test_the_marker_is_written_only_when_every_call_worked(self, tmp_path):
+        f = _fake_python_home(tmp_path, fail="--risk-pct")
+        r = _bash_env(F1_STEP, f.home)
+        assert r.returncode == 0, r.stderr
+        assert _calls(f.log) == F1_CALLS                                       # every call is still tried
+        assert not (f.data / FORMULA1).exists()
+        want = (f"cd {f.home}/app && {f.home}/venv/bin/python -m mintel.ops.modes --config {f.data}/config.json "
+                "--risk-pct 0.7 --risk-money 13")
+        assert "[WARN]" in r.stdout and want in r.stdout                       # the exact command to run by hand
+        assert "Nothing changed: a made-up refusal" in r.stdout
+        assert "Formula 1 is not fully set (1 of 3 steps failed" in r.stdout
+        assert "CODE=yes" in r.stdout          # what did change (the Rider OFF) must take effect: restart
+        # the next double-click tries again, and this time it is set
+        g = _fake_python_home(tmp_path / "again")
+        (g.data / "config.json").write_text((f.data / "config.json").read_text())
+        r = _bash_env(F1_STEP, g.home)
+        assert _calls(g.log) == F1_CALLS and (g.data / FORMULA1).exists() and "CODE=yes" in r.stdout
+
+    def test_every_call_failing_changes_nothing_and_restarts_nothing(self, tmp_path):
+        f = _fake_python_home(tmp_path, fail="--")
+        r = _bash_env(F1_STEP, f.home)
+        assert r.returncode == 0 and "CODE=none" in r.stdout and not (f.data / FORMULA1).exists()
+        assert r.stdout.count("[WARN]") == 4                                   # one per call, and the summary
+        for call in F1_CALLS:
+            assert f"-m mintel.ops.modes --config {f.data}/config.json {call}" in r.stdout, call
+
+    def test_an_existing_marker_is_left_alone(self, tmp_path):
+        f = _fake_python_home(tmp_path)
+        (f.data / FORMULA1).write_text("2026-10-09T19:45:00Z")
+        r = _bash_env(F1_STEP, f.home)
+        assert r.returncode == 0 and "CODE=none" in r.stdout and r.stdout.strip() == "CODE=none"
+        assert _calls(f.log) == [] and (f.data / FORMULA1).read_text() == "2026-10-09T19:45:00Z"
+
+    def test_no_settings_yet_means_nothing_is_done(self, tmp_path):
+        f = _fake_python_home(tmp_path)
+        (f.data / "config.json").unlink()
+        r = _bash_env(F1_STEP, f.home)
+        assert r.stdout.strip() == "CODE=none" and _calls(f.log) == [] and not (f.data / FORMULA1).exists()
+
+    def test_it_comes_last_on_every_path_and_the_fast_path_knows_it(self):
+        text = (MAC / "Start Trading Bot.command").read_text()
+        body = text.split("write_config         ||")[1]
+        assert (body.index("apply_lineup") < body.index("apply_ian_binance") < body.index("apply_formula1")
+                < body.index("install_launch_agent") < body.index("start_everything"))
+        fast = text.split("# ---- Fast path")[1].split("# ---- Otherwise")[0]
+        assert ".formula1-2026-10-09" in fast
+        lib = (MAC / "mintel_mac.sh").read_text()
+        step = lib.split("apply_formula1() {")[1].split("\n}\n")[0]
+        assert 'CODE_CHANGED="yes"' in step and "print_lineup" in step
+        assert "formula1_modes --off rider" in step and "formula1_modes --tnb-live-groups FX_MINOR" in step
+        assert "formula1_modes --risk-pct 0.7 --risk-money 13" in step
+        for never in ("max_daily_loss", "max_risk_pct", "top_", "--live rider", "--paper"):
+            assert never not in step, never                                   # nothing Aaron did not decide
+
+    def test_the_mode_words_say_which_part_is_live(self, tmp_path):
+        home = _home(tmp_path)
+        cfg = home / "data" / "config.json"
+        raw = json.loads(cfg.read_text())
+
+        def words(block):
+            raw["tnb"] = block
+            cfg.write_text(json.dumps(raw))
+            return _bash("tnb_mode_words", home).stdout.strip()
+        assert words({"mode": "PAPER", "live_groups": ["FX_MINOR"]}) == "PAPER - minor currency pairs LIVE (Formula 1)"
+        assert words({"mode": "PAPER", "live_groups": "FX_MINOR"}) == "PAPER - minor currency pairs LIVE (Formula 1)"
+        assert words({"mode": "PAPER", "live_groups": ["INDEX", "FX_MINOR"]}) == (
+            "PAPER - indices, minor currency pairs LIVE (Formula 1)")
+        assert words({"mode": "PAPER", "live_groups": []}) == "PAPER"
+        assert words({"mode": "PAPER"}) == "PAPER"
+        assert words({"mode": "LIVE", "live_groups": ["FX_MINOR"]}) == "LIVE"      # LIVE is all real anyway
+
+    def test_the_line_up_names_formula1_the_rider_off_and_the_money_a_trade(self, tmp_path):
+        home = _home(tmp_path)
+        data = home / "data"
+        raw = json.loads((data / "config.json").read_text())
+        raw["tnb"] = {"mode": "PAPER", "live_groups": ["FX_MINOR"], "live_since_utc": "2026-10-09T19:45:00+00:00"}
+        raw["runner"]["mode"] = "LIVE"
+        raw["risk"]["base_risk_pct"], raw["risk"]["max_risk_money"] = 0.7, 13.0
+        (data / "config.json").write_text(json.dumps(raw))
+        (data / "rider.json").write_text(json.dumps({"mode": "OFF", "user_pip_value_gbp": 1.0}))
+        (data / "ian.json").write_text(json.dumps({"mode": "LIVE"}))
+        out = _bash("print_lineup", home).stdout
+        assert "LIVE  - real orders on the account: Momentum Runner, Financial Ian" in out
+        assert "PAPER - real prices, simulated orders, never in the account: Band Breaker, Crowd Fader" in out
+        assert ("Trend & Breakout: PAPER - minor currency pairs LIVE (Formula 1) - those trades are real orders on "
+                "the account; the rest is simulated.") in out
+        assert "OFF   - not started: Rapid Momentum Rider" in out and "GBP 1.00 a pip" not in out
+        assert "The Rapid Momentum Rider is switched off (9 Oct: its own test on real prices found no edge)." in out
+        assert "Trend & Breakout's money a trade: 0.7% of the balance a trade, at most GBP 13." in out
+        assert "The Momentum Runner rides Trend & Breakout's index entries with its own real orders." in out
+
+    def test_the_riders_research_never_starts_while_it_is_off(self, tmp_path):
+        f = _fake_python_home(tmp_path)
+        (f.data / "rider.json").write_text(json.dumps({"mode": "OFF", "user_pip_value_gbp": 1.0}))
+        r = _bash_env("start_rider_research; echo done", f.home)
+        assert r.returncode == 0 and r.stdout.strip() == "done" and r.stderr == ""     # nothing said
+        assert _calls(f.other) == [] and not list(f.data.glob(".rider-research-*"))
+        (f.data / "rider.json").write_text(json.dumps({"mode": "LIVE", "user_pip_value_gbp": 1.0}))
+        (f.data / ".rider-ticks-refetch-2026-10-09").write_text("")
+        r = _bash_env("start_rider_research; echo done", f.home)
+        assert "Rapid Momentum Rider research on the last 10 days" in r.stdout          # on: as before
+        for _ in range(50):                                                             # its background start
+            if _calls(f.other):
+                break
+            import time
+            time.sleep(0.1)
+        assert any("mintel.rider.research" in c for c in _calls(f.other))
+
+    def test_an_off_rider_is_never_called_a_fault(self):
+        lib = (MAC / "mintel_mac.sh").read_text()
+        final = lib.split("final_report() {")[1].split("\n}\n")[0]
+        assert "switched off 9 Oct: its own test on real prices found no edge" in final
+        assert "$(tnb_mode_words)" in final
+        start_rider = (MAC / "START-RAPID-RIDER.command").read_text()
+        assert "It is switched OFF on purpose" in start_rider and "Nothing is wrong." in start_rider
+        assert "to put it on LIVE" not in start_rider
+
+    def test_a_fresh_install_writes_the_new_money_a_trade(self):
+        lib = (MAC / "mintel_mac.sh").read_text()
+        cfg = lib.split("write_config() {")[1].split("\n}\n")[0]
+        assert 'Normal risk per trade, % of the account [0.7]' in cfg and 'base_risk="${base_risk:-0.7}"' in cfg
+        assert '"base_risk_pct": f("MINTEL_BASE", 0.7)' in cfg and '"max_risk_money": 13.0' in cfg
+        assert 'f("MINTEL_DAILY", 3.0)' in cfg and 'max_risk="${max_risk:-1.5}"' in cfg   # the rest as it was
+
+
+class TestTheWindowsFormula1Step:
+    """PowerShell 5.1 is not on this machine: these read the scripts, the way the 9 Oct line-up's tests do."""
+
+    def _ps(self, name):
+        return (WIN / name).read_text()
+
+    def test_the_same_step_once_with_the_three_calls_and_a_marker_only_on_success(self):
+        text = self._ps("mintel_bots.ps1")
+        step = text.split("function Set-Formula1Once")[1].split("\nfunction ")[0]
+        assert '$marker = Join-Path $P.Data ".formula1-2026-10-09"' in step
+        assert step.index("if (Test-Path $marker) { return $false }") < step.index("Invoke-ModesOrSay")
+        assert ('@(@("--off", "rider"), @("--tnb-live-groups", "FX_MINOR"), @("--risk-pct", "0.7", "--risk-money", '
+                '"13"))') in step
+        assert step.index("if ($fails -gt 0)") < step.index("Set-Content -Path $marker")   # only when all worked
+        assert "return ($done -gt 0)" in step                       # what did change restarts the bots
+        for never in ("max_daily_loss", "max_risk_pct", "top_", '"--live"', '"--paper"'):
+            assert never not in step, never
+        say = text.split("function Invoke-ModesOrSay")[1].split("\nfunction ")[0]
+        assert "[WARN] Could not run:" in say and "-m mintel.ops.modes --config" in say and "Run it by hand" in say
+
+    def test_setup_runs_it_last_and_writes_the_new_money_a_trade(self):
+        text = self._ps("SETUP-AND-START.ps1")
+        assert (text.index("Invoke-LineUpOnce $P") < text.index("Set-IanBinanceOnce $P") < text.index("Set-Formula1Once $P")
+                < text.index("Write-LineUp $P") < text.index("-FromSetup -Restart"))
+        assert '"    Normal risk per trade, in percent of the account" "0.7"' in text
+        assert "max_risk_money          = 13.0" in text
+        assert '"    MAXIMUM risk per trade, in percent (never exceeded)" "1.5"' in text       # the rest as it was
+        assert '"    Stop trading for the day after losing this percent" "3.0"' in text
+
+    def test_the_line_up_and_the_start_window_say_which_part_is_live(self):
+        text = self._ps("mintel_bots.ps1")
+        show = text.split("function Write-LineUp")[1].split("\nfunction ")[0]
+        assert "Get-TnbModeWords $P" in show and "those trades are real orders on the account" in show
+        assert "The Rapid Momentum Rider is switched off (9 Oct: its own test on real prices found no edge)." in show
+        assert "Get-RiskWords $P" in show
+        words = text.split("function Get-TnbModeWords")[1].split("\nfunction ")[0]
+        assert '"minor currency pairs"' in words and '" (Formula 1)"' in words and 'return "PAPER - ' in words
+        start = self._ps("START-BOT.ps1")
+        assert "Get-TnbModeWords $P" in start and "real orders there, everything else simulated" in start
+
+    def test_an_off_rider_is_not_a_fault_and_its_research_stops(self):
+        text = self._ps("mintel_bots.ps1")
+        research = text.split("function Start-RiderResearch")[1].split("\nfunction ")[0]
+        assert research.index('if ((Get-BotFileMode $P "rider") -eq "OFF") { return }') < research.index("Start-Process")
+        rider = self._ps("START-RAPID-RIDER.ps1")
+        assert "It is switched OFF on purpose" in rider and "to put it on LIVE" not in rider
+        lines = text.split("function Write-BotLines")[1]
+        assert 'elseif ($b.Code -eq 2) { "Gray" }' in lines                    # OFF: grey, never yellow
+
+
+class TestTheMacFormula1StepForReal:
+    """The same step with the real modes command (this checkout, this Python), on a MADE-UP fresh install."""
+
+    def test_a_fresh_install_ends_on_formula1_and_a_later_choice_is_never_undone(self, tmp_path):
+        home = _home(tmp_path)
+        data = home / "data"
+        before = json.loads((data / "config.json").read_text())["risk"]
+        r = _bash_env(LINE_UP + "; " + F1_STEP, home)
+        assert r.returncode == 0, r.stderr
+        assert "[WARN]" not in r.stdout, r.stdout
+        assert r.stdout.index("The bots' line-up") < r.stdout.index("Formula 1 live, the Rapid Momentum Rider off")
+        raw = json.loads((data / "config.json").read_text())
+        assert raw["tnb"]["mode"] == "PAPER" and raw["tnb"]["live_groups"] == ["FX_MINOR"]
+        assert dt.datetime.fromisoformat(raw["tnb"]["live_since_utc"].replace("Z", "+00:00")).tzinfo is not None
+        assert raw["risk"]["base_risk_pct"] == 0.7 and raw["risk"]["max_risk_money"] == 13.0
+        for k, v in before.items():                                 # no other risk limit moved
+            if k not in ("base_risk_pct", "max_risk_money"):
+                assert raw["risk"][k] == v, k
+        assert json.loads((data / "rider.json").read_text())["mode"] == "OFF"
+        assert {k: (raw.get(k) or {}).get("mode") for k in ("runner", "bandbreaker", "crowd")} == {
+            "runner": "LIVE", "bandbreaker": "PAPER", "crowd": "PAPER"}
+        assert json.loads((data / "ian.json").read_text())["mode"] == "LIVE"
+        assert (data / FORMULA1).exists() and "CODE=yes" in r.stdout
+        assert "Trend & Breakout: PAPER - minor currency pairs LIVE (Formula 1)" in r.stdout
+        assert "OFF   - not started: Rapid Momentum Rider" in r.stdout
+        assert "Trend & Breakout's money a trade: 0.7% of the balance a trade, at most GBP 13." in r.stdout
+        # Aaron changes his mind later with the modes command: a reinstall never undoes it
+        later = _bash_env('cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" '
+                          "--live rider >/dev/null", home)
+        assert later.returncode == 0, later.stderr
+        again = _bash_env(LINE_UP + "; " + F1_STEP, home)
+        assert "CODE=none" in again.stdout and json.loads((data / "rider.json").read_text())["mode"] == "LIVE"
+
+
+# ================================================= 10 Oct review fixes --
+# Three verifiers read the change set on 9-10 Oct; what they found in the
+# installers is fixed here, each test failing without its fix.
+class TestTheSackedRiderStaysOff:
+    """Verifier (installer lens): when the 9 Oct line-up failed on a first run
+    and Formula 1 did not, a later run's line-up put the Rider Aaron sacked
+    back on LIVE, and Formula 1 (marker written) never ran again."""
+
+    def test_a_line_up_that_runs_after_formula1_keeps_the_rider_off(self, tmp_path):
+        home = _home(tmp_path)
+        data = home / "data"
+        (data / "ian.json").write_text("{ not json")                  # the line-up fails on this run ...
+        r = _bash_env(LINE_UP + "; " + F1_STEP, home)
+        assert r.returncode == 0, r.stderr
+        assert not (data / ".lineup-2026-10-09").exists() and (data / FORMULA1).exists()
+        assert json.loads((data / "rider.json").read_text())["mode"] == "OFF"
+        (data / "ian.json").write_text(json.dumps({"mode": "PAPER"}))   # ... and works on the next
+        r = _bash_env(LINE_UP + "; " + F1_STEP, home)
+        assert r.returncode == 0, r.stderr
+        assert (data / ".lineup-2026-10-09").exists()
+        assert json.loads((data / "rider.json").read_text())["mode"] == "OFF"     # never back on LIVE
+        raw = json.loads((data / "config.json").read_text())
+        assert raw["tnb"]["mode"] == "PAPER" and raw["tnb"]["live_groups"] == ["FX_MINOR"]
+        assert raw["runner"]["mode"] == "LIVE" and json.loads((data / "ian.json").read_text())["mode"] == "LIVE"
+        assert json.loads((data / "scalper.json").read_text())["mode"] == "OFF"
+        assert "OFF   - not started: Rapid Momentum Rider" in r.stdout
+
+    def test_the_older_rider_step_never_switches_it_back_on_either(self, tmp_path):
+        f = _fake_python_home(tmp_path)
+        (f.data / FORMULA1).write_text("2026-10-09T19:45:00Z")
+        r = _bash_env("apply_rider_live; apply_lineup; echo done", f.home)
+        assert r.returncode == 0, r.stderr
+        calls = _calls(f.log)
+        assert calls and not any("--live" in c and "rider" in c.split("--live")[1].split("--")[0] for c in calls), calls
+        assert calls[-1].startswith("--off scalper rider --paper tnb bandbreaker crowd --live runner ian")
+        assert (f.data / ".rider-live-2026-10-09").exists()                       # done with: never again
+
+    def test_on_windows_the_same(self):
+        text = (WIN / "mintel_bots.ps1").read_text()
+        setter = text.split("function Set-LineUp")[1].split("\nfunction ")[0]
+        assert 'Test-Path (Join-Path $P.Data ".formula1-2026-10-09")' in setter
+        assert ('@("--off", "scalper", "rider", "--paper", "tnb", "bandbreaker", "crowd", "--live", "runner", "ian")'
+                in setter)
+        once = text.split("function Invoke-LineUpOnce")[1].split("\nfunction ")[0]
+        guard = once.index('.formula1-2026-10-09')
+        assert guard < once.index("Set-RiderLive")                     # the older Rider step is skipped too
+
+
+class TestTheReportsSayWhichPartIsReal:
+    """Verifier (installer lens): with Trend & Breakout's minor currency pairs
+    LIVE (Formula 1), the Day Review, the numbers check, the nightly
+    report's tnb.json and the pulse still said its orders are all simulated,
+    and called its real Formula 1 trades 'left from LIVE'. The figures were
+    already split right; only the words were wrong."""
+
+    @staticmethod
+    def _f1(cfg: Config) -> Config:
+        _set_tnb(cfg, "PAPER")
+        cfg.tnb.live_groups = ("FX_MINOR",)
+        cfg.tnb.live_since_utc = "2026-10-09T18:45:00+00:00"
+        return cfg
+
+    def test_the_day_review(self, tmp_path):
+        d = a_day(tmp_path)
+        text, _, _ = build_day_review(self._f1(d.cfg), d.inner, DAY)
+        assert text.startswith("Trend & Breakout is on PAPER, with its minor currency pairs LIVE (Formula 1) since "
+                               "2026-10-09 18:45 UTC: those trades are real orders and real money, in the account.")
+        assert "REAL MONEY: Trend & Breakout's LIVE trades on minor currency pairs (Formula 1) and any position " \
+               "left from LIVE, from the broker's records" in text
+        assert "its orders are simulated" not in text
+        assert "REAL RESULT     : -6.30 GBP" in text                    # the figures as before
+        plain, _, _ = build_day_review(_set_tnb(a_day(tmp_path / "plain").cfg, "PAPER"), d.inner, DAY)
+        assert plain.startswith("Trend & Breakout is on PAPER: it decides on real prices and its orders are simulated.")
+
+    def test_the_nightly_reports_tnb_json(self, tmp_path):
+        d = a_day(tmp_path)
+        files = build_bundle(self._f1(d.cfg), d.inner, DAY, fetch=lambda url: "{}")
+        tnb = json.loads(files["reports/2026-10-07/tnb.json"])
+        assert tnb["note"].startswith("Trend & Breakout is on PAPER, with its minor currency pairs LIVE (Formula 1)")
+        assert "those are real orders and real money" in tnb["note"] and "rides its index entries" in tnb["note"]
+        assert tnb["real"]["net"] == -6.30
+        assert "real orders" in files["reports/2026-10-07/day_review.txt"]
+
+    def test_the_numbers_check(self, tmp_path, monkeypatch, capsys):
+        from mintel.ops import ledger_check
+        d = a_day(tmp_path)
+        path = tmp_path / "config.json"
+        self._f1(d.cfg).save(path)
+        monkeypatch.setattr("mintel.run.build_broker", lambda cfg: d.inner)
+        ledger_check.main(["--config", str(path)])
+        out = capsys.readouterr().out
+        assert ("Trend & Breakout            : PAPER, with its minor currency pairs LIVE (Formula 1) since "
+                "2026-10-09 18:45 UTC - real orders, real money") in out
+        assert "Trend & Breakout's REAL trades (minor currency pairs (Formula 1) LIVE, and any left from LIVE)" in out
+        assert "PAPER - real prices, simulated orders" not in out
+
+    def test_the_pulse(self, tmp_path):
+        from mintel.ops import pulse as pl
+        cfg = self._f1(Config())
+        cfg.ops.data_dir = str(tmp_path)
+        status = {"status": {"tnb_mode": "PAPER", "tnb_live_groups": ["FX_MINOR"],
+                             "tnb_live_since_utc": "2026-10-09T18:45:00+00:00"}, "health": {}}
+        out = pl._tnb_bot(cfg, {"up": True}, status, True)
+        assert "its FX_MINOR trades, which are LIVE, and any left from LIVE" in out["positions_on_page_note"]
+        plain = pl._tnb_bot(Config(), {"up": True}, {"status": {"tnb_mode": "PAPER"}, "health": {}}, True)
+        assert "plus any real position left from LIVE" in plain["positions_on_page_note"]
+
+
+class TestTheStartWindowsHealthLines:
+    """Verifier (installer lens): show_health piped the page's JSON into
+    Python while the script came from a heredoc on the same stdin, so the
+    JSON was never read and the window always said 'The status page is
+    still starting' - its new Formula 1 line could never print (broken
+    before 9 Oct too)."""
+
+    def test_the_page_is_read_and_the_mixed_line_printed(self, tmp_path):
+        import http.server
+        import threading
+        body = json.dumps({"status": {"bot": "RUNNING", "tnb_mode": "PAPER", "mode": "DEMO", "open_positions": 1,
+                                      "today_pnl": -1.5, "currency": "GBP", "last_scan": "19:40"},
+                           "health": {"summary": "all checks pass", "checks": []}}).encode()
+
+        class Page(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Page)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            home = _home(tmp_path)
+            raw = json.loads((home / "data" / "config.json").read_text())
+            raw["tnb"] = {"mode": "PAPER", "live_groups": ["FX_MINOR"], "live_since_utc": "2026-10-09T18:45:00+00:00"}
+            (home / "data" / "config.json").write_text(json.dumps(raw))
+            tmp = tmp_path / "tmp"
+            tmp.mkdir()
+            r = _bash_env("show_health", home, DASH_PORT=str(srv.server_address[1]), TMPDIR=str(tmp))
+        finally:
+            srv.shutdown()
+        assert r.returncode == 0, r.stderr
+        assert "still starting" not in r.stdout, r.stdout
+        assert "[ OK ] all checks pass" in r.stdout and "Mode        : DEMO" in r.stdout
+        assert ("Trend & Breakout: PAPER - minor currency pairs LIVE (Formula 1) - real orders there, everything "
+                "else simulated") in r.stdout
+        assert not list(tmp.iterdir())                                 # the page's copy is not left behind
+
+
+class TestARunCutShortStillRestarts:
+    """Verifier (installer lens): a run closed after Formula 1 was set but
+    before the bots were restarted had already written its markers and
+    app.version, so every later double-click took the fast path and the
+    sacked Rider kept trading LIVE until a reboot. A marker now keeps the
+    restart pending until start_everything has done it."""
+
+    def test_the_marker_is_written_when_something_must_restart(self, tmp_path):
+        f = _fake_python_home(tmp_path)
+        r = _bash_env("remember_restart; " + F1_STEP + "; remember_restart", f.home)
+        assert r.returncode == 0, r.stderr
+        assert "CODE=yes" in r.stdout and (f.data / ".restart-pending").exists()
+        g = _fake_python_home(tmp_path / "quiet")
+        assert _bash_env("remember_restart", g.home).returncode == 0
+        assert not (g.data / ".restart-pending").exists()                 # nothing changed: nothing pending
+
+    def test_the_fast_path_waits_for_it_and_the_restart_clears_it(self):
+        text = (MAC / "Start Trading Bot.command").read_text()
+        fast = text.split("# ---- Fast path")[1].split("# ---- Otherwise")[0]
+        assert '[[ ! -f "$DATA_DIR/.restart-pending" ]]' in fast
+        body = text.split("write_config         ||")[1]
+        assert body.index("\napply_formula1") < body.index("\nremember_restart") < body.index("\nstart_mt5") \
+            < body.index("\nstart_everything")
+        lib = (MAC / "mintel_mac.sh").read_text()
+        start = lib.split("start_everything() {")[1].split("\n}\n")[0]
+        assert start.index('if [[ -f "$DATA_DIR/$RESTART_MARKER_NAME" ]]; then\n    CODE_CHANGED="yes"') \
+            < start.index('if [[ -n "$CODE_CHANGED" ]]; then')
+        assert start.index("pkill -f \"mintel.rider.run --config\"") < start.index('rm -f "$DATA_DIR/$RESTART_MARKER_NAME"')
+        copy = lib.split("copy_program() {")[1].split("\n}\n")[0]
+        assert copy.index("remember_restart") < copy.index('> "$DATA_DIR/app.version"')
+
+
+class TestTheFinalReportNeverSuggestsLiveAll:
+    """Verifier (installer lens): the Start window ended 'To switch any bot:
+    ... --live all', which now puts the sacked Rider back on real money."""
+
+    def test_no_live_all_anywhere_the_installer_prints(self):
+        lib = (MAC / "mintel_mac.sh").read_text()
+        code = "\n".join(l for l in lib.splitlines() if not l.strip().startswith("#"))
+        assert "--live all" not in code
+        final = lib.split("final_report() {")[1].split("\n}\n")[0]
+        assert "-m mintel.ops.modes --config $CONFIG --show" in final and "--paper crowd" in final
+        assert "replaced by the Rapid Momentum Rider" not in final
+
+
+class TestTheDayReviewIconOnBash32:
+    """Verifier (installer lens; pre-existing): Day Review ran
+    "${DATE_ARG[@]}" under set -u with an empty array - an 'unbound variable'
+    error in macOS's bash 3.2 (fixed only in bash 4.4), so a double-click
+    without a date failed. This machine's bash is newer, so the script is
+    read for the guard and then run both ways."""
+
+    def test_the_empty_date_is_guarded_and_both_ways_run(self, tmp_path):
+        import os
+        path = MAC / "Day Review.command"
+        text = path.read_text()
+        code = "\n".join(l for l in text.splitlines() if not l.strip().startswith("#"))
+        assert '${DATE_ARG[@]+"${DATE_ARG[@]}"}' in code
+        assert ' "${DATE_ARG[@]}"' not in code
+        home = tmp_path / "home"
+        (home / "MarketBot" / "app" / "mintel").mkdir(parents=True)
+        (home / "MarketBot" / "venv" / "bin").mkdir(parents=True)
+        log = tmp_path / "args.log"
+        py = home / "MarketBot" / "venv" / "bin" / "python"
+        py.write_text(f'#!/bin/bash\nprintf "%s|" "$@" > "{log}"\n')
+        py.chmod(0o755)
+        env = {**os.environ, "HOME": str(home)}
+        r = subprocess.run(["bash", str(path)], input="\n", capture_output=True, text=True, env=env, timeout=30)
+        assert r.returncode == 0, r.stderr
+        assert log.read_text() == f"-m|mintel.ops.day_review|--config|{home}/MarketBot/data/config.json|"
+        r = subprocess.run(["bash", str(path), "2026-10-09"], input="\n", capture_output=True, text=True, env=env,
+                           timeout=30)
+        assert r.returncode == 0 and log.read_text().endswith("|--date|2026-10-09|")

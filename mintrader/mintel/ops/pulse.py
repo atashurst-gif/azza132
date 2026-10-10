@@ -175,6 +175,12 @@ def _figures(cfg: Config, status: dict, st: dict, now: dt.datetime) -> dict:
         # tnb_mode - Trend & Breakout's mode as the running trader reports
         #   it: LIVE (its orders are real) or PAPER (simulated).
         "tnb_mode": mode,
+        # tnb_mode_detail, tnb_live_groups, tnb_live_since_utc - 9 Oct: the
+        #   kinds of market Trend & Breakout keeps LIVE while on PAPER (real
+        #   orders under its magic; Formula 1 is FX_MINOR) and since when, as
+        #   the running trader reports them: "PAPER (FX_MINOR live)". Their
+        #   real trades are in today_pnl and open_positions like any other.
+        **_tnb_live(cfg, st, mode),
         "build": st.get("build"),
     }
     if today is None:
@@ -191,6 +197,22 @@ def _figures(cfg: Config, status: dict, st: dict, now: dt.datetime) -> dict:
         if why:
             out["tnb_practice_error"] = why
     return out
+
+
+def _tnb_live(cfg: Config, st: dict, mode: str) -> dict:
+    """Trend & Breakout's live markets while on PAPER, from the running
+    trader's page; from the settings when the page is older than 9 Oct."""
+    groups = st.get("tnb_live_groups")
+    if isinstance(groups, list):
+        since = str(st.get("tnb_live_since_utc") or "")
+    else:
+        from ..config import tnb_live_groups
+        groups = list(tnb_live_groups(cfg)) if mode == "PAPER" else []
+        since = str(getattr(getattr(cfg, "tnb", None), "live_since_utc", "") or "") if groups else ""
+    from ..config import tnb_mode_detail
+    groups = [str(g) for g in groups] if mode == "PAPER" else []
+    return {"tnb_mode_detail": tnb_mode_detail(mode, groups), "tnb_live_groups": groups,
+            "tnb_live_since_utc": since if groups else ""}
 
 
 def _tnb_practice_today(cfg: Config, sd: dict, now: dt.datetime) -> tuple[Optional[float], str]:
@@ -293,6 +315,8 @@ def pulse_line(p: dict) -> str:
         if str(p.get("tnb_mode") or "").upper() == "PAPER":
             pr = p.get("tnb_practice_today")           # practice, never money
             line += f" tnb=PAPER tnb_practice={'?' if pr is None else f'{pr:+.2f}'}"
+            if p.get("tnb_live_groups"):                # 9 Oct: kinds whose T&B orders are real (Formula 1)
+                line += f" tnb_live={','.join(p['tnb_live_groups'])}"
         return line
     return f"{ts} DOWN {p['reason']}"
 
@@ -600,6 +624,10 @@ def _tnb_bot(cfg: Config, p: dict, status: dict, page_ok: bool) -> dict:
         except Exception:
             mode = "?"
     out: dict = {"mode": mode, "running": bool(p.get("up"))}
+    if mode in ("LIVE", "PAPER"):
+        live = _tnb_live(cfg, st, mode)                # 9 Oct: e.g. "PAPER (FX_MINOR live)", since when
+        out.update({"mode_detail": live["tnb_mode_detail"], "live_groups": live["tnb_live_groups"],
+                    "live_since_utc": live["tnb_live_since_utc"]})
     if mode == "PAPER":
         out["open_paper_trades"] = _tnb_paper_open(Path(cfg.ops.data_dir))
     if not page_ok:
@@ -612,7 +640,11 @@ def _tnb_bot(cfg: Config, p: dict, status: dict, page_ok: bool) -> dict:
     out["last_trade"] = st.get("last_trade")
     out["not_trading_because"] = [str(x) for x in (st.get("not_trading_because") or [])][:10]
     out["positions_on_page"] = _picks(status.get("positions"), TNB_POSITION_KEYS, 20)
-    out["positions_on_page_note"] = ("as its page lists them: on PAPER its paper book (simulated) plus any real "
+    kept = ", ".join(out.get("live_groups") or ())     # 9 Oct: e.g. FX_MINOR (Formula 1) trades for real
+    out["positions_on_page_note"] = (f"as its page lists them: on PAPER its paper book (simulated) plus its real "
+                                     f"positions - its {kept} trades, which are LIVE, and any left from LIVE; the "
+                                     f"real ones are also under open_on_account" if kept and mode == "PAPER" else
+                                     "as its page lists them: on PAPER its paper book (simulated) plus any real "
                                      "position left from LIVE; the real ones are also under open_on_account")
     out["thinking"] = _picks(status.get("thinking"), THINKING_KEYS, 5)
     return out

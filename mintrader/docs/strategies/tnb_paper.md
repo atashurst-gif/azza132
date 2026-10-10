@@ -268,3 +268,20 @@ a real position is refused before it reaches MetaTrader (on LIVE the dry
 run would otherwise manage Trend & Breakout's real trades too), and a
 trade the running bot already holds is never reported as "an order was
 sent".
+
+## 9 October, about 19:30 UK: Formula 1 LIVE, the rest still on PAPER
+
+Aaron: *"Sack the rider off and let's get trend and breakout live risking
+0.2 higher pip average per trade"*, then *"Just Formula 1"*. Trend &
+Breakout stays on PAPER, but its minor currency pair trades (EURGBP, AUDJPY
+and similar; `"tnb": {"live_groups": ["FX_MINOR"], "live_since_utc": ...}`)
+go to the real broker; everything else is still simulated here and still
+feeds the Momentum Runner, so no idea is traded twice. The money a trade is
+0.7% of the balance, at most GBP 13 (was 0.5% and 10); the proven FX-minor
+setup keeps its top-opportunity size. The installers set it once (marker
+`.formula1-2026-10-09`). The page never calls it plain PAPER: its row reads
+"LIVE: minor pairs (Formula 1) - rest PAPER", its real money (MetaTrader,
+magic 990311) leads and its practice follows in grey. The plan's focus line
+counts Formula 1's live trades from MetaTrader's deal records only - its
+positions on minor pairs opened since `live_since_utc` - and it is judged
+after 20 of them (docs/plan.json).

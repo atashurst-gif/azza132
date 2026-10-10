@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS trades (
     spread_pips REAL, cost_pips REAL, reward_risk REAL,
     entry_state_json TEXT, exit_state_json TEXT, flow_json TEXT,
     account_currency TEXT, equity_at_entry REAL, aggression TEXT,
-    mode TEXT, learned TEXT
+    mode TEXT, learned TEXT, entry_commission REAL, commission_sides INTEGER,
+    runner_volume REAL
 );
 CREATE INDEX IF NOT EXISTS ix_trades_closed ON trades(closed_utc);
 CREATE INDEX IF NOT EXISTS ix_trades_symbol ON trades(symbol);
@@ -148,7 +149,31 @@ class Journal:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.executescript(SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    # Columns a journal written by an older version gains on open (nothing
+    # is dropped or rewritten). 9 Oct: what pnl_money holds of the broker's
+    # commission. entry_commission - the opening deal's commission added
+    # into pnl_money (NULL: not known). commission_sides - 2 when pnl_money
+    # holds the opening and the closing deals' commission (every trade
+    # closed from 9 Oct whose opening deal could be read), 1 the closing
+    # deals' only (NULL on every older row: closed_deal sums the closing
+    # deals), 0 none (worked out from prices, no broker record). 10 Oct:
+    # runner_volume - the volume the Momentum Runner copies from this trade
+    # (its size at the Runner's copy settings, RiskManager.copy_size; NULL:
+    # not worked out, the Runner holds the copy to runner.max_risk_money).
+    ADDED_COLUMNS = {"entry_commission": "REAL", "commission_sides": "INTEGER", "runner_volume": "REAL"}
+
+    def _migrate(self) -> None:
+        have = {row[1] for row in self._conn.execute("PRAGMA table_info(trades)")}
+        for col, kind in self.ADDED_COLUMNS.items():
+            if col not in have:
+                try:
+                    self._conn.execute(f"ALTER TABLE trades ADD COLUMN {col} {kind}")
+                except sqlite3.OperationalError as exc:      # another process added it a moment ago
+                    if "duplicate column" not in str(exc).lower():
+                        raise
 
     def close(self) -> None:
         with self._lock:
@@ -240,14 +265,16 @@ class Journal:
     def open_trade(self, position: Position, state: MarketState,
                    intent_key: str, risk_pct: float, risk_money: float,
                    equity: float, currency: str, aggression: str,
-                   mode: str) -> None:
+                   mode: str, runner_volume: Optional[float] = None) -> None:
+        """``runner_volume``: what the Momentum Runner copies from this
+        trade (see ADDED_COLUMNS); None when not worked out."""
         self._exec("""
             INSERT INTO trades (ticket, intent_key, symbol, side, volume,
                 entry, stop, target, opened_utc, regime, tactic, opportunity,
                 raw_score, tier, risk_pct, risk_money, session, news_state,
                 spread_pips, cost_pips, reward_risk, entry_state_json,
-                account_currency, equity_at_entry, aggression, mode)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                account_currency, equity_at_entry, aggression, mode, runner_volume)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(ticket) DO NOTHING
         """, (position.ticket, intent_key, position.symbol,
               position.side.value, position.volume, position.entry_price,
@@ -257,19 +284,26 @@ class Journal:
               risk_pct, risk_money,
               ",".join(_sessions_from(state)), _news_from(state),
               _spread_from(state), state.cost_pips, state.reward_risk or 0.0,
-              json.dumps(state.to_row()), currency, equity, aggression, mode))
+              json.dumps(state.to_row()), currency, equity, aggression, mode,
+              None if runner_volume is None else float(runner_volume)))
 
     def close_trade(self, ticket: int, *, exit_price: float,
                     closed_utc: dt.datetime, pnl_money: float,
                     pnl_pips: float, exit_reason: str,
                     stats: dict, tracker: Optional[TradeTracker] = None,
                     exit_state: Optional[MarketState] = None,
-                    learned: str = "") -> None:
+                    learned: str = "",
+                    entry_commission: Optional[float] = None,
+                    commission_sides: Optional[int] = None) -> None:
+        """``commission_sides``: how many sides of the broker's commission
+        ``pnl_money`` holds (2 opening and closing, 1 closing only, 0 none);
+        None leaves it unknown, read as 1 (see ADDED_COLUMNS)."""
         self._exec("""
             UPDATE trades SET closed_utc=?, exit_price=?, pnl_money=?,
                 pnl_pips=?, realised_r=?, mfe=?, mae=?, mfe_r=?, mae_r=?,
                 mfe_capture_pct=?, exit_reason=?, final_flow_state=?,
-                exit_state_json=?, flow_json=?, learned=?
+                exit_state_json=?, flow_json=?, learned=?,
+                entry_commission=?, commission_sides=?
             WHERE ticket=?
         """, (to_utc(closed_utc).isoformat(), exit_price, pnl_money, pnl_pips,
               stats.get("realised_r", 0.0), stats.get("mfe", 0.0),
@@ -278,7 +312,8 @@ class Journal:
               exit_reason, stats.get("final_state", ""),
               json.dumps(exit_state.to_row()) if exit_state else None,
               json.dumps(tracker.to_row()) if tracker else None,
-              learned, ticket))
+              learned, entry_commission,
+              None if commission_sides is None else int(commission_sides), ticket))
 
     def closed_trades(self, limit: int = 500,
                       since: Optional[dt.datetime] = None) -> list[dict]:
@@ -336,10 +371,13 @@ class Journal:
     def segment_rows(self, tactic: str, limit: int = 500) -> list[dict]:
         """Closed trades of one approach, newest first, with the money the
         broker booked (``pnl_money``) and R against the planned stop - the
-        evidence the top-opportunity size is checked against."""
+        evidence the top-opportunity size is checked against - plus the
+        volume and how much of the commission pnl_money holds
+        (``commission_sides``), so a row missing its opening commission can
+        be counted honestly (RiskManager.segment_record)."""
         cur = self._exec("""
             SELECT ticket, symbol, regime, tactic, closed_utc, pnl_money, realised_r,
-                   side, entry, stop, exit_price FROM trades
+                   side, entry, stop, exit_price, volume, commission_sides FROM trades
             WHERE closed_utc IS NOT NULL AND (tactic=? OR tactic=?)
             ORDER BY closed_utc DESC LIMIT ?
         """, (tactic, f"{tactic}_2X", int(limit)))

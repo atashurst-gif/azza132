@@ -65,7 +65,7 @@ import re
 from pathlib import Path
 from typing import Optional, Sequence
 
-from ..clock import to_utc
+from ..clock import TZ_LONDON as UK_TZ, to_utc
 from .standing import _money, uk_date, uk_midnight
 
 log = logging.getLogger("mintel.verdicts")
@@ -396,11 +396,14 @@ def research_counts(r: Optional[dict]) -> bool:
 
 
 # ---------------------------------------------------------- can it trade --
+SWITCHED_OFF = "it is switched OFF"
+
+
 def cannot_trade(data_dir, bot: str, mode: str) -> str:
     """Why the bot cannot trade at all just now, from its own files; '' when
     nothing says it cannot (a missing status file says nothing)."""
     if str(mode or "").upper() == "OFF":
-        return "it is switched OFF"
+        return SWITCHED_OFF
     if not data_dir:
         return ""
     data = Path(data_dir)
@@ -516,6 +519,114 @@ def _segment_filter():
 
 
 SEGMENT_NAME = "momentum continuation on FX minor pairs, in fast and news markets"
+
+
+# ------------------------------------------------- Formula 1, LIVE (9 Oct) --
+# Aaron, 9 Oct about 19:30 UK: "Just Formula 1" - Trend & Breakout stays on
+# PAPER except its minor currency pair trades (config.json "tnb" ->
+# "live_groups": ["FX_MINOR"]), which go to the account with real money from
+# "live_since_utc". It is judged after 20 live trades (docs/plan.json "focus"
+# -> "judge_after"), from MetaTrader's records only - never the journal,
+# never practice.
+FORMULA1_GROUP = "FX_MINOR"
+FORMULA1_JUDGE_AFTER = 20
+TNB_MAGIC = 990_311
+# the kinds of market in plain words, for "LIVE: minor pairs (Formula 1) - rest PAPER"
+_KIND_WORDS = {"FX_MINOR": "minor pairs", "FX_MAJOR": "major pairs", "FX_EXOTIC": "exotic pairs", "INDEX": "indices",
+               "GOLD": "gold", "SILVER": "silver", "METAL": "metals", "ENERGY": "energy"}
+
+
+def tnb_live_setting(data_dir) -> dict:
+    """Which kinds of Trend & Breakout's market trade for REAL while it is on
+    PAPER, from config.json in the data folder (the file the trader reads):
+    {groups: ("FX_MINOR",) - empty when it is LIVE, or all on paper; since:
+    tnb.live_since_utc as a UTC datetime, None when not recorded}. Spelled as
+    the PaperBroker reads them ("INDICES" is INDEX). Never raises."""
+    out = {"groups": (), "since": None}
+    raw = _read_json(Path(data_dir) / "config.json") if data_dir else None
+    b = (raw or {}).get("tnb")
+    if not isinstance(b, dict) or str(b.get("mode") or "").strip().upper() != "PAPER":
+        return out
+    g = b.get("live_groups") or []
+    g = [g] if isinstance(g, str) else (list(g) if isinstance(g, (list, tuple)) else [])
+    try:
+        from ..broker.paper import GROUP_ALIASES
+    except Exception:                                    # never a reason to fail the page
+        GROUP_ALIASES = {}
+    groups: list = []
+    for x in g:
+        key = str(x or "").strip().upper()
+        if key:
+            groups.extend(GROUP_ALIASES.get(key, (key,)))
+    out["groups"] = tuple(dict.fromkeys(groups))
+    since = str(b.get("live_since_utc") or "").strip()
+    out["since"] = _when(since) if since and out["groups"] else None
+    return out
+
+
+def live_kinds(groups) -> str:
+    """The kinds of market that trade for real, in plain words: 'minor pairs
+    (Formula 1)'; '' when none."""
+    return _join([_KIND_WORDS.get(g, str(g).lower().replace("_", " ")) + (" (Formula 1)" if g == FORMULA1_GROUP else "")
+                  for g in tuple(groups or ())])
+
+
+def live_words(groups) -> str:
+    """Trend & Breakout's mode when part of it trades for real: 'LIVE: minor
+    pairs (Formula 1) - rest PAPER'; '' when nothing does."""
+    kinds = live_kinds(groups)
+    return f"LIVE: {kinds} - rest PAPER" if kinds else ""
+
+
+def formula1_live(deals, open_tickets, since: Optional[dt.datetime], magic: int = TNB_MAGIC) -> dict:
+    """Formula 1's LIVE record, from MetaTrader's deal rows only: Trend &
+    Breakout's REAL positions (its magic) on minor currency pairs
+    (``contracts.infer_group``, as the PaperBroker routes them) OPENED at or
+    after ``since`` (tnb.live_since_utc). A closed one counts in full - every
+    one of its deals, commission and swap - on the UK day it closed
+    (``stats``); one still open is counted only as open. {stats, open, since}."""
+    from ..contracts import infer_group
+    from .standing import positions_of
+    trades, n_open = [], 0
+    if since is not None:
+        since = to_utc(since)
+        for p in positions_of(deals or (), open_tickets):
+            if p.get("bot_magic") != magic or p.get("opened") is None or p["opened"] < since:
+                continue
+            if infer_group(str(p.get("symbol") or "")) != FORMULA1_GROUP:
+                continue
+            if not p.get("is_closed"):
+                n_open += 1
+                continue
+            trades.append({"closed": p["closed"], "net": round(float(p["net"]), 2),
+                           "costs": round(float(p.get("commission") or 0.0), 2), "symbol": str(p.get("symbol") or ""),
+                           "ticket": int(p.get("position") or 0), "kind": "real"})
+    return {"stats": stats(trades), "open": n_open, "since": since}
+
+
+def formula1_judgement(f1: dict, judge_after: int = FORMULA1_JUDGE_AFTER) -> str:
+    """What the plan's rule says of Formula 1's live trades so far, in one
+    sentence: keep and grow it after ``judge_after`` live trades if it is
+    positive after costs with more up days than down, otherwise back to PAPER."""
+    s = (f1 or {}).get("stats") or stats([])
+    n = int(s.get("trades") or 0)
+    # 10 Oct: never a count that was not made - MetaTrader unreadable, or no live start time on record
+    if not (f1 or {}).get("readable", True):
+        so_far = "they cannot be counted just now: MetaTrader's records could not be read"
+    elif (f1 or {}).get("since") is None:
+        so_far = "they are not counted yet: its live start time is not recorded"
+    else:
+        so_far = f"{n} so far"
+    if n < judge_after or so_far != f"{n} so far":
+        return (f"Formula 1 - its minor-pair trades - is LIVE: judge it after {judge_after} live trades "
+                f"({so_far}). Keep it and grow it only if it is positive after costs with more up days than down; "
+                f"otherwise back to PAPER and test the next candidate. The rest stays on PAPER.")
+    passes = float(s.get("net") or 0.0) > 0 and int(s.get("up_days") or 0) > int(s.get("down_days") or 0)
+    facts = (f"{_gbp(s['net'])} after costs over {_n(n, 'live trade')}, {s['up_days']} days up and "
+             f"{s['down_days']} down")
+    return (f"Formula 1 has its {judge_after} live trades - time to judge it: {facts}. "
+            + ("By the plan's rule that is a keep: keep it and grow it." if passes else
+               "By the plan's rule it has not earned its place: back to PAPER, and test the next candidate."))
 
 
 def tnb_history(data_dir, reset: dt.datetime, real_by_ticket: dict, record=None,
@@ -715,7 +826,7 @@ def money_gap(view: Optional[dict], magic: int, made: Optional[float], closed: d
 
 def what_happened(mode: str, phrase: str, real: dict, practice: dict, judged: dict,
                   research: Optional[dict], real_ok: bool = True, real_money: Optional[float] = None,
-                  real_note: str = "", split: Optional[tuple] = None) -> str:
+                  real_note: str = "", split: Optional[tuple] = None, mixed: bool = False) -> str:
     """Two or three plain sentences built from the numbers: the chosen
     period (real money for a LIVE bot, practice for a PAPER one), what the
     costs did, and the longer record or its research. ``real_ok`` False:
@@ -723,11 +834,15 @@ def what_happened(mode: str, phrase: str, real: dict, practice: dict, judged: di
     than "no trades". ``real_money``: the period's real money as the page's
     rows show it (``view_made``), used for the money in place of the closed
     trades added up, with ``real_note`` (``money_gap``) saying why they
-    differ. ``split``: (real, practice) trades in ``judged``."""
+    differ. ``split``: (real, practice) trades in ``judged``. ``mixed``:
+    part LIVE (Trend & Breakout's Formula 1, 9 Oct), read as LIVE with its
+    real trades called real, so a day of practice alone never reads as if
+    nothing was traded."""
     live = str(mode or "").upper() == "LIVE"
+    off = str(mode or "").upper() == "OFF"
     if live:
-        main, kind = real, ""
-    elif real["trades"] and not practice["trades"]:
+        main, kind = real, ("real " if mixed else "")
+    elif off or (real["trades"] and not practice["trades"]):
         main, kind = real, "real "                      # a real trade left from its LIVE days
     else:
         main, kind = practice, "practice "
@@ -736,12 +851,16 @@ def what_happened(mode: str, phrase: str, real: dict, practice: dict, judged: di
     if live and not real_ok:
         out.append(f"MetaTrader's records could not be read just now, so its real trades {phrase} are not shown "
                    f"rather than shown wrong.")
+    elif off and not main["trades"]:
+        out.append(f"No trades {phrase}: it is switched off.")
+        if real_note:
+            out.append(real_note)
     elif not main["trades"]:
         out.append(f"No {kind}trades {phrase}.")
         if kind != "practice " and real_note:
             out.append(real_note)
     else:
-        tag = {"practice ": " (practice, not money)", "real ": " - left from its LIVE days"}.get(kind, "")
+        tag = "" if mixed else {"practice ": " (practice, not money)", "real ": " - left from its LIVE days"}.get(kind, "")
         out.append(f"{_n(main['trades'], kind + 'trade')} {phrase}, {main['wins']} won, "
                    f"{_gbp(real_net if kind != 'practice ' else main['net'])} after costs{tag}.")
         if main["wins"] and main.get("avg_loss") is not None:
@@ -810,6 +929,8 @@ def headline(code: str, s: dict, research: Optional[dict], blocked: str, split: 
     if code == BREAK_EVEN:
         return f"Break-even: {_gbp(s['expectancy'])} a trade after costs over {cnt} - no edge as a whole."
     if code == WAITING:
+        if blocked == SWITCHED_OFF:                      # 9 Oct: the Rider is off by choice, not waiting to trade
+            return "Switched off: it places no trades, so there is nothing new to judge."
         return f"Waiting: {blocked} - nothing new to judge until it can trade."
     if not n:
         return f"Too early to tell: no trades yet - it needs {MIN_TRADES} over {MIN_DAYS} UK days."
@@ -824,7 +945,10 @@ def recommendation(code: str, mode: str, label: str, s: dict, blocked: str, bot:
     """What to do about it, in one or two sentences. ``split``: (real,
     practice) trades in ``s``."""
     live = str(mode or "").upper() == "LIVE"
+    off = str(mode or "").upper() == "OFF"
     n, days = int(s.get("trades") or 0), int(s.get("days") or 0)
+    if code == NO_EDGE and off:
+        return "Leave it off - it is binned: do not put money on it."
     if code == NO_EDGE:
         return ("Take it off live trading - put it back on PAPER (or bin it). Every live trade pays costs for an "
                 "edge it does not have." if live else
@@ -852,6 +976,8 @@ def recommendation(code: str, mode: str, label: str, s: dict, blocked: str, bot:
         return (("Keep it small or move it to PAPER: as a whole it does not pay." if live else
                  "Keep it on PAPER: as a whole it does not pay - look inside it for the part that does.") + part)
     if code == WAITING:
+        if blocked == SWITCHED_OFF:
+            return "Nothing to judge while it is switched off."
         return f"Nothing to judge until it can trade ({blocked})."
     need = f"{MIN_TRADES} trades over {MIN_DAYS} UK days"
     have = f"{_count(n, split)} over {_n(days, 'UK day')}" if n else "no trades yet"
@@ -862,7 +988,8 @@ def recommendation(code: str, mode: str, label: str, s: dict, blocked: str, bot:
 def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[dict], tot: Optional[dict],
                 data_dir, now: dt.datetime, reset: Optional[dt.datetime] = None, real_readable: bool = True,
                 record=None, since_plan: Optional[dt.datetime] = None, period: Optional[dict] = None,
-                deals=None) -> dict:
+                deals=None, live_groups=(), formula1: Optional[dict] = None,
+                judge_after: int = FORMULA1_JUDGE_AFTER) -> dict:
     """One bot: its verdict, a one-line headline, "What happened" in the
     chosen period (``sel``, a ``standing.period_view``), a recommendation,
     and the evidence with its source and dates. ``tot`` is the Total view
@@ -876,8 +1003,17 @@ def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[di
     averages; ``deals`` (the account's deal rows) count the trades still
     open when the two differ. The verdict
     is judged only on trades whose full costs are on record. Never raises
-    for a missing file."""
+    for a missing file.
+
+    Trend & Breakout on PAPER with ``live_groups`` (9 Oct: its minor currency
+    pairs LIVE, Formula 1) is part LIVE: its mode reads "LIVE: minor pairs
+    (Formula 1) - rest PAPER" (``mode_words``), What happened leads with its
+    real money (practice after it, labelled), and with ``formula1``
+    (``formula1_live``) the recommendation is the plan's judgement of
+    Formula 1 after ``judge_after`` live trades. The verdict itself is the
+    same rule on the same trades (its real ones and its labelled practice)."""
     now = to_utc(now)
+    mixed = bot == TNB and bool(live_groups) and str(mode or "").upper() != "LIVE"
     reset = to_utc(reset) if reset is not None else (_when((tot or {}).get("start")) or uk_midnight(uk_date(now)))
     tomorrow = uk_midnight(uk_date(now) + dt.timedelta(days=1))
     pv = sel if sel is not None else (period or None)
@@ -1002,13 +1138,45 @@ def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[di
     if blocked:
         evidence.append({"label": "Can it trade?", "facts": f"No - {blocked}", "source": "its own settings and status file",
                          "period": "now"})
+    if mixed and formula1 is not None:
+        f1s = formula1.get("stats") or stats([])
+        since = formula1.get("since")
+        when = f"{_day(uk_date(since))} {since.astimezone(UK_TZ).strftime('%H:%M')} UK" if since else ""
+        if not formula1.get("readable", True):
+            facts = "MetaTrader's records for it could not be read just now - nothing is shown rather than a guess"
+        elif since is None:
+            facts = "its live start time is not recorded (tnb.live_since_utc), so its live trades are not counted yet"
+        else:
+            k = int(formula1.get("open") or 0)
+            facts = (_facts(f1s) if f1s["trades"] else "no live trades closed yet") + (
+                f"; {k} more still open (not counted until {'it closes' if k == 1 else 'they close'})"
+                if k else "") + (f". {f1s['trades']} of {judge_after} toward the judgement"
+                                                    if f1s["trades"] < judge_after else
+                                                    f". Its {judge_after} live trades are in: time to judge it")
+        evidence.insert(0, {"label": "Formula 1 LIVE - its minor-pair trades with real money",
+                            "facts": facts,
+                            "source": f"MetaTrader's records for magic number {magic}: positions on minor currency pairs "
+                                      f"opened since it went live, each in full after commission - never its journal",
+                            "period": f"since {when}" if when else ""})
+    head = (headline(code, judged, research_used, blocked, split) if real_ok or code != NOT_ENOUGH else
+            "No verdict just now: MetaTrader's records could not be read - it comes back on its own.")
+    if mixed and (real_ok or code != NOT_ENOUGH):
+        # 10 Oct: the chip and this line judge Trend & Breakout as a whole (its practice and its real trades,
+        # earlier ones included), next to a pill that says Formula 1 is LIVE - so they say what they cover
+        head = f"As a whole (practice and real together; Formula 1 is judged on its own below): {head}"
+        action = f"{action} for Trend & Breakout as a whole - Formula 1 is judged on its own"
     return {"bot": bot, "label": label, "mode": str(mode or ""), "magic": magic, "code": code, "why": why,
             "action": action, "colour": colour,
-            "headline": (headline(code, judged, research_used, blocked, split) if real_ok or code != NOT_ENOUGH else
-                         "No verdict just now: MetaTrader's records could not be read - it comes back on its own."),
-            "what_happened": what_happened(mode, phrase, real_p, prac_p, judged, research_used, real_ok,
-                                           real_money=made_p, real_note=gap_p, split=split),
-            "recommendation": recommendation(code, mode, label, judged, blocked, bot, seg, split),
+            "mode_words": live_words(live_groups) if mixed else str(mode or ""),
+            "live_kinds": live_kinds(live_groups) if mixed else "",
+            "live_groups": tuple(live_groups) if mixed else (),
+            "formula1": formula1 if mixed else None,
+            "headline": head,
+            # part LIVE: What happened leads with its real money, its practice after it (labelled)
+            "what_happened": what_happened("LIVE" if mixed else mode, phrase, real_p, prac_p, judged, research_used,
+                                           real_ok, real_money=made_p, real_note=gap_p, split=split, mixed=mixed),
+            "recommendation": (formula1_judgement(formula1, judge_after) if mixed and formula1 is not None else
+                               recommendation(code, mode, label, judged, blocked, bot, seg, split)),
             "evidence": evidence, "rule": RULE_TEXT,
             "period": {"real": real_p, "practice": prac_p, "phrase": phrase, "made": made_p},
             "real": real_all, "practice": prac_all, "judged": judged, "research": research, "segment": seg,
@@ -1044,25 +1212,48 @@ def all_verdicts(sd: Optional[dict], sel: Optional[dict], tot: Optional[dict], d
             record = TnbPaperRecord(data_dir)
         except Exception:
             record = None
+    live = tnb_live_setting(data_dir)
+    focus = (plan or {}).get("focus") if isinstance((plan or {}).get("focus"), dict) else {}
+    try:
+        judge_after = int(focus.get("judge_after") or FORMULA1_JUDGE_AFTER)
+    except (TypeError, ValueError):
+        judge_after = FORMULA1_JUDGE_AFTER
     out = {}
     for bid, label in ACTIVE_BOTS:
         b = by_id.get(bid) or {}
         magic = int(b.get("magic") or DEFAULT_MAGICS.get(bid, 0))
         mode = str(b.get("mode") or "")
+        readable = bool(b) and magic not in unknown and b.get("made") is not None
+        extra = {}
+        if bid == TNB and live["groups"]:
+            extra["live_groups"] = live["groups"]
+            if FORMULA1_GROUP in live["groups"]:
+                # Formula 1's live trades: MetaTrader's deal rows only, and only when they could be read
+                f1 = (formula1_live(deals, sd.get("open_tickets"), live["since"], magic)
+                      if readable and deals is not None else {"stats": stats([]), "open": 0, "since": live["since"]})
+                extra["formula1"] = dict(f1, readable=readable and deals is not None)
+                extra["judge_after"] = judge_after
         try:
             out[bid] = bot_verdict(bid, str(b.get("label") or label), mode, magic, sel=sel, tot=tot,
                                    data_dir=data_dir, now=now, reset=reset,
-                                   real_readable=bool(b) and magic not in unknown and b.get("made") is not None,
-                                   record=record, since_plan=since_plan, period=period, deals=deals)
+                                   real_readable=readable,
+                                   record=record, since_plan=since_plan, period=period, deals=deals, **extra)
         except Exception as exc:                          # never a reason to fail the page
             log.warning("verdict of %s: %s", bid, exc)
+            if extra.get("live_groups") and mode.upper() != "LIVE":
+                # 10 Oct: still part LIVE (Formula 1) - never plain PAPER with its real money called "LIVE days"
+                g = tuple(extra["live_groups"])
+                extra = {"mode_words": live_words(g), "live_kinds": live_kinds(g), "live_groups": g,
+                         "formula1": extra.get("formula1")}
+            else:
+                extra = {}
             out[bid] = {"bot": bid, "label": label, "mode": mode, "magic": magic, "code": NOT_ENOUGH,
                         "action": VERDICTS[NOT_ENOUGH][0], "colour": VERDICTS[NOT_ENOUGH][1],
                         "headline": f"Its records could not be read just now ({exc}).", "what_happened": "",
                         "recommendation": "", "evidence": [], "rule": RULE_TEXT,
                         "period": {"real": stats([]), "practice": stats([]), "phrase": in_period(sel or period)},
                         "real": stats([]), "practice": stats([]), "judged": stats([]), "research": None,
-                        "segment": None, "error": str(exc)}
+                        "segment": None, "error": str(exc), **extra}
     return out
 
 

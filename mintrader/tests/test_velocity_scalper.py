@@ -276,5 +276,6 @@ class TestInsideTheEngine:
     def test_the_other_bots_are_untouched(self):
         from mintel.config import Config as C
         c = C()
-        assert c.scan.entry_tier == "STRONG" and c.risk.max_risk_money == 10.0 and c.runner.trail_r == 3.0
+        # Trend & Breakout's money cap: 13 from 9 Oct (Aaron, "About £13 a trade"), 10 before
+        assert c.scan.entry_tier == "STRONG" and c.risk.max_risk_money == 13.0 and c.runner.trail_r == 3.0
         assert c.bandbreaker.markets == ("US500", "US30", "USTEC")

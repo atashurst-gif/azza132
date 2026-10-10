@@ -375,3 +375,9 @@ which case it was.
 - The installer step (INSTALL-FINANCIAL-IAN), the start script and the page
   itself are wired separately; this package provides `python -m mintel.ian
   --set-key` for the installer to call and the status file for the page.
+
+## Daily record
+
+| Day | Mode | Trades | Wins | Net (the broker's figure) | Notes |
+|---|---|---|---|---|---|
+| 9 Oct | LIVE (Binance public book) | 6 | 2 | -3.73 (no commission) | No data until the 16:36 UK restart ("feed none" before). Then 6 BTCUSD trades 16:38-16:59 UK, risk 9.00-10.64 each, average win +5.35 vs loss -3.61; then its 6-entries-a-day limit for the market. All 171 ETHUSD signals refused on cost (spread 33% of the target, limit 30%: the 3x-spread stop floor with a 1:1 target). Two short data blips (17:51 and 19:02 UK). 6 of 30 trades before judging |

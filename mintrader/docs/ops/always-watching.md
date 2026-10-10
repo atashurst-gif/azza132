@@ -138,5 +138,6 @@ then anything that carried none of them (a hand trade), each with
 positions, price result, commission and net, then the account total. The
 account line must match the bottom of MetaTrader's History tab for the same
 day. Only real trades are in it: Trend & Breakout's PAPER trades never
-reach MetaTrader, so its line is only a real trade left open from LIVE.
+reach MetaTrader, so its line is its LIVE minor currency pair trades
+(Formula 1, from the evening of 9 Oct) and any real trade left open from LIVE.
 Add `--positions` to list every position. Read-only.

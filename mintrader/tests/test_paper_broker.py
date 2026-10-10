@@ -686,7 +686,11 @@ class TestDealsAndJournal:
             assert row["ticket"] >= PAPER_FIRST_TICKET and paper.is_paper(row["ticket"])
             deal = paper.closed_deal(row["ticket"])
             assert deal is not None
-            assert row["pnl_money"] == pytest.approx(deal["pnl"], abs=0.01)
+            # 9 Oct: the journal holds the whole commission - closed_deal's closing side and the opening deal's
+            opening = sum(d["commission"] for d in paper.paper_deals_since(dt.datetime(2000, 1, 1, tzinfo=UTC), False)
+                          if d["position"] == row["ticket"] and d["is_entry"])
+            assert row["pnl_money"] == pytest.approx(deal["pnl"] + opening, abs=0.01)
+            assert row["commission_sides"] == 2 and row["entry_commission"] == pytest.approx(opening, abs=0.01)
         # the daily-loss stop's figure is the paper ledger (entries' commission included)
         start = t._strategy_day_start(sim.now)
         expected = sum(r["profit"] for r in paper.deals_since(start, cfg.magic, False))

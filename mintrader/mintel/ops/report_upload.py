@@ -85,10 +85,11 @@ def trades_csv(journal_rows: list[dict], positions: list[dict], paper_tickets=fr
 def tnb_json(cfg: Config, day: dt.datetime, positions: list[dict]) -> Optional[str]:
     """Trend & Breakout's PAPER day: its paper deals and positions from its
     paper record (practice, not money, never in the account) and its REAL
-    positions left from LIVE (real money). None on LIVE with no paper deal
-    that day."""
-    from .standing import TnbPaperRecord, tnb_mode
+    positions - its kinds of market kept LIVE (9 Oct: Formula 1) and any
+    left from LIVE (real money). None on LIVE with no paper deal that day."""
+    from .standing import TnbPaperRecord, tnb_live_words, tnb_mode
     mode = tnb_mode(cfg)
+    _, phrase, kinds = tnb_live_words(cfg)            # 9 Oct: e.g. its minor currency pairs LIVE (Formula 1)
     record = TnbPaperRecord(cfg.ops.data_dir, cfg.magic)
     end = day + dt.timedelta(days=1)
     deals = record.deals_in(day, end)
@@ -96,8 +97,13 @@ def tnb_json(cfg: Config, day: dt.datetime, positions: list[dict]) -> Optional[s
         return None
     paper = [p for p in positions if p.get("mode") == "PAPER"]
     real = [p for p in positions if p.get("mode") != "PAPER"]
+    runner = ("Its index orders are real, so the Momentum Runner gets no runner feed." if "INDEX" in kinds else
+              "The Momentum Runner rides its index entries.")
     out = {"mode": mode,
-           "note": ("Trend & Breakout is on PAPER: real prices, simulated orders; its practice is not money and is "
+           "note": (f"Trend & Breakout is on PAPER, with its {phrase}: those are real orders and real money (under "
+                    f"real, from the broker's records). Everything else: real prices, simulated orders; that practice "
+                    f"is not money and is never in the account. {runner}" if mode == "PAPER" and phrase else
+                    "Trend & Breakout is on PAPER: real prices, simulated orders; its practice is not money and is "
                     "never in the account. The Momentum Runner rides its index entries." if mode == "PAPER" else
                     "Trend & Breakout was on PAPER for part of the day: its paper trades are not money."),
            "paper": {"source": "the paper record (tnb_paper.sqlite), read-only", "deals": deals,

@@ -1,46 +1,49 @@
 {
   "aim": "Find one winning formula, prove it, grow it - then build the next.",
   "updated": "2026-10-09",
-  "written_by": "Written on 9 Oct 2026 from the real broker figures and the real-price research; the nightly review keeps it up to date.",
+  "written_by": "Written on the evening of 9 Oct 2026, after Aaron's decision, from the real broker figures and the real-price research; the nightly review keeps it up to date.",
   "focus": {
     "name": "Formula 1",
     "bot": "market_intelligence",
-    "what": "Trend & Breakout's momentum continuation on FX minor pairs, in fast and news markets.",
-    "evidence": "38 real trades over 10 days: 8 days up and 2 down, +£156.31 after £29.89 of commission (+£4.11 a trade). Without its best day it is still +£81 over 25 trades.",
-    "caution": "Chosen by looking back, so it has to prove itself going forward before it gets more money.",
+    "live_group": "FX_MINOR",
+    "judge_after": 20,
+    "what": "LIVE by Aaron's decision of 9 Oct. Trend & Breakout's minor currency pair trades (EURGBP, AUDJPY and similar) use real money, about £13 a trade (0.7% of the balance); its momentum continuation there, in fast and news markets, is the part its record backs and can earn the bigger top-opportunity size. The rest of Trend & Breakout stays on PAPER and still feeds the Momentum Runner.",
+    "evidence": "Its record: 38 real trades over 10 days, 8 days up and 2 down, +£156.31 after £29.89 of commission (+£4.11 a trade). Without its best day it is still +£81 over 25 trades.",
+    "caution": "Chosen by looking back, so it has to prove itself on new live trades: it is judged after 20 of them.",
     "source": "Trend & Breakout's real trades, 17 Sep - 8 Oct (MetaTrader's figures, after commission)"
   },
   "steps": [
-    {"text": "Rapid Momentum Rider back to PAPER - its own 10-day test on real prices found no edge (-1.3 pips a trade over 1,073 trades, and every version lost).", "bot": "momentum_rider", "done": false},
-    {"text": "Formula 1 live on its own - proposed for Monday, waiting for Aaron's OK.", "done": false},
-    {"text": "Judge Formula 1 after 20 live trades: keep it and raise the size only if it is positive after costs.", "done": false},
+    {"text": "Formula 1 live - judge it after 20 live trades: keep it and grow it if it is positive after costs with more up days than down; otherwise back to PAPER and test the next candidate.", "bot": "market_intelligence", "done": false},
+    {"text": "Rapid Momentum Rider switched OFF and binned - its own 10-day test on real prices found no edge (1,073 trades, lost 1.33 pips a trade after costs).", "bot": "momentum_rider", "done": false},
+    {"text": "Momentum Runner stays LIVE at about £10 a ride, riding Trend & Breakout's index entries from paper.", "bot": "momentum_runner", "done": false},
     {"text": "Financial Ian keeps testing on Binance's public crypto book until it has 30 trades.", "bot": "financial_ian", "done": false},
-    {"text": "Everything else stays on PAPER as the place the next formula comes from.", "done": false}
+    {"text": "Band Breaker and Crowd Fader stay on PAPER, where the next candidate comes from.", "done": false}
   ],
   "bin": [
-    {"bot": "momentum_rider", "stance": "bin", "says": "take {name} off live trading",
-     "text": "Rapid Momentum Rider as a live bot",
-     "why": "62 live trades on 9 Oct lost £50.16 after £58.28 of costs, and its own test on real past prices found no edge in any version."},
+    {"bot": "momentum_rider", "stance": "bin", "says": "bin {name}",
+     "text": "Rapid Momentum Rider - switched off",
+     "why": "Its own 10-day test on real prices found no edge: 1,073 trades, lost 1.33 pips a trade after costs, and every version lost. 62 live trades on 9 Oct lost £50.16 after £58.28 of costs."},
     {"text": "Trend & Breakout's momentum continuation on FX major pairs",
      "why": "17 real trades, -£13.87 after £17.48 of commission, down on 5 of 8 days - switched off since version 5. (Every Trend & Breakout approach on the FX majors together: -£84 over 74 real trades.)"}
   ],
   "change": [
-    {"text": "Trend & Breakout's FX-minor momentum trades become Formula 1, live on their own",
-     "why": "its one strong part: 38 real trades, 8 days up and 2 down, +£156 after commission."}
+    {"text": "Formula 1 live at about £13 a trade",
+     "why": "Trend & Breakout's minor currency pair trades now use real money at 0.7% of the balance (was 0.5%), at most £13 a trade (was £10); the proven setup keeps its bigger top-opportunity size. Every other limit, and every other bot's money a trade, is unchanged."}
   ],
   "keep": [
+    {"bot": "momentum_runner", "stance": "test", "text": "Momentum Runner LIVE, about £10 a ride",
+     "why": "2 real rides (-£14.28) is too few to judge; its index replay favoured it. It rides Trend & Breakout's index entries, which stay on paper, so no idea is traded twice."},
     {"bot": "financial_ian", "stance": "test", "text": "Financial Ian testing on Binance",
      "why": "2 trades (+£0.38) so far - no evidence yet; judge it at 30."},
-    {"bot": "momentum_runner", "stance": "test", "text": "Momentum Runner, small",
-     "why": "2 real rides (-£14.28) is too few to judge; its index replay favoured it."},
-    {"bot": "market_intelligence", "stance": "test", "text": "Trend & Breakout on PAPER",
-     "why": "436 real trades broke even (-£7.58 after £159 of commission); its indices (+£86 over 102 trades) are the next part to watch."},
+    {"text": "The rest of Trend & Breakout on PAPER",
+     "why": "436 real trades broke even (-£7.58 after £159 of commission); its indices (+£86 over 102 trades) feed the Momentum Runner and are the next part to watch."},
     {"bot": "band_breaker", "stance": "test", "text": "Band Breaker on PAPER",
      "why": "2 real trades (-£9.23) - no evidence either way."},
     {"bot": "crowd_fader", "stance": "test", "text": "Crowd Fader on PAPER",
      "why": "4 trades, all stopped (-£29.00 real) - no evidence yet."}
   ],
   "sources": [
+    "Aaron's decision, 9 Oct 2026 about 19:30 UK: the Rider off; Formula 1 live at about £13 a trade (0.7% of the balance, at most £13), judged after 20 live trades",
     "MetaTrader's deal history for each bot's magic number, since the account reset on 5 Oct 2026 (after commission)",
     "Rapid Momentum Rider research on real past ticks: reports/rider-research/2026-10-09/summary.json",
     "Trend & Breakout's real trades 17 Sep - 8 Oct, by approach and market (docs/strategies/v2-commission-first.md)"
