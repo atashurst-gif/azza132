@@ -164,6 +164,20 @@ starts, so a change applies on the next start. 9 Oct 2026 (Aaron, "Just
 Formula 1"): ``("FX_MINOR",)``, set with ``python -m mintel.ops.modes
 --tnb-live-groups FX_MINOR``, which also records ``tnb.live_since_utc``.
 
+live_tactics (10 Oct)
+---------------------
+Which approaches go real on those markets (``tnb.live_tactics``, e.g.
+``("MOMENTUM_CONTINUATION",)``). Default: empty, every approach on a live
+market goes real (as set on 9 Oct). When set, an order on a live market
+goes to the real broker only when its approach (``OrderRequest.tactic``,
+which the executor fills from the setup; a twin's "_2X" is the same
+approach) is listed; any other approach there, and an order that does not
+say its approach, is simulated like every other paper order - never real
+money on an approach it cannot name. A list that names no approach it
+knows keeps every market on paper. Stop changes and closes follow the
+ticket, so each position stays with the side it was opened on. Set with
+``python -m mintel.ops.modes --tnb-live-tactics MOMENTUM_CONTINUATION``.
+
 Tickets
 -------
 Paper tickets (positions and deals share one sequence) start at
@@ -275,6 +289,12 @@ def _groups(names: Sequence[str]) -> frozenset[str]:
     return frozenset(out)
 
 
+def _tactics(names: Sequence[str]) -> frozenset[str]:
+    """tnb.live_tactics as approach names ("_2X" twins are the same approach)."""
+    from ..engine.tactics import approach_of
+    return frozenset(a for a in (approach_of(n) for n in (names or ())) if a)
+
+
 def _iso(ts: dt.datetime) -> str:
     return _utc(ts).isoformat()
 
@@ -314,6 +334,9 @@ class PaperConfig:
     fx_rates: dict = field(default_factory=dict)        # {"USD": 0.79}: account currency per unit; overrides the broker
     fallback_fx_rates: dict = field(default_factory=lambda: dict(DEFAULT_FALLBACK_FX))
     live_groups: tuple[str, ...] = ()           # kinds of market sent to the REAL broker; empty = all paper
+    # 10 Oct: approaches whose orders on those markets go real; empty = every
+    # approach (as on 9 Oct). Any other approach, or none said: PAPER.
+    live_tactics: tuple[str, ...] = ()
     # A REAL position of this magic outside the live groups (left open from
     # before the switch to paper) is read-only by default: its broker stop and
     # target end it and nothing is sent. True lets the trader wind it down at
@@ -389,6 +412,13 @@ class PaperBroker:
         self.cfg = cfg
         self.magic = int(cfg.magic)
         self.live_groups = _groups(cfg.live_groups)
+        self.live_tactics = _tactics(cfg.live_tactics)
+        if cfg.live_tactics and not self.live_tactics and self.live_groups:
+            # a list that names no approach cannot be read as "every approach":
+            # fail safe, every market on paper
+            log.warning("PAPER %s: tnb.live_tactics %r names no approach, so no order goes to the real broker "
+                        "(every market stays on paper)", LABEL, tuple(cfg.live_tactics))
+            self.live_groups = frozenset()
         self.slippage_points = float(cfg.slippage_points or 0.0)
         self._commission = {**DEFAULT_COMMISSION, **{str(k).upper(): v for k, v in (cfg.commission or {}).items()}}
         self._now = now_fn
@@ -431,7 +461,7 @@ class PaperBroker:
             for name in PaperConfig.__dataclass_fields__:
                 src = block.get(name) if isinstance(block, dict) else getattr(block, name, None)
                 if src is not None:
-                    kw[name] = tuple(src) if name == "live_groups" else src
+                    kw[name] = tuple(src) if name in ("live_groups", "live_tactics") else src
         kw.setdefault("magic", int(getattr(cfg, "magic", PAPER_MAGIC)))
         kw.update(overrides)
         data_dir = getattr(getattr(cfg, "ops", None), "data_dir", "data")
@@ -516,6 +546,18 @@ class PaperBroker:
         if not self.live_groups:
             return False
         return market_kind(symbol, spec if spec is not None else self._spec(symbol)) in self.live_groups
+
+    def goes_real(self, req: OrderRequest, spec: Optional[SymbolSpec] = None) -> bool:
+        """Does this NEW order go to the real broker? Only on a live market
+        and, when tnb.live_tactics is set, only for a listed approach; an
+        order that does not say its approach stays on paper (10 Oct)."""
+        if not self._in_live_group(req.symbol, spec):
+            return False
+        if not self.live_tactics:
+            return True                                   # every approach on a live market (9 Oct)
+        from ..engine.tactics import approach_of
+        approach = approach_of(getattr(req, "tactic", "") or "")
+        return bool(approach) and approach in self.live_tactics
 
     def _fresh(self, tick: Tick) -> bool:
         try:
@@ -1026,7 +1068,8 @@ class PaperBroker:
                                    "real ones in a live market, can be changed here; nothing was sent)")
 
     def send(self, req: OrderRequest) -> OrderResult:
-        """Open a position: PAPER, unless its market is a live group."""
+        """Open a position: PAPER, unless its market is a live group (and,
+        with tnb.live_tactics set, its approach is listed)."""
         if self.read_only:
             return self._read_only_refusal(req=req)
         magic = int(req.magic or self.magic)
@@ -1037,7 +1080,7 @@ class PaperBroker:
         spec = self._spec(req.symbol)
         if spec is None:
             return self._refuse(RetCode.REJECT, "no symbol spec", req)
-        if self._in_live_group(req.symbol, spec):
+        if self.goes_real(req, spec):
             return self.inner.send(req)                   # LIVE group: the real order, unchanged
         with self._lock:
             tick = self._evaluate(req.symbol)             # PAPER: the book first, then the fill
@@ -1333,7 +1376,8 @@ class PaperBroker:
         paper_today = self._by_position(rows, day_start)
         out: dict = {
             "label": LABEL, "mode": "PAPER", "magic": self.magic,
-            "live_groups": sorted(self.live_groups), "day_start": day_start.isoformat(),
+            "live_groups": sorted(self.live_groups), "live_tactics": sorted(self.live_tactics),
+            "day_start": day_start.isoformat(),
             "open": paper_open,
             "paper_today": {"trades": paper_today, "closed": len(paper_today),
                             "wins": sum(1 for t in paper_today if t["net"] > 0),
@@ -1364,8 +1408,10 @@ class PaperBroker:
             out["error"] = f"the real broker could not be read: {exc}"
         n_open = sum(1 for r in out["open"] if r["origin"] == "PAPER")
         pt = out["paper_today"]
-        where = (f" Orders in {', '.join(g.lower().replace('_', ' ') for g in sorted(self.live_groups))} markets "
-                 f"go to the real broker; everything else is simulated." if self.live_groups else
+        only = (f" from {', '.join(t.lower().replace('_', ' ') for t in sorted(self.live_tactics))} only"
+                if self.live_tactics else "")                 # 10 Oct: tnb.live_tactics
+        where = (f" Orders in {', '.join(g.lower().replace('_', ' ') for g in sorted(self.live_groups))} markets"
+                 f"{only} go to the real broker; everything else is simulated." if self.live_groups else
                  " Every order is simulated.")
         out["note"] = (f"{LABEL} is on PAPER: it decides on real prices and its orders never reach the broker."
                        f"{where} {n_open} paper trade{'s' if n_open != 1 else ''} open; {pt['closed']} closed "

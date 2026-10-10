@@ -15,6 +15,11 @@
 
     Safe to run any time: the watchdog starts the Rider, and the Rider
     refuses to run twice. Double-click SETUP-RAPID-RIDER.cmd to run it.
+
+    10 Oct: the Rider was switched OFF on 9 Oct (its own 10-day test on real
+    prices found no edge). While it is off, or once the Formula 1 step has
+    run, this asks first and only goes on if you type LIVE; anything else
+    changes nothing (Confirm-RiderLive in mintel_bots.ps1).
 #>
 [CmdletBinding()]
 param([string] $InstallDir = "C:\mintel")
@@ -28,6 +33,19 @@ Write-Host "=============================================================="
 Write-Host "  RAPID MOMENTUM RIDER - SETUP"
 Write-Host "=============================================================="
 
+# 10 Oct: the Rider was switched OFF on 9 Oct (its own test on real prices
+# found no edge). While it is off, or once the Formula 1 step has run, ask
+# first - before anything else runs: only LIVE, typed as it is, goes on;
+# anything else changes nothing.
+$confirmed = $false
+if (Test-RiderSacked $P) {
+    if (-not (Confirm-RiderLive $P)) {
+        Write-Host ""
+        exit 1
+    }
+    $confirmed = $true
+}
+
 $here = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path.TrimEnd("\")
 $fromInstall = $here -ieq $P.App.TrimEnd("\")
 if (-not (Test-MintelInstalled $P) -or -not $fromInstall) {
@@ -38,6 +56,12 @@ if (-not (Test-MintelInstalled $P) -or -not $fromInstall) {
         Write-Host "    [FAIL] The bot is not installed yet: see the lines above." -ForegroundColor Red
         exit 1
     }
+}
+
+# A first install switches the Rider off itself (the Formula 1 step): ask then too
+if (-not $confirmed -and -not (Confirm-RiderLive $P)) {
+    Write-Host ""
+    exit 1
 }
 
 Write-Host ""

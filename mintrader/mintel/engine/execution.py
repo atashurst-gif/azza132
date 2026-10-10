@@ -191,7 +191,11 @@ class Executor:
                 sl=state.stop, tp=state.target or 0.0,
                 deviation_points=dev, comment=key,
                 magic=self.cfg.magic, idempotency_key=key,
-                filling=spec.filling_modes[0] if spec.filling_modes else "IOC")
+                filling=spec.filling_modes[0] if spec.filling_modes else "IOC",
+                # 10 Oct: on PAPER the wrapper sends an order on a live
+                # market to the real broker only for an approach in
+                # tnb.live_tactics (when set); it is never sent on
+                tactic=str(state.tactic or ""))
             try:
                 result = self.broker.send(req)
             except Exception as exc:

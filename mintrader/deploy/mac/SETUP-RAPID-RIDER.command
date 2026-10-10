@@ -12,6 +12,11 @@
 #  Safe to double-click any time: nothing here can start a second copy of
 #  anything (the supervisor starts the Rider, and the Rider refuses to run
 #  twice).
+#
+#  10 Oct: the Rider was switched OFF on 9 Oct (its own 10-day test on real
+#  prices found no edge). While it is off - or once Formula 1's one-time step
+#  has run on this Mac - this asks first, and only goes on if you type LIVE;
+#  anything else changes nothing (setup_rider in mintel_mac.sh).
 
 set -uo pipefail
 

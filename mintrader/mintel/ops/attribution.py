@@ -105,7 +105,8 @@ def existing_strategy_stats(journal, positions, day_start: dt.datetime, currency
                        "regime": r.get("regime"), "closed_utc": r.get("closed_utc")})
     record = _tnb_record(data_dir)
     if _tnb_split_needed(tnb_mode, record, closed, positions):
-        return _tnb_split(closed, positions, record, currency, tnb_mode, live_groups=_tnb_live_kinds(data_dir))
+        return _tnb_split(closed, positions, record, currency, tnb_mode, live_groups=_tnb_live_kinds(data_dir),
+                          live_tactics=_tnb_live_tactics(data_dir))
     opens = [{"symbol": p.symbol, "pnl": float(getattr(p, "profit", 0.0) or 0.0)} for p in positions]
     s = strategy_stats(closed, opens, label=EXISTING_STRATEGY_LABEL, strategy_id=EXISTING_STRATEGY_ID, currency=currency)
     s["by_approach"] = breakdown(closed, lambda r: approach_name(r.get("tactic"), r.get("regime")))
@@ -147,16 +148,30 @@ TNB_SPLIT_SOURCE = ("Trend & Breakout's own records: its real trades are booked 
                     "practice, not money, not in Overall")
 
 
-def tnb_paper_source(live_groups=()) -> str:
+def tnb_paper_source(live_groups=(), live_tactics=()) -> str:
     """TNB_PAPER_SOURCE, or - with kinds of market kept LIVE on PAPER (9 Oct:
     its minor pairs, Formula 1) - which of its trades are real."""
     if not live_groups:
         return TNB_PAPER_SOURCE
     from .verdicts import live_kinds
-    return (f"Trend & Breakout is on PAPER except its {live_kinds(live_groups)}: those trades are real orders, booked "
-            f"from the broker's closing deals, and count in Overall; everything else is decided on real prices with "
-            f"simulated orders (its paper record, tnb_paper.sqlite) - practice, not money, not in Overall; a real "
-            f"trade left from LIVE also counts in Overall")
+    # 10 Oct: with tnb.live_tactics, "its minor pairs (Formula 1, momentum continuation only)"
+    return (f"Trend & Breakout is on PAPER except its {live_kinds(live_groups, live_tactics)}: those trades are real "
+            f"orders, booked from the broker's closing deals, and count in Overall; everything else is decided on "
+            f"real prices with simulated orders (its paper record, tnb_paper.sqlite) - practice, not money, not in "
+            f"Overall; a real trade left from LIVE also counts in Overall")
+
+
+def _tnb_live_tactics(data_dir) -> tuple:
+    """10 Oct: the approaches that trade for real on those kinds of market
+    (tnb.live_tactics), as the page reads them; () when every approach does,
+    or when it cannot be read."""
+    if not data_dir:
+        return ()
+    try:
+        from .verdicts import tnb_live_setting
+        return tuple(tnb_live_setting(data_dir).get("tactics") or ())
+    except Exception:
+        return ()
 
 
 def _tnb_live_kinds(data_dir) -> tuple:
@@ -191,7 +206,7 @@ def _tnb_split_needed(mode: str, record, closed, positions) -> bool:
 
 
 def _tnb_split(closed: list, positions, record, currency: str, mode: str, includes_now: bool = True,
-               shown: Optional[int] = 60, live_groups=()) -> dict:
+               shown: Optional[int] = 60, live_groups=(), live_tactics=()) -> dict:
     """Trend & Breakout's tab with each row marked PAPER (its ticket was born
     on the paper record; its money is the record's, every deal of the
     position) or LIVE (a real trade: money, in Overall), in the shape every
@@ -231,7 +246,7 @@ def _tnb_split(closed: list, positions, record, currency: str, mode: str, includ
     live["trades_today"] = [trade(r) for r in live_rows]
     live["in_overall"] = bool(live_rows or live_opens or mode == "LIVE")
     s["live"] = live
-    s["source"] = tnb_paper_source(live_groups) if mode == "PAPER" else TNB_SPLIT_SOURCE
+    s["source"] = tnb_paper_source(live_groups, live_tactics) if mode == "PAPER" else TNB_SPLIT_SOURCE
     if record is not None and record.error:
         s["source"] += f"; {record.error}"
     return s
@@ -691,7 +706,7 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
     record = _tnb_record(data_dir)
     if _tnb_split_needed(tnb, record, closed, positions if includes_now else ()):
         mi = _tnb_split(closed, positions, record, currency, tnb, includes_now, shown=None,
-                        live_groups=_tnb_live_kinds(data_dir))
+                        live_groups=_tnb_live_kinds(data_dir), live_tactics=_tnb_live_tactics(data_dir))
     else:
         opens = [{"symbol": p.symbol, "pnl": float(getattr(p, "profit", 0.0) or 0.0)} for p in positions] if includes_now else []
         mi = strategy_stats(closed, opens, label=EXISTING_STRATEGY_LABEL, strategy_id=EXISTING_STRATEGY_ID, currency=currency)
@@ -736,9 +751,10 @@ def build_strategies_range(data_dir: str | Path, start: dt.datetime, end: dt.dat
     kept = _tnb_live_kinds(data_dir) if mi.get("mode") == "PAPER" else ()
     if kept:                                      # 9 Oct: its minor pairs (Formula 1) trade for real
         from .verdicts import live_kinds
-        overall["note"] += (f" Trend & Breakout is on PAPER except its {live_kinds(kept)}, which trade LIVE (real "
-                            f"money, in Overall); the rest is real prices, simulated orders; the Momentum Runner "
-                            f"rides its index entries.")
+        only = _tnb_live_tactics(data_dir)        # 10 Oct: only those approaches, when tnb.live_tactics is set
+        overall["note"] += (f" Trend & Breakout is on PAPER except its {live_kinds(kept, only)}, which trade LIVE "
+                            f"(real money, in Overall); the rest is real prices, simulated orders; the Momentum "
+                            f"Runner rides its index entries.")
     elif mi.get("mode") == "PAPER":
         overall["note"] += (" Trend & Breakout is on PAPER: real prices, simulated orders; the Momentum Runner "
                             "rides its index entries.")

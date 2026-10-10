@@ -18,6 +18,9 @@
         the dashboard address
       * once a day, starts the Rider's research on the last ten days of real
         ticks in the background (it uploads its results to GitHub)
+      * once per machine (10 Oct), applies the Formula 1 step if it is not
+        set yet: the Rider OFF, Trend & Breakout's minor currency pairs LIVE,
+        0.7% / GBP 13 a trade - as SETUP-AND-START does
 
     The scheduled tasks SETUP-AND-START.ps1 registers run this at boot and
     every five minutes, so the VPS keeps everything running on its own.
@@ -67,6 +70,37 @@ if (-not (Test-Path $configPath)) {
 $cfg = Get-Content $configPath -Raw | ConvertFrom-Json
 $dashPort = 8787
 if ($cfg.ops -and $cfg.ops.dashboard_port) { $dashPort = $cfg.ops.dashboard_port }
+
+# ------------------------------------------- Formula 1, once (10 Oct) ----
+# SETUP-AND-START applies the 9 Oct one-time steps (the line-up, then Ian's
+# feed, then Formula 1 last); program files that arrive any other way only
+# ever pass through here. So the same Formula 1 step runs here too, the same
+# way: once per machine (its marker, written only when every call worked),
+# after the line-up whenever SETUP-AND-START has run it, and nothing at all
+# once the marker is there. What it changed takes effect at once: every bot
+# restarts below to read it (a Rider switched OFF stops trading). When only
+# part of it could be set (a call failed) it is NOT tried again here: run
+# every 5 minutes, it would undo a later choice made with the modes command
+# (the Rider back on, the markets back on paper) - 10 Oct review. A second
+# marker records that one try (the restart it owed happens once with it),
+# and SETUP-AND-START, run by hand, is how to try again.
+$formula1Marker = Join-Path $dataDir ".formula1-2026-10-09"
+$formula1Part = Join-Path $dataDir ".formula1-2026-10-09-part-restart"
+if (-not $FromSetup -and -not (Test-Path $formula1Marker)) {      # SETUP-AND-START has just run it itself
+    if (Test-Path $formula1Part) {
+        Say "Formula 1 (a one-time step) was tried once here and is not fully set: it is not tried again on its own. Run SETUP-AND-START.cmd to try again."
+    } else {
+        Say ""
+        Say "Formula 1 (a one-time step)"
+        $formula1Changed = Set-Formula1Once $P
+        if (Test-Path $formula1Marker) {
+            if ($formula1Changed) { $Restart = $true }
+        } elseif (Test-MintelInstalled $P) {                      # tried, and not fully set: never again on its own
+            Set-Content -Path $formula1Part -Value (Get-Date).ToUniversalTime().ToString("s")
+            if ($formula1Changed) { $Restart = $true }
+        }
+    }
+}
 
 # ---------------------------------------------------------------- restart ----
 if ($Restart) {

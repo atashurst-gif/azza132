@@ -211,7 +211,9 @@ def _tnb_live(cfg: Config, st: dict, mode: str) -> dict:
         since = str(getattr(getattr(cfg, "tnb", None), "live_since_utc", "") or "") if groups else ""
     from ..config import tnb_mode_detail
     groups = [str(g) for g in groups] if mode == "PAPER" else []
-    return {"tnb_mode_detail": tnb_mode_detail(mode, groups), "tnb_live_groups": groups,
+    # 10 Oct: the approaches that go real there (tnb.live_tactics), as the trader reports them; [] = every one
+    tactics = st.get("tnb_live_tactics") if isinstance(st.get("tnb_live_tactics"), list) else []
+    return {"tnb_mode_detail": tnb_mode_detail(mode, groups, tactics if groups else ()), "tnb_live_groups": groups,
             "tnb_live_since_utc": since if groups else ""}
 
 

@@ -467,6 +467,8 @@ def push_dashboard(state: DashboardState, trader: Trader) -> None:
             "tnb_live_groups": list(getattr(trader, "tnb_live_groups", ()) or ()),
             "tnb_live_since_utc": (str(getattr(trader.cfg.tnb, "live_since_utc", "") or "")
                                    if getattr(trader, "tnb_live_groups", ()) else ""),
+            # 10 Oct: the approaches that go real there (tnb.live_tactics); [] = every one
+            "tnb_live_tactics": list(getattr(trader, "tnb_live_tactics", ()) or ()),
             "aggression": trader.cfg.aggression,
             "open_positions": len(positions),
             "equity": account.equity if account else 0.0,
@@ -627,8 +629,10 @@ def trend_and_breakout_broker(broker, cfg: Config):
         log.warning("%s", TNB_PAPER_LINE)
         if paper.live_groups:
             # 9 Oct (Formula 1): these kinds of market are REAL orders under Trend & Breakout's magic
-            log.warning("Trend & Breakout: orders on %s go to the REAL broker (tnb.live_groups, since %s); "
+            log.warning("Trend & Breakout: orders on %s%s go to the REAL broker (tnb.live_groups, since %s); "
                         "everything else is simulated", ", ".join(sorted(paper.live_groups)),
+                        # 10 Oct: tnb.live_tactics
+                        f" from {', '.join(sorted(paper.live_tactics))} only" if paper.live_tactics else "",
                         getattr(cfg.tnb, "live_since_utc", "") or "a time not recorded")
         return paper
     log.warning("Trend & Breakout: LIVE - its orders go to the broker")

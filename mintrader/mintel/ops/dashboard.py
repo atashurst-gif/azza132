@@ -881,6 +881,7 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
     # 9 Oct evening: Trend & Breakout on PAPER with some kinds of market LIVE (Formula 1: its minor pairs) leads
     # with its real money, as a LIVE card does; its practice follows, labelled. Never plain "PAPER".
     groups = ((snap.get("tnb_live") or {}).get("groups") or ()) if bid == "market_intelligence" else ()
+    tactics = ((snap.get("tnb_live") or {}).get("tactics") or ()) if groups else ()    # 10 Oct: tnb.live_tactics
     mixed = bool(groups) and mode != "LIVE"
     live = mode == "LIVE" or mixed
     show_sel = sel.get("key") != "total"
@@ -928,7 +929,7 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
         bits.append(e(str(line)))
     if mixed:
         from .verdicts import live_kinds
-        bits.append(f"{e(live_kinds(groups))} LIVE (real money); the rest real prices, simulated orders")
+        bits.append(f"{e(live_kinds(groups, tactics))} LIVE (real money); the rest real prices, simulated orders")
     elif bid == "market_intelligence" and mode == "PAPER":
         bits.append("real prices, simulated orders")
     if bid == "momentum_runner":
@@ -949,7 +950,7 @@ def _bot_card(snap: dict, b: dict, sel: dict, tot: dict, p_sel: dict, p_tot: dic
                     + f'{e(sel_label.lower())} {m(ps)} &middot; overall {m(pt)}</div>')
     if mixed:
         from .verdicts import live_words
-        pill = f'<span class="pill ok">{e(live_words(groups))}</span>'
+        pill = f'<span class="pill ok">{e(live_words(groups, tactics))}</span>'
     else:
         pill = f'<span class="pill {"ok" if live else ""}">{e(mode)}</span>'
     now_html = f'<div class="now"><b>Now:</b> {e(str(now_line))}</div>' if now_line else ""
@@ -1375,6 +1376,7 @@ def bot_now_lines(snap: dict, top: Optional[dict] = None, only: Optional[str] = 
     makers = {"momentum_rider": _rider_now, "momentum_runner": _runner_now, "band_breaker": _band_now,
               "crowd_fader": _crowd_now, "financial_ian": _ian_now}
     groups = (snap.get("tnb_live") or {}).get("groups") or ()    # Trend & Breakout's kinds of market kept LIVE
+    tactics = (snap.get("tnb_live") or {}).get("tactics") or ()  # 10 Oct: only those approaches (tnb.live_tactics)
     from .verdicts import live_words
     out: dict = {}
     for b in sd.get("bots") or ():
@@ -1403,7 +1405,7 @@ def bot_now_lines(snap: dict, top: Optional[dict] = None, only: Optional[str] = 
             log.warning("last trade of %s: %s", bid, exc)
             last = f"its last trade could not be read just now ({exc})"
         if mode == "PAPER" and bid == "market_intelligence" and groups:
-            out[bid] = f"{live_words(groups)} - {last}; {doing}"   # 9 Oct: part LIVE, never plain PAPER
+            out[bid] = f"{live_words(groups, tactics)} - {last}; {doing}"   # 9 Oct: part LIVE, never plain PAPER
         else:
             out[bid] = f"PAPER - {last}; {doing}" if mode == "PAPER" else f"{doing}; {last}"
     return out
@@ -1702,9 +1704,10 @@ def _bot_live_view(snap: dict, bot: str, data_dir: str, mode: str, now: Optional
             groups = (snap.get("tnb_live") or {}).get("groups") or ()
             if mode != "LIVE" and groups:              # 9 Oct evening: Formula 1 LIVE, the rest on PAPER
                 from .verdicts import live_kinds
-                what = (f"It is on PAPER except its {live_kinds(groups)}: those orders go to MetaTrader with real "
-                        f"money; everything else is decided on real prices and simulated, and the Momentum Runner "
-                        f"rides its index entries with real orders.")
+                tactics = (snap.get("tnb_live") or {}).get("tactics") or ()     # 10 Oct: tnb.live_tactics
+                what = (f"It is on PAPER except its {live_kinds(groups, tactics)}: those orders go to MetaTrader "
+                        f"with real money; everything else is decided on real prices and simulated, and the "
+                        f"Momentum Runner rides its index entries with real orders.")
             else:
                 what = ("It is on PAPER: it decides on real prices and its orders are simulated, while the Momentum "
                         "Runner rides its index entries with real orders." if mode == "PAPER" else
@@ -1809,8 +1812,9 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
     kept = (snap.get("tnb_live") or {}).get("groups") or ()
     if str(st.get("tnb_mode") or "").upper() == "PAPER" and kept:
         from .verdicts import live_kinds              # 9 Oct: its minor pairs (Formula 1) trade for real
-        src_html = (f'Trend &amp; Breakout is on PAPER except its {html.escape(live_kinds(kept))}, which trade LIVE '
-                    f'with real money: Today, Win rate today, This strategy and Open trades are its real trades '
+        tactics = (snap.get("tnb_live") or {}).get("tactics") or ()       # 10 Oct: tnb.live_tactics
+        src_html = (f'Trend &amp; Breakout is on PAPER except its {html.escape(live_kinds(kept, tactics))}, which '
+                    f'trade LIVE with real money: Today, Win rate today, This strategy and Open trades are its real trades '
                     f'there and its practice together (the practice on real prices with simulated orders, never '
                     f'added to the account; its real money alone is on the main page and in Overall); Equity is '
                     f'the real account.')
@@ -2157,6 +2161,10 @@ def _plan_html(plan: Optional[dict], plan_error: str, verdicts: dict) -> str:
         # 9 Oct evening: Formula 1 is LIVE - its progress is its live trades from MetaTrader's records only
         # (verdicts.formula1_live), never the journal and never practice
         fwd = f'<div class="s-small"><b>Live so far:</b> {e(formula1_line(verdicts.get(str(f.get("bot") or "")), f))}</div>'
+        # 10 Oct review: what config.json now holds that the plan's words do not (Aaron's answers, by config)
+        force = str((verdicts.get(str(f.get("bot") or "")) or {}).get("in_force") or "")
+        if force:
+            fwd += f'<div class="s-small"><b>In force now (config.json):</b> {e(force)}.</div>'
         out.append(f'<div class="s-focus"><div class="s-k">The focus now</div><b>{e(str(f.get("name") or ""))}</b>: '
                    f'{e(str(f.get("what") or ""))}<div class="s-small">{e(str(f.get("evidence") or ""))} '
                    f'{e(str(f.get("caution") or ""))}</div>{fwd}</div>')

@@ -35,7 +35,7 @@ from typing import Callable, Optional, Sequence
 from ..broker.base import Bar, Broker, Position, Side, TF, Tick
 from ..broker.paper import PaperBroker, real_broker
 from ..clock import to_utc, utcnow
-from ..config import Config, tnb_live_groups, tnb_mode, tnb_mode_detail
+from ..config import Config, tnb_live_groups, tnb_live_tactics, tnb_mode, tnb_mode_detail
 from ..data.series import atr
 from ..news.adapters import AdapterRegistry, ForexFactoryAdapter, Mt5CalendarAdapter, StoreBackedAdapter
 from ..news.calendar_store import CalendarStore
@@ -144,7 +144,10 @@ class Trader:
         # the heartbeat, the page's status and the pulse: "PAPER (FX_MINOR live)".
         self.tnb_live_groups = (tuple(sorted(broker.live_groups)) if isinstance(broker, PaperBroker)
                                 else tnb_live_groups(cfg))
-        self.tnb_mode_detail = tnb_mode_detail(tnb_mode(cfg), self.tnb_live_groups)
+        # 10 Oct: the approaches that go real there (tnb.live_tactics); () = every one
+        self.tnb_live_tactics = ((tuple(sorted(broker.live_tactics)) if self.tnb_live_groups else ())
+                                 if isinstance(broker, PaperBroker) else tnb_live_tactics(cfg))
+        self.tnb_mode_detail = tnb_mode_detail(tnb_mode(cfg), self.tnb_live_groups, self.tnb_live_tactics)
         self.clock = clock
         # In dry-run everything is evaluated exactly as normal - regime,
         # tactics, scoring, sizing, stop placement, idempotency - and the
@@ -189,6 +192,18 @@ class Trader:
                                history_match=self.matcher)
         self.risk = RiskManager(cfg, self.journal)
         self.risk.realised_today = self.realised_today
+        if isinstance(self.broker, PaperBroker):
+            # 10 Oct: on PAPER the wrapper's deals and positions under this
+            # magic hold REAL ones (Formula 1's live markets, anything left
+            # from before the switch) and PRACTICE ones. The daily-loss stop
+            # reads them apart, so a practice profit can never let real
+            # losses run past the limit (RiskManager.daily_loss_figure).
+            self.risk.realised_today = self.realised_today_parts
+            self.risk.is_practice = self.broker.is_paper
+            # 10 Oct (review): counting real money alone
+            # (risk.daily_loss_counts_practice False) must count the live
+            # Momentum Runner's real money too - the stop gates it
+            self.risk.others_real = self.others_real_today
         # The top-opportunity check counts the WHOLE commission: what older
         # journal rows left out is estimated at the broker's own rate per lot
         # (learned from its deals, refresh_commissions). 9 Oct.
@@ -198,6 +213,7 @@ class Trader:
         self._entry_times: list[dt.datetime] = []
         self._entries_today: list[dt.datetime] = []
         self._realised_cache: dict = {"at": None, "value": 0.0}
+        self._others_cache: dict = {"at": None, "value": 0.0}
         self.scanner.losses_today = self.losses_today
         self.executor = Executor(broker, cfg, self.journal, self.risk, clock)
         self.flowlock = FlowLock(cfg.flowlock)
@@ -392,17 +408,89 @@ class Trader:
     def realised_today(self) -> float:
         """Today's realised P&L of the bot's trades, from the broker (30s cache)."""
         now = to_utc(self.clock())
-        at = self._realised_cache["at"]
+        at = self._realised_cache.get("at")
         if at is not None and (now - at).total_seconds() < 30:
             return float(self._realised_cache["value"])
+        return float(self._read_realised(now)["value"])
+
+    def realised_today_parts(self) -> tuple[float, float]:
+        """(real, practice): today's realised P&L of this bot's REAL deals
+        (at the broker under its magic) and of its PRACTICE ones (the paper
+        record), from the very rows ``realised_today`` sums (same cache).
+        10 Oct: what the daily-loss stop reads on PAPER, so a practice profit
+        never offsets a real loss (RiskManager.daily_loss_figure). On a
+        broker that is not the paper wrapper every deal is real."""
+        now = to_utc(self.clock())
+        c = self._realised_cache
+        at = c.get("at")
+        if at is None or (now - at).total_seconds() >= 30 or "real" not in c:
+            c = self._read_realised(now)
+        return float(c["real"]), float(c["practice"])
+
+    def _read_realised(self, now: dt.datetime) -> dict:
         fn = getattr(self.broker, "deals_since", None)
         if fn is None:
             raise RuntimeError("broker has no deal history")
         start = self._strategy_day_start(now)
         rows = fn(start, self.cfg.magic, False) or []     # entries too: half the commission sits there
         value = float(sum(float(r.get("profit") or 0.0) for r in rows))
-        self._realised_cache = {"at": now, "value": value}
-        return value
+        # each row by where its position was born, in the same order (so one
+        # side alone sums to exactly the figure above)
+        paper = self.broker.is_paper if isinstance(self.broker, PaperBroker) else None
+        real: list[float] = []
+        practice: list[float] = []
+        for r in rows:
+            born_on_paper = bool(paper(int(r.get("position") or 0))) if paper is not None else False
+            (practice if born_on_paper else real).append(float(r.get("profit") or 0.0))
+        self._realised_cache = {"at": now, "value": value, "real": float(sum(real)),
+                                "practice": float(sum(practice))}
+        return self._realised_cache
+
+    def stop_gated_magics(self) -> tuple[int, ...]:
+        """The magic numbers of the other bots the daily-loss stop gates
+        (``_bots_may_enter``): the Momentum Runner, the Band Breaker and the
+        Crowd Fader, whatever their mode (on PAPER they hold no real deals)."""
+        out: list[int] = []
+        for name in ("runner", "bandbreaker", "crowd"):
+            try:
+                m = int(getattr(getattr(self.cfg, name, None), "magic", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if m > 0 and m != int(self.cfg.magic) and m not in out:
+                out.append(m)
+        return tuple(out)
+
+    def others_real_today(self) -> float:
+        """Today's REAL money of the other bots the daily-loss stop gates
+        (stop_gated_magics): their own deals at the real broker since the
+        strategy's day start, plus the floating P&L of their open real
+        positions (30s cache, both read together so a position that closes
+        is never missing from both). A broker that cannot be read raises:
+        the stop then falls back to the account's equity.
+
+        10 Oct (review): what risk.daily_loss_counts_practice False adds to
+        the real side - "only real money counts" has to mean the live
+        Momentum Runner's real money as well, or the stop could never trip
+        on it. Read only then, so the default asks the broker nothing new."""
+        now = to_utc(self.clock())
+        at = self._others_cache.get("at")
+        if at is not None and (now - at).total_seconds() < 30:
+            return float(self._others_cache["value"])
+        real = real_broker(self.broker)
+        fn = getattr(real, "deals_since", None)
+        if fn is None:
+            raise RuntimeError("broker has no deal history")
+        start = self._strategy_day_start(now)
+        total = 0.0
+        for m in self.stop_gated_magics():
+            for r in fn(start, m, False) or []:          # entries too: half the commission sits there
+                if int(r.get("magic", m) or m) == m:
+                    total += float(r.get("profit") or 0.0)
+            for p in real.positions(m) or []:
+                if int(getattr(p, "magic", m) or m) == m:
+                    total += float(getattr(p, "profit", 0.0) or 0.0)
+        self._others_cache = {"at": now, "value": total}
+        return total
 
     def _strategy_day_start(self, now: dt.datetime) -> dt.datetime:
         """Start of the broker's day, or the strategy's start if later.

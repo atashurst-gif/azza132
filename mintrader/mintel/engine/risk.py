@@ -37,6 +37,18 @@ Circuit breakers
 The breakers exist as much to contain *software failure* as market loss: a
 runaway loop that sends thirty orders a minute, a spread explosion, a rejection
 storm.  A breaker stops new entries; it never stops managing existing risk.
+
+The daily-loss stop, real and practice (10 Oct)
+-----------------------------------------------
+With Trend & Breakout on PAPER and some markets kept LIVE (Formula 1), its
+day holds real trades and practice ones. The stop reads the two apart
+(``daily_loss_figure``): a practice profit never offsets a real loss, and
+otherwise the figure is today's sum. ``risk.daily_loss_counts_practice``
+False counts real money alone - Trend & Breakout's real trades and the real
+trades of the bots this stop gates (``others_real``). The same snapshot is
+the gate for the Momentum Runner, Band Breaker and Crowd Fader
+(``Trader._bots_may_enter``), and its line on the page says which part is
+down.
 """
 from __future__ import annotations
 
@@ -96,6 +108,13 @@ class RiskSnapshot:
     drawdown_pct: float
     margin_level: float
     breakers: tuple[BreakerState, ...] = ()
+    # 10 Oct: the two sides of the day the daily-loss stop reads apart (each
+    # its closed trades today plus its open ones), None when there is only
+    # one pot (Trend & Breakout LIVE, or a caller that gives one figure).
+    # With only real money counting, the real side holds the other gated
+    # bots' real money too (RiskManager.others_real; 10 Oct review).
+    daily_real_pnl: Optional[float] = None
+    daily_practice_pnl: Optional[float] = None
 
     @property
     def entries_allowed(self) -> bool:
@@ -150,7 +169,20 @@ class RiskManager:
         # depends on an equity snapshot taken at start-up - which every
         # restart quietly reset, so on the first live day an 11% loss never
         # tripped a 3% limit.
-        self.realised_today: Optional[Callable[[], float]] = None
+        # 10 Oct: it may instead return (real, practice) - Trend & Breakout
+        # on PAPER with markets kept LIVE (Formula 1) - and is_practice
+        # (ticket -> born on paper?) splits the open positions the same way,
+        # so a practice profit never offsets a real loss (daily_loss_figure).
+        self.realised_today: Optional[Callable[[], float | tuple[float, float]]] = None
+        self.is_practice: Optional[Callable[[int], bool]] = None
+        # 10 Oct (review): callable() -> today's REAL money of the other bots
+        # this stop gates (Momentum Runner, Band Breaker, Crowd Fader: their
+        # own magic numbers at the broker, closed deals and open positions).
+        # Read only when risk.daily_loss_counts_practice is False: counting
+        # real money alone must count the live Runner's real losses too, or
+        # the stop could never trip on them. Unreadable: the stop falls back
+        # to the account's equity since the day's first snapshot.
+        self.others_real: Optional[Callable[[], float]] = None
         self._rejects: list[dt.datetime] = []
         self._orders: list[dt.datetime] = []
         self._manual_halt = ""
@@ -208,12 +240,27 @@ class RiskManager:
 
         daily_pnl = account.equity - (self._day_start_equity or account.equity)
         daily_pct = daily_pnl / max(self._day_start_equity, 1e-9) * 100.0
+        sides: Optional[tuple[float, float]] = None          # (real, practice) when the day is read in two parts
         if self.realised_today is not None:
             try:
-                realised = float(self.realised_today())
+                got = self.realised_today()
+                realised = ((float(got[0]), float(got[1])) if isinstance(got, (tuple, list))
+                            else float(got))
+                if isinstance(realised, tuple) and not self.practice_counts() and self.others_real is not None:
+                    # 10 Oct (review): real money alone - the other gated bots' real money is in it too
+                    others = float(self.others_real())
+                    if not math.isfinite(others):
+                        raise ValueError(f"the other bots' real money today is not a number ({others})")
+                    realised = (realised[0] + others, realised[1])
             except Exception:
                 realised = None
-            if realised is not None:
+            if isinstance(realised, tuple):
+                # 10 Oct: real and practice apart (daily_loss_figure)
+                sides = self._day_sides(realised, positions)
+                daily_pnl = self.daily_loss_figure(*sides)
+                base = account.equity - daily_pnl
+                daily_pct = daily_pnl / max(base, 1e-9) * 100.0
+            elif realised is not None:
                 floating = sum(float(getattr(p, "profit", 0.0) or 0.0) for p in positions)
                 daily_pnl = realised + floating
                 base = account.equity - daily_pnl
@@ -236,7 +283,7 @@ class RiskManager:
 
         trip("MANUAL_HALT", bool(self._manual_halt), self._manual_halt, False)
         trip("DAILY_LOSS", daily_pct <= -abs(r.max_daily_loss_pct),
-             f"down {abs(daily_pct):.2f}% today (limit {r.max_daily_loss_pct:.2f}%)",
+             self._daily_loss_words(daily_pct, sides, account.equity - daily_pnl),
              False)
         trip("MAX_DRAWDOWN", dd >= r.max_drawdown_pct,
              f"{dd:.2f}% below the equity peak (limit {r.max_drawdown_pct:.2f}%)",
@@ -265,7 +312,76 @@ class RiskManager:
             open_positions=len(positions), daily_pnl=round(daily_pnl, 2),
             daily_pnl_pct=round(daily_pct, 3), peak_equity=self.peak_equity,
             drawdown_pct=round(dd, 3), margin_level=account.margin_level,
-            breakers=tuple(breakers))
+            breakers=tuple(breakers),
+            daily_real_pnl=round(sides[0], 2) if sides is not None else None,
+            daily_practice_pnl=round(sides[1], 2) if sides is not None else None)
+
+    # ------------------------------------------------- the day, real and practice
+    def practice_counts(self) -> bool:
+        """risk.daily_loss_counts_practice: only a clear False turns it off
+        (a malformed value keeps the stricter reading: practice counts)."""
+        return getattr(self.cfg.risk, "daily_loss_counts_practice", True) is not False
+
+    def _day_sides(self, realised: tuple[float, float], positions: Sequence[Position]) -> tuple[float, float]:
+        """(real, practice): each side's realised P&L today plus the floating
+        P&L of its own open positions. A position is practice when
+        ``is_practice`` says it was born on paper; one it cannot tell is
+        counted as real money (a real loss is never hidden on paper)."""
+        real_f: list[float] = []
+        practice_f: list[float] = []
+        fn = self.is_practice
+        for p in positions:
+            practice = False
+            if callable(fn):
+                try:
+                    practice = bool(fn(int(p.ticket)))
+                except Exception:
+                    practice = False
+            (practice_f if practice else real_f).append(float(getattr(p, "profit", 0.0) or 0.0))
+        return realised[0] + sum(real_f), realised[1] + sum(practice_f)
+
+    def daily_loss_figure(self, real: float, practice: float) -> float:
+        """The day's figure the daily-loss stop reads, from its two sides.
+
+        10 Oct: with Formula 1 live, Trend & Breakout's day holds real trades
+        and practice ones, and the stop summed them - so a practice profit
+        could let real losses run past the limit. Now a practice profit never
+        offsets a real loss: when real money is down and practice is up, the
+        figure is the real side alone. In every other case it is their sum,
+        exactly as before (a real profit still covers a practice loss, as it
+        did; 10 Oct review). Within a side, closed and open trades, profits
+        and losses, net exactly as before. With only one side trading this
+        is exactly the old figure, and it is never above it (never later).
+        ``risk.daily_loss_counts_practice`` False: the real side alone (with
+        the other gated bots' real money in it, ``others_real``)."""
+        if not self.practice_counts():
+            return real
+        if real < 0 < practice:
+            return real                                   # a practice profit never covers a real loss
+        return real + practice
+
+    def _daily_loss_words(self, daily_pct: float, sides: Optional[tuple[float, float]], base: float) -> str:
+        """The DAILY_LOSS line, saying which part is down when the day is read
+        in two parts: "real money down 3.16% today (limit 3.00%)"."""
+        r = self.cfg.risk
+        limit = f"(limit {r.max_daily_loss_pct:.2f}%)"
+        if sides is None:
+            return f"down {abs(daily_pct):.2f}% today {limit}"
+        base = max(base, 1e-9)
+        real, practice = sides
+        counts = limit[:-1] + "; practice losses count towards the stop)"
+        if not self.practice_counts() or practice >= 0:
+            return f"real money down {abs(daily_pct):.2f}% today {limit}"     # only the real side is in it
+        real_pct = abs(real) / base * 100.0
+        practice_pct = -practice / base * 100.0
+        if real < 0:
+            return (f"down {abs(daily_pct):.2f}% today: real money {real_pct:.2f}%, practice "
+                    f"{practice_pct:.2f}% {limit}")
+        if real > 0:
+            # 10 Oct review: a real profit still covers a practice loss, as before
+            return (f"down {abs(daily_pct):.2f}% today: practice down {practice_pct:.2f}%, real money up "
+                    f"{real_pct:.2f}% {counts}")
+        return f"practice down {practice_pct:.2f}% today {counts}"
 
     # ------------------------------------------------------- top opportunity
     @staticmethod

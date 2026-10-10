@@ -163,6 +163,45 @@ function Set-RiderLive {
     return $ok
 }
 
+function Test-RiderSacked {
+    # 10 Oct: was the Rapid Momentum Rider switched off on purpose? The
+    # Formula 1 step ran on this machine (its marker), or rider.json says OFF.
+    param($P)
+    return ((Test-Path (Join-Path $P.Data ".formula1-2026-10-09")) -or ((Get-BotFileMode $P "rider") -eq "OFF"))
+}
+
+function Confirm-RiderLive {
+    # 10 Oct: the Rapid Momentum Rider was switched OFF on 9 Oct (its own
+    # 10-day test on real prices found no edge). SETUP-RAPID-RIDER put it
+    # back on LIVE in one double-click; now, while it is off or once the
+    # Formula 1 step has run (its marker), it asks first. Only the word LIVE,
+    # typed as it is, goes on; anything else, or no answer, changes nothing.
+    # $true: go on; $false: leave everything as it is (and say so).
+    param($P)
+    if (-not (Test-RiderSacked $P)) { return $true }
+    Write-Host ""
+    Write-Host "  The Rapid Momentum Rider was switched OFF on 9 Oct: its own 10-day test on real prices found no" -ForegroundColor Yellow
+    Write-Host "  edge, so you switched it off and put Formula 1 live instead." -ForegroundColor Yellow
+    Write-Host "  Putting it back on LIVE means it trades real money again."
+    Write-Host ""
+    $answer = ""
+    try { $answer = Read-Host "  Type LIVE and press Enter to put it back on LIVE - anything else changes nothing" } catch { $answer = "" }
+    if ("$answer".Trim() -ceq "LIVE") {
+        Write-Host "  You typed LIVE: putting the Rapid Momentum Rider back on LIVE."
+        # 10 Oct review: remember the answer, so the Formula 1 one-time step -
+        # when it has not run on this machine yet - never switches it straight
+        # back OFF a moment later (Set-Formula1Once leaves the Rider alone)
+        try {
+            if (-not (Test-Path $P.Data)) { New-Item -ItemType Directory -Force -Path $P.Data | Out-Null }
+            Set-Content -Path (Join-Path $P.Data ".rider-live-confirmed") -Value (Get-Date).ToUniversalTime().ToString("s")
+        } catch { }
+        return $true
+    }
+    Write-Host ""
+    Write-Host "  Nothing changed: the Rapid Momentum Rider stays OFF."
+    return $false
+}
+
 function Enable-Ian {
     # Financial Ian on: PAPER unless it is already LIVE. Without a data-feed
     # key it runs DATA-DEGRADED - no signals, no trades.
@@ -365,6 +404,40 @@ function Get-TnbLiveGroups {
     } catch { return @() }
 }
 
+function Get-TnbLiveTactics {
+    # 10 Oct: the approaches whose orders go real on those markets
+    # (config.json "tnb" -> "live_tactics"), e.g. @("MOMENTUM_CONTINUATION");
+    # empty when every approach does. 10 Oct review: read as the trader reads
+    # it - a name it does not trade is left out, and @("NONE") when the list
+    # names no approach it trades (or is not a list): every market on paper.
+    # The names are mintel/engine/tactics.py's APPROACH_NAMES (a test keeps
+    # the two the same).
+    param($P)
+    $names = @("MOMENTUM_CONTINUATION", "TREND_PULLBACK", "BREAKOUT_ACCEPTANCE", "SESSION_EXPANSION",
+               "SQUEEZE_RELEASE", "RANGE_REJECTION", "FAILED_BREAKOUT_RECLAIM", "LIQUIDITY_SWEEP_REVERSAL",
+               "VWAP_REVERSION", "NEWS_CONTINUATION", "BREAKOUT_RETEST")
+    if (-not (Test-Path $P.Config)) { return @() }
+    try {
+        $b = (Get-Content $P.Config -Raw | ConvertFrom-Json).tnb
+        if ($null -eq $b -or $null -eq $b.live_tactics) { return @() }
+        $t = $b.live_tactics
+        if ($t -is [string]) {
+            if ($t -eq "") { return @() }
+            $t = @($t)
+        } elseif (-not ($t -is [System.Array])) {
+            return @("NONE")
+        }
+        $known = @()
+        foreach ($x in @($t)) {
+            $a = "$x".Trim().ToUpper()
+            if ($a.EndsWith("_2X")) { $a = $a.Substring(0, $a.Length - 3) }
+            if (($names -ccontains $a) -and -not ($known -ccontains $a)) { $known += $a }
+        }
+        if (@($t).Count -gt 0 -and $known.Count -eq 0) { return @("NONE") }
+        return $known
+    } catch { return @() }
+}
+
 function Get-TnbModeWords {
     # Trend & Breakout's mode in plain words: LIVE, PAPER, or "PAPER - minor
     # currency pairs LIVE (Formula 1)" when some kinds of market still trade
@@ -381,7 +454,18 @@ function Get-TnbModeWords {
         elseif ($g -eq "INDEX") { $words += "indices" }
         else { $words += $g.ToLower().Replace("_", " ") }
     }
-    return "PAPER - $($words -join ', ') LIVE$f1"
+    # 10 Oct: with tnb.live_tactics, "PAPER - minor currency pairs LIVE for momentum continuation only (Formula 1)"
+    $tactics = @(Get-TnbLiveTactics $P)
+    if ($tactics.Count -eq 1 -and $tactics[0] -eq "NONE") {
+        # 10 Oct review: a list naming no approach it trades - the trader keeps every market on paper
+        return "PAPER - every market (tnb.live_tactics names no approach it trades)"
+    }
+    $only = ""
+    if ($tactics.Count -gt 0) {
+        $only = " for " + (($tactics | ForEach-Object { $_.ToLower().Replace("_", " ") }) -join " and ") + " only"
+        if (-not ($tactics.Count -eq 1 -and $tactics[0] -eq "MOMENTUM_CONTINUATION")) { $f1 = "" }
+    }
+    return "PAPER - $($words -join ', ') LIVE$only$f1"
 }
 
 function Get-RiskWords {
@@ -433,15 +517,25 @@ function Set-Formula1Once {
     Write-Host "    Formula 1 live, the Rapid Momentum Rider off:"
     $done = 0
     $fails = 0
-    foreach ($call in @(@("--off", "rider"), @("--tnb-live-groups", "FX_MINOR"), @("--risk-pct", "0.7", "--risk-money", "13"))) {
+    $calls = @(@("--off", "rider"), @("--tnb-live-groups", "FX_MINOR"), @("--risk-pct", "0.7", "--risk-money", "13"))
+    $riderWords = "OFF"
+    if (Test-Path (Join-Path $P.Data ".rider-live-confirmed")) {
+        # 10 Oct review: Aaron typed LIVE for the Rider at the SETUP-RAPID-RIDER
+        # question (Confirm-RiderLive), after being told why it was switched
+        # off: that later choice stands, so the Rider is left as it is
+        $calls = @($calls[1], $calls[2])
+        $riderWords = "left as you chose (you typed LIVE for it)"
+        Write-Host "    Rapid Momentum Rider: left as you chose - you typed LIVE for it."
+    }
+    foreach ($call in $calls) {
         if (Invoke-ModesOrSay $P $call) { $done += 1 } else { $fails += 1 }
     }
     if ($fails -gt 0) {
-        Write-Host "    [WARN] Formula 1 is not fully set ($fails of 3 steps failed, see above). Run SETUP-AND-START.cmd again, or the command shown." -ForegroundColor Yellow
+        Write-Host "    [WARN] Formula 1 is not fully set ($fails of $($calls.Count) steps failed, see above). Run SETUP-AND-START.cmd again, or the command shown." -ForegroundColor Yellow
         return ($done -gt 0)
     }
     Set-Content -Path $marker -Value (Get-Date).ToUniversalTime().ToString("s")
-    Write-Host "    [ OK ] Rapid Momentum Rider: OFF. Trend & Breakout: minor currency pairs LIVE (Formula 1), the rest on PAPER. Risk: 0.7% of the balance a trade, at most GBP 13" -ForegroundColor Green
+    Write-Host "    [ OK ] Rapid Momentum Rider: $riderWords. Trend & Breakout: minor currency pairs LIVE (Formula 1), the rest on PAPER. Risk: 0.7% of the balance a trade, at most GBP 13" -ForegroundColor Green
     return $true
 }
 

@@ -78,6 +78,19 @@ class RiskConfig:
     max_open_positions: int = 8
     max_positions_per_symbol: int = 1
     max_daily_loss_pct: float = 3.00
+    # 10 Oct: with Trend & Breakout on PAPER and some markets kept LIVE
+    # (Formula 1), its day holds REAL trades and PRACTICE (paper) ones. Each
+    # side nets its own trades (closed today and still open), and a practice
+    # profit never offsets a real loss (RiskManager.daily_loss_figure);
+    # otherwise the figure is their sum, as before. True: practice losses
+    # count towards the stop as well (as before 10 Oct, less that offset).
+    # False: only real money counts - Trend & Breakout's real trades and
+    # the real trades of the bots this stop gates (Momentum Runner, Band
+    # Breaker, Crowd Fader, under their own magic numbers; 10 Oct review) -
+    # so practice losses can never stop the live bots (Aaron's decision 4,
+    # asked 10 Oct, not yet answered). The limit above never changes; only a
+    # JSON false turns this off (null, 0 or "" keep it on: Config.load).
+    daily_loss_counts_practice: bool = True
     max_drawdown_pct: float = 12.00
     min_margin_level_pct: float = 300.0
     # --- software-failure breakers -------------------------------------------
@@ -522,6 +535,16 @@ class TnbConfig:
     # the set changes, so the page and the nightly review can count the live
     # trades from then (9 Oct: Formula 1, FX_MINOR, judged after 20 of them).
     live_since_utc: str = ""
+    # 10 Oct: which approaches go real on those markets, e.g.
+    # ["MOMENTUM_CONTINUATION"] (Aaron's decision 1, asked 10 Oct, not yet
+    # answered). Empty = every approach on a live market goes real, as set
+    # on 9 Oct. When set, any other approach there stays on paper (practice),
+    # and so does an order that does not say its approach. A name that is
+    # not an approach is dropped with a log line; a list that names none
+    # keeps every market on paper. Written by `python -m mintel.ops.modes
+    # --tnb-live-tactics`, which starts live_since_utc again when the set of
+    # live trades changes (a narrower scope is a new trial).
+    live_tactics: tuple[str, ...] = ()
     # A REAL Trend & Breakout trade still open at the switch is wound down at
     # the real broker (stop changes and closes, never a new order) to its
     # natural end. False leaves it to its own broker stop and target.
@@ -564,6 +587,25 @@ class TnbConfig:
             fixed.append(f"tnb.live_groups {self.live_groups!r} is not a list: every market stays on paper")
             self.live_groups = ()
         self.live_groups = tuple(str(g) for g in self.live_groups)
+        # 10 Oct: the approaches that go real there - never wider than written
+        tactics = self.live_tactics
+        if not isinstance(tactics, (list, tuple)):
+            fixed.append(f"tnb.live_tactics {tactics!r} is not a list: every market stays on paper")
+            tactics, self.live_groups = (), ()
+        from .engine.tactics import APPROACH_NAMES, approach_of
+        known: list[str] = []
+        for t in tactics:
+            name = approach_of(t)
+            if name in APPROACH_NAMES:
+                known += [name] if name not in known else []
+            else:
+                fixed.append(f"tnb.live_tactics: {t!r} is not an approach Trend & Breakout trades "
+                             f"({', '.join(APPROACH_NAMES)}): it is dropped")
+        if tactics and not known and self.live_groups:
+            fixed.append(f"tnb.live_tactics {list(tactics)!r} names no approach: every market stays on paper "
+                         f"(set it with python -m mintel.ops.modes --tnb-live-tactics)")
+            self.live_groups = ()
+        self.live_tactics = tuple(known)
         since = utc_iso_or_blank(self.live_since_utc)
         if since is None:
             fixed.append(f"tnb.live_since_utc {self.live_since_utc!r} is not a time (ISO UTC): it is left blank")
@@ -628,12 +670,25 @@ def tnb_live_groups(cfg: Any) -> tuple[str, ...]:
     return tuple(sorted(_groups(getattr(getattr(cfg, "tnb", None), "live_groups", ()) or ())))
 
 
-def tnb_mode_detail(mode: str, live_groups=()) -> str:
+def tnb_live_tactics(cfg: Any) -> tuple[str, ...]:
+    """The approaches that go real on those markets (tnb.live_tactics),
+    sorted; () when every approach does, on LIVE, or when no market is live."""
+    if not tnb_live_groups(cfg):
+        return ()
+    from .broker.paper import _tactics              # the paper broker's own reading of the setting
+    return tuple(sorted(_tactics(getattr(getattr(cfg, "tnb", None), "live_tactics", ()) or ())))
+
+
+def tnb_mode_detail(mode: str, live_groups=(), live_tactics=()) -> str:
     """Trend & Breakout's mode with its live markets, for status files and
-    the nightly review: "LIVE", "PAPER" or "PAPER (FX_MINOR live)"."""
+    the nightly review: "LIVE", "PAPER" or "PAPER (FX_MINOR live)"; with
+    tnb.live_tactics set (10 Oct) "PAPER (FX_MINOR live, MOMENTUM_CONTINUATION
+    only)"."""
     mode = tnb_mode_of(mode)
     groups = sorted({str(g).upper() for g in (live_groups or ()) if str(g).strip()})
-    return f"PAPER ({', '.join(groups)} live)" if mode == "PAPER" and groups else mode
+    tactics = sorted({str(t).upper() for t in (live_tactics or ()) if str(t).strip()})
+    only = f", {', '.join(tactics)} only" if tactics else ""
+    return f"PAPER ({', '.join(groups)} live{only})" if mode == "PAPER" and groups else mode
 
 
 @dataclass
@@ -905,11 +960,20 @@ class Config:
                 sub = raw.get(f.name)
                 if f.name == "tnb" and isinstance(sub, dict) and isinstance(sub.get("live_groups"), str):
                     sub = dict(sub, live_groups=[sub["live_groups"]])     # "INDEX" means ["INDEX"]
+                bad_tactics = None
+                if f.name == "tnb" and isinstance(sub, dict) and "live_tactics" in sub:
+                    lt = sub["live_tactics"]
+                    if isinstance(lt, str) or lt is None:                 # one name, or null for none
+                        sub = dict(sub, live_tactics=[lt] if lt else [])
+                    elif not isinstance(lt, (list, tuple)):
+                        bad_tactics, sub = lt, {k: v for k, v in sub.items() if k != "live_tactics"}
                 if f.name == "tnb" and isinstance(sub, dict) and "live_since_utc" in sub \
                         and sub["live_since_utc"] is None:
                     sub = dict(sub, live_since_utc="")                    # null means not known
                 if isinstance(sub, dict):
                     setattr(cfg, f.name, _build(nested[f.name], sub))
+                    if bad_tactics is not None:
+                        cfg.tnb.live_tactics = bad_tactics                # normalise says so: every market on paper
                 elif f.name == "tnb" and f.name in raw:
                     _warn_once(f"the tnb block in {path.name} is not a table: Trend & Breakout stays LIVE")
             elif f.name in raw:
@@ -931,6 +995,15 @@ class Config:
                                               cfg.account_password)
         if cfg.mode.upper() == "LIVE" and cfg.live_marker != LIVE_MARKER:
             cfg.mode = "DEMO"          # fail safe, loudly, downstream
+        risk_raw = raw.get("risk")
+        if isinstance(risk_raw, dict) and "daily_loss_counts_practice" in risk_raw \
+                and risk_raw["daily_loss_counts_practice"] is not False:
+            # 10 Oct review: only a JSON false stops practice losses counting;
+            # null, 0, "" or a word would otherwise read as false (bool())
+            if risk_raw["daily_loss_counts_practice"] is not True:
+                _warn_once(f"risk.daily_loss_counts_practice {risk_raw['daily_loss_counts_practice']!r} is not "
+                           f"true or false: practice losses still count towards the daily-loss stop")
+            cfg.risk.daily_loss_counts_practice = True
         try:
             for fixed in cfg.tnb.normalise():     # never a crash: a bad value becomes a safe one
                 _warn_once(fixed)

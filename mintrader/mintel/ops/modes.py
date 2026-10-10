@@ -12,6 +12,10 @@
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-groups FX_MINOR
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-groups none
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --risk-pct 0.7 --risk-money 13
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-tactics MOMENTUM_CONTINUATION
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-tactics all
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --top-size off
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --news-before-minutes 15
 
 Bots: rider (Rapid Momentum Rider), runner (Momentum Runner), bandbreaker
 (Band Breaker), crowd (Crowd Fader), ian (Financial Ian), or all - "all" is
@@ -77,6 +81,32 @@ other risk setting is ever touched. Only Trend & Breakout sizes from these
 two: the Momentum Runner copies the size Trend & Breakout would have had
 at its old 0.5% (runner.copy_risk_pct, 10 Oct), held to its own
 runner.max_risk_money, and the other bots size from their own settings.
+
+Three switches for the questions put to Aaron on 10 Oct (each default keeps
+what runs today; the answer is applied by one of these alone):
+
+--tnb-live-tactics MOMENTUM_CONTINUATION [more] chooses which approaches go
+real on the markets Trend & Breakout keeps LIVE (config.json "tnb" ->
+"live_tactics"): any other approach there stays on paper (practice), and so
+does an order that does not say its approach. "all" clears it: every
+approach on a live market goes real, as set on 9 Oct. It needs Trend &
+Breakout on PAPER with markets kept LIVE (in the file, or --tnb-live-groups
+in the same call); an approach it does not know is refused. When the set of
+live trades changes, tnb.live_since_utc starts again from now: a narrower
+(or wider) scope is a new trial, and the page counts its live trades from
+then.
+
+--top-size on|off sets risk.top_size_enabled: off, every Trend & Breakout
+trade - Formula 1's included - is sized by --risk-pct / --risk-money (about
+13 a trade); on, momentum continuation on minor pairs may take the
+top-opportunity size when its own record passes. Nothing else in risk.top_*
+changes, nor the Momentum Runner's own top size.
+
+--news-before-minutes N (at least 0.5, at most 120) sets
+news.blackout_before_seconds to N x 60: no new Trend & Breakout entry,
+practice or real, in the N minutes before a high-importance release
+(news.min_importance_for_blackout) on either currency of the pair. 90
+seconds until 10 Oct. The other bots have their own news rules.
 
 --check BOT prints that bot's health in one plain line from its own status
 file, for the one-click scripts: exit 0 when it is running and reporting,
@@ -153,6 +183,19 @@ NO_LIVE_GROUPS = "none"
 FORMULA_1 = frozenset({"FX_MINOR"})
 TNB_LIVE_WITH_LIVE_REFUSAL = ("--tnb-live-groups keeps some markets LIVE while Trend & Breakout is on PAPER; "
                               "with --live tnb every order is real already, so say one or the other")
+# 10 Oct: the three switches for Aaron's pending decisions (asked 10 Oct)
+ALL_TACTICS = "all"                                         # --tnb-live-tactics all: every approach (9 Oct)
+F1_TACTIC = "MOMENTUM_CONTINUATION"                         # Formula 1's own approach
+TNB_TACTICS_WITH_LIVE_REFUSAL = ("--tnb-live-tactics chooses which approaches go real on the markets Trend & "
+                                 "Breakout keeps LIVE while it is on PAPER; with --live tnb every order is real "
+                                 "already, so say one or the other")
+TNB_TACTICS_NOTHING_LIVE = ("--tnb-live-tactics chooses which approaches go real on the markets Trend & Breakout "
+                            "keeps LIVE while it is on PAPER, and none is kept LIVE: set --tnb-live-groups FX_MINOR "
+                            "(with --paper tnb if it is LIVE) first or in the same call")
+NEWS_MAX_MINUTES = 120.0                                    # a typo guard on --news-before-minutes
+# 10 Oct review: "more than 0" let 1e-9 through, stored as 0 seconds - no
+# blackout at all. Half a minute is the least it takes.
+NEWS_MIN_MINUTES = 0.5
 
 
 class PartialWrite(OSError):
@@ -403,18 +446,172 @@ def _since_words(since: str) -> str:
         return "since a time not recorded"
 
 
-def tnb_live_phrase(kinds, since: str = "") -> str:
-    """"minor currency pairs LIVE (Formula 1) since 2026-10-09 18:45 UTC"."""
-    f1 = " (Formula 1)" if frozenset(kinds) == FORMULA_1 else ""
-    return f"{kinds_in_words(kinds)} LIVE{f1} {_since_words(since)}"
+def tactics_in_words(tactics) -> str:
+    """"momentum continuation", "momentum continuation and trend pullback"."""
+    words = [str(t).lower().replace("_", " ") for t in tactics]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
 
 
-def tnb_paper_live_meaning(kinds, since: str = "") -> str:
+def tnb_live_phrase(kinds, since: str = "", tactics=()) -> str:
+    """"minor currency pairs LIVE (Formula 1) since 2026-10-09 18:45 UTC";
+    with tnb.live_tactics set (10 Oct) "minor currency pairs LIVE for
+    momentum continuation only (Formula 1) since ..."."""
+    tactics = tuple(tactics or ())
+    f1 = (" (Formula 1)" if frozenset(kinds) == FORMULA_1 and (not tactics or set(tactics) == {F1_TACTIC})
+          else "")
+    only = f" for {tactics_in_words(tactics)} only" if tactics else ""
+    return f"{kinds_in_words(kinds)} LIVE{only}{f1} {_since_words(since)}"
+
+
+def tnb_paper_live_meaning(kinds, since: str = "", tactics=()) -> str:
     """What PAPER with live kinds means, for --show."""
     runner = ("its index orders are real, so the Momentum Runner gets no runner feed" if "INDEX" in kinds else
               "the Momentum Runner still rides its index entries")
-    return (f"{tnb_live_phrase(kinds, since)}: real orders under its own magic number, the broker's figures are "
-            f"the record; every other market simulated (tnb_paper.sqlite), practice only, never in Overall; {runner}")
+    rest = ("its other approaches there and every other market simulated" if tactics else
+            "every other market simulated")
+    return (f"{tnb_live_phrase(kinds, since, tactics)}: real orders under its own magic number, the broker's "
+            f"figures are the record; {rest} (tnb_paper.sqlite), practice only, never in Overall; {runner}")
+
+
+# --------------------------------------- Trend & Breakout's live approaches --
+def check_live_tactics(names) -> tuple[str, ...]:
+    """The approaches named for --tnb-live-tactics, each checked and spelled
+    as the trader's journal spells them, in the order given, once each; ()
+    for "all". An approach the trader does not trade is refused, so nothing
+    is written (never real money on a name it cannot match)."""
+    from ..engine.tactics import APPROACH_NAMES, approach_of
+    words = [str(n).strip().upper().replace("-", "_").replace(" ", "_") for n in (names or ())]
+    words = [w for w in words if w]
+    if not words:
+        raise ValueError(f"name at least one approach for --tnb-live-tactics ({F1_TACTIC} for Formula 1), or all")
+    if ALL_TACTICS.upper() in words:
+        if len(words) > 1:
+            raise ValueError("--tnb-live-tactics all lets every approach on the live markets go real; name it on "
+                             "its own")
+        return ()
+    out: list[str] = []
+    bad: list[str] = []
+    for w in words:
+        a = approach_of(w)
+        if a not in APPROACH_NAMES:
+            bad.append(w)
+        elif a not in out:
+            out.append(a)
+    if bad:
+        raise ValueError(f"unknown approach {', '.join(bad)}: choose from {', '.join(APPROACH_NAMES)}, or all")
+    return tuple(out)
+
+
+def tnb_tactics_of(raw: dict) -> tuple[str, ...]:
+    """The approaches config.json's tnb.live_tactics lets go real, spelled as
+    the trader reads them (a name it does not know is left out, as it is
+    there); () when every approach does."""
+    from ..engine.tactics import APPROACH_NAMES, approach_of
+    block = raw.get(TNB) if isinstance(raw, dict) else None
+    block = block if isinstance(block, dict) else {}
+    names = block.get("live_tactics")
+    if isinstance(names, str):
+        names = [names]
+    out: list[str] = []
+    for n in names if isinstance(names, (list, tuple)) else ():
+        a = approach_of(n)
+        if a in APPROACH_NAMES and a not in out:
+            out.append(a)
+    return tuple(out)
+
+
+def tnb_tactics_name_nothing(raw: dict) -> bool:
+    """Does config.json's tnb.live_tactics name no approach the trader knows
+    (a list of unknown names, or not a list at all)? The trader then keeps
+    every market on paper (TnbConfig.normalise, PaperBroker), so --show,
+    --check and the restart of tnb.live_since_utc must read it the same way
+    (10 Oct review). Missing, null, "" or [] mean every approach: False."""
+    block = raw.get(TNB) if isinstance(raw, dict) else None
+    block = block if isinstance(block, dict) else {}
+    names = block.get("live_tactics")
+    if names is None:
+        return False
+    if isinstance(names, str):
+        names = [names] if names else []
+    if not isinstance(names, (list, tuple)):
+        return True
+    return bool(names) and not tnb_tactics_of(raw)
+
+
+def tnb_live_in_force(raw: dict) -> tuple[tuple[str, ...], str]:
+    """(kinds, since) as the trader acts on them: ``tnb_live_of``, but no
+    kind at all when tnb.live_tactics names no approach it knows."""
+    kinds, since = tnb_live_of(raw)
+    return ((), "") if kinds and tnb_tactics_name_nothing(raw) else (kinds, since)
+
+
+NAMES_NO_APPROACH = ("config.json's tnb.live_tactics names no approach Trend & Breakout trades, so every market "
+                     "stays on paper and nothing goes to the real broker (set it with --tnb-live-tactics "
+                     "MOMENTUM_CONTINUATION, or all)")
+
+
+# ---------------------------------------------------- the top-opportunity size --
+def top_size_lines(raw: dict) -> list[str]:
+    """What a Formula 1 trade (momentum continuation on a minor pair) risks
+    with risk.top_size_enabled as config.json says it, in plain words."""
+    from ..config import RiskConfig, _build
+    rc = _build(RiskConfig, raw.get("risk") if isinstance(raw.get("risk"), dict) else {})
+    normal = (f"{rc.base_risk_pct:g}% of the account and never more than {rc.max_risk_money:.2f} at its stop "
+              f"(risk.base_risk_pct, risk.max_risk_money)")
+    if not rc.top_size_enabled or float(rc.top_risk_money or 0.0) <= 0:
+        return [f"Top-opportunity size: OFF (config.json: risk.top_size_enabled false). Every Trend & Breakout "
+                f"trade, Formula 1's included, risks {normal}; a stronger setup may take a higher percent, still "
+                f"never more than {rc.max_risk_money:.2f}. The Momentum Runner's own top size "
+                f"(runner.top_size_enabled) is not changed."]
+    segs = ", ".join(f"{str(t).lower().replace('_', ' ')} on "
+                     f"{LIVE_KINDS.get(str(g).upper(), str(g).lower().replace('_', ' '))}"
+                     for t, g in (rc.top_segments or ())) or "no segment listed (risk.top_segments)"
+    return [f"Top-opportunity size: ON (config.json: risk.top_size_enabled true). A trade in {segs} - Formula "
+            f"1's - may risk up to {rc.top_risk_money:.2f} (risk.top_risk_money), never more than "
+            f"{rc.max_risk_pct:g}% of the account and at most {rc.top_max_lots:g} lots, but only while its own "
+            f"record passes (at least {rc.top_min_trades} trades over {rc.top_min_days} days, positive after costs, "
+            f"more days up than down); otherwise it risks {normal}, like every other trade. The Momentum Runner's "
+            f"own top size (runner.top_size_enabled) is not changed."]
+
+
+# ------------------------------------------------------------- the news window --
+def check_news_minutes(value) -> float:
+    """--news-before-minutes: at least 0.5 (30 seconds) and at most 120."""
+    v = _a_number(value, "--news-before-minutes")
+    if not (NEWS_MIN_MINUTES <= v <= NEWS_MAX_MINUTES):
+        raise ValueError(f"--news-before-minutes must be at least {NEWS_MIN_MINUTES:g} (30 seconds) and at most "
+                         f"{NEWS_MAX_MINUTES:g}, not {v:g}")
+    return v
+
+
+def _minutes_words(seconds: float) -> str:
+    m = float(seconds) / 60.0
+    if seconds < 60 or abs(m - round(m)) > 1e-9:
+        return f"{float(seconds):g} seconds"
+    return f"{m:g} minute{'' if m == 1 else 's'}"
+
+
+def news_lines(raw: dict) -> list[str]:
+    """What news.blackout_before_seconds means, as config.json says it. What
+    it touches (checked 10 Oct): Trend & Breakout's scanner (NewsIntelligence
+    verdict -> a blocker on the setup) for every new entry, paper and live
+    alike, on both currencies of an FX pair (an index or metal: its own
+    currencies, else USD), releases of at least
+    news.min_importance_for_blackout. The Momentum Runner, Band Breaker,
+    Crowd Fader, Rapid Momentum Rider and Financial Ian never read it (the
+    Rider and Ian have their own news rules); the Runner only rides Trend &
+    Breakout's entries, so an index entry not taken is not ridden either."""
+    from ..config import NewsConfig, _build
+    nc = _build(NewsConfig, raw.get("news") if isinstance(raw.get("news"), dict) else {})
+    window = _minutes_words(float(nc.blackout_before_seconds))
+    return [f"News: Trend & Breakout takes no new trade - practice or real - in the {window} before a "
+            f"high-importance release (importance {int(nc.min_importance_for_blackout)} or more, "
+            f"news.min_importance_for_blackout) on either currency of the pair (an index or a metal: its own "
+            f"currencies, else USD). Trades already open are still managed, and the wait after a release is "
+            f"unchanged. The Momentum Runner, Band Breaker, Crowd Fader, Rapid Momentum Rider and Financial Ian do "
+            f"not read this setting; the Runner only rides Trend & Breakout's index entries, so one not taken "
+            f"in the window is not ridden either (config.json: news.blackout_before_seconds "
+            f"{float(nc.blackout_before_seconds):g})."]
 
 
 # ------------------------------------------- Trend & Breakout's risk per trade --
@@ -468,17 +665,21 @@ def risk_lines(raw: dict) -> list[str]:
     runner = (f"the Momentum Runner copies {sized} and each ride is held to at most {cap:.2f} at its own stop "
               f"(runner.max_risk_money)" if cap > 0 else
               f"the Momentum Runner copies {sized} (runner.max_risk_money is 0: no cap of its own)")
+    # 10 Oct review: the top-opportunity sentence only while that size is on (risk.top_size_enabled)
+    top = (f"A top-opportunity trade keeps its own limit (risk.top_risk_money {rc.top_risk_money:.2f}, at most "
+           f"{rc.max_risk_pct:g}% of the account)." if rc.top_size_enabled and float(rc.top_risk_money or 0.0) > 0
+           else "The top-opportunity size is OFF (risk.top_size_enabled), so no trade risks more.")
     return [f"Trend & Breakout's risk per trade: {rc.base_risk_pct:g}% of the account and never more than "
             f"{rc.max_risk_money:.2f} at its stop (config.json: risk.base_risk_pct, risk.max_risk_money). A stronger "
             f"setup may take a higher percent, never past the {rc.max_risk_pct:g}% ceiling, and still never past "
-            f"{rc.max_risk_money:.2f}. A top-opportunity trade keeps its own limit (risk.top_risk_money "
-            f"{rc.top_risk_money:.2f}, at most {rc.max_risk_pct:g}% of the account).",
+            f"{rc.max_risk_money:.2f}. {top}",
             f"Only Trend & Breakout sizes from these two numbers: {runner}; the Band Breaker, Crowd Fader, Rapid "
             f"Momentum Rider and Financial Ian size from their own settings."]
 
 
 def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: Optional[float] = None,
               ian_feed: Optional[str] = None, tnb_live_groups=None, risk_pct=None, risk_money=None,
+              tnb_live_tactics=None, top_size: Optional[bool] = None, news_before_minutes=None,
               now: Optional[dt.datetime] = None) -> dict[str, str]:
     """Write the modes in `changes` ({bot: mode}), and the settings when
     given, and return every bot's resulting mode. Only those keys change;
@@ -496,7 +697,14 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
     and, when the live set changes, tnb.live_since_utc (``now``); live kinds
     need Trend & Breakout on PAPER, so it is put there (refused with LIVE).
     ``risk_pct`` and ``risk_money`` set risk.base_risk_pct and
-    risk.max_risk_money and nothing else in the risk block."""
+    risk.max_risk_money and nothing else in the risk block.
+
+    10 Oct: ``tnb_live_tactics`` (approach names, or ["all"]) sets
+    tnb.live_tactics - it needs Trend & Breakout on PAPER with markets kept
+    LIVE after this call, and starts tnb.live_since_utc again (``now``) when
+    the set of live trades changes; ``top_size`` (True/False) sets
+    risk.top_size_enabled alone; ``news_before_minutes`` sets
+    news.blackout_before_seconds to that many minutes in seconds."""
     cfg_path = Path(config_path)
     unknown = [b for b in changes if b not in BOTS]
     if unknown:
@@ -514,6 +722,12 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
         if modes.get(TNB) == "LIVE":
             raise ValueError(TNB_LIVE_WITH_LIVE_REFUSAL)
         modes[TNB] = "PAPER"                                 # live kinds only mean something on PAPER
+    live_tactics = check_live_tactics(tnb_live_tactics) if tnb_live_tactics is not None else None
+    if live_tactics and modes.get(TNB) == "LIVE":
+        raise ValueError(TNB_TACTICS_WITH_LIVE_REFUSAL)
+    if top_size is not None and not isinstance(top_size, bool):
+        raise ValueError(f"--top-size must be on or off, not {top_size!r}")
+    news_minutes = check_news_minutes(news_before_minutes) if news_before_minutes is not None else None
     pip = _check_gbp_per_pip(gbp_per_pip) if gbp_per_pip is not None else None
     feed = None
     if ian_feed is not None:
@@ -524,6 +738,13 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
     raw = _read_config(cfg_path)
     data = _data_dir(raw, cfg_path)
     pct, money = check_risk(raw, risk_pct, risk_money)
+    old_kinds, _old_since = tnb_live_of(raw)
+    old_tactics = tnb_tactics_of(raw)
+    old_nothing = bool(old_kinds) and tnb_tactics_name_nothing(raw)    # nothing was live: the trader read it so
+    kinds_after = live_kinds if live_kinds is not None else old_kinds
+    paper_after = (modes.get(TNB) or tnb_mode_of(raw)) == "PAPER"
+    if live_tactics and not (kinds_after and paper_after):
+        raise ValueError(TNB_TACTICS_NOTHING_LIVE)          # an approach list with nothing live means nothing
     own: dict[str, dict] = {}
     for bot in FILES:
         if bot in modes or (bot == "rider" and pip is not None) or (bot == "ian" and feed is not None):
@@ -537,7 +758,6 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
             raise ValueError("; ".join(problems))
     # ... then write
     was_paper = tnb_mode_of(raw) == "PAPER"
-    old_kinds, _old_since = tnb_live_of(raw)
     in_config = {b: m for b, m in modes.items() if b in CONFIG_BOTS or b == TNB}
     for bot, mode in in_config.items():
         block = raw.get(bot)
@@ -559,6 +779,27 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
         # the same set while already on PAPER: both keys exactly as they were
     elif old_kinds and not was_paper and modes.get(TNB) == "PAPER":
         raw[TNB]["live_since_utc"] = stamp                   # LIVE -> PAPER: the kept live kinds take effect now
+    if live_tactics is not None:
+        block = raw.get(TNB)
+        if not isinstance(block, dict):
+            block = {}
+            raw[TNB] = block
+        block["live_tactics"] = list(live_tactics)
+        if (old_nothing or set(live_tactics) != set(old_tactics)) and kinds_after and paper_after:
+            # 10 Oct: a different set of live trades (narrower or wider) is a new trial: its live count starts now
+            block["live_since_utc"] = stamp
+    if top_size is not None:
+        risk = raw.get("risk")
+        if not isinstance(risk, dict):
+            risk = {}
+            raw["risk"] = risk
+        risk["top_size_enabled"] = bool(top_size)
+    if news_minutes is not None:
+        news = raw.get("news")
+        if not isinstance(news, dict):
+            news = {}
+            raw["news"] = news
+        news["blackout_before_seconds"] = round(news_minutes * 60.0, 3)
     if pct is not None or money is not None:
         risk = raw.get("risk")
         if not isinstance(risk, dict):
@@ -579,7 +820,8 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
         f["vendor"] = feed
         own["ian"]["feed"] = f
     todo: list[tuple[Path, dict]] = []
-    if in_config or live_kinds is not None or pct is not None or money is not None:
+    if (in_config or live_kinds is not None or pct is not None or money is not None or live_tactics is not None
+            or top_size is not None or news_minutes is not None):
         todo.append((cfg_path, raw))
     todo += [(data / FILES[bot], obj) for bot, obj in own.items()]
     written: list[Path] = []
@@ -601,14 +843,18 @@ def describe(modes: dict[str, str], magic: Optional[dict[str, int]] = None,
              tnb_live: Optional[tuple] = None) -> str:
     """One plain line per bot: its mode, what that means, its magic number
     when known, and where it is set. ``tnb_live`` is (kinds, since) from
-    ``tnb_live_of``: Trend & Breakout's markets kept LIVE while on PAPER."""
+    ``tnb_live_of``, or (kinds, since, approaches) with ``tnb_tactics_of``
+    (10 Oct): Trend & Breakout's markets kept LIVE while on PAPER."""
     names = labels()
     where = {bot: f"config.json: {bot}.mode" for bot in CONFIG_BOTS + (TNB,)}
     kinds, since = (tuple(tnb_live[0]), str(tnb_live[1] or "")) if tnb_live else ((), "")
+    tactics = tuple(tnb_live[2]) if tnb_live and len(tnb_live) > 2 else ()
     if str(modes.get(TNB) or "").upper() != "PAPER":
         kinds, since = (), ""                                # on LIVE every order is real: the kinds mean nothing
+    if not kinds:
+        tactics = ()
     if kinds:
-        where[TNB] += ", tnb.live_groups"
+        where[TNB] += ", tnb.live_groups" + (", tnb.live_tactics" if tactics else "")
     for bot, name in FILES.items():
         path = (files or {}).get(bot) or (scalper_file if bot == "scalper" else None)
         where[bot] = f"{path}: mode" if path else f"{name}: mode"
@@ -622,7 +868,7 @@ def describe(modes: dict[str, str], magic: Optional[dict[str, int]] = None,
         if bot == TNB:
             meaning = TNB_WHAT.get(mode, TNB_WHAT[TNB_DEFAULT])
             if mode == "PAPER" and kinds:
-                meaning = tnb_paper_live_meaning(kinds, since)
+                meaning = tnb_paper_live_meaning(kinds, since, tactics)
         if bot in RETIRED:
             name, meaning = f"{name} (retired)", RETIRED_WHAT
         tag = f"magic {magic[bot]}; " if magic and bot in magic else ""
@@ -675,8 +921,13 @@ def tnb_line(data_dir: str | Path, raw: dict, now: Optional[dt.datetime] = None)
         runner_mode = "OFF"
     what = "real prices, simulated orders" if mode == "PAPER" else "real orders on the account"
     kinds, since = tnb_live_of(raw) if mode == "PAPER" else ((), "")
+    if kinds and tnb_tactics_name_nothing(raw):
+        # 10 Oct review: as the trader reads it - every market on paper
+        kinds, since = (), ""
+        what += "; tnb.live_tactics names no approach it trades, so every market is on paper"
     if kinds:
-        what += f"; {tnb_live_phrase(kinds, since)}"          # e.g. minor currency pairs LIVE (Formula 1) since ...
+        # e.g. minor currency pairs LIVE (Formula 1) since ...; 10 Oct: "... LIVE for momentum continuation only ..."
+        what += f"; {tnb_live_phrase(kinds, since, tnb_tactics_of(raw))}"
     if runner_mode == "OFF":
         rides = "the Momentum Runner is OFF"
     else:
@@ -761,6 +1012,48 @@ def health_line(data_dir: str | Path, key: str, now: Optional[dt.datetime] = Non
     return 0, "".join(bits) + restart
 
 
+def tnb_live_lines(mode: str, live: tuple, tactics=(), *, tactics_given: bool = False,
+                   restarted: bool = False) -> list[str]:
+    """What --tnb-live-groups / --tnb-live-tactics leave in force, in plain
+    words: which of Trend & Breakout's orders now go to the real broker, and
+    (10 Oct) when the live trial starts again because the set of live
+    trades changed."""
+    kinds, since = live
+    tactics = tuple(tactics or ())
+    if str(mode).upper() != "PAPER" or not kinds:
+        if tactics_given:
+            where = ("it is LIVE, so every order is real" if str(mode).upper() == "LIVE" else
+                     "no market is kept LIVE just now, so every order is simulated")
+            return [f"Trend & Breakout: every approach may go real on the markets it keeps LIVE while on PAPER "
+                    f"(config.json: tnb.live_tactics cleared); {where}."]
+        # 10 Oct review: say so when the approach list stays in the file (it applies again later)
+        kept = (f"; tnb.live_tactics - {tactics_in_words(tactics)} only - is kept, and applies again if "
+                f"markets are kept LIVE later" if tactics else "")
+        return [f"Trend & Breakout: no market kept LIVE - on PAPER every order is simulated "
+                f"(config.json: tnb.live_groups and tnb.live_since_utc cleared{kept})."]
+    if tactics:
+        rest = (f"its other approaches there, and every other market, stay on paper (practice)"
+                + ("; its index orders are real only for those approaches, so the Momentum Runner gets no runner "
+                   "feed" if "INDEX" in kinds else "; the Momentum Runner still rides its index entries"))
+        what = f"Its {tactics_in_words(tactics)} orders on {kinds_in_words(kinds)} go to the real broker; {rest}"
+        keys = "tnb.live_groups, tnb.live_tactics, tnb.live_since_utc"
+    else:
+        rest = ("every other market stays on paper; its index orders are real, so the Momentum Runner rides "
+                "those and gets no runner feed" if "INDEX" in kinds else
+                "every other market stays on paper and still feeds the Momentum Runner")
+        what = f"Its orders on {kinds_in_words(kinds)} go to the real broker; {rest}"
+        keys = "tnb.live_groups, tnb.live_since_utc"
+        if tactics_given:
+            what = f"Every approach's orders on {kinds_in_words(kinds)} go to the real broker; {rest}"
+            keys = "tnb.live_groups, tnb.live_tactics cleared, tnb.live_since_utc"
+    out = [f"Trend & Breakout: {mode}, {tnb_live_phrase(kinds, since, tactics)}. {what} (config.json: {keys})."]
+    if restarted:
+        out.append(f"The set of live trades changed, so the live trial starts again: the page counts Trend & "
+                   f"Breakout's live trades on {kinds_in_words(kinds)} from {_since_words(since)[6:]} "
+                   f"(tnb.live_since_utc); the earlier ones stay in the account's record.")
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="python -m mintel.ops.modes",
                                  description="switch the Rapid Momentum Rider, Momentum Runner, Band Breaker, Crowd "
@@ -786,6 +1079,17 @@ def main(argv=None) -> int:
                     help="Trend & Breakout's risk per trade, percent of the account (risk.base_risk_pct)")
     ap.add_argument("--risk-money", type=float, default=None, metavar="MONEY",
                     help="the most one Trend & Breakout trade may lose at its stop (risk.max_risk_money)")
+    # 10 Oct: the switches for Aaron's pending decisions; each default keeps what runs today
+    ap.add_argument("--tnb-live-tactics", nargs="+", default=None, metavar="APPROACH",
+                    help="approaches whose Trend & Breakout orders go REAL on the markets it keeps LIVE: "
+                         "MOMENTUM_CONTINUATION (Formula 1), ...; all = every approach, as on 9 Oct "
+                         "(tnb.live_tactics; restarts tnb.live_since_utc when the live set changes)")
+    ap.add_argument("--top-size", default=None, choices=("on", "off"),
+                    help="the top-opportunity size for Trend & Breakout (risk.top_size_enabled); off = every "
+                         "trade sized by --risk-pct / --risk-money")
+    ap.add_argument("--news-before-minutes", type=float, default=None, metavar="N",
+                    help="no new Trend & Breakout entry in the N minutes (at least 0.5, at most 120) before a "
+                         "high-importance release on either currency of the pair (news.blackout_before_seconds)")
     ap.add_argument("--show", action="store_true", help="print every bot's mode and change nothing")
     ap.add_argument("--check", default="", metavar="BOT",
                     help="one line on how tnb, rider or ian is doing; changes nothing")
@@ -805,14 +1109,27 @@ def main(argv=None) -> int:
         return 2
     risk_given = a.risk_pct is not None or a.risk_money is not None
     settings = (a.gbp_per_pip is not None or a.ian_feed is not None or a.tnb_live_groups is not None
-                or risk_given)
+                or risk_given or a.tnb_live_tactics is not None or a.top_size is not None
+                or a.news_before_minutes is not None)
     if not changes and not settings and not a.show:
         ap.print_help()
         return 2
     try:
+        tactics_before: Optional[tuple] = None
+        nothing_before = False
+        if a.tnb_live_tactics is not None:
+            try:
+                before = _read_config(Path(a.config))
+                tactics_before = tnb_tactics_of(before)
+                nothing_before = bool(tnb_live_of(before)[0]) and tnb_tactics_name_nothing(before)
+            except (OSError, ValueError):
+                tactics_before = None                        # set_modes says why, and writes nothing
         if changes or settings:
             modes = set_modes(a.config, changes, gbp_per_pip=a.gbp_per_pip, ian_feed=a.ian_feed,
-                              tnb_live_groups=a.tnb_live_groups, risk_pct=a.risk_pct, risk_money=a.risk_money)
+                              tnb_live_groups=a.tnb_live_groups, risk_pct=a.risk_pct, risk_money=a.risk_money,
+                              tnb_live_tactics=a.tnb_live_tactics,
+                              top_size=None if a.top_size is None else a.top_size == "on",
+                              news_before_minutes=a.news_before_minutes)
         else:
             modes = read_modes(a.config)
         raw = _read_config(Path(a.config))
@@ -825,24 +1142,30 @@ def main(argv=None) -> int:
         print(f"Nothing changed: {exc}", file=sys.stderr)
         return 1
     live = tnb_live_of(raw)
-    print(describe(modes, mg, files=files, tnb_live=live))
+    tactics = tnb_tactics_of(raw)
+    # 10 Oct review: a tnb.live_tactics naming no approach keeps every market on paper, as the trader reads it
+    names_nothing = bool(live[0]) and tnb_tactics_name_nothing(raw)
+    print(describe(modes, mg, files=files, tnb_live=((), "", ()) if names_nothing else live + (tactics,)))
+    if names_nothing and modes.get(TNB) == "PAPER":
+        print(f"Trend & Breakout: {NAMES_NO_APPROACH}.")
     if a.gbp_per_pip is not None:
         print(f"Rapid Momentum Rider exposure: GBP {a.gbp_per_pip:.2f} per pip ({files['rider']}: user_pip_value_gbp)")
     if a.ian_feed is not None:
         print(f"Financial Ian data feed: {a.ian_feed} ({files['ian']}: feed.vendor)")
-    if a.tnb_live_groups is not None:
-        if live[0]:
-            rest = ("every other market stays on paper; its index orders are real, so the Momentum Runner rides "
-                    "those and gets no runner feed" if "INDEX" in live[0] else
-                    "every other market stays on paper and still feeds the Momentum Runner")
-            print(f"Trend & Breakout: {modes.get(TNB, TNB_DEFAULT)}, {tnb_live_phrase(*live)}. Its orders on "
-                  f"{kinds_in_words(live[0])} go to the real broker; {rest} "
-                  f"(config.json: tnb.live_groups, tnb.live_since_utc).")
-        else:
-            print("Trend & Breakout: no market kept LIVE - on PAPER every order is simulated "
-                  "(config.json: tnb.live_groups and tnb.live_since_utc cleared).")
+    if (a.tnb_live_groups is not None or a.tnb_live_tactics is not None) and not names_nothing:
+        for line in tnb_live_lines(modes.get(TNB, TNB_DEFAULT), live, tactics,
+                                   tactics_given=a.tnb_live_tactics is not None,
+                                   restarted=tactics_before is not None and (nothing_before
+                                                                             or set(tactics_before) != set(tactics))):
+            print(line)
     if risk_given:
         for line in risk_lines(raw):
+            print(line)
+    if a.top_size is not None:
+        for line in top_size_lines(raw):
+            print(line)
+    if a.news_before_minutes is not None:
+        for line in news_lines(raw):
             print(line)
     if changes or settings:
         print(RESTART)

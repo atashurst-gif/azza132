@@ -1166,6 +1166,9 @@ apply_ian_binance() {
 }
 
 FORMULA1_MARKER_NAME=".formula1-2026-10-09"
+# 10 Oct review: written when Aaron types LIVE at the Rider's question
+# (confirm_rider_live); apply_formula1 then leaves the Rider as he chose
+RIDER_CONFIRMED_MARKER_NAME=".rider-live-confirmed"
 
 # formula1_modes ARGS... - one call of the modes command for apply_formula1:
 # quiet when it works; when it does not, its own words and a [WARN] with the
@@ -1205,7 +1208,18 @@ apply_formula1() {
   local fails
   done_n=0
   fails=0
-  if formula1_modes --off rider; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
+  local rider_words
+  local steps_n
+  rider_words="OFF"
+  steps_n=3
+  if [[ -f "$DATA_DIR/$RIDER_CONFIRMED_MARKER_NAME" ]]; then
+    # 10 Oct review: Aaron typed LIVE for the Rider at the SETUP-RAPID-RIDER
+    # question (confirm_rider_live), after being told why it was switched
+    # off: that later choice stands, so the Rider is left as it is
+    rider_words="left as you chose (you typed LIVE for it)"
+    steps_n=2
+    say "    Rapid Momentum Rider: left as you chose - you typed LIVE for it."
+  elif formula1_modes --off rider; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
   if formula1_modes --tnb-live-groups FX_MINOR; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
   if formula1_modes --risk-pct 0.7 --risk-money 13; then done_n=$((done_n + 1)); else fails=$((fails + 1)); fi
   if (( done_n )); then
@@ -1214,11 +1228,11 @@ apply_formula1() {
     CODE_CHANGED="yes"
   fi
   if (( fails )); then
-    warn "Formula 1 is not fully set ($fails of 3 steps failed, see above). Double-click Start Trading Bot again, or run the command shown."
+    warn "Formula 1 is not fully set ($fails of $steps_n steps failed, see above). Double-click Start Trading Bot again, or run the command shown."
     return 0
   fi
   date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
-  good "Rapid Momentum Rider: OFF. Trend & Breakout: minor currency pairs LIVE (Formula 1), the rest on PAPER. Risk: 0.7% of the balance a trade, at most GBP 13"
+  good "Rapid Momentum Rider: $rider_words. Trend & Breakout: minor currency pairs LIVE (Formula 1), the rest on PAPER. Risk: 0.7% of the balance a trade, at most GBP 13"
   print_lineup
   return 0
 }
@@ -1245,6 +1259,45 @@ except Exception:
     pass' "$CONFIG" 2>/dev/null || true
 }
 
+# tnb_live_tactics - 10 Oct: the approaches whose orders go real on those
+# markets (config.json "tnb" -> "live_tactics"), as MOMENTUM_CONTINUATION or
+# A,B; empty when every approach does. 10 Oct review: read as the trader
+# reads it - a name it does not trade is left out, and NONE when the list
+# names no approach it trades (or is not a list): then every market is on
+# paper. The names are mintel/engine/tactics.py's APPROACH_NAMES (a test
+# keeps the two the same).
+tnb_live_tactics() {
+  local py=""
+  if [[ -x "$VENV_DIR/bin/python" ]]; then
+    py="$VENV_DIR/bin/python"
+  else
+    py="$(command -v python3 2>/dev/null || true)"
+  fi
+  [[ -n "$py" && -f "$CONFIG" ]] || return 0
+  "$py" -c 'import json, sys
+NAMES = ("MOMENTUM_CONTINUATION", "TREND_PULLBACK", "BREAKOUT_ACCEPTANCE", "SESSION_EXPANSION",
+         "SQUEEZE_RELEASE", "RANGE_REJECTION", "FAILED_BREAKOUT_RECLAIM", "LIQUIDITY_SWEEP_REVERSAL",
+         "VWAP_REVERSION", "NEWS_CONTINUATION", "BREAKOUT_RETEST")
+try:
+    t = (json.load(open(sys.argv[1])).get("tnb") or {}).get("live_tactics")
+    if t is None:
+        t = []
+    elif isinstance(t, str):
+        t = [t] if t else []
+    if not isinstance(t, list):
+        print("NONE")
+    else:
+        known = []
+        for x in t:
+            a = str(x or "").strip().upper()
+            a = a[:-3] if a.endswith("_2X") else a
+            if a in NAMES and a not in known:
+                known.append(a)
+        print("NONE" if t and not known else ",".join(known))
+except Exception:
+    pass' "$CONFIG" 2>/dev/null || true
+}
+
 # tnb_mode_words - Trend & Breakout's mode in plain words: LIVE, PAPER, or
 # "PAPER - minor currency pairs LIVE (Formula 1)" when some kinds of market
 # still trade for real (9 Oct: never plain PAPER while some orders are real).
@@ -1253,6 +1306,8 @@ tnb_mode_words() {
   local groups
   local g
   local w
+  local tactics
+  local only=""
   local words=""
   local f1=""
   mode="$(bot_mode tnb LIVE)"
@@ -1270,7 +1325,18 @@ tnb_mode_words() {
     esac
     words="${words:+$words, }$w"
   done
-  printf '%s\n' "PAPER - $words LIVE$f1"
+  # 10 Oct: with tnb.live_tactics, "... LIVE for momentum continuation only (Formula 1)"
+  tactics="$(tnb_live_tactics)"
+  if [[ "$tactics" == "NONE" ]]; then
+    # 10 Oct review: a list naming no approach it trades - the trader keeps every market on paper
+    printf '%s\n' "PAPER - every market (tnb.live_tactics names no approach it trades)"
+    return 0
+  fi
+  if [[ -n "$tactics" ]]; then
+    only=" for $(printf '%s' "$tactics" | tr '[:upper:]' '[:lower:]' | tr '_' ' ' | sed -e 's/,/ and /g') only"
+    [[ "$tactics" == "MOMENTUM_CONTINUATION" ]] || f1=""
+  fi
+  printf '%s\n' "PAPER - $words LIVE$only$f1"
 }
 
 # risk_words - the money a trade from config.json's risk block, as
@@ -1426,10 +1492,50 @@ restart_if_mode_changed() {
   return 0
 }
 
+# rider_sacked - 10 Oct: was the Rapid Momentum Rider switched off on
+# purpose? Formula 1's one-time step ran on this Mac (its marker), or
+# rider.json says OFF.
+rider_sacked() {
+  formula1_done || [[ "$(bot_file_mode rider)" == "OFF" ]]
+}
+
+# confirm_rider_live - 10 Oct: the SETUP-RAPID-RIDER icon Aaron has on his
+# Desktop turned the Rider LIVE in one double-click, including the Rider he
+# switched off on 9 Oct. Now it asks first: only the word LIVE, typed as it
+# is, puts it back on; anything else, or no answer, changes nothing. Exit 0:
+# go on; 1: leave everything as it is (and it says so).
+confirm_rider_live() {
+  rider_sacked || return 0
+  local answer
+  answer=""
+  say ""
+  say "  ${BOLD}The Rapid Momentum Rider was switched OFF on 9 Oct${RESET}: its own 10-day test on"
+  say "  real prices found no edge, so you switched it off and put Formula 1 live instead."
+  say "  Putting it back on LIVE means it trades real money again."
+  say ""
+  read -r -p "  Type LIVE and press Enter to put it back on LIVE (anything else changes nothing): " answer || answer=""
+  if [[ "$answer" == "LIVE" ]]; then
+    say "  You typed LIVE: putting the Rapid Momentum Rider back on LIVE."
+    # 10 Oct review: remember the answer, so Formula 1's one-time step - when
+    # it has not run on this Mac yet - never switches it straight back OFF a
+    # moment later (apply_formula1 leaves the Rider alone)
+    mkdir -p "$DATA_DIR" 2>/dev/null
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$DATA_DIR/$RIDER_CONFIRMED_MARKER_NAME" 2>/dev/null || true
+    return 0
+  fi
+  say ""
+  say "  ${BOLD}Nothing changed${RESET}: the Rapid Momentum Rider stays OFF."
+  return 1
+}
+
 # setup_rider - the Rapid Momentum Rider LIVE in place of the Rapid Scalper.
 # GBP 1 a pip only when rider.json names no figure yet: once set, the figure
-# is Aaron's and is never changed here.
+# is Aaron's and is never changed here. 10 Oct: when the Rider was switched
+# off on purpose it asks first (confirm_rider_live) and returns 1, having
+# changed nothing, unless Aaron types LIVE. The Desktop copy of
+# SETUP-RAPID-RIDER placed before 10 Oct calls this too, so it asks as well.
 setup_rider() {
+  confirm_rider_live || return 1
   step "Rapid Momentum Rider: LIVE, in place of the Rapid Scalper"
   local has_pip
   has_pip="$("$VENV_DIR/bin/python" -c 'import json, sys

@@ -92,7 +92,8 @@ wrapper (`mintel/broker/paper.py`, `PaperBroker`) around the real one:
 - The paper deal records have exactly the same form as MetaTrader's. So the
   journal books a paper trade the same way as a real one, the commission the
   bot learns comes from them, and the daily-loss stop counts paper money.
-  The daily-loss stop's code is unchanged.
+  The daily-loss stop's code is unchanged. (10 Oct: with Formula 1 live it
+  reads the real and the practice part apart - see the end of this page.)
 
 ## How paper can differ from the real broker
 
@@ -285,3 +286,43 @@ magic 990311) leads and its practice follows in grey. The plan's focus line
 counts Formula 1's live trades from MetaTrader's deal records only - its
 positions on minor pairs opened since `live_since_utc` - and it is judged
 after 20 of them (docs/plan.json).
+
+## 10 October: the daily-loss stop reads real money and practice apart
+
+With Formula 1 live, Trend & Breakout's day holds real trades (its minor
+pairs, at the broker) and practice ones (this paper record), and the 3%
+daily-loss stop added them together: a practice profit could let real
+losses run past 3% before it stopped anything. Now each part nets its own
+trades - closed today and still open - and a practice profit never offsets
+a real loss (`RiskManager.daily_loss_figure`: real money down and practice
+up, the stop reads the real money alone). In every other case the figure
+is the sum, as before - a real profit still covers a practice loss (10 Oct
+review). With only one side trading - fully PAPER, or LIVE - the figure is
+exactly what it was. The page's "Why no new trade right now" line says
+which part tripped it: "real money down 3.16% today" or "practice down
+3.36% today". The 3% limit, the drawdown stop and every other limit are
+unchanged, and the same stop still holds back the Momentum Runner, the
+Band Breaker and the Crowd Fader. `risk.daily_loss_counts_practice` (true
+by default) decides whether practice losses count at all; false counts
+real money alone - Trend & Breakout's real trades and the real trades of
+the Momentum Runner, Band Breaker and Crowd Fader under their own magic
+numbers (10 Oct review: without them, "only real money" could never stop
+the live Runner). Only a JSON `false` turns it off. With the default (true)
+the Runner's real money is still not in the figure, as before.
+
+## 10 October: switches for the questions put to Aaron
+
+Each default keeps what runs today; his answer is applied with one command
+(`python -m mintel.ops.modes`), which says in plain words what changes:
+
+- `--tnb-live-tactics MOMENTUM_CONTINUATION` (`tnb.live_tactics`): only that
+  approach goes real on the live markets; any other approach there - and an
+  order that does not say its approach - stays on paper. `all` puts every
+  approach back. A different set of live trades is a new trial, so
+  `live_since_utc` starts again and the page counts from then.
+- `--top-size off|on` (`risk.top_size_enabled`): off, a Formula 1 trade
+  risks the normal 0.7% / at most GBP 13, never the top-opportunity size.
+- `--news-before-minutes 15` (`news.blackout_before_seconds`, 90 seconds
+  until now): no new Trend & Breakout entry, practice or real, in that many
+  minutes before a high-importance release on either currency of the pair.
+  The other bots have their own news rules and never read it.

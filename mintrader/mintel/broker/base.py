@@ -141,6 +141,10 @@ class OrderRequest:
     magic: int = 0
     idempotency_key: str = ""
     filling: str = "IOC"
+    # 10 Oct: the approach that made the order (Trend & Breakout's tactic,
+    # e.g. "MOMENTUM_CONTINUATION"; "" when not said). Only the PAPER
+    # wrapper reads it (tnb.live_tactics); it is never sent to the broker.
+    tactic: str = ""
 
 
 class RetCode(int, Enum):

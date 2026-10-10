@@ -458,6 +458,25 @@ TACTICS: tuple[Tactic, ...] = (
 )
 
 
+# Every name an approach reports under (the journal's "tactic" column): the
+# registry's names, plus BREAKOUT_RETEST, which BREAKOUT_ACCEPTANCE reports
+# for a retested level. A twin trade adds scan.twin_suffix ("_2X"). 10 Oct:
+# what tnb.live_tactics and `python -m mintel.ops.modes --tnb-live-tactics`
+# accept.
+APPROACH_NAMES: tuple[str, ...] = tuple(t.name for t in TACTICS) + ("BREAKOUT_RETEST",)
+
+
+def approach_of(tactic: str) -> str:
+    """The approach a trade's tactic name belongs to, as APPROACH_NAMES spell
+    it: "MOMENTUM_CONTINUATION" for "momentum_continuation_2x" (a twin, the
+    same setup with a further target). "" for nothing; a name that is not an
+    approach comes back as written (upper case), so it matches no list."""
+    name = str(tactic or "").strip().upper()
+    if name.endswith("_2X"):
+        name = name[:-3]
+    return name
+
+
 def candidates_for(regime: Regime) -> tuple[Tactic, ...]:
     return tuple(t for t in TACTICS if regime in t.regimes)
 

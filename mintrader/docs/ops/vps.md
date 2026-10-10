@@ -126,10 +126,10 @@ Nothing. The scheduled tasks keep it running. To check on it, double-click:
 
 | File | What it does |
 |---|---|
-| `START-BOT.cmd` | starts whatever is not running, prints the health |
+| `START-BOT.cmd` | starts whatever is not running, prints the health; since 10 Oct it also sets Formula 1 once if it is not set yet (as SETUP-AND-START does) - one try only: if part of it fails it says so and leaves it to SETUP-AND-START, so it never undoes a later choice every 5 minutes |
 | `START-RAPID-RIDER.cmd` | the same, then one line: `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets` |
 | `START-FINANCIAL-IAN.cmd` | the same, then one line: `FINANCIAL IAN - HEALTHY, PAPER, feed NOT CONFIGURED` |
-| `SETUP-RAPID-RIDER.cmd` | puts the Rider back on LIVE (GBP 1 a pip unless a figure is set) and checks it - since 9 Oct the Rider is OFF by Aaron's choice, so only run this to undo that |
+| `SETUP-RAPID-RIDER.cmd` | puts the Rider back on LIVE (GBP 1 a pip unless a figure is set) and checks it - since 9 Oct the Rider is OFF by Aaron's choice, so only run this to undo that; since 10 Oct it asks first and only goes on if you type LIVE (and once you have, the Formula 1 step leaves the Rider as you chose) |
 | `STOP-BOT.cmd` | stops everything; open trades keep their broker stops |
 
 Once a day, `START-BOT` (and the scheduled tasks that run it) also starts the

@@ -45,7 +45,7 @@ Four more icons, placed on your Desktop once:
 
 | Icon | What it does |
 |---|---|
-| **SETUP-RAPID-RIDER** | Rider on LIVE (GBP 1 a pip unless you have set a figure), Rapid Scalper OFF, then starts or checks everything and prints one line, e.g. `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets`. Since 9 Oct the Rider is OFF by Aaron's choice: only use this to undo that |
+| **SETUP-RAPID-RIDER** | Rider on LIVE (GBP 1 a pip unless you have set a figure), Rapid Scalper OFF, then starts or checks everything and prints one line, e.g. `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets`. Since 9 Oct the Rider is OFF by Aaron's choice: only use this to undo that. Since 10 Oct it asks first and only goes on if you type LIVE; anything else changes nothing. Once you have typed LIVE, the Formula 1 step leaves the Rider as you chose |
 | **START-RAPID-RIDER** | Starts the bot if it is stopped, changes nothing, prints the Rider's line (OFF since 9 Oct, on purpose: "Nothing is wrong") |
 | **INSTALL-FINANCIAL-IAN** | Asks once for a Databento API key (not shown as you type; press Enter to skip), saves it in `data/secrets.json`, installs the `databento` package only when a key is saved, switches Ian on (PAPER unless it is already LIVE, as the line-up below sets it), prints e.g. `FINANCIAL IAN - HEALTHY, LIVE, feed NOT CONFIGURED` |
 | **START-FINANCIAL-IAN** | Starts the bot if it is stopped, changes nothing, prints Ian's line |

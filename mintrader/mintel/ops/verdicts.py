@@ -559,22 +559,46 @@ def tnb_live_setting(data_dir) -> dict:
         if key:
             groups.extend(GROUP_ALIASES.get(key, (key,)))
     out["groups"] = tuple(dict.fromkeys(groups))
+    # 10 Oct: tnb.live_tactics - the approaches that go real there, read as
+    # the trader reads it (a name it does not know is left out; a list that
+    # names none keeps every market on paper). Only in the answer when set.
+    lt = b.get("live_tactics")
+    lt = [lt] if isinstance(lt, str) else (list(lt) if isinstance(lt, (list, tuple)) else ([] if lt is None else [None]))
+    if lt and out["groups"]:
+        try:
+            from ..engine.tactics import APPROACH_NAMES, approach_of
+            known = tuple(dict.fromkeys(a for a in (approach_of(x) for x in lt if isinstance(x, str))
+                                        if a in APPROACH_NAMES))
+        except Exception:                                # never a reason to fail the page
+            known = ()
+        if known:
+            out["tactics"] = known
+        else:
+            out["groups"] = ()
     since = str(b.get("live_since_utc") or "").strip()
     out["since"] = _when(since) if since and out["groups"] else None
     return out
 
 
-def live_kinds(groups) -> str:
+def live_kinds(groups, tactics=()) -> str:
     """The kinds of market that trade for real, in plain words: 'minor pairs
-    (Formula 1)'; '' when none."""
-    return _join([_KIND_WORDS.get(g, str(g).lower().replace("_", " ")) + (" (Formula 1)" if g == FORMULA1_GROUP else "")
-                  for g in tuple(groups or ())])
+    (Formula 1)'; '' when none. 10 Oct: with tnb.live_tactics set, only those
+    approaches trade for real there: 'minor pairs (Formula 1, momentum
+    continuation only)'."""
+    groups, tactics = tuple(groups or ()), tuple(tactics or ())
+    if not tactics:
+        return _join([_KIND_WORDS.get(g, str(g).lower().replace("_", " "))
+                      + (" (Formula 1)" if g == FORMULA1_GROUP else "") for g in groups])
+    kinds = _join([_KIND_WORDS.get(g, str(g).lower().replace("_", " ")) for g in groups])
+    only = _join([str(t).lower().replace("_", " ") for t in tactics]) + " only"
+    f1 = "Formula 1, " if groups == (FORMULA1_GROUP,) and tactics == ("MOMENTUM_CONTINUATION",) else ""
+    return f"{kinds} ({f1}{only})" if kinds else ""
 
 
-def live_words(groups) -> str:
+def live_words(groups, tactics=()) -> str:
     """Trend & Breakout's mode when part of it trades for real: 'LIVE: minor
     pairs (Formula 1) - rest PAPER'; '' when nothing does."""
-    kinds = live_kinds(groups)
+    kinds = live_kinds(groups, tactics)
     return f"LIVE: {kinds} - rest PAPER" if kinds else ""
 
 
@@ -604,10 +628,48 @@ def formula1_live(deals, open_tickets, since: Optional[dt.datetime], magic: int 
     return {"stats": stats(trades), "open": n_open, "since": since}
 
 
-def formula1_judgement(f1: dict, judge_after: int = FORMULA1_JUDGE_AFTER) -> str:
+def formula1_trades(tactics=()) -> str:
+    """Which of Trend & Breakout's trades are Formula 1's real ones, in plain
+    words: "its minor-pair trades"; with tnb.live_tactics set "its momentum
+    continuation trades on minor pairs" (10 Oct review: the row's badge
+    already said so, the line beside it did not)."""
+    tactics = tuple(tactics or ())
+    if not tactics:
+        return "its minor-pair trades"
+    return f"its {_join([str(t).lower().replace('_', ' ') for t in tactics])} trades on minor pairs"
+
+
+def formula1_in_force(data_dir) -> str:
+    """What config.json now holds for Formula 1 that the plan of 9 Oct does
+    not say, in one line: only some approaches real (tnb.live_tactics), the
+    top-opportunity size off (risk.top_size_enabled). '' when neither -
+    the plan's words hold, and the page shows nothing new. 10 Oct review:
+    Aaron's answers are applied by config alone, and the plan box printed
+    docs/plan.json word for word beside them. Never raises."""
+    try:
+        live = tnb_live_setting(data_dir)
+        if FORMULA1_GROUP not in live["groups"]:
+            return ""
+        bits = []
+        if live.get("tactics"):
+            bits.append(f"only {formula1_trades(live['tactics'])} use real money (tnb.live_tactics)")
+        raw = _read_json(Path(data_dir) / "config.json") or {}
+        from ..config import RiskConfig, _build
+        rc = _build(RiskConfig, raw.get("risk") if isinstance(raw.get("risk"), dict) else {})
+        if not rc.top_size_enabled:
+            # (the money a trade itself is not read here: only Trend & Breakout's sizing reads it)
+            bits.append("the top-opportunity size is OFF, so every trade risks the normal amount, never the "
+                        "bigger size (risk.top_size_enabled)")
+        return "; ".join(bits)
+    except Exception:                                    # never a reason to fail the page
+        return ""
+
+
+def formula1_judgement(f1: dict, judge_after: int = FORMULA1_JUDGE_AFTER, live_tactics=()) -> str:
     """What the plan's rule says of Formula 1's live trades so far, in one
     sentence: keep and grow it after ``judge_after`` live trades if it is
-    positive after costs with more up days than down, otherwise back to PAPER."""
+    positive after costs with more up days than down, otherwise back to PAPER.
+    ``live_tactics``: tnb.live_tactics, so it names the trades that are real."""
     s = (f1 or {}).get("stats") or stats([])
     n = int(s.get("trades") or 0)
     # 10 Oct: never a count that was not made - MetaTrader unreadable, or no live start time on record
@@ -618,7 +680,7 @@ def formula1_judgement(f1: dict, judge_after: int = FORMULA1_JUDGE_AFTER) -> str
     else:
         so_far = f"{n} so far"
     if n < judge_after or so_far != f"{n} so far":
-        return (f"Formula 1 - its minor-pair trades - is LIVE: judge it after {judge_after} live trades "
+        return (f"Formula 1 - {formula1_trades(live_tactics)} - is LIVE: judge it after {judge_after} live trades "
                 f"({so_far}). Keep it and grow it only if it is positive after costs with more up days than down; "
                 f"otherwise back to PAPER and test the next candidate. The rest stays on PAPER.")
     passes = float(s.get("net") or 0.0) > 0 and int(s.get("up_days") or 0) > int(s.get("down_days") or 0)
@@ -989,7 +1051,7 @@ def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[di
                 data_dir, now: dt.datetime, reset: Optional[dt.datetime] = None, real_readable: bool = True,
                 record=None, since_plan: Optional[dt.datetime] = None, period: Optional[dict] = None,
                 deals=None, live_groups=(), formula1: Optional[dict] = None,
-                judge_after: int = FORMULA1_JUDGE_AFTER) -> dict:
+                judge_after: int = FORMULA1_JUDGE_AFTER, live_tactics=()) -> dict:
     """One bot: its verdict, a one-line headline, "What happened" in the
     chosen period (``sel``, a ``standing.period_view``), a recommendation,
     and the evidence with its source and dates. ``tot`` is the Total view
@@ -1011,7 +1073,9 @@ def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[di
     real money (practice after it, labelled), and with ``formula1``
     (``formula1_live``) the recommendation is the plan's judgement of
     Formula 1 after ``judge_after`` live trades. The verdict itself is the
-    same rule on the same trades (its real ones and its labelled practice)."""
+    same rule on the same trades (its real ones and its labelled practice).
+    ``live_tactics`` (10 Oct, tnb.live_tactics): only those approaches trade
+    for real there, and the words say so."""
     now = to_utc(now)
     mixed = bot == TNB and bool(live_groups) and str(mode or "").upper() != "LIVE"
     reset = to_utc(reset) if reset is not None else (_when((tot or {}).get("start")) or uk_midnight(uk_date(now)))
@@ -1153,7 +1217,7 @@ def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[di
                 if k else "") + (f". {f1s['trades']} of {judge_after} toward the judgement"
                                                     if f1s["trades"] < judge_after else
                                                     f". Its {judge_after} live trades are in: time to judge it")
-        evidence.insert(0, {"label": "Formula 1 LIVE - its minor-pair trades with real money",
+        evidence.insert(0, {"label": f"Formula 1 LIVE - {formula1_trades(live_tactics)} with real money",
                             "facts": facts,
                             "source": f"MetaTrader's records for magic number {magic}: positions on minor currency pairs "
                                       f"opened since it went live, each in full after commission - never its journal",
@@ -1167,15 +1231,16 @@ def bot_verdict(bot: str, label: str, mode: str, magic: int, *, sel: Optional[di
         action = f"{action} for Trend & Breakout as a whole - Formula 1 is judged on its own"
     return {"bot": bot, "label": label, "mode": str(mode or ""), "magic": magic, "code": code, "why": why,
             "action": action, "colour": colour,
-            "mode_words": live_words(live_groups) if mixed else str(mode or ""),
-            "live_kinds": live_kinds(live_groups) if mixed else "",
+            "mode_words": live_words(live_groups, live_tactics) if mixed else str(mode or ""),
+            "live_kinds": live_kinds(live_groups, live_tactics) if mixed else "",
             "live_groups": tuple(live_groups) if mixed else (),
             "formula1": formula1 if mixed else None,
             "headline": head,
             # part LIVE: What happened leads with its real money, its practice after it (labelled)
             "what_happened": what_happened("LIVE" if mixed else mode, phrase, real_p, prac_p, judged, research_used,
                                            real_ok, real_money=made_p, real_note=gap_p, split=split, mixed=mixed),
-            "recommendation": (formula1_judgement(formula1, judge_after) if mixed and formula1 is not None else
+            "recommendation": (formula1_judgement(formula1, judge_after, live_tactics)
+                               if mixed and formula1 is not None else
                                recommendation(code, mode, label, judged, blocked, bot, seg, split)),
             "evidence": evidence, "rule": RULE_TEXT,
             "period": {"real": real_p, "practice": prac_p, "phrase": phrase, "made": made_p},
@@ -1227,6 +1292,8 @@ def all_verdicts(sd: Optional[dict], sel: Optional[dict], tot: Optional[dict], d
         extra = {}
         if bid == TNB and live["groups"]:
             extra["live_groups"] = live["groups"]
+            if live.get("tactics"):
+                extra["live_tactics"] = live["tactics"]       # 10 Oct: only those approaches are real there
             if FORMULA1_GROUP in live["groups"]:
                 # Formula 1's live trades: MetaTrader's deal rows only, and only when they could be read
                 f1 = (formula1_live(deals, sd.get("open_tickets"), live["since"], magic)
@@ -1242,8 +1309,8 @@ def all_verdicts(sd: Optional[dict], sel: Optional[dict], tot: Optional[dict], d
             log.warning("verdict of %s: %s", bid, exc)
             if extra.get("live_groups") and mode.upper() != "LIVE":
                 # 10 Oct: still part LIVE (Formula 1) - never plain PAPER with its real money called "LIVE days"
-                g = tuple(extra["live_groups"])
-                extra = {"mode_words": live_words(g), "live_kinds": live_kinds(g), "live_groups": g,
+                g, lt = tuple(extra["live_groups"]), tuple(extra.get("live_tactics") or ())
+                extra = {"mode_words": live_words(g, lt), "live_kinds": live_kinds(g, lt), "live_groups": g,
                          "formula1": extra.get("formula1")}
             else:
                 extra = {}
@@ -1254,6 +1321,8 @@ def all_verdicts(sd: Optional[dict], sel: Optional[dict], tot: Optional[dict], d
                         "period": {"real": stats([]), "practice": stats([]), "phrase": in_period(sel or period)},
                         "real": stats([]), "practice": stats([]), "judged": stats([]), "research": None,
                         "segment": None, "error": str(exc), **extra}
+    if out.get(TNB) is not None and live["groups"]:
+        out[TNB]["in_force"] = formula1_in_force(data_dir)     # 10 Oct review: what config.json changed
     return out
 
 
