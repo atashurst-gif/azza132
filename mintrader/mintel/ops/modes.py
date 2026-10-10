@@ -16,6 +16,7 @@
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --tnb-live-tactics all
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --top-size off
     python -m mintel.ops.modes --config ~/MarketBot/data/config.json --news-before-minutes 15
+    python -m mintel.ops.modes --config ~/MarketBot/data/config.json --daily-loss-practice ignore
 
 Bots: rider (Rapid Momentum Rider), runner (Momentum Runner), bandbreaker
 (Band Breaker), crowd (Crowd Fader), ian (Financial Ian), or all - "all" is
@@ -83,7 +84,9 @@ at its old 0.5% (runner.copy_risk_pct, 10 Oct), held to its own
 runner.max_risk_money, and the other bots size from their own settings.
 
 Three switches for the questions put to Aaron on 10 Oct (each default keeps
-what runs today; the answer is applied by one of these alone):
+what runs today; the answer is applied by one of these alone). He answered
+the same day, "fine to go with your suggestions": the installers apply all
+four once (with --daily-loss-practice below), right after Formula 1's step.
 
 --tnb-live-tactics MOMENTUM_CONTINUATION [more] chooses which approaches go
 real on the markets Trend & Breakout keeps LIVE (config.json "tnb" ->
@@ -107,6 +110,17 @@ news.blackout_before_seconds to N x 60: no new Trend & Breakout entry,
 practice or real, in the N minutes before a high-importance release
 (news.min_importance_for_blackout) on either currency of the pair. 90
 seconds until 10 Oct. The other bots have their own news rules.
+
+--daily-loss-practice count|ignore (10 Oct, Aaron's fourth answer: "fine to
+go with your suggestions") sets risk.daily_loss_counts_practice true|false.
+ignore: the daily-loss stop counts real money only - Trend & Breakout's real
+trades and the real trades of the Momentum Runner, Band Breaker and Crowd
+Fader - so Trend & Breakout's practice losses no longer trip this stop.
+count: its practice losses count too (a practice profit never covers a real
+loss). Either way only while Trend & Breakout is on PAPER: on LIVE every
+trade of its is real and the stop counts its own trades only, as before (10
+Oct review: --show says that first). The 3% limit (risk.max_daily_loss_pct)
+is never touched here. --show says so whenever it is false.
 
 --check BOT prints that bot's health in one plain line from its own status
 file, for the one-click scripts: exit 0 when it is running and reporting,
@@ -196,6 +210,9 @@ NEWS_MAX_MINUTES = 120.0                                    # a typo guard on --
 # 10 Oct review: "more than 0" let 1e-9 through, stored as 0 seconds - no
 # blackout at all. Half a minute is the least it takes.
 NEWS_MIN_MINUTES = 0.5
+# 10 Oct, Aaron: "fine to go with your suggestions" - decision 4, the daily-loss
+# stop counts real money only: --daily-loss-practice ignore
+DAILY_LOSS_PRACTICE = {"count": True, "ignore": False}     # word -> risk.daily_loss_counts_practice
 
 
 class PartialWrite(OSError):
@@ -614,6 +631,71 @@ def news_lines(raw: dict) -> list[str]:
             f"{float(nc.blackout_before_seconds):g})."]
 
 
+# ----------------------------------------------------- the daily-loss stop --
+def check_daily_loss_practice(value) -> bool:
+    """--daily-loss-practice: "count" -> True, "ignore" -> False (any case),
+    or the boolean itself; anything else is refused, so nothing is written
+    (never a word that might be read the other way)."""
+    if isinstance(value, bool):
+        return value
+    word = str(value or "").strip().lower() if isinstance(value, str) else None
+    if word not in DAILY_LOSS_PRACTICE:
+        raise ValueError(f"--daily-loss-practice must be count or ignore, not {value!r}")
+    return DAILY_LOSS_PRACTICE[word]
+
+
+def daily_loss_counts_practice_of(raw: dict) -> bool:
+    """risk.daily_loss_counts_practice as the trader reads it (Config.load):
+    only a JSON false turns it off."""
+    risk = raw.get("risk") if isinstance(raw, dict) else None
+    return not (isinstance(risk, dict) and risk.get("daily_loss_counts_practice") is False)
+
+
+def daily_loss_lines(raw: dict) -> list[str]:
+    """What the daily-loss stop counts, as config.json says it. Checked 10 Oct
+    against what the trader does with it: RiskManager.snapshot and
+    daily_loss_figure (mintel/engine/risk.py), Trader.realised_today_parts,
+    others_real_today and stop_gated_magics (mintel/engine/trader.py). It
+    only matters while Trend & Breakout is on PAPER (the paper wrapper holds
+    real and practice trades apart); on LIVE every trade of its is real and
+    the figure is its own, as before. False: its real side (closed today and
+    still open) plus the Momentum Runner's, Band Breaker's and Crowd
+    Fader's real money at the broker under their own magic numbers; when
+    those cannot be read, the account's change since the day's first look.
+    True: its real and practice sides, a practice profit never covering a
+    real loss, and the other bots' trades not in it. Practice losses still
+    count towards the wait after a loss and the losses-a-day limit on a
+    market (the journal) either way; the limit itself is never changed."""
+    from ..config import RiskConfig, _build
+    rc = _build(RiskConfig, raw.get("risk") if isinstance(raw.get("risk"), dict) else {})
+    limit = f"The limit stays {rc.max_daily_loss_pct:g}% (risk.max_daily_loss_pct)"
+    fallback = ("When the broker's records cannot be read, it reads the whole account's change since its first look "
+                "today, as before.")
+    if tnb_mode_of(raw) != "PAPER":
+        # 10 Oct review: on LIVE the trader hands the stop Trend & Breakout's own trades only (no paper
+        # wrapper, so no other bot's money is read) - say what counts NOW first, and PAPER's words after
+        on_paper = ("real money only: Trend & Breakout's real trades and the real trades of the Momentum Runner, "
+                    "Band Breaker and Crowd Fader, not its practice losses"
+                    if not daily_loss_counts_practice_of(raw) else
+                    "its practice trades as well as its real ones; a practice profit never covers a real loss")
+        return [f"Daily-loss stop: Trend & Breakout is LIVE just now, so every trade of its is real and the stop "
+                f"counts its own trades only, closed today and still open, as before - the Momentum Runner's, Band "
+                f"Breaker's and Crowd Fader's trades are not in its figure, and this setting changes nothing until "
+                f"it is on PAPER. On PAPER it would count {on_paper}. {fallback} {limit} (config.json: "
+                f"risk.daily_loss_counts_practice "
+                f"{'true' if daily_loss_counts_practice_of(raw) else 'false'})."]
+    if not daily_loss_counts_practice_of(raw):
+        return [f"Daily-loss stop: counts real money only - Trend & Breakout's real trades and the real trades of the "
+                f"Momentum Runner, Band Breaker and Crowd Fader, closed today and still open; Trend & Breakout's "
+                f"practice losses no longer count towards it (they still count, as before, towards the wait after "
+                f"a loss and the losses-a-day limit on that market). {fallback} {limit} "
+                f"(config.json: risk.daily_loss_counts_practice false)."]
+    return [f"Daily-loss stop: counts Trend & Breakout's practice trades as well as its real ones, closed today and "
+            f"still open; a practice profit never covers a real loss. The Momentum Runner's, Band Breaker's and "
+            f"Crowd Fader's trades are not in its figure. {fallback} {limit} "
+            f"(config.json: risk.daily_loss_counts_practice true)."]
+
+
 # ------------------------------------------- Trend & Breakout's risk per trade --
 def _a_number(value, what: str) -> float:
     if isinstance(value, bool):
@@ -680,7 +762,7 @@ def risk_lines(raw: dict) -> list[str]:
 def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: Optional[float] = None,
               ian_feed: Optional[str] = None, tnb_live_groups=None, risk_pct=None, risk_money=None,
               tnb_live_tactics=None, top_size: Optional[bool] = None, news_before_minutes=None,
-              now: Optional[dt.datetime] = None) -> dict[str, str]:
+              daily_loss_practice=None, now: Optional[dt.datetime] = None) -> dict[str, str]:
     """Write the modes in `changes` ({bot: mode}), and the settings when
     given, and return every bot's resulting mode. Only those keys change;
     everything else in config.json, rider.json, ian.json and scalper.json
@@ -704,7 +786,9 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
     LIVE after this call, and starts tnb.live_since_utc again (``now``) when
     the set of live trades changes; ``top_size`` (True/False) sets
     risk.top_size_enabled alone; ``news_before_minutes`` sets
-    news.blackout_before_seconds to that many minutes in seconds."""
+    news.blackout_before_seconds to that many minutes in seconds;
+    ``daily_loss_practice`` ("count" or "ignore", or True/False) sets
+    risk.daily_loss_counts_practice alone - never risk.max_daily_loss_pct."""
     cfg_path = Path(config_path)
     unknown = [b for b in changes if b not in BOTS]
     if unknown:
@@ -728,6 +812,7 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
     if top_size is not None and not isinstance(top_size, bool):
         raise ValueError(f"--top-size must be on or off, not {top_size!r}")
     news_minutes = check_news_minutes(news_before_minutes) if news_before_minutes is not None else None
+    counts_practice = check_daily_loss_practice(daily_loss_practice) if daily_loss_practice is not None else None
     pip = _check_gbp_per_pip(gbp_per_pip) if gbp_per_pip is not None else None
     feed = None
     if ian_feed is not None:
@@ -800,6 +885,12 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
             news = {}
             raw["news"] = news
         news["blackout_before_seconds"] = round(news_minutes * 60.0, 3)
+    if counts_practice is not None:
+        risk = raw.get("risk")
+        if not isinstance(risk, dict):
+            risk = {}
+            raw["risk"] = risk
+        risk["daily_loss_counts_practice"] = bool(counts_practice)      # a JSON true or false, nothing else
     if pct is not None or money is not None:
         risk = raw.get("risk")
         if not isinstance(risk, dict):
@@ -821,7 +912,7 @@ def set_modes(config_path: str | Path, changes: dict[str, str], *, gbp_per_pip: 
         own["ian"]["feed"] = f
     todo: list[tuple[Path, dict]] = []
     if (in_config or live_kinds is not None or pct is not None or money is not None or live_tactics is not None
-            or top_size is not None or news_minutes is not None):
+            or top_size is not None or news_minutes is not None or counts_practice is not None):
         todo.append((cfg_path, raw))
     todo += [(data / FILES[bot], obj) for bot, obj in own.items()]
     written: list[Path] = []
@@ -1090,6 +1181,14 @@ def main(argv=None) -> int:
     ap.add_argument("--news-before-minutes", type=float, default=None, metavar="N",
                     help="no new Trend & Breakout entry in the N minutes (at least 0.5, at most 120) before a "
                          "high-importance release on either currency of the pair (news.blackout_before_seconds)")
+    # 10 Oct, Aaron's fourth answer: the daily-loss stop counts real money only (ignore); never its 3% limit.
+    # No argparse choices: anything else is refused with "Nothing changed: ..." like every other setting.
+    ap.add_argument("--daily-loss-practice", default=None, metavar="count|ignore",
+                    help="while Trend & Breakout is on PAPER: ignore = the daily-loss stop counts real money only "
+                         "(Trend & Breakout's real trades and the Momentum Runner's, Band Breaker's and Crowd "
+                         "Fader's); count = Trend & Breakout's practice losses count too. On LIVE it counts "
+                         "Trend & Breakout's own trades only either way (risk.daily_loss_counts_practice; the "
+                         "limit is not changed)")
     ap.add_argument("--show", action="store_true", help="print every bot's mode and change nothing")
     ap.add_argument("--check", default="", metavar="BOT",
                     help="one line on how tnb, rider or ian is doing; changes nothing")
@@ -1110,7 +1209,7 @@ def main(argv=None) -> int:
     risk_given = a.risk_pct is not None or a.risk_money is not None
     settings = (a.gbp_per_pip is not None or a.ian_feed is not None or a.tnb_live_groups is not None
                 or risk_given or a.tnb_live_tactics is not None or a.top_size is not None
-                or a.news_before_minutes is not None)
+                or a.news_before_minutes is not None or a.daily_loss_practice is not None)
     if not changes and not settings and not a.show:
         ap.print_help()
         return 2
@@ -1129,7 +1228,8 @@ def main(argv=None) -> int:
                               tnb_live_groups=a.tnb_live_groups, risk_pct=a.risk_pct, risk_money=a.risk_money,
                               tnb_live_tactics=a.tnb_live_tactics,
                               top_size=None if a.top_size is None else a.top_size == "on",
-                              news_before_minutes=a.news_before_minutes)
+                              news_before_minutes=a.news_before_minutes,
+                              daily_loss_practice=a.daily_loss_practice)
         else:
             modes = read_modes(a.config)
         raw = _read_config(Path(a.config))
@@ -1166,6 +1266,10 @@ def main(argv=None) -> int:
             print(line)
     if a.news_before_minutes is not None:
         for line in news_lines(raw):
+            print(line)
+    # 10 Oct: --show says so whenever practice no longer counts towards the daily-loss stop
+    if a.daily_loss_practice is not None or (a.show and not daily_loss_counts_practice_of(raw)):
+        for line in daily_loss_lines(raw):
             print(line)
     if changes or settings:
         print(RESTART)

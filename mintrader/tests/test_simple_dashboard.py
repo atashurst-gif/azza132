@@ -601,7 +601,7 @@ class TestThePlan:
     def test_the_shipped_plan_is_whole(self):
         plan, err = V.load_plan()
         assert err == "" and plan["aim"] == "Find one winning formula, prove it, grow it - then build the next."
-        assert plan["updated"] == "2026-10-09"
+        assert plan["updated"] == "2026-10-10"                          # 10 Oct: Aaron's four answers for Formula 1
         assert plan["focus"]["name"] == "Formula 1" and plan["focus"]["bot"] == "market_intelligence"
         assert "must" in plan["focus"]["caution"] or "prove itself" in plan["focus"]["caution"]
         steps = [s["text"] for s in plan["steps"]]
@@ -609,6 +609,9 @@ class TestThePlan:
         assert len(steps) == 5 and steps[0].startswith("Formula 1 live - judge it after 20 live trades")
         assert steps[1].startswith("Rapid Momentum Rider switched OFF") and "30 trades" in steps[3]
         assert plan["focus"]["judge_after"] == 20 and plan["focus"]["live_group"] == "FX_MINOR"
+        # 10 Oct, Aaron: "fine to go with your suggestions" - the plan names the four settings it expects
+        assert plan["focus"]["settings"] == {"live_tactics": ["MOMENTUM_CONTINUATION"], "top_size_enabled": False,
+                                             "news_before_minutes": 15, "daily_loss_counts_practice": False}
         ids = {"market_intelligence", "momentum_rider", "momentum_runner", "band_breaker", "crowd_fader",
                "financial_ian"}
         for bucket in ("bin", "change", "keep"):
@@ -654,7 +657,7 @@ class TestThePlan:
         assert ("Live so far: not live on this computer yet - Trend & Breakout's minor currency pairs are still on "
                 "PAPER here, so there are no live trades to count.") in box
         assert "Going forward since" not in box                          # never the journal's count
-        assert "The plan is docs/plan.json, updated 09 Oct 2026." in box
+        assert "The plan is docs/plan.json, updated 10 Oct 2026." in box
         assert "Its figures come from: " + "; ".join(plan["sources"]) in box
         assert "Check:" not in box                                       # nothing disagrees on this made-up day
 

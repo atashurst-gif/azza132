@@ -21,6 +21,10 @@
       * once per machine (10 Oct), applies the Formula 1 step if it is not
         set yet: the Rider OFF, Trend & Breakout's minor currency pairs LIVE,
         0.7% / GBP 13 a trade - as SETUP-AND-START does
+      * once per machine (10 Oct), right after it, Aaron's four choices for
+        Formula 1: only momentum continuation real on the minor pairs, no
+        top-opportunity size, no new entry in the 15 minutes before a big
+        release, the daily-loss stop on real money only
 
     The scheduled tasks SETUP-AND-START.ps1 registers run this at boot and
     every five minutes, so the VPS keeps everything running on its own.
@@ -98,6 +102,32 @@ if (-not $FromSetup -and -not (Test-Path $formula1Marker)) {      # SETUP-AND-ST
         } elseif (Test-MintelInstalled $P) {                      # tried, and not fully set: never again on its own
             Set-Content -Path $formula1Part -Value (Get-Date).ToUniversalTime().ToString("s")
             if ($formula1Changed) { $Restart = $true }
+        }
+    }
+}
+
+# ------------------------------- Formula 1's choices, once (10 Oct) ----
+# Aaron, 10 Oct: "fine to go with your suggestions" - his four answers
+# (Set-Formula1ChoicesOnce: only momentum continuation real on the minor
+# pairs, no top-opportunity size, no new entry in the 15 minutes before a big
+# release, the daily-loss stop on real money only). Applied here the same way
+# as SETUP-AND-START applies them: once per machine (its marker, written only
+# when the call worked), right after the Formula 1 step above and only once
+# that is set. Tried at most once on its own here (a second marker), never
+# every 5 minutes, for the same reason as Formula 1: a later try could undo
+# a choice made since with the modes command. SETUP-AND-START, run by hand,
+# tries again. What it set takes effect at once: every bot restarts below.
+$choicesMarker = Join-Path $dataDir ".formula1-choices-2026-10-10"
+$choicesTried = Join-Path $dataDir ".formula1-choices-2026-10-10-tried"
+if (-not $FromSetup -and (Test-Path $formula1Marker) -and -not (Test-Path $choicesMarker)) {   # SETUP-AND-START runs it itself
+    if (Test-Path $choicesTried) {
+        Say "Your choices for Formula 1 (a one-time step) were tried once here and are not set: they are not tried again on their own. Run SETUP-AND-START.cmd to try again."
+    } else {
+        Say ""
+        Say "Your choices for Formula 1 (a one-time step)"
+        if (Set-Formula1ChoicesOnce $P) { $Restart = $true }
+        if (-not (Test-Path $choicesMarker) -and (Test-MintelInstalled $P)) {    # tried, and not set: never again on its own
+            Set-Content -Path $choicesTried -Value (Get-Date).ToUniversalTime().ToString("s")
         }
     }
 }

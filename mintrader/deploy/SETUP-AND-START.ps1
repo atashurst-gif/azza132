@@ -330,6 +330,22 @@ if ($reconfigure -match "^[Yy]") {
                                "runner", "bandbreaker", "crowd", "rider", "ian", "tnb", "report_repo", "report_branch")) {
                 if ($old.PSObject.Properties.Name -contains $key) { $cfg[$key] = $old.$key }
             }
+            # 10 Oct, Aaron: "fine to go with your suggestions" - three of his four
+            # choices for Formula 1 sit inside the risk and news blocks rebuilt above
+            # (the fourth is in "tnb"). Carry them over as they are, or changing the
+            # settings would quietly put the top-opportunity size back on, count
+            # practice losses in the daily-loss stop again and cut the news window to
+            # 90 seconds - and the one-time step's marker means it never sets them
+            # again. Never the limit itself: max_daily_loss_pct is what was typed.
+            foreach ($pair in @(@("risk", "top_size_enabled"), @("risk", "daily_loss_counts_practice"),
+                                @("news", "blackout_before_seconds"))) {
+                if ($old.PSObject.Properties.Name -contains $pair[0]) {
+                    $blk = $old.($pair[0])
+                    if ($null -ne $blk -and $blk.PSObject.Properties.Name -contains $pair[1]) {
+                        $cfg[$pair[0]][$pair[1]] = $blk.($pair[1])
+                    }
+                }
+            }
         } catch {
             Warn "The old settings file could not be read; its other bots' blocks were not carried over."
         }
@@ -377,7 +393,8 @@ $P = Get-MintelPaths $InstallDir
 if (Test-MintelInstalled $P) {
     [void](Invoke-LineUpOnce $P)
     [void](Set-IanBinanceOnce $P)      # after the line-up: Binance's public crypto book unless a Databento key is saved
-    [void](Set-Formula1Once $P)        # 9 Oct evening, last: the Rider OFF, Formula 1 LIVE, 0.7% / GBP 13 a trade
+    [void](Set-Formula1Once $P)        # 9 Oct evening, after the line-up: the Rider OFF, Formula 1 LIVE, 0.7% / GBP 13 a trade
+    [void](Set-Formula1ChoicesOnce $P) # 10 Oct, Aaron's four answers: right after Formula 1, and only once it is set
     Good "The bots as they are set now:"
     Write-LineUp $P
 } else {

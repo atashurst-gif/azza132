@@ -326,3 +326,28 @@ Each default keeps what runs today; his answer is applied with one command
   until now): no new Trend & Breakout entry, practice or real, in that many
   minutes before a high-importance release on either currency of the pair.
   The other bots have their own news rules and never read it.
+- `--daily-loss-practice ignore|count` (`risk.daily_loss_counts_practice`,
+  added with the answers): ignore writes a JSON `false` - real money only,
+  as above; count writes `true`. The 3% limit is never touched, and
+  `--show` says so whenever it is false.
+
+## 10 October: Aaron's answers - "fine to go with your suggestions"
+
+Yes to all four. Formula 1 is now Trend & Breakout's **momentum
+continuation trades on minor currency pairs** only (its other approaches
+there stay on paper), at a flat GBP 13 a trade (0.7% of the balance, never
+more than 13) with **no top-opportunity size** until it has 20 live trades;
+**no new entry in the 15 minutes** before a high-importance release on
+either currency of the pair; and the daily-loss stop counts **real money
+only** (3% unchanged). The installers set all four once, right after the
+Formula 1 step and only once it is set (marker
+`.formula1-choices-2026-10-10`: `apply_formula1_choices` on the Mac,
+`Set-Formula1ChoicesOnce` on Windows), with one call of the modes command:
+`--tnb-live-tactics MOMENTUM_CONTINUATION --top-size off
+--news-before-minutes 15 --daily-loss-practice ignore`. Changing the live
+approaches restarts `live_since_utc`, so Formula 1 is judged after 20 live
+trades counted from then: kept and grown (top size back on) if positive
+after all costs with more days up than down, otherwise back to paper and
+the next candidate (docs/plan.json). If Formula 1 was taken off live by
+hand before the step runs, the approach choice is not applied (nothing goes
+real that was taken off) and the step says so.

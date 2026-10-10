@@ -639,28 +639,76 @@ def formula1_trades(tactics=()) -> str:
     return f"its {_join([str(t).lower().replace('_', ' ') for t in tactics])} trades on minor pairs"
 
 
-def formula1_in_force(data_dir) -> str:
-    """What config.json now holds for Formula 1 that the plan of 9 Oct does
-    not say, in one line: only some approaches real (tnb.live_tactics), the
-    top-opportunity size off (risk.top_size_enabled). '' when neither -
-    the plan's words hold, and the page shows nothing new. 10 Oct review:
-    Aaron's answers are applied by config alone, and the plan box printed
-    docs/plan.json word for word beside them. Never raises."""
+def _window_words(seconds: float) -> str:
+    """900 -> "15 minutes", 90 -> "90 seconds" (as the modes tool says it)."""
+    m = float(seconds) / 60.0
+    if seconds < 60 or abs(m - round(m)) > 1e-9:
+        return f"{float(seconds):g} seconds"
+    return f"{m:g} minute{'' if m == 1 else 's'}"
+
+
+def formula1_in_force(data_dir, wanted: Optional[dict] = None) -> str:
+    """What config.json now holds for Formula 1 beyond 9 Oct's settings, in
+    one line: only some approaches real (tnb.live_tactics), the
+    top-opportunity size off (risk.top_size_enabled), a news window other
+    than the 90 seconds of 9 Oct (news.blackout_before_seconds), the
+    daily-loss stop on real money only (risk.daily_loss_counts_practice
+    false). '' when none of these - and nothing the plan asks for is
+    missing - so the page shows nothing new. 10 Oct review: Aaron's answers
+    are applied by config alone, and the plan box printed docs/plan.json
+    word for word beside them.
+
+    ``wanted``: the plan's own settings for Formula 1 (docs/plan.json
+    "focus" -> "settings": live_tactics, top_size_enabled,
+    news_before_minutes, daily_loss_counts_practice). 10 Oct, Aaron's
+    answers: the plan now says them, so a setting the plan names that
+    config.json here does not hold is said plainly after the rest (a
+    one-time step that failed, or a choice changed by hand since) - the box
+    never shows the plan's words as if they were in force. Never raises."""
     try:
         live = tnb_live_setting(data_dir)
         if FORMULA1_GROUP not in live["groups"]:
             return ""
+        raw = _read_json(Path(data_dir) / "config.json") or {}
+        from ..config import NewsConfig, RiskConfig, _build
+        rc = _build(RiskConfig, raw.get("risk") if isinstance(raw.get("risk"), dict) else {})
+        nc = _build(NewsConfig, raw.get("news") if isinstance(raw.get("news"), dict) else {})
+        counts_practice = not (isinstance(raw.get("risk"), dict)
+                               and raw["risk"].get("daily_loss_counts_practice") is False)  # as Config.load reads it
+        window = float(nc.blackout_before_seconds)
         bits = []
         if live.get("tactics"):
             bits.append(f"only {formula1_trades(live['tactics'])} use real money (tnb.live_tactics)")
-        raw = _read_json(Path(data_dir) / "config.json") or {}
-        from ..config import RiskConfig, _build
-        rc = _build(RiskConfig, raw.get("risk") if isinstance(raw.get("risk"), dict) else {})
         if not rc.top_size_enabled:
             # (the money a trade itself is not read here: only Trend & Breakout's sizing reads it)
             bits.append("the top-opportunity size is OFF, so every trade risks the normal amount, never the "
                         "bigger size (risk.top_size_enabled)")
-        return "; ".join(bits)
+        if abs(window - float(NewsConfig().blackout_before_seconds)) > 1e-9:
+            bits.append(f"no new Trend & Breakout entry in the {_window_words(window)} before a high-importance "
+                        f"release on either currency of the pair (news.blackout_before_seconds)")
+        if not counts_practice:
+            bits.append("the daily-loss stop counts real money only, its limit unchanged "
+                        "(risk.daily_loss_counts_practice)")
+        missing = []
+        w = wanted if isinstance(wanted, dict) else {}
+        if w.get("live_tactics"):
+            from ..engine.tactics import approach_of
+            want_t = tuple(dict.fromkeys(approach_of(x) for x in w["live_tactics"] if isinstance(x, str)))
+            if want_t and set(want_t) != set(live.get("tactics") or ()):
+                missing.append(f"only {formula1_trades(want_t)} with real money (tnb.live_tactics)")
+        if w.get("top_size_enabled") is False and rc.top_size_enabled:
+            missing.append("the top-opportunity size OFF (risk.top_size_enabled)")
+        if isinstance(w.get("news_before_minutes"), (int, float)) and not isinstance(w["news_before_minutes"], bool) \
+                and abs(float(w["news_before_minutes"]) * 60.0 - window) > 1e-6:
+            missing.append(f"no new entry in the {_window_words(float(w['news_before_minutes']) * 60.0)} before a "
+                           f"high-importance release (news.blackout_before_seconds is {window:g} here)")
+        if w.get("daily_loss_counts_practice") is False and counts_practice:
+            missing.append("the daily-loss stop on real money only (risk.daily_loss_counts_practice)")
+        out = "; ".join(bits)
+        if missing:
+            gap = "not in config.json here yet, though the plan says so: " + "; ".join(missing)
+            out = f"{out}. {gap[0].upper()}{gap[1:]}" if out else f"none of the plan's choices - {gap}"
+        return out
     except Exception:                                    # never a reason to fail the page
         return ""
 
@@ -1322,7 +1370,8 @@ def all_verdicts(sd: Optional[dict], sel: Optional[dict], tot: Optional[dict], d
                         "real": stats([]), "practice": stats([]), "judged": stats([]), "research": None,
                         "segment": None, "error": str(exc), **extra}
     if out.get(TNB) is not None and live["groups"]:
-        out[TNB]["in_force"] = formula1_in_force(data_dir)     # 10 Oct review: what config.json changed
+        # 10 Oct review: what config.json changed; 10 Oct, Aaron's answers: and what of the plan's it lacks
+        out[TNB]["in_force"] = formula1_in_force(data_dir, focus.get("settings"))
     return out
 
 

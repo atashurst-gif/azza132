@@ -1169,6 +1169,10 @@ class TestFormula1sLinesNameTheTradesThatAreReal:
 
 
 class TestThePlanBoxSaysWhatConfigNowHolds:
+    # 10 Oct, Aaron: "fine to go with your suggestions" - docs/plan.json now names the four settings
+    # (focus -> settings), so a setting it names that config.json does not hold is said plainly after the rest
+    NOT_YET = "Not in config.json here yet, though the plan says so: "
+
     def test_both_answers_applied(self, tmp_path):
         from tests.test_formula1_page import _pages, _plan_box
         d = _f1_day_with(tmp_path, tactics=[MC], top_size=False)
@@ -1176,18 +1180,24 @@ class TestThePlanBoxSaysWhatConfigNowHolds:
         box = _plan_box(home)
         assert ("In force now (config.json): only its momentum continuation trades on minor pairs use real money "
                 "(tnb.live_tactics); the top-opportunity size is OFF, so every trade risks the normal amount, never "
-                "the bigger size (risk.top_size_enabled).") in box
+                "the bigger size (risk.top_size_enabled). " + self.NOT_YET + "no new entry in the 15 minutes before "
+                "a high-importance release (news.blackout_before_seconds is 90 here); the daily-loss stop on real "
+                "money only (risk.daily_loss_counts_practice).") in box
 
     def test_one_answer_applied(self, tmp_path):
         from tests.test_formula1_page import _pages, _plan_box
         d = _f1_day_with(tmp_path, top_size=False)
         box = _plan_box(_pages(d, "/")[0])
-        assert "In force now (config.json): the top-opportunity size is OFF" in box and "tnb.live_tactics" not in box
+        assert "In force now (config.json): the top-opportunity size is OFF" in box
+        assert (self.NOT_YET + "only its momentum continuation trades on minor pairs with real money "
+                "(tnb.live_tactics);") in box
 
-    def test_with_every_default_the_box_is_as_before(self, tmp_path):
+    def test_with_every_default_the_box_says_none_of_the_plans_choices_is_set(self, tmp_path):
         from tests.test_formula1_page import _pages, _plan_box
         d = _f1_day_with(tmp_path, tactics=[], top_size=True)
-        assert "In force now" not in _plan_box(_pages(d, "/")[0])
+        box = _plan_box(_pages(d, "/")[0])
+        assert ("In force now (config.json): none of the plan's choices - not in config.json here yet, though the "
+                "plan says so: only its momentum continuation trades on minor pairs with real money") in box
 
 
 # ========================= review fixes (10 Oct, second pass): the installers --
@@ -1206,7 +1216,8 @@ def _run_pwsh(script: str) -> str:
 def _start_bot_formula1_block() -> str:
     text = (WIN / "START-BOT.ps1").read_text()
     step = text.split("# ------------------------------------------- Formula 1, once (10 Oct) ----")[1]
-    return step.split("# ---------------------------------------------------------------- restart ----")[0]
+    step = step.split("# ---------------------------------------------------------------- restart ----")[0]
+    return step.split("# ------------------------------- Formula 1's choices, once (10 Oct) ----")[0]    # its own block
 
 
 class TestStartBotTriesFormula1OnceOnItsOwn:

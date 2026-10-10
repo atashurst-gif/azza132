@@ -912,6 +912,20 @@ if existing_path.exists():
                     "runner", "bandbreaker", "crowd", "rider", "ian", "tnb"):
             if key in old:
                 cfg[key] = old[key]
+        # 10 Oct, Aaron: "fine to go with your suggestions" - three of his
+        # four choices for Formula 1 sit inside the risk and news blocks the
+        # answers above rebuild (the fourth is in "tnb"). Carry them over as
+        # they are, or re-entering the settings would quietly put the
+        # top-opportunity size back on, count practice losses in the
+        # daily-loss stop again and cut the news window to 90 seconds - and
+        # the one-time step's marker means it never sets them again. Never
+        # the limit itself: max_daily_loss_pct is what was typed above.
+        for block, keys in (("risk", ("top_size_enabled", "daily_loss_counts_practice")),
+                            ("news", ("blackout_before_seconds",))):
+            if isinstance(old.get(block), dict):
+                for k in keys:
+                    if k in old[block]:
+                        cfg[block][k] = old[block][k]
 (data / "config.json").write_text(json.dumps(cfg, indent=2, sort_keys=True))
 
 # The secrets file also holds the GitHub token the reports and the ten-minute
@@ -1234,6 +1248,81 @@ apply_formula1() {
   date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
   good "Rapid Momentum Rider: $rider_words. Trend & Breakout: minor currency pairs LIVE (Formula 1), the rest on PAPER. Risk: 0.7% of the balance a trade, at most GBP 13"
   print_lineup
+  return 0
+}
+
+FORMULA1_CHOICES_MARKER_NAME=".formula1-choices-2026-10-10"
+
+# apply_formula1_choices - 10 Oct, Aaron: "fine to go with your
+# suggestions" - yes to the four questions put to him that morning:
+#   1. only Formula 1's momentum continuation trades on minor currency pairs
+#      use real money (--tnb-live-tactics MOMENTUM_CONTINUATION);
+#   2. a flat GBP 13 a trade, no top-opportunity size, until Formula 1 has
+#      20 live trades (--top-size off);
+#   3. no new Trend & Breakout entry in the 15 minutes before a
+#      high-importance release on either currency (--news-before-minutes 15);
+#   4. the daily-loss stop counts real money only (--daily-loss-practice
+#      ignore); its 3% limit is not touched.
+# One call of the modes command, which checks every file before it writes
+# and writes nothing when it refuses. It runs right after apply_formula1 and
+# only once Formula 1 itself is set (formula1_done): these choices are about
+# Formula 1's live trades. Once only (marker, written only when the call
+# worked), so a later choice made with the modes command is never undone by
+# a reinstall. When Formula 1 is not live on this Mac just now (its minor
+# pairs taken off LIVE by hand with the modes command, or Trend & Breakout
+# put fully LIVE), the approach choice cannot apply - the modes command
+# refuses it with nothing live - so the other three are set without it, and
+# it says so plainly with the command that puts Formula 1 back on with it:
+# nothing goes to real money that a later hand choice took off. (10 Oct
+# review: fully LIVE has its own warning - there every trade of Trend &
+# Breakout's is real money, and its command puts it back on PAPER first.)
+apply_formula1_choices() {
+  local marker="$DATA_DIR/$FORMULA1_CHOICES_MARKER_NAME"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  formula1_done || return 0                  # Formula 1 first; the next double-click after it is set
+  step "Your choices for Formula 1"
+  local out
+  local code
+  local args
+  local live_now
+  local all_live
+  live_now=1
+  all_live=0
+  if [[ -z "$(tnb_live_groups)" || "$(tnb_live_tactics)" == "NONE" ]]; then
+    live_now=0                               # Formula 1 is not on just now (see the warnings below)
+  fi
+  # 10 Oct review: put fully LIVE by hand, EVERY Trend & Breakout trade is real
+  # (the trader reads anything but PAPER as LIVE) - a different warning
+  if [[ "$(bot_mode tnb LIVE | tr -d '[:space:]')" != "PAPER" ]]; then
+    all_live=1
+  fi
+  if (( live_now )); then
+    args="--tnb-live-tactics MOMENTUM_CONTINUATION --top-size off --news-before-minutes 15 --daily-loss-practice ignore"
+    out="$(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" \
+        --tnb-live-tactics MOMENTUM_CONTINUATION --top-size off --news-before-minutes 15 \
+        --daily-loss-practice ignore 2>&1)"
+    code=$?
+  else
+    args="--top-size off --news-before-minutes 15 --daily-loss-practice ignore"
+    out="$(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" \
+        --top-size off --news-before-minutes 15 --daily-loss-practice ignore 2>&1)"
+    code=$?
+  fi
+  if (( code != 0 )); then
+    printf '%s\n' "$out" | sed -e '/Restart the bot/d' -e 's/^/      /'
+    warn "Could not set your choices for Formula 1 (nothing was changed). Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG $args"
+    return 0
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  CODE_CHANGED="yes"                         # the trader reads these at its start: restart it
+  good "Your choices for Formula 1 are set:"
+  printf '%s\n' "$out" | sed -e '/Restart the bot/d' -e 's/^/      /'
+  if (( all_live )); then
+    warn "Trend & Breakout is fully LIVE on this Mac just now (put there by hand with the modes command): every trade of it, minor pairs included, is real money, so the first choice - only its momentum continuation trades with real money - cannot apply until it is back on PAPER. To put it back on PAPER with Formula 1 and that choice: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper tnb --tnb-live-groups FX_MINOR --tnb-live-tactics MOMENTUM_CONTINUATION"
+  elif (( ! live_now )); then
+    warn "Formula 1 is not live on this Mac just now (no minor-pair trade of Trend & Breakout goes to the real broker - changed by hand with the modes command), so the first choice - only its momentum continuation trades with real money - was not applied. To put Formula 1 back on live with it: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --tnb-live-groups FX_MINOR --tnb-live-tactics MOMENTUM_CONTINUATION"
+  fi
   return 0
 }
 

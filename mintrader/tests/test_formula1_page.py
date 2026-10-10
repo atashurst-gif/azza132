@@ -490,4 +490,4 @@ class TestThePlanNeverDatesTheStartItself:
         plan, err = V.load_plan()
         assert not err
         what = plan["focus"]["what"]
-        assert "since 9 Oct" not in what and what.startswith("LIVE by Aaron's decision of 9 Oct.")
+        assert "since 9 Oct" not in what and what.startswith("LIVE by Aaron's decisions of 9 and 10 Oct.")

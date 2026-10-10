@@ -100,13 +100,29 @@ everything after a reboot) - say yes. Then it:
   - **PAPER**: Trend & Breakout (real prices, simulated orders; the Momentum
     Runner still rides its index entries with its own real orders), the
     Band Breaker and the Crowd Fader;
-  - then, last (9 Oct evening, Aaron: "Just Formula 1", "About £13 a
+  - then (9 Oct evening, Aaron: "Just Formula 1", "About £13 a
     trade"; once, marker `.formula1-2026-10-09`, written only when every
     call worked): the Rapid Momentum Rider **OFF**; Trend & Breakout's
     minor currency pair trades **LIVE** (`--tnb-live-groups FX_MINOR`), the
     rest still on PAPER; **0.7%** of the balance a trade, at most **GBP 13**
     (`--risk-pct 0.7 --risk-money 13`). A fresh install asks 0.7% as the
     normal risk;
+  - then, right after it and only once it is set (10 Oct, Aaron: "fine to
+    go with your suggestions"; once, marker `.formula1-choices-2026-10-10`,
+    written only when the call worked): one call of the modes command -
+    `--tnb-live-tactics MOMENTUM_CONTINUATION` (only Formula 1's momentum
+    continuation trades on minor pairs go real; its live count starts
+    again), `--top-size off` (a flat GBP 13 a trade until 20 live trades),
+    `--news-before-minutes 15` (no new entry in the 15 minutes before a
+    high-importance release on either currency) and `--daily-loss-practice
+    ignore` (the daily-loss stop counts real money only; the 3% limit stays).
+    If Formula 1 was taken off live by hand, the other three are set and it
+    says the first was not applied, with the command to put it back (if
+    Trend & Breakout was put fully LIVE by hand, it says instead that every
+    trade of it is real money, with the command to put it back on PAPER).
+    Answering y to "Change your settings?" later keeps all four as they
+    are (10 Oct review: it used to drop three of them); the daily-loss
+    limit is the one you type;
 - registers the scheduled tasks:
   - **MintelTrader** - at every boot, starts everything;
   - **MintelKeepAlive** - every 5 minutes, starts whatever has stopped (it
@@ -126,7 +142,7 @@ Nothing. The scheduled tasks keep it running. To check on it, double-click:
 
 | File | What it does |
 |---|---|
-| `START-BOT.cmd` | starts whatever is not running, prints the health; since 10 Oct it also sets Formula 1 once if it is not set yet (as SETUP-AND-START does) - one try only: if part of it fails it says so and leaves it to SETUP-AND-START, so it never undoes a later choice every 5 minutes |
+| `START-BOT.cmd` | starts whatever is not running, prints the health; since 10 Oct it also sets Formula 1 once if it is not set yet, and then Aaron's four choices for it (as SETUP-AND-START does) - one try each: if one fails it says so and leaves it to SETUP-AND-START, so it never undoes a later choice every 5 minutes |
 | `START-RAPID-RIDER.cmd` | the same, then one line: `RAPID MOMENTUM RIDER - HEALTHY, LIVE, scanning 28 markets` |
 | `START-FINANCIAL-IAN.cmd` | the same, then one line: `FINANCIAL IAN - HEALTHY, PAPER, feed NOT CONFIGURED` |
 | `SETUP-RAPID-RIDER.cmd` | puts the Rider back on LIVE (GBP 1 a pip unless a figure is set) and checks it - since 9 Oct the Rider is OFF by Aaron's choice, so only run this to undo that; since 10 Oct it asks first and only goes on if you type LIVE (and once you have, the Formula 1 step leaves the Rider as you chose) |

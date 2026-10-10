@@ -539,6 +539,64 @@ function Set-Formula1Once {
     return $true
 }
 
+function Set-Formula1ChoicesOnce {
+    # 10 Oct, Aaron: "fine to go with your suggestions" - yes to the four
+    # questions put to him that morning:
+    #   1. only Formula 1's momentum continuation trades on minor currency
+    #      pairs use real money (--tnb-live-tactics MOMENTUM_CONTINUATION);
+    #   2. a flat GBP 13 a trade, no top-opportunity size, until Formula 1
+    #      has 20 live trades (--top-size off);
+    #   3. no new Trend & Breakout entry in the 15 minutes before a
+    #      high-importance release on either currency (--news-before-minutes 15);
+    #   4. the daily-loss stop counts real money only (--daily-loss-practice
+    #      ignore); its 3% limit is not touched.
+    # One call of the modes command, which checks every file first and
+    # writes nothing when it refuses. Right after Set-Formula1Once, and only
+    # once Formula 1 itself is set (its marker). Once per machine (marker,
+    # written only when the call worked), so a later choice made with the
+    # modes command is never undone. When Formula 1 is not live here just now
+    # (its minor pairs taken off LIVE by hand, or Trend & Breakout put fully
+    # LIVE), the approach choice cannot apply - the modes command refuses it
+    # with nothing live - so the other three are set without it, and it says
+    # so plainly with the command that puts Formula 1 back on with it. (10 Oct
+    # review: fully LIVE has its own warning - there every trade of Trend &
+    # Breakout's is real money, and its command puts it back on PAPER first.)
+    # Returns $true when it changed something (the trader must restart).
+    param($P)
+    $marker = Join-Path $P.Data ".formula1-choices-2026-10-10"
+    if (Test-Path $marker) { return $false }
+    if (-not (Test-MintelInstalled $P)) { return $false }
+    if (-not (Test-Path (Join-Path $P.Data ".formula1-2026-10-09"))) { return $false }
+    Write-Host "    Your choices for Formula 1:"
+    $rest = @("--top-size", "off", "--news-before-minutes", "15", "--daily-loss-practice", "ignore")
+    $groups = @(Get-TnbLiveGroups $P)
+    $tactics = @(Get-TnbLiveTactics $P)
+    $liveNow = ($groups.Count -gt 0) -and -not ($tactics.Count -eq 1 -and $tactics[0] -eq "NONE")
+    # 10 Oct review: put fully LIVE by hand, EVERY Trend & Breakout trade is real (the trader reads
+    # anything but PAPER as LIVE) - a different warning
+    $allLive = ((Get-ConfigBotMode $P "tnb" "LIVE") -ne "PAPER")
+    if ($liveNow) { $modeArgs = @("--tnb-live-tactics", "MOMENTUM_CONTINUATION") + $rest } else { $modeArgs = $rest }
+    $r = Invoke-MintelPython $P (@("-m", "mintel.ops.modes", "--config", $P.Config) + $modeArgs)
+    if ($r.Code -ne 0) {
+        foreach ($l in $r.Lines) {
+            if ($l -notmatch "^Restart the bot") { Write-Host "      $l" }
+        }
+        Write-Host "    [WARN] Could not set your choices for Formula 1 (nothing was changed). Run it by hand: cd `"$($P.App)`"; & `"$($P.Py)`" -m mintel.ops.modes --config `"$($P.Config)`" $($modeArgs -join ' ')" -ForegroundColor Yellow
+        return $false
+    }
+    Set-Content -Path $marker -Value (Get-Date).ToUniversalTime().ToString("s")
+    Write-Host "    [ OK ] Your choices for Formula 1 are set:" -ForegroundColor Green
+    foreach ($l in $r.Lines) {
+        if ($l -notmatch "^Restart the bot") { Write-Host "      $l" }
+    }
+    if ($allLive) {
+        Write-Host "    [WARN] Trend & Breakout is fully LIVE on this computer just now (put there by hand with the modes command): every trade of it, minor pairs included, is real money, so the first choice - only its momentum continuation trades with real money - cannot apply until it is back on PAPER. To put it back on PAPER with Formula 1 and that choice: cd `"$($P.App)`"; & `"$($P.Py)`" -m mintel.ops.modes --config `"$($P.Config)`" --paper tnb --tnb-live-groups FX_MINOR --tnb-live-tactics MOMENTUM_CONTINUATION" -ForegroundColor Yellow
+    } elseif (-not $liveNow) {
+        Write-Host "    [WARN] Formula 1 is not live on this computer just now (no minor-pair trade of Trend & Breakout goes to the real broker - changed by hand with the modes command), so the first choice - only its momentum continuation trades with real money - was not applied. To put Formula 1 back on live with it: cd `"$($P.App)`"; & `"$($P.Py)`" -m mintel.ops.modes --config `"$($P.Config)`" --tnb-live-groups FX_MINOR --tnb-live-tactics MOMENTUM_CONTINUATION" -ForegroundColor Yellow
+    }
+    return $true
+}
+
 function Start-RiderResearch {
     # The Rapid Momentum Rider's research on the last ten days of the
     # broker's REAL ticks, in the background, at most once a day (marker),

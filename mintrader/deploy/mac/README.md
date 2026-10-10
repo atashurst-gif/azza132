@@ -101,7 +101,7 @@ of its own left open from LIVE is still real money and still counts.
 Aaron: *"Sack the rider off and let's get trend and breakout live risking
 0.2 higher pip average per trade"* - then *"Just Formula 1"* and *"About £13
 a trade"*. The next **Start Trading Bot** does it once (marker
-`data/.formula1-2026-10-09`), after every other one-time step, with three
+`data/.formula1-2026-10-09`), after every other 9 Oct one-time step, with three
 calls of the modes command: `--off rider`; `--tnb-live-groups FX_MINOR`
 (Trend & Breakout stays on PAPER, but its minor currency pair trades -
 EURGBP, AUDJPY and similar - go to the account with real money; the rest
@@ -119,6 +119,32 @@ puts the sacked Rider back on LIVE. And while the bots still have to be
 restarted to read a change, `data/.restart-pending` says so: if the window
 is closed before they restart, the next double-click does the full start
 (not the quick "already running" check) and restarts them.
+
+## Your choices for Formula 1 (10 October)
+
+Aaron, 10 Oct: *"fine to go with your suggestions"* - yes to all four
+questions. The next **Start Trading Bot** sets them once (marker
+`data/.formula1-choices-2026-10-10`), right after the Formula 1 step and
+only once that is set, with one call of the modes command:
+`--tnb-live-tactics MOMENTUM_CONTINUATION` (only Formula 1's momentum
+continuation trades on minor pairs use real money; its other approaches
+there stay on paper, and its live count starts again from now);
+`--top-size off` (a flat GBP 13 a trade - 0.7%, never more than 13 - with no
+top-opportunity size until it has 20 live trades); `--news-before-minutes 15`
+(no new Trend & Breakout entry in the 15 minutes before a high-importance
+release on either currency); `--daily-loss-practice ignore` (the daily-loss
+stop counts real money only; its 3% limit is not touched). It prints `Your
+choices for Formula 1 are set:` and what each one now means. If the call
+fails nothing is changed, no marker is written and it prints the exact
+command to type. If Formula 1 was taken off live by hand before it runs, the
+other three are set and it says plainly that the momentum-continuation-only
+choice was not applied, with the command that puts Formula 1 back on with
+it (if Trend & Breakout was put fully LIVE by hand, it says instead that
+every trade of it is real money, and gives the command that puts it back
+on PAPER with Formula 1). Once set it never runs again, so a later choice
+made with the modes command stands. Answering *y* to *Change them?* later
+keeps all four as they are (10 Oct review: it used to drop three of
+them); the daily-loss limit is the one you type.
 
 **To trade with the Mac closed, move to a Windows VPS:** see
 [docs/ops/vps.md](../../docs/ops/vps.md).

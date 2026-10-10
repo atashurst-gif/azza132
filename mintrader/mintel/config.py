@@ -88,7 +88,9 @@ class RiskConfig:
     # the real trades of the bots this stop gates (Momentum Runner, Band
     # Breaker, Crowd Fader, under their own magic numbers; 10 Oct review) -
     # so practice losses can never stop the live bots (Aaron's decision 4,
-    # asked 10 Oct, not yet answered). The limit above never changes; only a
+    # asked 10 Oct; his answer the same day: "fine to go with your
+    # suggestions" - the installers write false once, with the modes command's
+    # --daily-loss-practice ignore). The limit above never changes; only a
     # JSON false turns this off (null, 0 or "" keep it on: Config.load).
     daily_loss_counts_practice: bool = True
     max_drawdown_pct: float = 12.00
