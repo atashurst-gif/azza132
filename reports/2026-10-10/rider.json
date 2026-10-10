@@ -1,0 +1,882 @@
+{
+  "status": {
+    "strategy_id": "momentum_rider",
+    "label": "Rapid Momentum Rider",
+    "tagline": "Finds the FX market that has just started running, gets on early with a real stop at the broker, rides it while it is strong and gets out fast when the move dies (FlowLock X).",
+    "magic": 990811,
+    "mode": "PAPER",
+    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
+    "pid": 887,
+    "user_pip_value_gbp": 1.0,
+    "tick_feed": "every tick",
+    "tick_history": {
+      "setting": "every tick",
+      "from_history": 0,
+      "latest_fed_instead": 0,
+      "minutes": 10,
+      "verdict": "no new prices in the last 10 min"
+    },
+    "order_flow": "not available on retail MetaTrader FX - never faked",
+    "health": {
+      "entries_allowed": false,
+      "summary": "new entries paused (open positions are still managed): the FX market is closed - no fresh prices",
+      "checks": [
+        {
+          "name": "mt5_alive",
+          "ok": true,
+          "critical": true,
+          "message": "MetaTrader is answering"
+        },
+        {
+          "name": "broker_connected",
+          "ok": true,
+          "critical": true,
+          "message": "connected to the broker"
+        },
+        {
+          "name": "algo_trading",
+          "ok": true,
+          "critical": false,
+          "message": "algo trading is enabled"
+        },
+        {
+          "name": "fresh_ticks",
+          "ok": false,
+          "critical": true,
+          "message": "the FX market is closed - no fresh prices"
+        },
+        {
+          "name": "symbols",
+          "ok": true,
+          "critical": true,
+          "message": "28 FX markets available"
+        },
+        {
+          "name": "spread_valid",
+          "ok": true,
+          "critical": true,
+          "message": "28 of 28 markets have a valid bid/ask"
+        },
+        {
+          "name": "execution",
+          "ok": true,
+          "critical": true,
+          "message": "orders and stop moves are going through"
+        },
+        {
+          "name": "positions_reconciled",
+          "ok": true,
+          "critical": true,
+          "message": "positions match the broker"
+        },
+        {
+          "name": "flowlock_alive",
+          "ok": true,
+          "critical": true,
+          "message": "FlowLock X is managing every open position"
+        },
+        {
+          "name": "database_writable",
+          "ok": true,
+          "critical": true,
+          "message": "the records can be written"
+        },
+        {
+          "name": "disk_memory",
+          "ok": true,
+          "critical": true,
+          "message": "48,481 MB free on disk; 1,504 MB memory free"
+        }
+      ]
+    },
+    "scanner": [
+      {
+        "market": "AUDCAD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "AUDCHF",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "AUDJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "AUDNZD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "AUDUSD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "CADCHF",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "CADJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "CHFJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURAUD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURCAD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURCHF",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURGBP",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURNZD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "EURUSD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "GBPAUD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "GBPCAD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "GBPCHF",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "GBPJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "GBPNZD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "GBPUSD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "NZDCAD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "NZDCHF",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "NZDJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "NZDUSD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "USDCAD",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "USDCHF",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      },
+      {
+        "market": "USDJPY",
+        "direction": "NONE",
+        "score": 0.0,
+        "state": "WATCHING",
+        "reason": "Warming up: not enough price history yet",
+        "family": "velocity_burst",
+        "cost_ratio": 0.0,
+        "headroom_atr": 0.0,
+        "held_back": ""
+      }
+    ],
+    "guards": {
+      "currency_cluster_guard": true,
+      "max_same_currency_positions": 1,
+      "loss_cooldown_guard": true,
+      "loss_cooldown_minutes": 15.0,
+      "loss_pause_minutes": 120.0,
+      "loss_cooldown_same_currency": true,
+      "loss_brake": "4 losing exits within 10 min: none anywhere for 15 min",
+      "now": []
+    },
+    "why_no_trade": {
+      "window_minutes": 60,
+      "covers": "the last 60 minutes",
+      "from_utc": "2026-10-10T14:12:00+00:00",
+      "to_utc": "2026-10-10T15:11:04.238776+00:00",
+      "trigger_score": 60.0,
+      "summary": "In the last 60 minutes: 3327 scans of 28 markets, 0 triggers, 0 entries. Best score 0.0 (USDJPY NONE at 14:12:00 UTC); the trigger score is 60. No market reached the trigger score.",
+      "last_trade": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (23.6 h ago), LIVE, closed STOP",
+      "last_trade_detail": {
+        "line": "last trade: EURNZD SELL opened 15:32:23 UTC on 2026-10-09 (23.6 h ago), LIVE, closed STOP",
+        "time_utc": "2026-10-09T15:32:23.030950+00:00",
+        "market": "EURNZD",
+        "side": "SELL",
+        "mode": "LIVE",
+        "ticket": 1999578965,
+        "closed_utc": "2026-10-09T15:32:28+00:00"
+      },
+      "last_trigger": "last trigger: none since the Rider started at 11:15:17 UTC",
+      "last_trigger_detail": null,
+      "scans": 3327,
+      "failed_scans": 0,
+      "triggers": 0,
+      "entries": 0,
+      "near_miss_scans": 0,
+      "near_miss_means": "a scan whose score reached the trigger score, or that was READY or TRIGGER, with no entry; counted once per scan, against the first rule that held it back",
+      "blocked_by": [],
+      "best": {
+        "market": "USDJPY",
+        "score": 0.0,
+        "direction": "NONE",
+        "time_utc": "2026-10-10T14:12:00.914940+00:00"
+      },
+      "ticks": {
+        "markets": 28,
+        "newest_age_seconds": 65644.3,
+        "oldest_age_seconds": 65646.9,
+        "no_price_yet": [],
+        "older_than_60s": [
+          "AUDCAD",
+          "AUDCHF",
+          "AUDJPY",
+          "AUDNZD",
+          "AUDUSD",
+          "CADCHF",
+          "CADJPY",
+          "CHFJPY",
+          "EURAUD",
+          "EURCAD",
+          "EURCHF",
+          "EURGBP",
+          "EURJPY",
+          "EURNZD",
+          "EURUSD",
+          "GBPAUD",
+          "GBPCAD",
+          "GBPCHF",
+          "GBPJPY",
+          "GBPNZD",
+          "GBPUSD",
+          "NZDCAD",
+          "NZDCHF",
+          "NZDJPY",
+          "NZDUSD",
+          "USDCAD",
+          "USDCHF",
+          "USDJPY"
+        ]
+      },
+      "markets": {
+        "AUDCAD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "AUDCHF": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.3,
+          "ticks_per_minute": null
+        },
+        "AUDJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.7,
+          "ticks_per_minute": null
+        },
+        "AUDNZD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.5,
+          "ticks_per_minute": null
+        },
+        "AUDUSD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "CADCHF": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.3,
+          "ticks_per_minute": null
+        },
+        "CADJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "CHFJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.4,
+          "ticks_per_minute": null
+        },
+        "EURAUD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.7,
+          "ticks_per_minute": null
+        },
+        "EURCAD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "EURCHF": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "EURGBP": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.4,
+          "ticks_per_minute": null
+        },
+        "EURJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65645.0,
+          "ticks_per_minute": null
+        },
+        "EURNZD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.7,
+          "ticks_per_minute": null
+        },
+        "EURUSD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.8,
+          "ticks_per_minute": null
+        },
+        "GBPAUD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.3,
+          "ticks_per_minute": null
+        },
+        "GBPCAD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65645.1,
+          "ticks_per_minute": null
+        },
+        "GBPCHF": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.4,
+          "ticks_per_minute": null
+        },
+        "GBPJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.4,
+          "ticks_per_minute": null
+        },
+        "GBPNZD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.3,
+          "ticks_per_minute": null
+        },
+        "GBPUSD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.5,
+          "ticks_per_minute": null
+        },
+        "NZDCAD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.5,
+          "ticks_per_minute": null
+        },
+        "NZDCHF": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.4,
+          "ticks_per_minute": null
+        },
+        "NZDJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65646.3,
+          "ticks_per_minute": null
+        },
+        "NZDUSD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65646.9,
+          "ticks_per_minute": null
+        },
+        "USDCAD": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "USDCHF": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65644.6,
+          "ticks_per_minute": null
+        },
+        "USDJPY": {
+          "scans": {
+            "WATCHING": 3327
+          },
+          "best": {
+            "score": 0.0,
+            "direction": "NONE",
+            "time_utc": "2026-10-10T14:12:00.914940+00:00"
+          },
+          "tick_age_seconds": 65646.4,
+          "ticks_per_minute": null
+        }
+      },
+      "near_misses": []
+    },
+    "open_positions": [],
+    "today": {
+      "mode": "PAPER",
+      "from_utc": "2026-10-09T23:00:00+00:00",
+      "day": "the UK day, from 00:00 UK",
+      "trades": 0,
+      "won": 0,
+      "lost": 0,
+      "win_rate": null,
+      "net_pips": 0,
+      "net_money": 0.0,
+      "net_money_estimated": false,
+      "money_source": "practice (paper) figures",
+      "best_trade": null
+    },
+    "stories": [
+      "EUR/NZD broke out of the range it had kept to earlier in the day, so the bot sold it. But the price turned round and reached the safety stop. It closed at -1.4 pips (-\u00a32.74).",
+      "EUR/AUD broke through a level, came back to touch it once, then moved away again, so the bot sold it. But the move did not carry on - it turned back - so the bot got out quickly. It closed at -0.8 pips (-\u00a31.84).",
+      "CHF/JPY broke out of the range it had kept to earlier in the day, so the bot bought it. It moved far enough for the bot to move the safety stop up behind it (it never moves it back). When the price came back to the stop, the trade closed at +3.1 pips (+\u00a31.95).",
+      "GBP/CAD broke through a level, came back to touch it once, then moved away again, so the bot bought it. It moved far enough for the bot to move the safety stop up behind it (it never moves it back). When the price came back to the stop, the trade closed at +6.6 pips (+\u00a35.60).",
+      "EUR/USD broke below the edge of where it had been stuck and was moving fast, so the bot sold it. It moved far enough for the bot to move the safety stop down behind it (it never moves it back). When the price came back to the stop, the trade closed at -2.7 pips (-\u00a33.37).",
+      "GBP/USD broke above the edge of where it had been stuck and was moving fast, so the bot bought it. But the move did not carry on - it turned back - so the bot got out quickly. It closed at -4.2 pips (-\u00a34.85).",
+      "EUR/CAD broke below the edge of where it had been stuck and was moving fast, so the bot sold it. It moved far enough for the bot to move the safety stop down behind it (it never moves it back). When the price came back to the stop, the trade closed at -3.5 pips (-\u00a34.56).",
+      "CAD/CHF broke above the edge of where it had been stuck and was moving fast, so the bot bought it. But the move did not carry on - it turned back - so the bot got out quickly. It closed at -0.9 pips (-\u00a31.50)."
+    ],
+    "currency_strength": {},
+    "notes": [
+      "14:25:40 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "14:30:41 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "14:35:41 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "14:40:42 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "14:45:42 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "14:50:43 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "14:55:44 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "15:00:45 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "15:01:05 could not read the account: NotConnected: account_info returned None",
+      "15:01:15 could not read the account: NotConnected: account_info returned None",
+      "15:01:25 could not read the account: NotConnected: account_info returned None",
+      "15:01:35 could not read the account: NotConnected: account_info returned None",
+      "15:01:46 could not read the account: NotConnected: account_info returned None",
+      "15:05:45 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar",
+      "15:10:46 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
+    ],
+    "cycle_ms": 179.6
+  },
+  "trades": [],
+  "events": [
+    {
+      "id": 133,
+      "ts_utc": "2026-10-10T11:15:18.010903+00:00",
+      "kind": "START",
+      "message": "mode PAPER, GBP 1.00/pip",
+      "detail_json": "{}"
+    },
+    {
+      "id": 134,
+      "ts_utc": "2026-10-10T15:11:04.255946+00:00",
+      "kind": "STOP",
+      "message": "stopped with 0 open",
+      "detail_json": "{}"
+    }
+  ]
+}
