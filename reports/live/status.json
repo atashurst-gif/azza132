@@ -1,11 +1,11 @@
 {
   "status": {
-    "bot": "SAFE MODE",
+    "bot": "RUNNING",
     "mt5_connected": true,
     "broker_connected": true,
     "data_live": false,
-    "news_live": false,
-    "watchdog_ok": false,
+    "news_live": true,
+    "watchdog_ok": true,
     "mode": "DEMO",
     "tnb_mode": "PAPER",
     "tnb_mode_detail": "PAPER (FX_MINOR live)",
@@ -16,8 +16,8 @@
     "tnb_live_tactics": [],
     "aggression": "NORMAL",
     "open_positions": 0,
-    "equity": 1865.04,
-    "balance": 1865.04,
+    "equity": 1867.32,
+    "balance": 1858.01,
     "currency": "GBP",
     "today_pnl": 0,
     "win_rate_today": null,
@@ -88,11 +88,12 @@
     "strategy": "2026-10-05 complete reset to zero - fresh 2,000 account, paper never in the account total",
     "strategy_name": "Commission First (version 5)",
     "build": "65c93b5279",
-    "started": "2026-10-11 00:57 UTC",
-    "last_scan": "never",
+    "started": "2026-10-11 07:02 UTC",
+    "last_scan": "07:38:51 UTC",
     "last_trade": "EURCAD 2026-10-09T12:44",
     "not_trading_because": [
-      "MetaTrader 5 is not connected to the broker"
+      "WARNING: price data is stale - the freshest price is 124912s old (weekend, markets closed)",
+      "WARNING: these parts of the system have stopped reporting: rider (59268s)"
     ],
     "strategy_rules": {
       "entry_tier": "STRONG",
@@ -102,51 +103,84 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 5,
-    "uptime_minutes": 17.5
+    "cycles": 10,
+    "uptime_minutes": 36.1
   },
   "health": {
-    "as_of": "2026-10-11T01:15:11.477832+00:00",
-    "safe_mode": true,
+    "as_of": "2026-10-11T07:38:51.644996+00:00",
+    "safe_mode": false,
     "entries_allowed": false,
-    "summary": "SAFE MODE - MetaTrader 5 is not connected to the broker",
+    "summary": "running with 2 warning(s)",
     "checks": [
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "46206 MB of disk space free",
+        "message": "46129 MB of disk space free",
         "detail": {
-          "free_mb": 46206.1
+          "free_mb": 46128.9
         }
       },
       {
         "name": "MEMORY",
         "severity": "OK",
-        "message": "memory 81% used",
+        "message": "memory 83% used",
         "detail": {
-          "percent": 81.3
+          "percent": 82.7
         }
       },
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock not comparable right now - the market is closed or quiet (last price 1698 min old)",
+        "message": "clock not comparable right now - the market is closed or quiet (last price 2082 min old)",
         "detail": {
-          "tick_age_seconds": 101892.478682
+          "tick_age_seconds": 124912.645628
         }
       },
       {
         "name": "BROKER_CONNECTION",
-        "severity": "FAIL",
-        "message": "MetaTrader 5 is not connected to the broker",
+        "severity": "OK",
+        "message": "MetaTrader 5 is connected",
         "detail": {}
       },
       {
-        "name": "NEWS",
-        "severity": "WARN",
-        "message": "the economic calendar has not refreshed recently; trading continues on charts and the stored calendar",
+        "name": "ACCOUNT",
+        "severity": "OK",
+        "message": "DEMO account 53020675 on ICMarketsSC-Demo",
         "detail": {
-          "events_known": 2
+          "login": 53020675,
+          "server": "ICMarketsSC-Demo",
+          "is_demo": true
+        }
+      },
+      {
+        "name": "TRADE_PERMISSION",
+        "severity": "OK",
+        "message": "trading is enabled",
+        "detail": {}
+      },
+      {
+        "name": "MARGIN",
+        "severity": "OK",
+        "message": "margin level 11448%",
+        "detail": {
+          "margin_level": 11448.436541998775
+        }
+      },
+      {
+        "name": "MARKET_DATA",
+        "severity": "WARN",
+        "message": "price data is stale - the freshest price is 124912s old (weekend, markets closed)",
+        "detail": {
+          "freshest_age_seconds": 124912.0,
+          "weekend": true
+        }
+      },
+      {
+        "name": "NEWS",
+        "severity": "OK",
+        "message": "calendar live (8 events known)",
+        "detail": {
+          "events_known": 8
         }
       },
       {
@@ -158,12 +192,19 @@
       {
         "name": "HEARTBEATS",
         "severity": "WARN",
-        "message": "these parts of the system have stopped reporting: watchdog (1031s), rider (36248s)",
+        "message": "these parts of the system have stopped reporting: rider (59268s)",
         "detail": {
           "stale": {
-            "watchdog": 1031.4,
-            "rider": 36248.1
+            "rider": 59268.3
           }
+        }
+      },
+      {
+        "name": "SCAN_FRESHNESS",
+        "severity": "OK",
+        "message": "markets scanned 7s ago",
+        "detail": {
+          "age_seconds": 7.3
         }
       },
       {
@@ -174,7 +215,176 @@
       }
     ]
   },
-  "thinking": [],
+  "thinking": [
+    {
+      "rank": 1,
+      "symbol": "GBPAUD",
+      "direction": "SHORT",
+      "score": 42.72,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "GBPAUD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Structure supports it (100/100; down structure on M5). Execution argues against it (0/100; spread 15.3 pips (1.0x normal), commission 1.0 pips). Volatility supports it (80/100; volatility at the 100th percentile). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 7 pips, giving about -0.5 to 1 after 20.2 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 43); price data is 124912s old (limit 14400s); reward:risk only -0.51 after costs; costs would be 88% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 43)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.51 after costs",
+        "costs would be 88% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.51
+    },
+    {
+      "rank": 2,
+      "symbol": "GBPCAD",
+      "direction": "SHORT",
+      "score": 42.64,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "GBPCAD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Execution argues against it (0/100; spread 9.2 pips (1.0x normal), commission 1.0 pips). Volatility supports it (76/100; volatility at the 90th percentile). Structure supports it (76/100; range structure on M5). Regime supports it (74/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 3 pips, giving about -0.1 to 1 after 12.5 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 43); price data is 124912s old (limit 14400s); reward:risk only -0.14 after costs; costs would be 91% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 43)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.14 after costs",
+        "costs would be 91% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.137
+    },
+    {
+      "rank": 3,
+      "symbol": "GBPNZD",
+      "direction": "SHORT",
+      "score": 41.25,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "GBPNZD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Execution argues against it (0/100; spread 21.1 pips (1.0x normal), commission 1.3 pips). Structure supports it (98/100; down structure on M5). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (79/100; volatility at the 98th percentile). Room to the first obstacle is 6 pips, giving about -0.5 to 1 after 27.7 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 41); price data is 124912s old (limit 14400s); reward:risk only -0.46 after costs; costs would be 83% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 41)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.46 after costs",
+        "costs would be 83% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.459
+    },
+    {
+      "rank": 4,
+      "symbol": "AUDNZD",
+      "direction": "SHORT",
+      "score": 32.22,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "AUDNZD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Execution argues against it (0/100; spread 12.6 pips (1.0x normal), commission 1.3 pips). Volatility supports it (80/100; volatility at the 100th percentile). Session supports it (73/100; session: LONDON). Regime supports it (68/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 5 pips, giving about -0.6 to 1 after 17.1 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 32); price data is 124912s old (limit 14400s); reward:risk only -0.58 after costs; costs would be 90% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 32)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.58 after costs",
+        "costs would be 90% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.577
+    },
+    {
+      "rank": 5,
+      "symbol": "EURGBP",
+      "direction": "LONG",
+      "score": 28.06,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "EURGBP: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Execution argues against it (0/100; spread 3.5 pips (1.0x normal), commission 0.6 pips). Volatility supports it (77/100; volatility at the 93th percentile). Session supports it (73/100; session: LONDON). Regime supports it (70/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 1 pips, giving about -0.2 to 1 after 4.9 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 28); price data is 124912s old (limit 14400s); reward:risk only -0.19 after costs; costs would be 52% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 7.2 ATR from the level that invalidates this idea - the move has been missed.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 28)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.19 after costs",
+        "costs would be 52% of the stop distance (limit 20%) - too small a trade to pay for itself",
+        "entry is 7.2 ATR from the level that invalidates this idea - the move has been missed"
+      ],
+      "reward_risk": -0.189
+    },
+    {
+      "rank": 6,
+      "symbol": "NZDUSD",
+      "direction": "SHORT",
+      "score": 26.09,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / HIGH VOL",
+      "reason": "NZDUSD: RANGE / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Execution argues against it (0/100; spread 3.0 pips (1.0x normal), commission 0.7 pips). Structure supports it (80/100; range structure on M5). Volatility supports it (79/100; volatility at the 96th percentile). Session supports it (73/100; session: LONDON). Room to the first obstacle is 1 pips, giving about -0.6 to 1 after 4.5 pips of cost. Blocked because: price data is 124914s old (limit 14400s); reward:risk only -0.60 after costs; costs would be 68% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 124914s old (limit 14400s)",
+        "reward:risk only -0.60 after costs",
+        "costs would be 68% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.602
+    },
+    {
+      "rank": 7,
+      "symbol": "AUDCAD",
+      "direction": "SHORT",
+      "score": 24.59,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "AUDCAD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Execution argues against it (0/100; spread 5.4 pips (1.0x normal), commission 1.0 pips). Volatility supports it (77/100; volatility at the 94th percentile). Session supports it (73/100; session: LONDON). Structure supports it (70/100; range structure on M5). Room to the first obstacle is 1 pips, giving about -0.3 to 1 after 7.8 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 25); price data is 124912s old (limit 14400s); reward:risk only -0.27 after costs; costs would be 96% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 25)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.27 after costs",
+        "costs would be 96% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.265
+    },
+    {
+      "rank": 8,
+      "symbol": "NZDCHF",
+      "direction": "SHORT",
+      "score": 24.04,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / HIGH VOL",
+      "reason": "NZDCHF: UNCLEAR / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Execution argues against it (0/100; spread 4.4 pips (1.0x normal), commission 0.6 pips). Multi Tf supports it (84/100; 6 timeframes weighed, higher ones first). Volatility supports it (80/100; volatility at the 99th percentile). Momentum supports it (76/100; efficiency 0.07, ADX 34). Room to the first obstacle is 0 pips, giving about -0.6 to 1 after 6.1 pips of cost. Blocked because: price data is 124912s old (limit 14400s); reward:risk only -0.61 after costs; costs would be 93% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.61 after costs",
+        "costs would be 93% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.61
+    },
+    {
+      "rank": 9,
+      "symbol": "NZDJPY",
+      "direction": "SHORT",
+      "score": 22.48,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "UNCLEAR / HIGH VOL",
+      "reason": "NZDJPY: UNCLEAR / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Momentum supports it (100/100; efficiency 0.00, ADX 19). Execution argues against it (0/100; spread 6.8 pips (1.0x normal), commission 1.2 pips). Structure supports it (80/100; range structure on M5). Volatility supports it (77/100; volatility at the 93th percentile). Room to the first obstacle is 0 pips, giving about -0.5 to 1 after 9.7 pips of cost. Blocked because: price data is 124914s old (limit 14400s); reward:risk only -0.46 after costs; costs would be 83% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "price data is 124914s old (limit 14400s)",
+        "reward:risk only -0.46 after costs",
+        "costs would be 83% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.461
+    },
+    {
+      "rank": 10,
+      "symbol": "NZDCAD",
+      "direction": "SHORT",
+      "score": 17.09,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "NZDCAD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Execution argues against it (0/100; spread 5.0 pips (1.0x normal), commission 1.0 pips). Volatility supports it (78/100; volatility at the 94th percentile). Regime supports it (74/100; HIGH_VOL / HIGH VOL). Session supports it (73/100; session: LONDON). Room to the first obstacle is 0 pips, giving about -0.3 to 1 after 7.3 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 17); price data is 124912s old (limit 14400s); reward:risk only -0.26 after costs; costs would be 97% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 17)",
+        "price data is 124912s old (limit 14400s)",
+        "reward:risk only -0.26 after costs",
+        "costs would be 97% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": -0.259
+    }
+  ],
   "results": {
     "date": "2026-10-11",
     "currency": "GBP",
@@ -193,204 +403,204 @@
   "positions": [],
   "events": [
     {
-      "id": 2397,
-      "ts_utc": "2026-10-11T01:15:16.099207+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "WARNING",
-      "message": "MT5 connection: recovered",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2396,
-      "ts_utc": "2026-10-11T01:15:11.481618+00:00",
-      "kind": "SAFE_MODE",
-      "severity": "CRITICAL",
-      "message": "MetaTrader 5 is not connected to the broker",
-      "detail_json": null
-    },
-    {
-      "id": 2395,
-      "ts_utc": "2026-10-11T01:15:11.471948+00:00",
+      "id": 2429,
+      "ts_utc": "2026-10-11T07:38:44.315107+00:00",
       "kind": "WAKE",
       "severity": "WARNING",
       "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 1028.0}"
+      "detail_json": "{\"gap_seconds\": 1039.0}"
     },
     {
-      "id": 2394,
-      "ts_utc": "2026-10-11T00:57:47.257496+00:00",
+      "id": 2428,
+      "ts_utc": "2026-10-11T07:20:57.228727+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 18 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 1077.7}"
+    },
+    {
+      "id": 2427,
+      "ts_utc": "2026-10-11T07:02:48.874441+00:00",
       "kind": "BOOTSTRAP",
       "severity": "INFO",
       "message": "trader started",
       "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
     },
     {
-      "id": 2393,
-      "ts_utc": "2026-10-11T00:57:43.930051+00:00",
+      "id": 2426,
+      "ts_utc": "2026-10-11T07:02:46.520311+00:00",
       "kind": "SHUTDOWN",
       "severity": "WARNING",
       "message": "trader stopped",
       "detail_json": null
     },
     {
-      "id": 2392,
-      "ts_utc": "2026-10-11T00:39:24.599048+00:00",
-      "kind": "SAFE_MODE_END",
+      "id": 2425,
+      "ts_utc": "2026-10-11T07:02:34.255897+00:00",
+      "kind": "WAKE",
       "severity": "WARNING",
-      "message": "conditions recovered",
+      "message": "this machine appears to have been asleep or suspended for about 15 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 912.5}"
+    },
+    {
+      "id": 2424,
+      "ts_utc": "2026-10-11T06:46:59.747081+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 10 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 597.6}"
+    },
+    {
+      "id": 2423,
+      "ts_utc": "2026-10-11T06:35:25.748616+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
+    },
+    {
+      "id": 2422,
+      "ts_utc": "2026-10-11T06:35:23.141198+00:00",
+      "kind": "SHUTDOWN",
+      "severity": "WARNING",
+      "message": "trader stopped",
       "detail_json": null
     },
     {
-      "id": 2391,
-      "ts_utc": "2026-10-11T00:39:06.634123+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2390,
-      "ts_utc": "2026-10-11T00:39:01.196924+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2389,
-      "ts_utc": "2026-10-11T00:38:55.719772+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2388,
-      "ts_utc": "2026-10-11T00:38:55.713551+00:00",
-      "kind": "WAKE",
-      "severity": "WARNING",
-      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 1007.3}"
-    },
-    {
-      "id": 2387,
-      "ts_utc": "2026-10-11T00:22:08.685793+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2386,
-      "ts_utc": "2026-10-11T00:22:08.556422+00:00",
-      "kind": "WAKE",
-      "severity": "WARNING",
-      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 1013.2}"
-    },
-    {
-      "id": 2385,
-      "ts_utc": "2026-10-11T00:05:15.261987+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2384,
-      "ts_utc": "2026-10-11T00:05:15.210853+00:00",
-      "kind": "WAKE",
-      "severity": "WARNING",
-      "message": "this machine appears to have been asleep or suspended for about 18 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 1070.1}"
-    },
-    {
-      "id": 2383,
-      "ts_utc": "2026-10-10T23:47:25.144446+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2382,
-      "ts_utc": "2026-10-10T23:47:25.098257+00:00",
-      "kind": "WAKE",
-      "severity": "WARNING",
-      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 1021.3}"
-    },
-    {
-      "id": 2381,
-      "ts_utc": "2026-10-10T23:30:23.910724+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
-    },
-    {
-      "id": 2380,
-      "ts_utc": "2026-10-10T23:30:23.805309+00:00",
+      "id": 2421,
+      "ts_utc": "2026-10-11T06:18:44.850245+00:00",
       "kind": "WAKE",
       "severity": "WARNING",
       "message": "this machine appears to have been asleep or suspended for about 16 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 987.3}"
+      "detail_json": "{\"gap_seconds\": 957.0}"
     },
     {
-      "id": 2379,
-      "ts_utc": "2026-10-10T23:13:58.331642+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+      "id": 2420,
+      "ts_utc": "2026-10-11T06:02:36.907541+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
     },
     {
-      "id": 2378,
-      "ts_utc": "2026-10-10T23:13:56.989751+00:00",
+      "id": 2419,
+      "ts_utc": "2026-10-11T06:02:34.605015+00:00",
+      "kind": "SHUTDOWN",
+      "severity": "WARNING",
+      "message": "trader stopped",
+      "detail_json": null
+    },
+    {
+      "id": 2418,
+      "ts_utc": "2026-10-11T05:45:52.849585+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 9 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 563.9}"
+    },
+    {
+      "id": 2417,
+      "ts_utc": "2026-10-11T05:36:12.947230+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
+    },
+    {
+      "id": 2416,
+      "ts_utc": "2026-10-11T05:36:10.640150+00:00",
+      "kind": "SHUTDOWN",
+      "severity": "WARNING",
+      "message": "trader stopped",
+      "detail_json": null
+    },
+    {
+      "id": 2415,
+      "ts_utc": "2026-10-11T05:18:16.919377+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
+    },
+    {
+      "id": 2414,
+      "ts_utc": "2026-10-11T04:44:52.074943+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 13 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 769.8}"
+    },
+    {
+      "id": 2413,
+      "ts_utc": "2026-10-11T04:31:34.914002+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 16 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 971.7}"
+    },
+    {
+      "id": 2412,
+      "ts_utc": "2026-10-11T04:15:12.391241+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
+    },
+    {
+      "id": 2411,
+      "ts_utc": "2026-10-11T04:15:09.669154+00:00",
+      "kind": "SHUTDOWN",
+      "severity": "WARNING",
+      "message": "trader stopped",
+      "detail_json": null
+    },
+    {
+      "id": 2410,
+      "ts_utc": "2026-10-11T03:43:57.736747+00:00",
+      "kind": "WAKE",
+      "severity": "WARNING",
+      "message": "this machine appears to have been asleep or suspended for about 26 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 1568.4}"
+    },
+    {
+      "id": 2409,
+      "ts_utc": "2026-10-11T03:17:21.061467+00:00",
       "kind": "WAKE",
       "severity": "WARNING",
       "message": "this machine appears to have been asleep or suspended for about 18 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 1052.4}"
+      "detail_json": "{\"gap_seconds\": 1060.5}"
     },
     {
-      "id": 2377,
-      "ts_utc": "2026-10-10T22:56:25.313017+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "ERROR",
-      "message": "MT5 connection: recovery attempt failed",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+      "id": 2408,
+      "ts_utc": "2026-10-11T02:59:29.826951+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
     },
     {
-      "id": 2376,
-      "ts_utc": "2026-10-10T22:56:25.283356+00:00",
-      "kind": "SAFE_MODE",
-      "severity": "CRITICAL",
-      "message": "MetaTrader 5 is not connected to the broker",
+      "id": 2407,
+      "ts_utc": "2026-10-11T02:59:27.729808+00:00",
+      "kind": "SHUTDOWN",
+      "severity": "WARNING",
+      "message": "trader stopped",
       "detail_json": null
     },
     {
-      "id": 2375,
-      "ts_utc": "2026-10-10T22:56:24.128064+00:00",
+      "id": 2406,
+      "ts_utc": "2026-10-11T02:42:50.354151+00:00",
       "kind": "WAKE",
       "severity": "WARNING",
-      "message": "this machine appears to have been asleep or suspended for about 17 minutes; discarding the stale view and re-checking everything before trading again",
-      "detail_json": "{\"gap_seconds\": 993.5}"
+      "message": "this machine appears to have been asleep or suspended for about 12 minutes; discarding the stale view and re-checking everything before trading again",
+      "detail_json": "{\"gap_seconds\": 743.4}"
     },
     {
-      "id": 2374,
-      "ts_utc": "2026-10-10T19:55:58.351467+00:00",
-      "kind": "SAFE_MODE_END",
-      "severity": "WARNING",
-      "message": "conditions recovered",
-      "detail_json": null
-    },
-    {
-      "id": 2373,
-      "ts_utc": "2026-10-10T19:55:52.583885+00:00",
-      "kind": "SELF_HEAL",
-      "severity": "WARNING",
-      "message": "MT5 connection: recovered",
-      "detail_json": "{\"check\": \"BROKER_CONNECTION\"}"
+      "id": 2405,
+      "ts_utc": "2026-10-11T02:30:15.901037+00:00",
+      "kind": "BOOTSTRAP",
+      "severity": "INFO",
+      "message": "trader started",
+      "detail_json": "{\"universe\": \"['EURUSD', 'USDCAD', 'NZDUSD', 'AUDUSD', 'GBPUSD', 'XAUUSD', 'XAUEUR', 'XAUCHF', 'US500', 'US30', 'AUS200', 'JP225', 'HK50', 'CADCHF', 'EURCAD', 'CADJPY', 'EURGBP', 'EURCHF', 'NZDCHF', 'NZDCAD', 'AUDCHF', 'AUDCAD', 'EURJPY', 'NZDJPY', 'AUDJPY', 'GBPCHF', 'GBPCAD', 'EURAUD', 'AUDNZD', 'GBPAUD', 'GBPNZD', 'XAGUSD', 'XAGEUR', 'XAGAUD', 'BRENT_Z6', 'WTI_X6', 'XBRUSD', 'XTIUSD']\", \"rejected\": \"{'USDCHF': 'switched off on evidence (loses on most days it trades)', 'USDJPY': 'switched off on evidence (loses on most days it trades)', 'CHFJPY': 'switched off on evidence (loses on most days it trades)', 'EURNZD': 'switched off on evidence (loses on most days it trades)', 'GBPJPY': 'switched off on evidence (loses on most days it trades)', 'USDSGD': 'group UNKNOWN not enabled', 'AUDSGD': 'grou\", \"calibration\": \"[{'band': '0-50', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '50-58', 'trades': 0, 'win_rate': None, 'expectancy_r': None}, {'band': '58-64', 'trades': 175, 'win_rate': 0.463, 'expectancy_r': -0.13}, {'band': '64-70', 'trades': 112, 'win_rate': 0.348, 'expectancy_r': -0.272}, {'band': '70-76', 'trades': 181, 'win_rate': 0.519, 'expectancy_r': 0.11}, {'band': '76-82', 'trades': \", \"trackers_restored\": \"0\", \"reconcile\": \"{'adopted': [], 'abandoned': [], 'orphans': [], 'naked': []}\", \"adopted_positions\": \"[]\"}"
     }
   ],
   "strategies": {
@@ -398,16 +608,16 @@
       "id": "overall",
       "label": "Overall",
       "currency": "GBP",
-      "net_today": 0.0,
-      "realised": 0.0,
-      "unrealised": 0.0,
-      "trades": 0,
-      "wins": 0,
-      "losses": 0,
-      "open_positions": 0,
-      "win_rate": null,
+      "net_today": 1.54,
+      "realised": -7.03,
+      "unrealised": 8.57,
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "open_positions": 1,
+      "win_rate": 50.0,
       "total_costs": null,
-      "max_drawdown": 0.0,
+      "max_drawdown": -9.31,
       "by_strategy": [
         {
           "id": "momentum_runner",
@@ -417,10 +627,38 @@
         {
           "id": "financial_ian",
           "label": "Financial Ian",
-          "net_today": 0
+          "net_today": 1.54
         }
       ],
-      "trades_today": [],
+      "trades_today": [
+        {
+          "ticket": 2000265794,
+          "symbol": "BTCUSD",
+          "net": 2.28,
+          "closed": "2026-10-11T01:33:37.816495+00:00",
+          "exit_reason": "THESIS",
+          "mode": "LIVE",
+          "strategy": "financial_ian",
+          "tactic": null,
+          "estimated": false
+        },
+        {
+          "ticket": 2000281121,
+          "symbol": "BTCUSD",
+          "net": -9.31,
+          "closed": "2026-10-11T02:59:21.802770+00:00",
+          "exit_reason": "STOP",
+          "mode": "LIVE",
+          "strategy": "financial_ian",
+          "tactic": null,
+          "estimated": false
+        }
+      ],
+      "avg_win": 2.28,
+      "avg_loss": -9.31,
+      "largest_win": 2.28,
+      "largest_loss": -9.31,
+      "profit_factor": 0.24,
       "estimated_trades": 0,
       "note": "Trend & Breakout, the Rapid Momentum Rider, the Band Breaker and the Crowd Fader are in PAPER: their simulated results are on their own tabs only."
     },
@@ -915,54 +1153,100 @@
       "id": "financial_ian",
       "label": "Financial Ian",
       "currency": "GBP",
-      "net_today": 0,
-      "realised": 0,
-      "unrealised": 0,
-      "trades": 0,
-      "wins": 0,
-      "losses": 0,
-      "win_rate": null,
-      "avg_win": null,
-      "avg_loss": null,
-      "largest_win": null,
-      "largest_loss": null,
-      "profit_factor": null,
+      "net_today": 1.54,
+      "realised": -7.03,
+      "unrealised": 8.57,
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "win_rate": 50.0,
+      "avg_win": 2.28,
+      "avg_loss": -9.31,
+      "largest_win": 2.28,
+      "largest_loss": -9.31,
+      "profit_factor": 0.24,
       "total_costs": null,
       "est_slippage_points": null,
-      "avg_hold_seconds": null,
-      "open_positions": 0,
-      "max_drawdown": 0.0,
-      "live_net": 0,
+      "avg_hold_seconds": 1019.6,
+      "open_positions": 1,
+      "max_drawdown": -9.31,
+      "live_net": -7.03,
       "paper_net": 0,
-      "live_trades": 0,
+      "live_trades": 2,
       "paper_trades": 0,
       "mode": "LIVE",
-      "trades_today": [],
-      "avg_peak_r": null,
+      "trades_today": [
+        {
+          "ticket": 2000265794,
+          "symbol": "BTCUSD",
+          "net": 2.28,
+          "closed": "2026-10-11T01:33:37.816495+00:00",
+          "exit_reason": "THESIS",
+          "mode": "LIVE",
+          "strategy": "financial_ian",
+          "tactic": null,
+          "estimated": false
+        },
+        {
+          "ticket": 2000281121,
+          "symbol": "BTCUSD",
+          "net": -9.31,
+          "closed": "2026-10-11T02:59:21.802770+00:00",
+          "exit_reason": "STOP",
+          "mode": "LIVE",
+          "strategy": "financial_ian",
+          "tactic": null,
+          "estimated": false
+        }
+      ],
+      "avg_peak_r": 0.0,
       "estimated_trades": 0,
       "estimated_net": 0,
       "live": {
         "id": "financial_ian",
         "label": "Financial Ian",
         "currency": "GBP",
-        "net_today": 0,
-        "realised": 0,
-        "unrealised": 0,
-        "trades": 0,
-        "wins": 0,
-        "losses": 0,
-        "win_rate": null,
-        "avg_win": null,
-        "avg_loss": null,
-        "largest_win": null,
-        "largest_loss": null,
-        "profit_factor": null,
+        "net_today": 1.54,
+        "realised": -7.03,
+        "unrealised": 8.57,
+        "trades": 2,
+        "wins": 1,
+        "losses": 1,
+        "win_rate": 50.0,
+        "avg_win": 2.28,
+        "avg_loss": -9.31,
+        "largest_win": 2.28,
+        "largest_loss": -9.31,
+        "profit_factor": 0.24,
         "total_costs": null,
         "est_slippage_points": null,
-        "avg_hold_seconds": null,
-        "open_positions": 0,
-        "max_drawdown": 0.0,
-        "trades_today": [],
+        "avg_hold_seconds": 1019.6,
+        "open_positions": 1,
+        "max_drawdown": -9.31,
+        "trades_today": [
+          {
+            "ticket": 2000265794,
+            "symbol": "BTCUSD",
+            "net": 2.28,
+            "closed": "2026-10-11T01:33:37.816495+00:00",
+            "exit_reason": "THESIS",
+            "mode": "LIVE",
+            "strategy": "financial_ian",
+            "tactic": null,
+            "estimated": false
+          },
+          {
+            "ticket": 2000281121,
+            "symbol": "BTCUSD",
+            "net": -9.31,
+            "closed": "2026-10-11T02:59:21.802770+00:00",
+            "exit_reason": "STOP",
+            "mode": "LIVE",
+            "strategy": "financial_ian",
+            "tactic": null,
+            "estimated": false
+          }
+        ],
         "in_overall": true,
         "estimated_trades": 0,
         "estimated_net": 0
@@ -973,7 +1257,7 @@
       "strategy_id": "rapid_scalper",
       "label": "Rapid Scalper",
       "tagline": "High-Velocity Session Rider (version 3): seconds-level acceleration in a scalpable market; cut failed scalps fast, protect winners, give exceptional winners room.",
-      "status": "NOT RUNNING (last seen 2428 min ago)",
+      "status": "NOT RUNNING (last seen 2812 min ago)",
       "mode": "PAPER",
       "build": "3635e80773",
       "updated": "2026-10-09T08:46:48.494685+00:00",
@@ -1400,7 +1684,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 145707.760474
+      "age_seconds": 168726.367467
     },
     "runner": {
       "strategy_id": "momentum_runner",
@@ -1416,7 +1700,7 @@
       "note": "",
       "orphans": [],
       "unmanaged": [],
-      "updated": "2026-10-11T01:15:11.471350+00:00",
+      "updated": "2026-10-11T07:38:51.641976+00:00",
       "trail_r": 3.0,
       "window_hours": 8.0,
       "skip_tactics": [
@@ -1432,7 +1716,7 @@
       "markets": "every index market the main bot trades",
       "open": [],
       "present": true,
-      "age_seconds": 4.8
+      "age_seconds": 3.2
     },
     "bandbreaker": {
       "strategy_id": "band_breaker",
@@ -1444,7 +1728,7 @@
       "executor_error": "",
       "refused": 0,
       "status": "OUTSIDE SESSION",
-      "updated": "2026-10-11T01:15:11.471350+00:00",
+      "updated": "2026-10-11T07:38:51.641976+00:00",
       "markets": [
         "US500",
         "US30",
@@ -1463,7 +1747,7 @@
       "bands_today": {},
       "checks_today": [],
       "present": true,
-      "age_seconds": 4.8
+      "age_seconds": 3.2
     },
     "crowd": {
       "strategy_id": "crowd_fader",
@@ -1476,7 +1760,7 @@
       "refused": 0,
       "estimated_rows": 0,
       "status": "OUTSIDE HOURS (managing only)",
-      "updated": "2026-10-11T01:15:11.471350+00:00",
+      "updated": "2026-10-11T07:38:51.641976+00:00",
       "key_present": true,
       "markets": [
         "XAUUSD",
@@ -1489,133 +1773,133 @@
         "XBRUSD"
       ],
       "rule": "crowd 50% net one way and the winners not with them; score 60+; entry on a 15-min close beyond the last 8; stop beyond the last 4 bars; target the nearest cluster or 2 R; out after 24 h; at most 2 a day per market; 10 at the stop (the smallest size up to 30); reads every 10 min",
-      "last_poll": null,
-      "polls": 0,
+      "last_poll": "2026-10-11T07:02:49.138003+00:00",
+      "polls": 1,
       "poll_error": "",
-      "api_calls": 15,
+      "api_calls": 17,
       "api_remaining": 49,
       "markets_now": {
-        "XAUUSD": "crowd 82% long (2,421 wallets); Apex and Sharps 17% short by money; 2.8m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 53/100",
-        "XAGUSD": "crowd 82% long (1,162 wallets); Apex and Sharps 17% short by money; 3.6m of longs liquidate below vs 59k of shorts above; lean SHORT, score 73/100; outside entry hours",
-        "US500": "crowd 61% long (2,361 wallets); Apex and Sharps 18% long by money; 27.5m of longs liquidate below vs 48.2m of shorts above; not stretched: nothing to fade",
-        "JP225": "too few crowd wallets to read (143 < 200)",
-        "EURUSD": "crowd 52% short (208 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.4m of shorts above; not stretched: nothing to fade",
-        "GBPUSD": "too few crowd wallets to read (47 < 200)",
-        "XTIUSD": "last read 156 min old: waiting for a fresh one",
-        "XBRUSD": "last read 156 min old: waiting for a fresh one"
+        "XAUUSD": "last read 36 min old: waiting for a fresh one",
+        "XAGUSD": "last read 36 min old: waiting for a fresh one",
+        "US500": "last read 36 min old: waiting for a fresh one",
+        "JP225": "last read 36 min old: waiting for a fresh one",
+        "EURUSD": "last read 36 min old: waiting for a fresh one",
+        "GBPUSD": "last read 36 min old: waiting for a fresh one",
+        "XTIUSD": "last read 36 min old: waiting for a fresh one",
+        "XBRUSD": "last read 36 min old: waiting for a fresh one"
       },
       "reads": {
         "XAUUSD": {
           "coin": "xyz:GOLD",
-          "at": "2026-10-11T00:57:47.627050+00:00",
+          "at": "2026-10-11T07:02:49.138003+00:00",
           "crowd_long_pct": 82.3,
-          "crowd_wallets": 2421,
+          "crowd_wallets": 2413,
           "crowd_bias": 0.65,
           "winners_bias": -0.17,
-          "fuel_below": 2786700,
-          "fuel_above": 13712648,
+          "fuel_below": 2740973,
+          "fuel_above": 13723020,
           "direction": -1,
-          "score": 53.3,
-          "reason": "crowd 82% long (2,421 wallets); Apex and Sharps 17% short by money; 2.8m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 53/100",
-          "hl_price": 4191.2
+          "score": 53.5,
+          "reason": "crowd 82% long (2,413 wallets); Apex and Sharps 17% short by money; 2.7m of longs liquidate below vs 13.7m of shorts above; lean SHORT, score 54/100",
+          "hl_price": 4193.9
         },
         "XAGUSD": {
           "coin": "xyz:SILVER",
-          "at": "2026-10-11T00:57:47.627050+00:00",
-          "crowd_long_pct": 82.1,
-          "crowd_wallets": 1162,
-          "crowd_bias": 0.64,
+          "at": "2026-10-11T07:02:49.138003+00:00",
+          "crowd_long_pct": 82.6,
+          "crowd_wallets": 1161,
+          "crowd_bias": 0.65,
           "winners_bias": -0.17,
-          "fuel_below": 3618391,
-          "fuel_above": 59130,
+          "fuel_below": 3496143,
+          "fuel_above": 57738,
           "direction": -1,
-          "score": 73.1,
-          "reason": "crowd 82% long (1,162 wallets); Apex and Sharps 17% short by money; 3.6m of longs liquidate below vs 59k of shorts above; lean SHORT, score 73/100",
-          "hl_price": 60.672
+          "score": 73.6,
+          "reason": "crowd 83% long (1,161 wallets); Apex and Sharps 17% short by money; 3.5m of longs liquidate below vs 58k of shorts above; lean SHORT, score 74/100",
+          "hl_price": 60.716
         },
         "US500": {
           "coin": "xyz:SP500",
-          "at": "2026-10-11T00:57:47.627050+00:00",
-          "crowd_long_pct": 61.2,
-          "crowd_wallets": 2361,
+          "at": "2026-10-11T07:02:49.138003+00:00",
+          "crowd_long_pct": 61.1,
+          "crowd_wallets": 2369,
           "crowd_bias": 0.22,
           "winners_bias": 0.18,
-          "fuel_below": 27506298,
-          "fuel_above": 48228909,
+          "fuel_below": 27796337,
+          "fuel_above": 49117595,
           "direction": 0,
-          "score": 14.0,
-          "reason": "crowd 61% long (2,361 wallets); Apex and Sharps 18% long by money; 27.5m of longs liquidate below vs 48.2m of shorts above; not stretched: nothing to fade",
-          "hl_price": 7809.0
+          "score": 13.9,
+          "reason": "crowd 61% long (2,369 wallets); Apex and Sharps 18% long by money; 27.8m of longs liquidate below vs 49.1m of shorts above; not stretched: nothing to fade",
+          "hl_price": 7810.5
         },
         "JP225": {
           "coin": "xyz:JP225",
-          "at": "2026-10-11T00:57:47.627050+00:00",
-          "crowd_long_pct": 67.1,
-          "crowd_wallets": 143,
-          "crowd_bias": 0.34,
+          "at": "2026-10-11T07:02:49.138003+00:00",
+          "crowd_long_pct": 67.6,
+          "crowd_wallets": 145,
+          "crowd_bias": 0.35,
           "winners_bias": 0.18,
-          "fuel_below": 62457,
-          "fuel_above": 236540,
+          "fuel_below": 73089,
+          "fuel_above": 237789,
           "direction": 0,
           "score": 0.0,
-          "reason": "too few crowd wallets to read (143 < 200)",
-          "hl_price": 68909.0
+          "reason": "too few crowd wallets to read (145 < 200)",
+          "hl_price": 68852.0
         },
         "EURUSD": {
           "coin": "xyz:EUR",
-          "at": "2026-10-11T00:57:47.627050+00:00",
+          "at": "2026-10-11T07:02:49.138003+00:00",
           "crowd_long_pct": 48.1,
-          "crowd_wallets": 208,
+          "crowd_wallets": 210,
           "crowd_bias": -0.04,
           "winners_bias": 0.59,
-          "fuel_below": 2080540,
-          "fuel_above": 3377792,
+          "fuel_below": 2080691,
+          "fuel_above": 3373547,
           "direction": 0,
           "score": 2.4,
-          "reason": "crowd 52% short (208 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.4m of shorts above; not stretched: nothing to fade",
+          "reason": "crowd 52% short (210 wallets); Apex and Sharps 59% long by money; 2.1m of longs liquidate below vs 3.4m of shorts above; not stretched: nothing to fade",
           "hl_price": 1.1209
         },
         "GBPUSD": {
           "coin": "xyz:GBP",
-          "at": "2026-10-11T00:57:47.627050+00:00",
-          "crowd_long_pct": 53.2,
-          "crowd_wallets": 47,
-          "crowd_bias": 0.06,
-          "winners_bias": -0.45,
-          "fuel_below": 269525,
-          "fuel_above": 357083,
+          "at": "2026-10-11T07:02:49.138003+00:00",
+          "crowd_long_pct": 51.0,
+          "crowd_wallets": 49,
+          "crowd_bias": 0.02,
+          "winners_bias": -0.46,
+          "fuel_below": 269400,
+          "fuel_above": 357104,
           "direction": 0,
           "score": 0.0,
-          "reason": "too few crowd wallets to read (47 < 200)",
+          "reason": "too few crowd wallets to read (49 < 200)",
           "hl_price": 1.3235999999999999
         },
         "XTIUSD": {
           "coin": "xyz:CL",
-          "at": "2026-10-10T22:38:50.472115+00:00",
-          "crowd_long_pct": 67.6,
-          "crowd_wallets": 1151,
-          "crowd_bias": 0.35,
-          "winners_bias": -0.27,
-          "fuel_below": 1908023,
-          "fuel_above": 886131,
+          "at": "2026-10-11T07:02:49.138003+00:00",
+          "crowd_long_pct": 68.5,
+          "crowd_wallets": 1164,
+          "crowd_bias": 0.37,
+          "winners_bias": -0.28,
+          "fuel_below": 1583922,
+          "fuel_above": 942112,
           "direction": 0,
-          "score": 22.0,
-          "reason": "crowd 68% long (1,151 wallets); Apex and Sharps 27% short by money; 1.9m of longs liquidate below vs 886k of shorts above; not stretched: nothing to fade",
-          "hl_price": 91.12100000000001
+          "score": 23.1,
+          "reason": "crowd 68% long (1,164 wallets); Apex and Sharps 28% short by money; 1.6m of longs liquidate below vs 942k of shorts above; not stretched: nothing to fade",
+          "hl_price": 91.285
         },
         "XBRUSD": {
           "coin": "xyz:BRENTOIL",
-          "at": "2026-10-10T22:38:50.472115+00:00",
-          "crowd_long_pct": 54.4,
-          "crowd_wallets": 1100,
-          "crowd_bias": 0.09,
-          "winners_bias": -0.06,
-          "fuel_below": 2395339,
-          "fuel_above": 2927252,
+          "at": "2026-10-11T07:02:49.138003+00:00",
+          "crowd_long_pct": 55.1,
+          "crowd_wallets": 1122,
+          "crowd_bias": 0.1,
+          "winners_bias": -0.03,
+          "fuel_below": 1584914,
+          "fuel_above": 2949823,
           "direction": 0,
-          "score": 5.5,
-          "reason": "crowd 54% long (1,100 wallets); Apex and Sharps 6% short by money; 2.4m of longs liquidate below vs 2.9m of shorts above; not stretched: nothing to fade",
-          "hl_price": 102.32000000000001
+          "score": 6.4,
+          "reason": "crowd 55% long (1,122 wallets); Apex and Sharps balanced by money; 1.6m of longs liquidate below vs 2.9m of shorts above; not stretched: nothing to fade",
+          "hl_price": 102.47
         }
       },
       "open": [],
@@ -1623,7 +1907,7 @@
       "switch_notes": [],
       "entries_today": {},
       "present": true,
-      "age_seconds": 4.8
+      "age_seconds": 3.2
     },
     "rider": {
       "strategy_id": "momentum_rider",
@@ -2488,8 +2772,8 @@
       ],
       "cycle_ms": 179.6,
       "present": true,
-      "age_seconds": 36252.0,
-      "status": "NOT RUNNING (last seen 604 min ago)",
+      "age_seconds": 59270.6,
+      "status": "NOT RUNNING (last seen 988 min ago)",
       "stale": true
     },
     "ian": {
@@ -2499,13 +2783,13 @@
       "magic": 990911,
       "mode": "LIVE",
       "running": true,
-      "updated": "2026-10-11T01:15:16.100196+00:00",
-      "status": "DATA-DEGRADED on BTCUSDT, ETHUSDT: missing depth: 0 bid and 0 offer levels; no book update for 1000000000 s; stale trades: none for 1032 s; the feed was silent for 1026 s - recovering (0/200 clean events) - no new trades on any market until the data is clean; open positions are still managed (Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs)",
+      "updated": "2026-10-11T07:38:53.047838+00:00",
+      "status": "DATA-DEGRADED on BTCUSDT, ETHUSDT: the feed reported gap: 3371 trade(s) missed (aggregate trade ids 2097840284-2097843654) - recovering (99/200 clean events); the feed reported gap: 4123 trade(s) missed (aggregate trade ids 4086891225-4086895347) - recovering (142/200 clean events) - no new trades on any market until the data is clean; open positions are still managed (Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs)",
       "data_source": "LIVE FEED",
       "data_label": "LIVE",
       "feed": {
         "state": "DEGRADED",
-        "reason": "missing depth: 0 bid and 0 offer levels; no book update for 1000000000 s; stale trades: none for 1032 s; the feed was silent for 1026 s - recovering (0/200 clean events)",
+        "reason": "the feed reported gap: 3371 trade(s) missed (aggregate trade ids 2097840284-2097843654) - recovering (99/200 clean events); the feed reported gap: 4123 trade(s) missed (aggregate trade ids 4086891225-4086895347) - recovering (142/200 clean events)",
         "vendor": "binance",
         "label": "Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
         "source": "binance",
@@ -2523,18 +2807,18 @@
         },
         "data_class": "EXCHANGE",
         "synthetic": false,
-        "events": 165,
+        "events": 1774,
         "subscribed": [
           "BTCUSDT",
           "ETHUSDT"
         ],
         "quality": {
-          "BTCUSDT": "DEGRADED: stale trades: none for 1032 s; the feed was silent for 1026 s - recovering (0/200 clean events); missing depth: 0 bid and 0 offer levels",
-          "ETHUSDT": "DOWN: no book update for 1000000000 s"
+          "BTCUSDT": "DEGRADED: the feed reported gap: 4123 trade(s) missed (aggregate trade ids 4086891225-4086895347) - recovering (142/200 clean events)",
+          "ETHUSDT": "DEGRADED: the feed reported gap: 3371 trade(s) missed (aggregate trade ids 2097840284-2097843654) - recovering (99/200 clean events)"
         },
         "latency_ms": {
-          "BTCUSDT": 1025119.6,
-          "ETHUSDT": -507.3
+          "BTCUSDT": -310.2,
+          "ETHUSDT": -310.8
         }
       },
       "mt5": {
@@ -2546,56 +2830,280 @@
       "reasoning": "",
       "opportunities": {},
       "markets_now": {
-        "BTCUSDT": "no signals: DEGRADED: stale trades: none for 1032 s; the feed was silent for 1026 s - recovering (0/200 clean events); missing depth: 0 bid and 0 offer levels",
-        "ETHUSDT": "no signals: DOWN: no book update for 1000000000 s"
+        "BTCUSDT": "no signals: DEGRADED: the feed reported gap: 4123 trade(s) missed (aggregate trade ids 4086891225-4086895347) - recovering (142/200 clean events)",
+        "ETHUSDT": "no signals: DEGRADED: the feed reported gap: 3371 trade(s) missed (aggregate trade ids 2097840284-2097843654) - recovering (99/200 clean events)"
       },
-      "open_positions": [],
+      "open_positions": [
+        {
+          "ticket": 2000326489,
+          "symbol": "BTCUSD",
+          "future": "BTCUSDT",
+          "side": "SELL",
+          "volume": 0.13,
+          "entry": 83028.04,
+          "stop": 83019.33,
+          "initial_stop": 83134.78,
+          "r_now": 0.82,
+          "best_r": 0.88,
+          "pnl": 8.57,
+          "opened": "2026-10-11T07:21:15.462992+00:00",
+          "reasoning": "Buyers keep lifting the offer but the price will not rise - sellers are absorbing them, there is little resting liquidity below the price, and the cumulative delta is falling. Binance's public BTCUSDT order book points to BTC falling, so BTCUSD SELL (the broker's CFD).",
+          "trail": "stop 83019.72 -> 83019.33200000001: no reliable order book: a plain trail",
+          "mode": "LIVE",
+          "not_seen_since": null
+        }
+      ],
       "today": {
-        "trades": 0,
-        "wins": 0,
-        "losses": 0,
-        "win_rate": null,
-        "net": 0,
-        "expectancy": null,
-        "expectancy_r": null,
-        "profit_factor": null,
-        "avg_win": null,
-        "avg_loss": null,
-        "max_drawdown": 0.0,
-        "mfe_r": null,
-        "mae_r": null,
-        "mfe_capture": null,
+        "trades": 2,
+        "wins": 1,
+        "losses": 1,
+        "win_rate": 0.5,
+        "net": -7.03,
+        "expectancy": -3.52,
+        "expectancy_r": -0.379,
+        "profit_factor": 0.24,
+        "avg_win": 2.28,
+        "avg_loss": -9.31,
+        "max_drawdown": -9.31,
+        "mfe_r": 0.109,
+        "mae_r": -0.568,
+        "mfe_capture": -3.463,
         "data_source": "LIVE FEED"
       },
       "last_trade": {
-        "ticket": 2000136074,
+        "ticket": 2000281121,
         "spot_symbol": "BTCUSD",
-        "side": "SELL",
-        "entry": 82754.0,
-        "exit_price": 82753.05,
-        "net_pnl": 0.14,
-        "realised_r": 0.016,
-        "exit_reason": "THESIS",
-        "exit_explanation": "Closed THESIS at 82753.05 for +0.14 (+0.02 R; best +0.02 R, worst -0.10 R, 100% of the best captured): the trade's flow is being absorbed.",
-        "reasoning": "Large sellers are repeatedly hitting the available BTC bids, the order flow at the top of the book favours sellers, and the book leans to the offer (pressure -0.36). Binance's public BTCUSDT order book points to BTC falling, so BTCUSD SELL (the broker's CFD).",
-        "closed_utc": "2026-10-10T13:05:08.980573+00:00",
+        "side": "BUY",
+        "entry": 83073.49,
+        "exit_price": 83008.63,
+        "net_pnl": -9.31,
+        "realised_r": -0.9759,
+        "exit_reason": "STOP",
+        "exit_explanation": "Closed STOP at 83008.63 for -9.31 (-0.98 R; best +0.00 R, worst -0.98 R): closed at the broker.",
+        "reasoning": "The order flow at the top of the book favours buyers, offers above the price are being pulled, and the book leans to the bid (pressure +0.57) and has for 66% of the last 30 seconds. Binance's public BTCUSDT order book points to BTC rising, so BTCUSD BUY (the broker's CFD).",
+        "closed_utc": "2026-10-11T02:59:21.802770+00:00",
         "mode": "LIVE",
         "data_source": "LIVE FEED"
       },
-      "last_report": null,
+      "last_report": {
+        "signal_id": "9d754e76173529cc9488",
+        "status": "FILLED",
+        "ok": true,
+        "message": "filled",
+        "ticket": 2000326489,
+        "price": 83028.04,
+        "volume": 0.13,
+        "stop": 83134.78,
+        "mode": "LIVE",
+        "risk_money": 10.48,
+        "latency": {
+          "data_received": "2026-10-11T07:21:15.244719+00:00",
+          "signal": "2026-10-11T07:21:15.462992+00:00",
+          "order_request": "2026-10-11T07:21:15.462992+00:00",
+          "order_request_wall": "2026-10-11T07:21:15.621781+00:00",
+          "mt5_receipt": null,
+          "broker_accept": "2026-10-11T07:21:16.317844+00:00",
+          "fill": "2026-10-11T07:21:16.317844+00:00",
+          "ms_request_to_accept": 696.1,
+          "note": "MT5 receipt not reported by this adapter (not measured)"
+        }
+      },
       "ladder": {
         "instrument": "BTCUSDT",
         "data_class": "EXCHANGE",
         "tick": 5.0,
-        "bid": null,
-        "ask": null,
-        "mid": null,
-        "imbalance": 0.0,
-        "pressure": "balanced",
-        "rows": []
+        "bid": 83020.0,
+        "ask": 83025.0,
+        "mid": 83022.5,
+        "imbalance": 0.491,
+        "pressure": "buyers (book +0.16, aggression +0.98)",
+        "rows": [
+          {
+            "price": 83070.0,
+            "ask": 3.61773,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83065.0,
+            "ask": 5.03023,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83060.0,
+            "ask": 5.43699,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83055.0,
+            "ask": 6.53368,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83050.0,
+            "ask": 6.53897,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83045.0,
+            "ask": 4.15205,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83040.0,
+            "ask": 2.16946,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83035.0,
+            "ask": 1.84023,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83030.0,
+            "ask": 1.31771,
+            "bid": 0.0,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83025.0,
+            "ask": 2.15078,
+            "bid": 0.0,
+            "bought": 0.36025,
+            "sold": 0.0,
+            "delta": 0.36025,
+            "flags": []
+          },
+          {
+            "price": 83020.0,
+            "ask": 0.0,
+            "bid": 7.47926,
+            "bought": 0.0,
+            "sold": 0.00438,
+            "delta": -0.00438,
+            "flags": []
+          },
+          {
+            "price": 83015.0,
+            "ask": 0.0,
+            "bid": 2.68799,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83010.0,
+            "ask": 0.0,
+            "bid": 3.5976,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83005.0,
+            "ask": 0.0,
+            "bid": 4.33601,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 83000.0,
+            "ask": 0.0,
+            "bid": 6.04664,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82995.0,
+            "ask": 0.0,
+            "bid": 5.71769,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82990.0,
+            "ask": 0.0,
+            "bid": 3.15068,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82985.0,
+            "ask": 0.0,
+            "bid": 4.17256,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82980.0,
+            "ask": 0.0,
+            "bid": 5.88715,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": []
+          },
+          {
+            "price": 82975.0,
+            "ask": 0.0,
+            "bid": 358.74723,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": [
+              "WALL"
+            ]
+          }
+        ]
       },
       "present": true,
-      "age_seconds": 0.2
+      "age_seconds": 1.8
     },
     "labels": {
       "overall": "Overall",
@@ -2612,13 +3120,13 @@
     "start": "2026-10-05T11:30:42+00:00",
     "day_start": "2026-10-10T23:00:00+00:00",
     "source": "broker",
-    "made": -134.96,
-    "trading": -134.96,
+    "made": -141.99,
+    "trading": -141.99,
     "adjustments": 0.0,
-    "today": 0,
-    "open": 0,
-    "balance": 1865.04,
-    "equity": 1865.04,
+    "today": -7.03,
+    "open": 8.54,
+    "balance": 1858.01,
+    "equity": 1866.55,
     "currency": "GBP",
     "start_balance": 2000.0,
     "bots": [
@@ -2692,12 +3200,12 @@
         "label": "Financial Ian",
         "magic": 990911,
         "mode": "LIVE",
-        "made": -11.36,
-        "today": 0,
-        "trades": 12,
-        "today_trades": 0,
-        "open": 0.0,
-        "open_trades": 0,
+        "made": -18.39,
+        "today": -7.03,
+        "trades": 14,
+        "today_trades": 2,
+        "open": 8.54,
+        "open_trades": 1,
         "retired": false
       },
       {
@@ -2721,20 +3229,36 @@
       "open": 0.0
     },
     "error": "",
-    "made_trades": 129,
+    "made_trades": 131,
     "made_commission": 89.92,
-    "today_trades": 0,
-    "today_commission": 0,
+    "today_trades": 2,
+    "today_commission": 0.0,
     "day_basis": "UK",
-    "open_tickets": [],
+    "open_tickets": [
+      2000326489
+    ],
     "deals_complete": true,
     "unknown_magics": []
   },
-  "open_live": [],
-  "open_at": "2026-10-11T01:15:16.248336+00:00",
+  "open_live": [
+    {
+      "bot": "Financial Ian",
+      "magic": 990911,
+      "ticket": 2000326489,
+      "symbol": "BTCUSD",
+      "side": "SELL",
+      "volume": 0.13,
+      "entry": 83028.04,
+      "stop": 83018.64,
+      "target": 0.0,
+      "profit": 9.31,
+      "opened": "2026-10-11T07:21:16+00:00"
+    }
+  ],
+  "open_at": "2026-10-11T07:38:54.858405+00:00",
   "bot_lines": {
     "momentum_rider": "OFF (rider.json says OFF, so it is not started)",
-    "financial_ian": "HEALTHY, LIVE, feed DEGRADED (missing depth: 0 bid and 0 offer levels; no book update for 1000000000 s; stale trades: none for 1032 s; the feed was silent for 1026 s - recovering (0/200 clean events))"
+    "financial_ian": "HEALTHY, LIVE, feed DEGRADED (the feed reported gap: 3371 trade(s) missed (aggregate trade ids 2097840284-2097843654) - recovering (99/200 clean events); the feed reported gap: 4123 trade(s) missed (aggregate trade ids 4086891225-4086895347) - recovering (142/200 clean events))"
   },
-  "updated": "2026-10-11T01:15:16.264963+00:00"
+  "updated": "2026-10-11T07:38:54.864245+00:00"
 }
