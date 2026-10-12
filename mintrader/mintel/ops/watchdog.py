@@ -701,7 +701,9 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
     On macOS and Linux: watch the trader, the Wine-side bridge, and the MT5
     terminal running under Wine.
     Everywhere: the Rapid Momentum Rider and Financial Ian, each while its
-    own file (data/rider.json, data/ian.json) does not say OFF.
+    own file (data/rider.json, data/ian.json) does not say OFF; and the
+    strategy lab's practice process (prices only, no orders) while
+    data/lab.json does not say OFF, judged by its status file.
     """
     python = python or sys.executable
     project = project_dir or str(Path(__file__).resolve().parents[2])
@@ -749,6 +751,27 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
             log_file=str(Path(cfg.ops.log_dir) / f"{name}.out.log"),
             grace_seconds=120.0,
             enabled=enabled,
+            max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
+
+    # The strategy lab's practice process (11 Oct): live prices, no money - it
+    # cannot place an order. It writes NO heartbeat (a stale heartbeat the trader
+    # does not know would stop its entries); it is judged by its status file
+    # instead, probed exactly as the bridge is. Looked after while data/lab.json
+    # does not say OFF and the lab has chosen its markets (data/lab/universe.json,
+    # written by its first night).
+    if (Path(project) / "mintel" / "lab" / "practice.py").exists():
+        from ..lab.status import STATUS_MAX_AGE_S, status_fresh
+        lab_mode, lab_universe = data / "lab.json", data / "lab" / "universe.json"
+        processes.append(ManagedProcess(
+            name="lab",
+            command=[python, "-m", "mintel.lab.practice", "--config", config_path],
+            pid_file=str(data / "lab.pid"),
+            cwd=project,
+            log_file=str(Path(cfg.ops.log_dir) / "lab.out.log"),
+            grace_seconds=120.0,
+            kill_pattern="mintel.lab.practice",
+            probe=status_fresh(data / "lab-status.json", STATUS_MAX_AGE_S),
+            enabled=lambda: own_file_mode(lab_mode) != "OFF" and lab_universe.exists(),
             max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
 
     mt5_cmd: list[str] = []

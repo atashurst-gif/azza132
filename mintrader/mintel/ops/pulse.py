@@ -34,6 +34,11 @@ and publishes the latest state to the reports branch:
                                 paper trades and thinking, the Momentum
                                 Runner's rides. Read-only from each bot's
                                 status file; under 60 KB; no secrets
+    reports/live/lab.json       the strategy lab (``lab_json``): its board
+                                (data/lab/summary.json) and its practice
+                                status (data/lab-status.json), whitelisted,
+                                scrubbed, under 20 KB; only once the lab
+                                has run; practice and tests, never money
 
 The nightly report copies the day's pulse lines into
 ``reports/<date>/uptime.log`` and sums the gaps, so an outage is a number
@@ -57,6 +62,8 @@ KEEP_LINES = 400
 STALE_SECONDS = 120.0
 BOTS_PATH = "reports/live/bots.json"
 BOTS_MAX_BYTES = 60_000
+LAB_PATH = "reports/live/lab.json"
+LAB_MAX_BYTES = 20_000
 
 
 # --------------------------------------------------------------- observe --
@@ -383,9 +390,10 @@ def _gap(outage: list[str], open_ended: bool = False) -> tuple[str, str, int, st
     return start, end, len(outage), why[:220]
 
 
-def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None) -> dict[str, str]:
+def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
+                lab: Optional[str] = None) -> dict[str, str]:
     """The files the pulse publishes; ``bots`` (bots_json's text) adds
-    reports/live/bots.json."""
+    reports/live/bots.json, ``lab`` (lab_json's text) reports/live/lab.json."""
     status = p.get("status")
     slim = {k: v for k, v in p.items() if k != "status"}
     files = {
@@ -395,6 +403,8 @@ def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None) -> dict[s
     }
     if bots is not None:
         files[BOTS_PATH] = bots
+    if lab is not None:
+        files[LAB_PATH] = lab
     return files
 
 
@@ -773,6 +783,81 @@ def bots_json(cfg: Config, p: dict, now: Optional[dt.datetime] = None, max_bytes
     return text
 
 
+# ---------------------------------------------------------------- the lab --
+# The strategy lab (11 Oct): its board (data/lab/summary.json, written nightly) and its
+# practice process's status (data/lab-status.json), copied key by key - never a whole
+# file - through _scrub, for the nightly review. Practice only: no money is in it.
+LAB_SUMMARY_KEYS = ("schema", "written_utc", "synthetic", "test_data_note", "mode", "paused", "store",
+                    "funnel", "trials", "families", "candidates", "changes_24h", "binned_recent", "nightly")
+LAB_CANDIDATE_KEYS = ("id", "name", "family", "stage", "stage_since", "chip", "headline", "what_to_do",
+                      "ready", "checks", "figures", "tests", "practice", "words", "story", "synthetic")
+LAB_STATUS_KEYS = ("updated_utc", "mode", "roster", "open_positions", "last_bar_utc", "feed_ok",
+                   "feed_age_s", "last_error", "resting", "synthetic")
+
+
+def _lab_trim_steps():
+    """Applied in turn while lab.json is over its cap: the least needed first."""
+    def binned(rep):
+        rep.get("summary", {}).pop("binned_recent", None)
+
+    def words_story(rep):
+        for c in rep.get("summary", {}).get("candidates") or []:
+            c.pop("words", None)
+            c.pop("story", None)
+
+    def beyond_12(rep):
+        summ = rep.get("summary", {})
+        if isinstance(summ.get("candidates"), list) and len(summ["candidates"]) > 12:
+            summ["candidates_left_out"] = len(summ["candidates"]) - 12
+            summ["candidates"] = summ["candidates"][:12]
+
+    def lean(rep):
+        for c in rep.get("summary", {}).get("candidates") or []:
+            for k in ("tests", "checks", "practice"):
+                c.pop(k, None)
+        rep.get("summary", {}).pop("families", None)
+        rep.get("summary", {}).pop("changes_24h", None)
+
+    return [binned, words_story, beyond_12, lean]
+
+
+def lab_json(cfg: Config, max_bytes: int = LAB_MAX_BYTES) -> Optional[str]:
+    """reports/live/lab.json: the lab's board and practice status, whitelisted and
+    scrubbed, under ``max_bytes``. None when the lab has never run (no data/lab/).
+    Never raises: a file that cannot be read is a line saying so."""
+    data = Path(cfg.ops.data_dir)
+    if not (data / "lab").exists():
+        return None
+    rep: dict = {"note": "the strategy lab: practice and tests only, never money"}
+    summ, why = _read_status_file(data / "lab" / "summary.json")
+    if summ is None:
+        rep["summary_unavailable"] = why
+    else:
+        out = {k: summ[k] for k in LAB_SUMMARY_KEYS if k in summ}
+        if isinstance(out.get("candidates"), list):
+            out["candidates"] = [_pick(c, LAB_CANDIDATE_KEYS) for c in out["candidates"] if isinstance(c, dict)]
+        rep["summary"] = out
+    st, why = _read_status_file(data / "lab-status.json")
+    if st is None:
+        rep["status_unavailable"] = why
+    else:
+        rep["status"] = _pick(st, LAB_STATUS_KEYS)
+    try:
+        rep = _scrub(rep)
+        text = json.dumps(rep, indent=1, default=str) + "\n"
+        for step in _lab_trim_steps():
+            if len(text.encode("utf-8")) <= max_bytes:
+                break
+            step(rep)
+            rep["trimmed"] = "some details were left out to keep this file under its size cap"
+            text = json.dumps(rep, indent=1, default=str) + "\n"
+        if len(text.encode("utf-8")) > max_bytes:
+            text = json.dumps({"unavailable": "the lab's report was too big to publish"}) + "\n"
+        return text
+    except Exception as exc:
+        return json.dumps({"unavailable": f"the lab's report could not be built: {exc}"}) + "\n"
+
+
 # ------------------------------------------------------------------ main --
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="record whether the bot is up, and publish it")
@@ -792,7 +877,8 @@ def main(argv=None) -> int:
         print("(not published: no GitHub token in secrets.json)")
         return 0
     bots = bots_json(cfg, p)                       # never raises: a broken bot is an entry saying so
-    files = pulse_files(p, uptime_lines(cfg), bots)
+    lab = lab_json(cfg)                            # never raises; None when the lab has never run
+    files = pulse_files(p, uptime_lines(cfg), bots, lab)
     try:
         # the same upload as the nightly report: a clash with another writer is retried with a fresh read
         n = upload(files, cfg.report_repo, cfg.report_branch, token, day="live")

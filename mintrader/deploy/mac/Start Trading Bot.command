@@ -102,6 +102,7 @@ if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
    && [[ -f "$DATA_DIR/.rider-live-2026-10-09" ]] && [[ -f "$DATA_DIR/.ian-enabled-2026-10-09" ]] \
    && [[ -f "$DATA_DIR/.lineup-2026-10-09" ]] && [[ -f "$DATA_DIR/.ian-binance-2026-10-09" ]] \
    && [[ -f "$DATA_DIR/.formula1-2026-10-09" ]] && [[ -f "$DATA_DIR/.formula1-choices-2026-10-10" ]] \
+   && [[ -f "$DATA_DIR/.lab-2026-10-11" ]] \
    && [[ ! -f "$DATA_DIR/.restart-pending" ]]; then
   say ""
   say "  ${GREEN}It is already running.${RESET} Checking it over..."
@@ -109,6 +110,7 @@ if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
   find_native_python >/dev/null 2>&1
   prevent_idle_sleep
   show_health
+  start_lab_nightly_if_missed   # 11 Oct: tonight's lab run, if the Mac missed 23:10 (only 23:10-06:00)
   start_rider_research
   say ""
   say "  Status page :  http://127.0.0.1:$DASH_PORT"
@@ -144,6 +146,8 @@ apply_lineup
 apply_ian_binance
 apply_formula1       # 9 Oct evening: after the line-up, so on a fresh install it has the final word
 apply_formula1_choices   # 10 Oct, Aaron's four answers: right after Formula 1, and only once it is set
+apply_lab_2026_10_11     # 11 Oct: the strategy lab (practice only, no live path): its folder, data/lab.json on PAPER, its nightly
+install_lab_icon         # 11 Oct: The Lab's own icon on the Desktop, placed once
 remember_restart     # 10 Oct: until the bots are restarted below, the next double-click never takes the fast path
 install_launch_agent
 install_desktop_icon
@@ -151,6 +155,7 @@ prevent_idle_sleep
 start_mt5
 start_everything
 show_health
+start_lab_nightly_if_missed   # 11 Oct: tonight's lab run, if the Mac missed 23:10 (only 23:10-06:00)
 start_rider_research
 
 step "Checking every part of it"

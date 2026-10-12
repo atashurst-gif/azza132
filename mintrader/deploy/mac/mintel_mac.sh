@@ -1326,6 +1326,42 @@ apply_formula1_choices() {
   return 0
 }
 
+# The strategy lab (11 Oct; Aaron, 10 Oct: "Build the lab ... ensure that
+# consistency stays, luck doesn't"): set up once, and the marker written only
+# when every part worked (the next double-click tries again otherwise). Its
+# folder; its settings file (data/lab.json) on PAPER when there is none -
+# practice only: the lab has no live path and cannot place an order; and its
+# nightly LaunchAgent. The watchdog starts its practice process once its first
+# night has chosen the markets. A restart is remembered so the watchdog that
+# looks after the practice process is the new one.
+LAB_MARKER_NAME=".lab-2026-10-11"
+apply_lab_2026_10_11() {
+  local marker
+  marker="$DATA_DIR/$LAB_MARKER_NAME"
+  [[ -f "$marker" ]] && return 0
+  step "The strategy lab"
+  if ! mkdir -p "$DATA_DIR/lab"; then
+    warn "Could not make $DATA_DIR/lab, so the lab is not set up yet (the next double-click tries again)."
+    return 0
+  fi
+  if [[ ! -f "$DATA_DIR/lab.json" ]]; then
+    if ! { printf '{"mode": "PAPER"}\n' > "$DATA_DIR/.lab.json.tmp" && mv -f "$DATA_DIR/.lab.json.tmp" "$DATA_DIR/lab.json"; }; then
+      rm -f "$DATA_DIR/.lab.json.tmp"
+      warn "Could not write $DATA_DIR/lab.json, so the lab is not set up yet (the next double-click tries again)."
+      return 0
+    fi
+  fi
+  if ! install_lab_agent; then
+    warn "The lab's nightly run could not be registered with macOS, so the lab is not set up yet (the next double-click tries again)."
+    return 0
+  fi
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  CODE_CHANGED="yes"                         # the watchdog restarts with the lab's practice process in its care
+  remember_restart
+  good "The strategy lab is set up: every night from 23:10 it tries ideas on old prices, then once on fresh ones, and practises the best on live prices with no money (its own icon: The Lab)"
+  return 0
+}
+
 # tnb_live_groups - the kinds of market whose Trend & Breakout orders go to
 # the account while it is on PAPER (config.json "tnb" -> "live_groups"), as
 # FX_MINOR or FX_MINOR,INDEX; empty when it is LIVE or none are set.
@@ -1858,6 +1894,54 @@ PLIST
   launchctl load "$plist" >/dev/null 2>&1 || true
 }
 
+# install_lab_agent - the strategy lab's night (11 Oct): Monday to Saturday at
+# 23:10 local time, under nice -n 19 (it only ever takes spare computer time),
+# one worker, stopping by 06:00. Its lines go to logs/lab-nightly.log. It tests
+# on stored prices and fetches old prices gently; it never places an order.
+# Returns non-zero when macOS would not take it.
+install_lab_agent() {
+  local label
+  local plist
+  local day
+  local days
+  label="com.mintel.lab"
+  plist="$HOME/Library/LaunchAgents/$label.plist"
+  mkdir -p "$HOME/Library/LaunchAgents" "$LOG_DIR" || return 1
+  days=""
+  for day in 1 2 3 4 5 6; do
+    days="$days    <dict><key>Weekday</key><integer>$day</integer><key>Hour</key><integer>23</integer><key>Minute</key><integer>10</integer></dict>
+"
+  done
+  cat > "$plist" <<PLIST || return 1
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/nice</string><string>-n</string><string>19</string>
+    <string>$VENV_DIR/bin/python</string>
+    <string>-m</string><string>mintel.lab.nightly</string>
+    <string>--config</string><string>$CONFIG</string>
+    <string>--upload</string>
+    <string>--workers</string><string>1</string>
+  </array>
+  <key>WorkingDirectory</key><string>$APP_DIR</string>
+  <key>StartCalendarInterval</key>
+  <array>
+$days  </array>
+  <key>LowPriorityIO</key><true/>
+  <key>StandardOutPath</key><string>$LOG_DIR/lab-nightly.log</string>
+  <key>StandardErrorPath</key><string>$LOG_DIR/lab-nightly.log</string>
+</dict>
+</plist>
+PLIST
+  launchctl unload "$plist" >/dev/null 2>&1
+  launchctl load "$plist" >/dev/null 2>&1
+}
+
 # ---------------------------------------------------------------- caffeine ---
 prevent_idle_sleep() {
   # Stops the Mac dozing off while it is awake and plugged in.  It cannot stop
@@ -1943,6 +2027,25 @@ install_test_ian_icon() {
   xattr -d com.apple.quarantine "$desktop/TEST-FINANCIAL-IAN.command" >/dev/null 2>&1
   mkdir -p "$DATA_DIR" && : > "$marker"
   good "TEST-FINANCIAL-IAN placed on your Desktop (tests Ian on past CME data; shows the price first)"
+}
+
+# The Lab's own icon (11 Oct): placed once, like the others, and never put
+# back after that.
+install_lab_icon() {
+  local desktop
+  local marker
+  local src
+  desktop="${1:-$HOME/Desktop}"
+  marker="$DATA_DIR/.desktop-icon-lab-placed"
+  src="$APP_DIR/deploy/mac/The Lab.command"
+  [[ -f "$marker" ]] && return 0
+  [[ -d "$desktop" && -f "$src" ]] || return 0
+  cp -f "$src" "$desktop/The Lab.command" || return 0
+  chmod +x "$desktop/The Lab.command"
+  xattr -d com.apple.quarantine "$desktop/The Lab.command" >/dev/null 2>&1
+  mkdir -p "$DATA_DIR" && : > "$marker"
+  good "The Lab placed on your Desktop (the lab's ideas in plain words; run it or pause it)"
+  return 0
 }
 
 # ------------------------------------------------------------ start / check --
@@ -2053,6 +2156,28 @@ start_everything() {
   fi
 }
 
+# start_lab_nightly_if_missed - the lab's night when the Mac was asleep or off
+# at 23:10: on a launcher run between 23:10 and 06:00 only, once the lab is set
+# up, when tonight's run has not finished and none is running (the lab's own
+# "due" answer), in the background under nice -n 19, its lines in
+# logs/lab-nightly.log as the LaunchAgent's are.
+start_lab_nightly_if_missed() {
+  local hm
+  local out
+  [[ -f "$DATA_DIR/$LAB_MARKER_NAME" ]] || return 0
+  [[ -x "$VENV_DIR/bin/python" ]] || return 0
+  hm="${MINTEL_LAB_HHMM:-$(date +%H%M)}"
+  if (( 10#$hm < 2310 && 10#$hm >= 600 )); then
+    return 0
+  fi
+  out="$(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.lab due --config "$CONFIG" 2>/dev/null)" || return 0
+  mkdir -p "$LOG_DIR"
+  ( cd "$APP_DIR" && nohup nice -n 19 "$VENV_DIR/bin/python" -m mintel.lab.nightly --config "$CONFIG" \
+      --upload --workers 1 >> "$LOG_DIR/lab-nightly.log" 2>&1 & )
+  good "The lab's night had not run yet (${out:-due}): started it in the background (nice -n 19)"
+  return 0
+}
+
 show_health() {
   step "Health"
   local waited
@@ -2118,6 +2243,10 @@ PYEOF
   for b in rider ian; do
     say "    $(bot_check "$b" | tail -1)"
   done
+  # the strategy lab in one line (practice only: it cannot place an order)
+  if [[ -d "$DATA_DIR/lab" ]]; then
+    say "    $(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.lab show --one-line --config "$CONFIG" 2>/dev/null | tail -1)"
+  fi
 }
 
 open_dashboard() {
@@ -2253,6 +2382,10 @@ stop_everything() {
   pkill -f "mintel.scalper.run --config" 2>/dev/null || true
   pkill -f "mintel.rider.run --config" 2>/dev/null || true
   pkill -f "mintel.ian.run --config" 2>/dev/null || true
+  # The strategy lab's practice process (prices only; it cannot trade). Its
+  # nightly LaunchAgent is left alone: it only tests on stored prices.
+  pkill -f "mintel.lab.practice" 2>/dev/null || true
+  rm -f "$DATA_DIR/lab.pid"
   # The retired Rapid Scalper's last report goes too (see start_everything).
   rm -f "$DATA_DIR/heartbeats/scalper.heartbeat.json"
   if [[ -f "$DATA_DIR/caffeinate.pid" ]]; then

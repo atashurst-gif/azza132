@@ -26,7 +26,11 @@ class ControlTimeOfDay(FamilyBase):
         ser = day.series
         target = uk_day_min(day.uk) + int(p["hour_uk"]) * 60
         i = day.index_at(target)
-        if i >= day.flat_i or ser.t[i] - target > 2 or i < span[0]:
+        # On a day still being traded live (practice) the newest bar is flat_i, and its entry
+        # bar is still to come, so only a finished day rules out i == flat_i (fix, 12 Oct: as
+        # written it never fired on a live day; a finished day is judged exactly as before).
+        if i >= day.i1 or (i >= day.flat_i and not day.open_ended) or ser.t[i] - target > 2 \
+                or i < span[0]:
             return []
         return [Signal(i, 1 if p["side"] == "BUY" else -1, None, "the clock")]
 

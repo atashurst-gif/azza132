@@ -11,7 +11,13 @@ The pages, all written in plain English rather than trader jargon:
   record and what to do (mintel/ops/verdicts.py), then the plan
   (docs/plan.json) - see ``render_home``. ``/?bot=<id>`` is one bot: what
   happened, the recommendation and the evidence, above its existing
-  detail (``render_bot_detail``).
+  detail (``render_bot_detail``). Since 12 Oct (the lab's showcase,
+  mintel/ops/showcase.py) "/" also shows today's standouts and what changed
+  since yesterday, and puts the bots and the lab's candidates on one ladder:
+  Real money, Practising, Binned, each row with what to do and five checks.
+* ``/lab``     - the strategy lab in full, and ``/lab?id=<id>`` one of its
+  ideas (``render_lab_board``, ``render_candidate``): read-only, from
+  data/lab/summary.json and data/lab-status.json alone.
 * ``/details`` - the full page, as the main page was until 9 Oct: is it
   running?  Is it healthy?  What is it looking at?  Every figure, the
   folded tabs and the bot buttons (``render_status``; its links stay on
@@ -2005,12 +2011,39 @@ vertical-align:middle;margin-left:6px;white-space:nowrap}
 .s-foot a{margin-right:16px;display:inline-block;margin-bottom:6px}
 .s-old{overflow-x:auto}
 .s-old table{display:block;max-width:100%;overflow-x:auto}
+.s-stage{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:6px;
+vertical-align:middle;margin-left:6px;background:#f3f4f6;color:#374151;white-space:nowrap}
+.s-checks{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1;font-size:13px}
+.s-ck{padding:1px 9px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;white-space:nowrap}
+.s-ck.ok{color:#047857}.s-ck.no{color:#b91c1c}.s-ck.run{color:#075985}.s-ck.ny{color:#9ca3af}
+.s .s-group{margin:22px 0 2px;color:#6b7280}
+.s-scout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.s-scout>h2,.s-scout>h3,.s-scout>p,.s-scout>ul{grid-column:1/-1;margin-bottom:0}
+.s-scout>h3{margin-top:8px}
+.s-pick{display:block;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;color:#111827 !important}
+.s-pick:hover{background:#f9fafb}
+.s-pick-name{font-size:16px}
+.s-cname{font-weight:600;font-size:16px}
+.s-sim{font-size:14px;color:#6b7280;text-align:right;flex:1 1 100%}
+.s-funnel{margin:22px 0 4px;padding:12px 14px;background:#f9fafb;border-radius:10px;font-size:14px;color:#374151}
+.s-funnel summary{cursor:pointer}
+.s-funnel div{margin-top:8px}
+.s-none{font-size:14px;color:#4b5563;margin:0}
+.s-changes{margin:0;padding-left:18px;font-size:14px}
+.s-changes li{margin-bottom:4px}
+.s-test{margin:0 0 20px;padding:10px 14px;border-radius:10px;background:#f3f4f6;color:#111827;font-size:15px}
+.s-lt th,.s-lt td{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid #f0f1f3;font-size:14px;
+vertical-align:top}
+.s-lt th{font-size:12px;color:#6b7280;font-weight:600}
+.s-lt pre{white-space:pre-wrap;font-size:12px;margin:0}
 @media (max-width:700px){
 .s-big{font-size:32px}
 .s-cols{grid-template-columns:1fr}
 .s-bot{grid-template-columns:1fr;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
 .s-bot:first-of-type{border-top:1px solid #e5e7eb}
 .s-nums{justify-content:flex-start;text-align:left}
+.s-scout{grid-template-columns:1fr}
+.s-sim{text-align:left}
 }
 """
 
@@ -2199,11 +2232,16 @@ def _plan_html(plan: Optional[dict], plan_error: str, verdicts: dict) -> str:
     return "".join(out)
 
 
-def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
+def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str, ladder: Optional[dict] = None) -> str:
     """One bot on the main page: name, LIVE/PAPER, the chosen period and
     Overall (real money for a LIVE bot; practice in grey, labelled, for a
     PAPER one), its trades and win rate in the period, its verdict and its
-    one-line headline. The whole row opens the bot."""
+    one-line headline. The whole row opens the bot.
+
+    ``ladder`` (``showcase.bot_ladder``, 12 Oct: the lab's showcase) adds its
+    stage after the chip and its five checks under the figures; its figures,
+    pill, chip and words stay exactly as they were. Every row says what to
+    do: the verdict's recommendation, or the ladder's word when it has none."""
     e = html.escape
     bid, label, mode = b.get("id"), str(b.get("label") or v.get("label") or ""), str(b.get("mode") or v.get("mode") or "")
     # 9 Oct evening: Trend & Breakout on PAPER with its minor currency pairs LIVE (Formula 1) is part real money:
@@ -2274,11 +2312,169 @@ def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
     chip = f'<span class="s-chip {e(str(v.get("colour") or "grey"))}">{e(str(v.get("code") or ""))}</span>'
     words = str(v.get("mode_words") or "") if mixed else mode
     pill = f'<span class="s-mode{" live" if (mode == "LIVE" or mixed) else ""}">{e(words or "-")}</span>'
+    rec = str(v.get("recommendation") or "")
+    stage = checks = ""
+    if ladder is not None:
+        stage = f'<span class="s-stage">{e(str(ladder.get("stage")))}</span>' if ladder.get("stage") else ""
+        checks = _checks_html(ladder.get("checks"))
+        rec = rec or str(ladder.get("what_to_do") or "")
     return (f'<a class="s-bot" href="/{_home_query(view, bid)}"><div><span class="s-name">{e(label)}</span>{pill}'
-            f'{chip}<div class="s-hl">{e(str(v.get("headline") or ""))}</div>'
-            + (f'<div class="s-rec"><b>What to do:</b> {e(str(v.get("recommendation")))}</div>'
-               if v.get("recommendation") else "") + '</div>'
-            f'<div class="s-nums">{"".join(figs)}</div>{extra}</a>')
+            f'{chip}{stage}<div class="s-hl">{e(str(v.get("headline") or ""))}</div>'
+            + (f'<div class="s-rec"><b>What to do:</b> {e(rec)}</div>' if rec else "") + '</div>'
+            f'<div class="s-nums">{"".join(figs)}</div>{extra}{checks}</a>')
+
+
+# ------------------------------------------------ the lab's showcase (12 Oct) --
+# Aaron, 10 Oct 2026: "Make sure everything is presented in the bot showcase really simply for me and not over the
+# top" and "each day the winners stand out and we watch them closely like scouts". The words and the rules are
+# mintel/ops/showcase.py's; these only draw them, every string escaped. The page reads data/lab/summary.json and
+# data/lab-status.json and nothing else of the lab's.
+def _checks_html(checks, synthetic: bool = False) -> str:
+    """The five check pills, in order and wording (Enough trades, Steady, Fresh
+    prices, Costs, Luck check), each with its state word and, in its title, the
+    sentence. A made-up summary keeps the words and shows TEST DATA in place of
+    the sentence and the counts."""
+    from . import showcase as S
+    e = html.escape
+    pills = []
+    for c in S.ordered_checks(checks):
+        title = S.TEST_DATA if synthetic else S.pounds(c.get("text") or "")
+        pills.append(f'<span class="s-ck {S.CHECK_CLASS.get(c["state"], "ny")}" title="{e(title)}">'
+                     f'{e(c["label"])}: {e(S.check_word(c, synthetic))}</span>')
+    return f'<div class="s-checks">{"".join(pills)}</div>'
+
+
+def _lab_href(cid) -> str:
+    """/lab?id=<the id>, quoted and escaped."""
+    from urllib.parse import quote
+    return html.escape(f"/lab?id={quote(str(cid), safe='')}")
+
+
+def _lab_chip(c: dict) -> str:
+    chip = c.get("chip") if isinstance(c.get("chip"), dict) else {}
+    colour = str(chip.get("colour") or "grey")
+    from .showcase import CHIP_CLASSES
+    colour = colour if colour in CHIP_CLASSES else "grey"
+    code = str(chip.get("code") or "")
+    return f'<span class="s-chip {colour}">{html.escape(code)}</span>' if code else ""
+
+
+def _lab_sims(c: dict) -> str:
+    """A candidate's computer tests, as 'On old prices (computer test): +£312.00 over
+    143 trades' - simulated, never called money made."""
+    from . import showcase as S
+    e = html.escape
+    tests = c.get("tests") if isinstance(c.get("tests"), dict) else {}
+    out = []
+    for kind, lead in (("past", "On old prices (computer test)"), ("fresh", "Once on prices it had never seen")):
+        t = tests.get(kind) if isinstance(tests.get(kind), dict) else {}
+        n, net = S._int(t.get("trades")), S._num(t.get("net_gbp"))
+        if n is not None and net is not None:
+            out.append(f'<div class="s-sim">{e(lead)}: {e(S.money(net))} over {e(S._plural(n, "trade"))}</div>')
+    return "".join(out)
+
+
+def _cand_row(r: dict) -> str:
+    """One lab candidate on the ladder, in the same grid as a bot's row: its name,
+    chip and stage, its headline, What to do, its practice figures in grey (or
+    its computer tests, or "Not yet" when it has no record), and its five checks.
+    The whole row opens its page (/lab?id=...)."""
+    from . import showcase as S
+    e = html.escape
+    c = r.get("candidate") or {}
+    syn = bool(r.get("synthetic"))
+    stage = str(r.get("stage") or "")
+    head = S.TEST_DATA if syn else S.pounds(c.get("headline") or "")
+    f = c.get("figures") if isinstance(c.get("figures"), dict) else {}
+    n = S._int(f.get("trades"))
+
+    def fig(k, val):
+        return f'<div class=s-prac><div class="s-k">{e(k)}</div><div class="s-m">{_gbp_html(val, "GBP")}</div></div>'
+    if syn:
+        nums = f'<div class="s-sim">{e(S.TEST_DATA)}</div>'
+    elif stage in (S.PRACTICE, S.READY_FOR_LIVE, S.LIVE_TRIAL, S.PROVEN):
+        # the lab's money is always practice (it has no live path): grey and labelled, whatever the stage
+        if not n:
+            nums = '<div class=s-prac><div class="s-k">Practice</div><div class="s-m0">Not yet</div></div>'
+        else:
+            w = S._int(f.get("wins")) or 0
+            nums = (fig("This week (practice)", f.get("week_gbp")) + fig("Overall (practice)", f.get("overall_gbp"))
+                    + f'<div class=s-prac><div class="s-k">Trades</div><div class="s-m0">'
+                    f'{e(S._plural(n, "practice trade"))}, {round(100.0 * w / n):.0f}% won</div></div>')
+    else:
+        nums = _lab_sims(c) or '<div class="s-sim">Not yet</div>'
+    return (f'<a class="s-bot" href="{_lab_href(r.get("id"))}"><div>'
+            f'<span class="s-cname">{e(str(r.get("name")))}</span>{_lab_chip(c)}'
+            f'<span class="s-stage">{e(stage)}</span><div class="s-hl">{e(head)}</div>'
+            f'<div class="s-rec"><b>What to do:</b> {e(str(r.get("what_to_do") or ""))}</div></div>'
+            f'<div class="s-nums">{nums}</div>{_checks_html(r.get("checks"), syn)}</a>')
+
+
+def _scout_html(picks: list, moved: list, view: Optional[dict]) -> str:
+    """Today's standouts (``showcase.standouts``: at most 3, never padded) and
+    what changed since yesterday (at most 5 lines)."""
+    from . import showcase as S
+    e = html.escape
+    out = []
+    for p in picks:
+        r = p["row"]
+        href = f"/{_home_query(view, r['id'])}" if r.get("kind") == "bot" else _lab_href(r.get("id"))
+        out.append(f'<a class="s-pick" href="{href}"><b class="s-pick-name">{e(str(r.get("name")))}</b> '
+                   f'<span class="s-stage">{e(str(r.get("stage")))}</span><div class="s-hl">Why: {e(p["why"])}</div>'
+                   f'<div class="s-rec"><b>Next:</b> {e(str(p.get("next") or ""))}</div></a>')
+    picks_html = "".join(out) or f'<p class="s-none">{e(S.NO_STANDOUTS)}</p>'
+    if moved:
+        lines = "".join(f'<li>{e(S.uk_time(m.get("when"), "%a %d %b %H:%M") + " UK: " if m.get("when") else "")}'
+                        f'{e(m["text"])}</li>' for m in moved)
+        moved_html = f'<ul class="s-changes">{lines}</ul>'
+    else:
+        moved_html = f'<p class="s-none">{e(S.NOTHING_MOVED)}</p>'
+    return (f'<section class="s-card s-scout"><h2>Today\'s standouts</h2>{picks_html}'
+            f'<h3>What changed since yesterday</h3>{moved_html}</section>')
+
+
+def _funnel_html(lab: dict) -> str:
+    """The lab in one folded line on "/": the funnel, last night and the prices;
+    open it for the bench, what was binned this week and the link to /lab. Or,
+    plainly, that it has not run, could not be read, or is still collecting."""
+    from . import showcase as S
+    e = html.escape
+    now = lab.get("now") or utcnow()
+    body = []
+    if lab.get("state") == S.LAB_NONE:
+        body.append("<div>Each night (23:10, Monday to Saturday) it will try trading ideas on old prices, then once on "
+                    "prices they have never seen, then on live prices with no money - and say plainly which earned a "
+                    "place.</div>")
+    elif lab.get("state") == S.LAB_READY and not lab.get("synthetic"):
+        bench = [c for c in S.candidates_of(lab) if c.get("stage") == S.ON_THE_BENCH]
+        body.append("<div><b>On the bench:</b> " + (", ".join(
+            f'<a href="{_lab_href(c.get("id"))}">{e(str(c.get("name") or c.get("id")))}</a>' for c in bench)
+            or "none") + "</div>")
+        week = [b for b in (lab.get("summary") or {}).get("binned_recent") or ()
+                if isinstance(b, dict) and S.binned_lately({"stage_since": b.get("when")}, now)]
+        body.append("<div><b>Binned this week:</b> " + ("; ".join(
+            f'<a href="{_lab_href(b.get("id"))}">{e(str(b.get("name") or b.get("id")))}</a> - '
+            f'{e(S.pounds(b.get("reason") or ""))}' for b in week) or "none") + "</div>")
+    body.append('<div><a href="/lab">The lab in full</a></div>')
+    return (f'<details class="s-funnel" id="lab-funnel"><summary>{e(str(lab.get("line") or ""))}</summary>'
+            f'{"".join(body)}</details>')
+
+
+def _showcase_html(entries: list, lab: dict) -> str:
+    """The bots and the lab's candidates together, in three groups - Real money,
+    Practising, Binned - with the lab's funnel folded between the last two and
+    the stage words explained underneath."""
+    from . import showcase as S
+    e = html.escape
+    by_row = {id(info): row for info, row in entries}
+    parts = [f'<section class="s-card"><h2>{e(S.LADDER_TITLE, quote=False)}</h2>']
+    for name, rows in S.grouped([info for info, _row in entries]):
+        inner = "".join(by_row[id(r)] for r in rows) or '<p class="s-none">Nothing here just now.</p>'
+        parts.append(f'<h3 class="s-group">{e(name)}</h3><div class="s-rows">{inner}</div>')
+        if name == S.PRACTISING:
+            parts.append(_funnel_html(lab))
+    parts.append(f'<p class="s-src">{e(S.STAGE_NOTE)}</p></section>')
+    return "".join(parts)
 
 
 def _home_foot(view: Optional[dict], updated) -> str:
@@ -2286,7 +2482,7 @@ def _home_foot(view: Optional[dict], updated) -> str:
     when = _uk(str(updated), "%H:%M:%S") if updated else ""
     return (f'<footer class="s-foot"><a href="/details{q}">All the technical detail</a>'
             f'<span>Own pages: </span><a href="/rider">Rapid Momentum Rider</a><a href="/ian">Financial Ian</a>'
-            f'<a href="/health">Health (for the watchdog)</a>'
+            f'<a href="/lab">The lab</a><a href="/health">Health (for the watchdog)</a>'
             f'<div>{("Figures from " + html.escape(when) + " UK. ") if when else ""}This page refreshes itself every '
             f'10 seconds and keeps the period you chose.</div></footer>')
 
@@ -2319,34 +2515,71 @@ def _home_page(title: str, body: str, old_css: bool = False) -> str:
 
 
 def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[dict] = None,
-                plan_error: str = "") -> str:
-    """The main page: the period buttons, the account, one row per active
-    bot with its verdict and what to do, then the plan - the bots first, so
-    they are on the first screen. Nothing else (the scanner, the tiles, the
-    notes, the "Now:" lines are on each bot's own view and /details).
-    Renders whatever is missing as missing; everything is escaped."""
+                plan_error: str = "", deals=None, lab: Optional[dict] = None) -> str:
+    """The main page: the period buttons, the account, today's standouts and
+    what changed since yesterday, then the bots and the lab's candidates on
+    one ladder - Real money, Practising (the lab's funnel folded under it),
+    Binned - each row with its verdict or stage, what to do and its five
+    checks, then the plan. Nothing else (the scanner, the tiles, the notes,
+    the "Now:" lines are on each bot's own view and /details).
+
+    12 Oct (the lab's showcase): the bots' rows keep every figure and word
+    they had; the lab never enters the account. ``deals``: the account's deal
+    rows (Formula 1's trades for its checks); ``lab``: ``showcase.load_lab``
+    (read from the data folder when not given). Renders whatever is missing
+    as missing; everything is escaped."""
+    from . import showcase as S
     from .standing import ACTIVE_BOTS
     top = top or {}
     sd = snap.get("standing") or {}
     cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
     view = top.get("sel") or top.get("period") or {"key": "today"}
+    now = to_utc(top["now"]) if isinstance(top.get("now"), dt.datetime) else utcnow()
+    data_dir = str(top.get("data_dir") or "")
     head = (f'<div class="s-head"><h1>Trading bots</h1><span class="s-upd">'
             f'{html.escape(_uk(str(snap.get("updated") or ""), "%a %d %b, %H:%M UK"))}</span></div>')
+    if lab is None:
+        lab = S.load_lab(data_dir, now)
+    focus = (plan or {}).get("focus") if isinstance((plan or {}).get("focus"), dict) else {}
+    try:
+        from .verdicts import FORMULA1_JUDGE_AFTER
+        judge = int(focus.get("judge_after") or FORMULA1_JUDGE_AFTER)
+    except (TypeError, ValueError):
+        judge = 20
     by_id = {b.get("id"): b for b in sd.get("bots") or () if isinstance(b, dict)}
-    rows = []
+    entries = []                                         # (its place on the ladder, its row)
     for bid, label in ACTIVE_BOTS:
         v = verdicts.get(bid) or {"label": label, "code": "", "headline": ""}
         b = by_id.get(bid) or {"id": bid, "label": label, "mode": v.get("mode") or ""}
         try:
-            rows.append(_bot_row(b, v, top, view, cur))
+            info = S.bot_ladder(bid, v, sd=sd, top=top, data_dir=data_dir, now=now, deals=deals, judge_after=judge)
+        except Exception as exc:                             # never a reason to fail the page
+            log.warning("ladder of %s: %s", bid, exc)
+            info = {"kind": "bot", "id": bid, "name": label, "stage": S.bot_stage(v), "checks": [],
+                    "what_to_do": "Nothing until it can be worked out - it comes back on its own.",
+                    "verdict": str(v.get("code") or ""), "trades": None, "synthetic": False}
+        try:
+            row = _bot_row(b, v, top, view, cur, info)
         except Exception as exc:                             # never a reason to fail the page
             log.warning("row of %s: %s", bid, exc)
-            rows.append(f'<div class="s-bot">{html.escape(label)}: could not be shown just now '
-                        f'({html.escape(str(exc))}).</div>')
-    bots = (f'<section class="s-card"><h2>The bots - tap one for what happened, what to do and the evidence</h2>'
-            f'{"".join(rows)}</section>')
+            row = (f'<div class="s-bot">{html.escape(label)}: could not be shown just now '
+                   f'({html.escape(str(exc))}).<div class="s-rec"><b>What to do:</b> Nothing - it comes back on its '
+                   f'own.</div></div>')
+        entries.append((info, row))
+    for info in S.ladder_candidates(lab, now):
+        try:
+            entries.append((info, _cand_row(info)))
+        except Exception as exc:                             # never a reason to fail the page
+            log.warning("lab row of %s: %s", info.get("id"), exc)
+    try:
+        scout = _scout_html(S.standouts([info for info, _row in entries], now), S.changes(lab, data_dir, now), view)
+    except Exception as exc:                                 # never a reason to fail the page
+        log.warning("standouts: %s", exc)
+        scout = (f'<section class="s-card s-scout"><h2>Today\'s standouts</h2><p class="s-none">They could not be '
+                 f'worked out just now ({html.escape(str(exc))}).</p></section>')
     body = (head + _home_problem(snap) + render_home_periods(view, "all") + _home_account(snap, top, cur)
-            + bots + _plan_html(plan, plan_error, verdicts) + _home_foot(view, snap.get("updated")))
+            + scout + _showcase_html(entries, lab) + _plan_html(plan, plan_error, verdicts)
+            + _home_foot(view, snap.get("updated")))
     return _home_page("Trading bots", body)
 
 
@@ -2405,6 +2638,207 @@ def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, 
     body = (head + _home_problem(snap) + render_home_periods(view, bot) + box
             + f'<div class="s-old"><h2>Its detail</h2>{quiet}{old}</div>' + _home_foot(view, snap.get("updated")))
     return _home_page(label, body, old_css=True)
+
+
+def _lab_foot() -> str:
+    return ('<footer class="s-foot"><a href="/">All bots</a><a href="/lab">The lab</a>'
+            '<div>This page only reads the lab\'s summary (data/lab/summary.json) and its practice status '
+            '(data/lab-status.json); it changes nothing. It refreshes itself every 10 seconds.</div></footer>')
+
+
+def _lab_head(now: dt.datetime, back: str = "/", back_words: str = "All bots") -> str:
+    return (f'<div class="s-head"><a href="{back}">&larr; {html.escape(back_words)}</a><span class="s-upd">'
+            f'{html.escape(_uk(now.isoformat(), "%a %d %b, %H:%M UK"))}</span></div>')
+
+
+def _lab_test_banner(lab: dict) -> str:
+    from . import showcase as S
+    if not lab.get("synthetic"):
+        return ""
+    return (f'<p class="s-test"><b>{html.escape(S.TEST_DATA)}.</b> This summary was built from made-up prices to '
+            f'check that the lab works; nothing on this page is a result.</p>')
+
+
+def render_lab_board(data_dir, now: Optional[dt.datetime] = None, lab: Optional[dict] = None) -> str:
+    """/lab - the lab in full, read-only from data/lab/summary.json and
+    data/lab-status.json: the prices it holds, the stretch it keeps back, the
+    funnel, every family (ideas, passes, whether it looks to be fitting
+    noise), the clock-trade control's pass rate, the one honest line about how
+    many ideas were tried, the ideas on the ladder (the bench and the binned
+    folded), and last night's run. Tables only here, inside .s-old."""
+    from . import showcase as S
+    e = html.escape
+    now = to_utc(now) if now is not None else utcnow()
+    lab = lab or S.load_lab(data_dir, now)
+    head = _lab_head(now) + '<h1 style="margin-bottom:16px">The lab</h1>'
+    state = lab.get("state")
+    sm = lab.get("summary") or {}
+    syn = bool(lab.get("synthetic"))
+    parts = [head, _lab_test_banner(lab)]
+    if state in (S.LAB_NONE, S.LAB_BROKEN):
+        parts.append(f'<section class="s-card"><p class="s-aim">{e(str(lab.get("line")))}</p>'
+                     f'<p class="s-small">{e(S.practice_now_line(lab, now))}</p></section>')
+        return _home_page("The lab", "".join(parts) + _lab_foot())
+    line = str(lab.get("line") or "") if state != S.LAB_READY else S.funnel_line(sm, now, prices=False)
+    if syn:     # made-up prices: no research figure is shown, only that it is test data
+        where = [line, S.coverage_line(sm), f"Ideas tried and fresh looks: {S.TEST_DATA}.", S.SMALL_EDGE,
+                 S.practice_now_line(lab, now)]
+    else:
+        where = [line, S.coverage_line(sm), S.fresh_line(sm), S.honest_line(sm), S.SMALL_EDGE,
+                 S.practice_now_line(lab, now)]
+    f = sm.get("funnel") if isinstance(sm.get("funnel"), dict) else {}
+    if S._int(f.get("waiting_for_calendar")):
+        where.append(f"{S._count(f.get('waiting_for_calendar'))} ideas wait for enough news history to test.")
+    parts.append('<section class="s-card"><h2>Where it stands</h2>'
+                 + "".join(f'<p class="s-small">{e(x)}</p>' for x in where if x) + '</section>')
+    if state == S.LAB_READY:
+        rows = [S.candidate_ladder(c, syn) for c in S.candidates_of(lab)]
+        live = [r for r in rows if r["stage"] in (S.PROVEN, S.LIVE_TRIAL, S.READY_FOR_LIVE, S.PRACTICE)]
+        bench = [r for r in rows if r["stage"] == S.ON_THE_BENCH]
+        binned = [r for r in rows if r["stage"] == S.BINNED]
+        ladder = []
+        for name, rs in S.grouped(live):
+            if rs:
+                ladder.append(f'<h3 class="s-group">{e(name)}</h3><div class="s-rows">'
+                              + "".join(_cand_row(r) for r in rs) + '</div>')
+        ladder.append(f'<details class="s-more" id="lab-bench"><summary>On the bench ({len(bench)})</summary>'
+                      f'<div class="s-rows">{"".join(_cand_row(r) for r in bench) or "<p class=s-none>None.</p>"}</div>'
+                      f'</details>')
+        seen = {r["id"] for r in binned}
+        extra = [b for b in sm.get("binned_recent") or () if isinstance(b, dict) and str(b.get("id")) not in seen]
+        lis = "".join(
+            f'<li><a href="{_lab_href(r["id"])}">{e(r["name"])}</a> - '
+            f'{e(S.TEST_DATA if r["synthetic"] else S.pounds((r.get("candidate") or {}).get("headline") or "binned"))}'
+            f'</li>' for r in binned)
+        lis += "".join(f'<li><a href="{_lab_href(b.get("id"))}">{e(str(b.get("name") or b.get("id")))}</a> - '
+                       f'binned {e(S.day_words(b.get("when")))}: '
+                       f'{e(S.TEST_DATA if syn else S.pounds(b.get("reason") or ""))}</li>' for b in extra)
+        ladder.append(f'<details class="s-more" id="lab-binned"><summary>Binned lately ({len(binned) + len(extra)})'
+                      f'</summary><ul class="s-ev">{lis or "<li>None.</li>"}</ul></details>')
+        parts.append(f'<section class="s-card"><h2>Its ideas on the ladder</h2>{"".join(ladder)}'
+                     f'<p class="s-src">{e(S.STAGE_NOTE)}</p></section>')
+        fams = [x for x in sm.get("families") or () if isinstance(x, dict)]
+
+        def fam_cells(x: dict) -> tuple:
+            """(passed, PBO, fitting noise?) - TEST DATA for made-up prices; a family whose grid is
+            not finished on this stretch is not graded yet (its pass count and PBO come at the end)."""
+            if syn:
+                return S.TEST_DATA, S.TEST_DATA, S.TEST_DATA
+            if not x.get("complete"):
+                tried = f"not graded yet ({S._count(x.get('tested'))} of {S._count(x.get('n'))} tried)"
+                return tried, "-", "-"
+            return (S._count(x.get("past_passed")),
+                    "n/a" if S._num(x.get("pbo")) is None else format(float(x.get("pbo")), ".2f"),
+                    "Yes - nothing forwarded" if x.get("fits_noise") else "No")
+
+        trs = "".join(
+            f'<tr><td>{e(str(x.get("label") or x.get("code") or ""))}</td><td>{e(S._count(x.get("n")))}</td>'
+            + "".join(f'<td>{e(c)}</td>' for c in fam_cells(x))
+            + f'<td>{e(S.family_note(x))}</td></tr>' for x in fams)
+        parts.append('<section class="s-card"><h2>The families of ideas</h2><div class="s-old"><table class="s-lt">'
+                     '<tr><th>Family</th><th>Ideas</th><th>Passed the past test</th><th>Chance it is fitting noise '
+                     '(PBO; over 0.35 holds it back)</th><th>Fitting noise?</th><th>Note</th></tr>'
+                     f'{trs or "<tr><td colspan=6>None yet.</td></tr>"}</table></div>'
+                     f'<p class="s-small">{e(S.TEST_DATA if syn else S.control_line(sm))}</p></section>')
+    nightly = sm.get("nightly") if isinstance(sm.get("nightly"), dict) else {}
+    if nightly:
+        kv = [("Run of", S.day_words(nightly.get("date"), True)),
+              ("Started", S.uk_time(S._when(nightly.get("started")), "%a %d %b %H:%M UK")),
+              ("Finished", S.uk_time(S._when(nightly.get("finished")), "%a %d %b %H:%M UK") or "not yet"),
+              ("Last step", str(nightly.get("step") or "-")),
+              ("Ideas tested", S.TEST_DATA if syn else S._count(nightly.get("tested"))),
+              ("Fresh looks", S.TEST_DATA if syn else S._count(nightly.get("fresh"))),
+              ("Took", S.TEST_DATA if syn else (S.took_words(nightly.get("seconds")) or "-")),
+              ("Seconds an idea", S.TEST_DATA if syn else S._count(nightly.get("seconds_per_candidate"))),
+              ("Ran out of time", "yes" if nightly.get("deadline_hit") else "no"),
+              ("Note", str(nightly.get("note") or "-"))]
+        tail = nightly.get("log_tail") if isinstance(nightly.get("log_tail"), list) else []
+        missed = S.run_missed(nightly, now)
+        parts.append('<section class="s-card"><h2>Last night\'s run</h2>'
+                     + ('<p class="s-flag" style="margin-top:0"><b>Last night\'s run: missed.</b> The next run catches '
+                        'up.</p>' if missed else "")
+                     + '<div class="s-old"><table class="s-lt">'
+                     + "".join(f'<tr><th>{e(k)}</th><td>{e(v or "-")}</td></tr>' for k, v in kv)
+                     + (f'<tr><th>Its log</th><td><pre>{e(chr(10).join(str(x) for x in tail[-20:]))}</pre></td></tr>'
+                        if tail and not syn else "")
+                     + '</table></div></section>')
+    return _home_page("The lab", "".join(parts) + _lab_foot())
+
+
+def render_candidate(data_dir, cid: str, now: Optional[dt.datetime] = None, lab: Optional[dict] = None) -> str:
+    """/lab?id=<id> - one idea: its name, stage and chip, its headline, What
+    happened, What to do, "Is it luck? The five checks" (each sentence with its
+    numbers and its line; a cross says why), its rules in plain words, its
+    story, its practice trades and the source of every figure. An id the
+    summary does not hold: "No such idea." """
+    from . import showcase as S
+    e = html.escape
+    now = to_utc(now) if now is not None else utcnow()
+    lab = lab or S.load_lab(data_dir, now)
+    head = _lab_head(now, "/lab", "The lab")
+    c = S.find_candidate(lab, str(cid or "")) if lab.get("state") in (S.LAB_READY, S.LAB_COLLECTING) else None
+    if c is None:
+        why = "" if lab.get("state") in (S.LAB_READY, S.LAB_COLLECTING) else f' {e(str(lab.get("line") or ""))}'
+        return _home_page("The lab", head + f'<section class="s-card"><p class="s-aim">{e(S.NO_SUCH_IDEA)}</p>'
+                                            f'<p class="s-small">{why.strip()}</p></section>' + _lab_foot())
+    syn = bool(lab.get("synthetic"))
+    r = S.candidate_ladder(c, syn)
+    name = str(r["name"])
+    headline = S.TEST_DATA if syn else S.pounds(c.get("headline") or "")
+    marks = {"Passed": "&#10003;", "Failed": "&#10007;", "Running": "&hellip;"}
+    checks = "".join(
+        f'<li><b>{marks.get(k["state"], "&ndash;")} {e(k["label"])}: {e(S.check_word(k, syn))}</b>'
+        f'<div>{e(S.TEST_DATA if syn else S.pounds(k.get("text") or "Not worked out yet."))}</div></li>'
+        for k in r["checks"])
+    words = "".join(f"<li>{e(str(w))}</li>" for w in (c.get("words") if isinstance(c.get("words"), list) else [])
+                    if w)
+    story = "".join(
+        f'<li><b>{e(S.day_words(s.get("when"), True) or "-")}: {e(str(s.get("from") or "-"))} &rarr; '
+        f'{e(str(s.get("to") or "-"))}</b><div>{e(S.TEST_DATA if syn else S.pounds(s.get("why") or ""))}</div></li>'
+        for s in (c.get("story") if isinstance(c.get("story"), list) else []) if isinstance(s, dict))
+    rows = [t for t in (c.get("practice_trades") if isinstance(c.get("practice_trades"), list) else [])
+            if isinstance(t, dict)]
+
+    def side(v) -> str:
+        return {1: "buy", -1: "sell"}.get(S._int(v), str(v or ""))
+    rows.sort(key=lambda t: str(t.get("closed_utc") or t.get("closed") or ""), reverse=True)
+    st = lab.get("status") if isinstance(lab.get("status"), dict) else {}
+    open_now = [p for p in (st.get("open_positions") if isinstance(st.get("open_positions"), list) else [])
+                if isinstance(p, dict) and str(p.get("candidate_id") or p.get("id") or "") == str(c.get("id"))]
+    if syn:
+        trades = f'<p>{e(S.TEST_DATA)}</p>'
+    elif rows:
+        trades = ('<div class="s-old"><table class="s-lt"><tr><th>Closed (UK)</th><th>Market</th><th>Side</th>'
+                  '<th>After costs (practice)</th><th>Exit</th></tr>'
+                  + "".join(f'<tr><td>{e(S.uk_time(S._when(t.get("closed_utc") or t.get("closed")), "%a %d %b %H:%M"))}'
+                            f'</td><td>{e(str(t.get("symbol") or ""))}</td>'
+                            f'<td>{e(side(t.get("side")))}</td>'
+                            f'<td>{_gbp_html(t.get("net_gbp"), "GBP")}</td><td>{e(str(t.get("exit_reason") or ""))}'
+                            f'</td></tr>' for t in rows[:50])
+                  + '</table></div>')
+    elif S._int((c.get("figures") or {}).get("trades")):
+        trades = (f'<p>Its {e(S._plural(S._int(c["figures"]["trades"]), "practice trade"))} are in the lab\'s own '
+                  f'record (data/lab/lab.sqlite, practice_trades); this summary does not list them.</p>')
+    else:
+        trades = "<p>No practice trades on record yet.</p>"
+    if open_now and not syn:
+        trades += "<p>Open now (practice): " + "; ".join(
+            f'{e(str(p.get("symbol") or ""))} {e(side(p.get("side")))} since '
+            f'{e(S.uk_time(S._when(p.get("opened_utc")), "%H:%M UK"))}' for p in open_now) + "</p>"
+    sources = [str(x) for x in (c.get("sources") if isinstance(c.get("sources"), list) else []) if x]
+    written = S.uk_time(S._when((lab.get("summary") or {}).get("written_utc")), "%a %d %b %H:%M UK")
+    sources.append(f"data/lab/summary.json, written {written or '-'}")
+    body = (head + _lab_test_banner(lab)
+            + f'<section class="s-card s-v"><h1>{e(name)}<span class="s-stage">{e(r["stage"] or "-")}</span>'
+              f'{_lab_chip(c)}</h1><p class="s-hl" style="font-size:16px">{e(headline)}</p>'
+            + "<h2>What happened</h2>" + "".join(f"<p>{e(x)}</p>" for x in S.what_happened(c, syn))
+            + f'<h2>What to do</h2><p>{e(r["what_to_do"])}</p>'
+            + f'<h2>Is it luck? The five checks</h2><ul class="s-ev">{checks}</ul>'
+            + f'<h2>Its rules in plain words</h2><ul>{words or "<li>Not given.</li>"}</ul>'
+            + f'<h2>Its story</h2><ul class="s-ev">{story or "<li>Nothing on record yet.</li>"}</ul>'
+            + f'<h2>Its trades</h2>{trades}'
+            + '<h2>Sources</h2><ul class="s-ev">' + "".join(f"<li>{e(x)}</li>" for x in sources) + "</ul></section>")
+    return _home_page(name, body + _lab_foot())
 
 
 def render_results(results: dict) -> str:
@@ -3239,7 +3673,19 @@ class _Handler(BaseHTTPRequestHandler):
             return render_bot_detail(snap, headline, bot,
                                      verdicts.get(bot) or {"label": dict(BOTS).get(bot, bot), "mode": mode},
                                      plan, verdicts)
-        return render_home(snap, headline, verdicts, plan, plan_error)
+        return render_home(snap, headline, verdicts, plan, plan_error, deals=deals)
+
+    def _lab_page(self) -> str:
+        """/lab: the lab in full; /lab?id=<id>: one candidate. Read-only, from
+        data/lab/summary.json and data/lab-status.json."""
+        from urllib.parse import parse_qs, urlparse
+        q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+        with self.state.lock:
+            data_dir = self.state.data_dir
+        now = self.state.now()
+        if "id" in q:
+            return render_candidate(data_dir, (q.get("id") or [""])[0], now)
+        return render_lab_board(data_dir, now)
 
     def do_GET(self):
         try:
@@ -3266,6 +3712,8 @@ class _Handler(BaseHTTPRequestHandler):
                            "application/json")
             elif self.path.startswith("/details"):
                 self._send(self._details_page(snap))
+            elif self.path.split("?", 1)[0].rstrip("/") == "/lab":
+                self._send(self._lab_page())
             else:
                 self._send(self._home_page(snap))
         except Exception as exc:      # never let the page kill the process

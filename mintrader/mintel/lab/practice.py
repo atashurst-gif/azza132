@@ -1,0 +1,735 @@
+"""Practice: the roster's ideas on live prices, with no money.
+
+    python -m mintel.lab.practice --config data/config.json
+
+Started and kept alive by the watchdog while ``data/lab.json`` does not say OFF
+(nice 10). It reads prices through ``prices.PriceFeed`` and nothing else, so it
+CANNOT place an order; its trades are rows in ``data/lab/lab.sqlite`` marked
+PRACTICE and nowhere else.
+
+Every minute, three seconds past it:
+
+* for each market on the roster (at most 12) the last three one-minute bars are
+  read (a missed stretch is read back), and each finished bar goes through the
+  same feature code the past tests use (``features.LiveSeries``);
+* every open practice position is moved through each finished bar by the
+  simulator's own ``step`` (the stop first, then the target, the trail, the time
+  and the 21:55 UK flat); a feed silent for more than 5 minutes with a position
+  open closes it at the first bar back (FEED_GAP);
+* each idea's family looks at the newest finished bar; a signal is filled on ONE
+  ``ticks`` call for all the markets that want one, at the real ask (buys) or bid
+  (sells) plus slippage, under the same caps as the past test (one position per
+  market, three open per idea, a five-bar pause after an exit, six entries per
+  market per UK day) and the lab's own: at most 12 open across the lab.
+
+Nothing on a UK Saturday or Sunday. A restart resumes: open positions come back
+from ``practice_open`` (and the small ``practice_state.json`` beside it), and the
+bars missed while it was down are read back and walked through.
+
+Every 30 seconds it writes ``data/lab-status.json`` (the watchdog's sign of
+life: the lab writes NO heartbeat file) and refreshes the practice figures in
+``data/lab/summary.json``.
+
+Aaron, 10 Oct 2026: "each day the winners stand out and we watch them closely
+like scouts".
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import sys
+import time
+from dataclasses import dataclass, field
+from typing import Callable, Optional, Sequence
+
+from ..broker.base import TF
+from ..clock import TZ_LONDON
+from . import (COOLDOWN_BARS, FEED_GAP_MINUTES, MAX_ENTRIES_PER_DAY, MAX_OPEN_PER_CANDIDATE,
+               NEWS_AVOID_MINUTES, PRACTICE, READY_FOR_LIVE, SLIP_MIN_POINTS, SLIP_SPREAD_SHARE, UTC,
+               LabPaths, LabSettings, atomic_write_json, day_min, epoch_min, iso_utc, minute_to_dt,
+               utc_stamp)
+from . import features as FEAT
+from . import sim
+from .candidate import family_of
+from .cut import load_cut
+from .ledger import LabLedger
+from .report import refresh_practice
+from .stages import cand_of
+from .status import STATUS_EVERY_S, pid_alive, write_status
+from .store import BarStore, bar_row, flat_min, load_universe
+
+TICKET_BASE = 970_000_001
+MAX_OPEN_LAB = 12
+MAX_SYMBOLS = 12
+PRIME_BARS = max(FEAT.TAIL_BARS.values())     # enough warm-up for the slowest feature (EMA200 on H1)
+READ_BACK_MAX = 3000                          # bars read back after a gap (one page)
+RESET_AT = 2 * PRIME_BARS                     # a series this long is rebuilt at the UK day's turn
+AT_SECOND = 3                                 # the minute's work starts 3 s past the minute
+
+
+def _uk_date(m: int) -> str:
+    return minute_to_dt(m).astimezone(TZ_LONDON).date().isoformat()
+
+
+def _iso_min(stamp: str) -> int:
+    t = dt.datetime.fromisoformat(stamp)
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=UTC)
+    return epoch_min(t)
+
+
+@dataclass
+class Open:
+    """One open practice position and what is needed to finish its record."""
+    cid: str
+    symbol: str
+    pos: object                     # sim.Pos, prices in points
+    day: str                        # the UK day it opened on
+    signal_bar_utc: str
+    tick_json: str
+    last_t: int                     # the last bar it was walked through (epoch minutes)
+
+
+@dataclass
+class Slot:
+    """One idea on the roster."""
+    cid: str
+    name: str
+    cand: object
+    family: object
+    params: dict
+    symbols: list
+    stage: str
+    next_ok: dict = field(default_factory=dict)       # symbol -> first minute a signal may fire
+    entries: dict = field(default_factory=dict)       # "symbol|uk day" -> entries so far
+
+
+class Practice:
+    """The practice engine, one minute at a time. ``feed`` answers ``bars`` and
+    ``ticks`` (a ``prices.PriceFeed``, or a stand-in in the tests); ``now_fn`` is
+    the wall clock."""
+
+    def __init__(self, paths: LabPaths, feed, *, settings: Optional[LabSettings] = None,
+                 ledger: Optional[LabLedger] = None, calendar=None,
+                 now_fn: Optional[Callable[[], dt.datetime]] = None,
+                 log: Optional[Callable[[str], None]] = None, prime_bars: int = PRIME_BARS):
+        self.paths = paths
+        self.feed = feed
+        self.settings = settings or LabSettings.load(paths.data_dir)
+        self.ledger = ledger or LabLedger(paths.sqlite)
+        self.store = BarStore(paths)
+        self.calendar = calendar
+        self.now_fn = now_fn or (lambda: dt.datetime.now(UTC))
+        self._log = log or (lambda msg: print(msg, flush=True))
+        self.prime_bars = int(prime_bars)
+        self.universe = {e.name: e for e in load_universe(paths)}
+        self.insts: dict = {}
+        self.series: dict = {}
+        self.slots: dict = {}
+        self.open: dict = {}                          # (cid, symbol) -> Open
+        self.done_t: dict = {}                        # symbol -> last bar walked through
+        self.last_bar: dict = {}                      # symbol -> newest finished bar seen (minute)
+        self.roster_key = None
+        self.day = ""
+        self.feed_ok = True
+        self.last_error = ""
+        self.skipped: dict = {}
+        self.source = "SYNTHETIC" if getattr(feed, "synthetic", False) else "bridge"
+        self._news_days: Optional[set] = None
+        self._restored = False
+
+    # ------------------------------------------------------------- helpers --
+    def log(self, msg: str) -> None:
+        self._log(f"{utc_stamp(self.now_fn())} lab practice: {msg}")
+
+    def skip(self, why: str) -> None:
+        self.skipped[why] = self.skipped.get(why, 0) + 1
+
+    def inst(self, symbol: str):
+        got = self.insts.get(symbol)
+        if got is None:
+            e = self.universe[symbol]
+            got = self.insts[symbol] = sim.Inst(symbol, e.kind, e.spec)
+        return got
+
+    def _state_path(self):
+        return self.paths.root / "practice_state.json"
+
+    # ------------------------------------------------------------- roster --
+    def load_roster(self) -> bool:
+        """Read the roster the nightly wrote. True when it changed."""
+        rows = [dict(r) for r in self.ledger.query(
+            "SELECT r.*, c.name AS name, c.stage AS stage, c.def_json AS def_json, c.id AS id"
+            " FROM roster r JOIN candidates c ON c.id=r.candidate_id ORDER BY r.slot")]
+        rows = [r for r in rows if r["stage"] in (PRACTICE, READY_FOR_LIVE)]
+        rows = rows[:max(0, int(self.settings.practice_slots))]
+        key = tuple((r["id"], r["symbols_json"], r["stage"]) for r in rows)
+        if key == self.roster_key:
+            return False
+        self.roster_key = key
+        slots, seen = {}, set()
+        for r in rows:
+            try:
+                c = cand_of(r)
+                fam = family_of(c)
+                syms = [s for s in json.loads(r["symbols_json"] or "[]") if s in self.universe]
+            except Exception as exc:
+                self.log(f"{r['id']} cannot practise: {exc}")
+                continue
+            keep = []
+            for s in syms:
+                if s in seen or len(seen) < MAX_SYMBOLS:
+                    seen.add(s)
+                    keep.append(s)
+            old = self.slots.get(r["id"])
+            slot = Slot(r["id"], r["name"], c, fam, sim.family_params(c), keep, r["stage"])
+            if old is not None:
+                slot.next_ok, slot.entries = old.next_ok, old.entries
+            slots[r["id"]] = slot
+        self.slots = slots
+        for key2 in [k for k in self.open if k[0] not in self.slots]:
+            self.log(f"{key2[0]} left the roster with a position open on {key2[1]}: it closes at the next bar")
+        self.log(f"roster: {len(self.slots)} idea(s) on {len(self.symbols())} market(s)")
+        return True
+
+    def symbols(self) -> list:
+        out = []
+        for s in self.slots.values():
+            for sym in s.symbols:
+                if sym not in out:
+                    out.append(sym)
+        for (_cid, sym) in self.open:
+            if sym not in out and sym in self.universe:
+                out.append(sym)
+        return out
+
+    # ------------------------------------------------------------- series --
+    def _hours(self, symbol: str) -> list:
+        cut = load_cut(self.paths)
+        if cut is None or not self.store.months(symbol):
+            return [0] * 24
+        try:
+            return self.store.hour_table(symbol, day_min(cut.cut_day))
+        except Exception:
+            return [0] * 24
+
+    def _news(self, symbol: str):
+        if self.calendar is None:
+            return None
+        try:
+            return FEAT.news_inputs(self.calendar, symbol, self.universe[symbol].spec)
+        except Exception:
+            return None
+
+    def prime(self, symbol: str, now_min: int) -> None:
+        """A fresh series for a market: recent stored bars, then the bridge's own
+        bars since, up to the last finished minute. Nothing is traded on these."""
+        entry = self.universe[symbol]
+        ser = FEAT.LiveSeries(entry, FEAT.SETS, news=self._news(symbol), hours=self._hours(symbol))
+        point = float(entry.spec.point)
+        rows: list = []
+        for ym in reversed(self.store.months(symbol)):
+            try:
+                cols = self.store.read_month(symbol, ym)
+            except Exception:
+                break
+            rows = [(cols.t[i], cols.o[i], cols.h[i], cols.l[i], cols.c[i], cols.s[i], cols.v[i])
+                    for i in range(cols.n)] + rows
+            if len(rows) >= self.prime_bars:
+                break
+        rows = [r for r in rows[-self.prime_bars:] if r[0] < now_min]
+        last = rows[-1][0] if rows else None
+        want = READ_BACK_MAX if last is None else min(READ_BACK_MAX, max(3, now_min - last + 2))
+        for r in self._read(symbol, want, point):
+            if r[0] < now_min and (last is None or r[0] > last):
+                rows.append(r)
+                last = r[0]
+        self.series[symbol] = ser
+        for r in rows:
+            ser.push(*r)
+            self._walk(symbol, r)              # a position restored after a restart catches up
+        if rows:
+            self.last_bar[symbol] = rows[-1][0]
+            self.done_t.setdefault(symbol, rows[-1][0])
+        self.log(f"{symbol}: primed with {len(rows)} bars")
+
+    def _read(self, symbol: str, count: int, point: float) -> list:
+        """Bars from the feed as store rows (epoch minute, points ...), oldest first."""
+        out = []
+        for b in self.feed.bars(symbol, TF.M1, int(count)) or []:
+            row = bar_row(b, point)
+            if row is not None:
+                out.append(row)
+        out.sort(key=lambda r: r[0])
+        return out
+
+    # -------------------------------------------------------------- restore --
+    def restore(self) -> None:
+        """Open positions after a restart: the rows in practice_open, with the full
+        position state from practice_state.json when it matches; a row the state
+        file does not know is rebuilt from the row itself and the idea's exit rule."""
+        try:
+            state = json.loads(self._state_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            state = {}
+        saved = state.get("positions") or {}
+        for sym, t in (state.get("done_t") or {}).items():
+            self.done_t[sym] = int(t)
+        for cid, info in (state.get("slots") or {}).items():
+            if cid in self.slots:
+                self.slots[cid].next_ok = {k: int(v) for k, v in (info.get("next_ok") or {}).items()}
+                self.slots[cid].entries = {k: int(v) for k, v in (info.get("entries") or {}).items()}
+        for r in self.ledger.query("SELECT * FROM practice_open"):
+            r = dict(r)
+            sym, cid = r["symbol"], r["candidate_id"]
+            if sym not in self.universe:
+                continue
+            key = f"{cid}|{sym}"
+            inst = self.inst(sym)
+            pt = inst.point
+            got = saved.get(key)
+            pos = sim.Pos()
+            if got and got.get("opened_utc") == r["opened_utc"]:
+                for k, v in got["pos"].items():
+                    setattr(pos, k, v)
+                o = Open(cid, sym, pos, got["day"], got.get("signal_bar_utc", ""), got.get("tick_json", "{}"),
+                         int(got.get("last_t") or _iso_min(r["opened_utc"]) - 1))
+            else:
+                crow = self.ledger.candidate(cid)
+                c = cand_of(crow) if crow else None
+                rule = sim.EXIT_RULES.get(c.exit if c else "t1", sim.EXIT_RULES["t1"])
+                pos.side, pos.vol = int(r["side"]), float(r["volume"])
+                pos.entry, pos.stop = float(r["entry"]) / pt, float(r["stop"]) / pt
+                pos.stop0 = pos.stop
+                pos.target = None if r["target"] is None else float(r["target"]) / pt
+                pos.peak = float(r["peak"]) / pt if r["peak"] is not None else pos.entry
+                pos.D = abs(pos.entry - pos.stop) or 1.0
+                pos.trail = rule[2]
+                pos.trail_dist = rule[3] * pos.D if rule[2] else 0.0
+                pos.hold = rule[4]
+                pos.t_open = _iso_min(r["opened_utc"])
+                pos.j_open = pos.t_open
+                pos.spread_in = inst.dflt_spread
+                pos.slip_in = max(SLIP_MIN_POINTS, SLIP_SPREAD_SHARE * pos.spread_in)
+                pos.assumed = True
+                pos.fill_source = "tick"
+                o = Open(cid, sym, pos, _uk_date(pos.t_open), "", "{}", pos.t_open - 1)
+                self.log(f"{cid} {sym}: open position rebuilt from its row (no saved state)")
+            self.open[(cid, sym)] = o
+        self._restored = True
+
+    def save_state(self) -> None:
+        positions = {}
+        for (cid, sym), o in self.open.items():
+            p = o.pos
+            positions[f"{cid}|{sym}"] = {
+                "opened_utc": iso_utc(p.t_open), "day": o.day, "signal_bar_utc": o.signal_bar_utc,
+                "tick_json": o.tick_json, "last_t": o.last_t,
+                "pos": {k: getattr(p, k) for k in sim.Pos.__slots__ if hasattr(p, k)}}
+        atomic_write_json(self._state_path(), {
+            "written_utc": utc_stamp(self.now_fn()), "positions": positions,
+            "done_t": self.done_t,
+            "slots": {cid: {"next_ok": s.next_ok, "entries": s.entries} for cid, s in self.slots.items()}})
+
+    # -------------------------------------------------------------- records --
+    def _ticket(self) -> int:
+        got = self.ledger.one("SELECT MAX(ticket) FROM practice_trades")[0]
+        return max(TICKET_BASE, int(got or 0) + 1)
+
+    def _book(self, o: Open, fill: tuple, t_exit: int) -> None:
+        """Close a practice position: the trade, its day, and the open row gone."""
+        slot = self.slots.get(o.cid)
+        risk = float(slot.cand.risk_gbp) if slot else float(self.settings.risk_gbp)
+        inst = self.inst(o.symbol)
+        tr = sim.close_trade(inst, o.pos, o.symbol, risk, fill, t_exit, t_exit, o.day, False)
+        spread_paid = o.pos.spread_in if o.pos.side > 0 else fill[3]
+        slip_paid = o.pos.slip_in + fill[2]
+        commission = tr.gross_gbp - tr.net_gbp
+        with self.ledger._tx():
+            self.ledger.conn.execute(
+                "INSERT INTO practice_trades(ticket, candidate_id, symbol, side, volume, entry, stop, target,"
+                " opened_utc, closed_utc, exit_price, exit_reason, gross_gbp, commission_gbp, spread_points,"
+                " slippage_points, net_gbp, risk_gbp, r, signal_bar_utc, tick_at_signal_json, fill_source,"
+                " mode, source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (self._ticket(), o.cid, o.symbol, tr.side, tr.volume, tr.entry, tr.stop, tr.target,
+                 tr.opened_utc, tr.closed_utc, tr.exit_price, tr.exit_reason, tr.gross_gbp, commission,
+                 spread_paid, slip_paid, tr.net_gbp, risk, tr.r, o.signal_bar_utc, o.tick_json,
+                 tr.fill_source, "PRACTICE", self.source))
+            self.ledger.conn.execute(
+                "INSERT INTO practice_days(candidate_id, day, net_gbp, trades) VALUES (?,?,?,1)"
+                " ON CONFLICT(candidate_id, day) DO UPDATE SET net_gbp=net_gbp+excluded.net_gbp,"
+                " trades=trades+1", (o.cid, o.day, tr.net_gbp))
+            self.ledger.conn.execute("DELETE FROM practice_open WHERE candidate_id=? AND symbol=?",
+                                     (o.cid, o.symbol))
+        self.open.pop((o.cid, o.symbol), None)
+        if slot is not None:
+            slot.next_ok[o.symbol] = t_exit + COOLDOWN_BARS
+        self.log(f"{o.cid} {o.symbol}: closed {tr.exit_reason} {tr.net_gbp:+.2f} GBP ({tr.r:+.2f} R)")
+
+    def _record_open(self, o: Open) -> None:
+        p, pt = o.pos, self.inst(o.symbol).point
+        nd = self.inst(o.symbol).digits + 3
+        self.ledger.execute(
+            "INSERT OR REPLACE INTO practice_open(candidate_id, symbol, side, volume, entry, stop, target, peak,"
+            " opened_utc) VALUES (?,?,?,?,?,?,?,?,?)",
+            (o.cid, o.symbol, p.side, p.vol, round(p.entry * pt, nd), round(p.stop * pt, nd),
+             None if p.target is None else round(p.target * pt, nd), round(p.peak * pt, nd),
+             iso_utc(p.t_open)))
+
+    def _update_open(self, o: Open) -> None:
+        p, pt = o.pos, self.inst(o.symbol).point
+        nd = self.inst(o.symbol).digits + 3
+        self.ledger.execute("UPDATE practice_open SET stop=?, peak=? WHERE candidate_id=? AND symbol=?",
+                            (round(p.stop * pt, nd), round(p.peak * pt, nd), o.cid, o.symbol))
+
+    def roll_day(self, day: str) -> None:
+        """A new UK day: a zero row for each practising idea (a weekday only)."""
+        if day == self.day:
+            return
+        self.day = day
+        if dt.date.fromisoformat(day).weekday() >= 5:
+            return
+        for cid in self.slots:
+            self.ledger.execute("INSERT OR IGNORE INTO practice_days(candidate_id, day, net_gbp, trades)"
+                                " VALUES (?,?,0,0)", (cid, day))
+        for sym, ser in list(self.series.items()):
+            if ser.n > RESET_AT:
+                del self.series[sym]                  # rebuilt (shorter) at the next minute
+
+    # ---------------------------------------------------------- the minute --
+    def minute(self, now: Optional[dt.datetime] = None) -> dict:
+        """One minute's work. Returns what it did (for the tests and the log)."""
+        now = now or self.now_fn()
+        now_min = epoch_min(now)
+        done = {"bars": 0, "entries": 0, "exits": 0, "weekend": False}
+        self.load_roster()
+        if not self._restored:
+            self.restore()
+        today = _uk_date(now_min)
+        self.roll_day(today)
+        if dt.date.fromisoformat(today).weekday() >= 5:
+            done["weekend"] = True
+            return done
+        wants: list = []
+        try:
+            for sym in self.symbols():
+                if sym not in self.universe:
+                    continue
+                if sym not in self.series:
+                    self.prime(sym, now_min)
+                done["bars"] += self._advance(sym, now_min, done)
+                wants.extend(self._signals(sym, now_min))
+            if wants:
+                done["entries"] += self._enter(wants, now_min)
+            self.feed_ok, self.last_error = True, ""
+        except Exception as exc:                       # the feed went away: say so, try again next minute
+            self.feed_ok, self.last_error = False, f"{type(exc).__name__}: {exc}"
+            self.log(f"feed: {self.last_error}")
+        self.save_state()
+        return done
+
+    def _advance(self, sym: str, now_min: int, done: dict) -> int:
+        """Push the finished bars not seen yet, and walk the open positions through them."""
+        ser = self.series[sym]
+        point = float(self.universe[sym].spec.point)
+        last = ser.t[ser.n - 1] if ser.n else None
+        newest = now_min - 1                           # the last finished minute
+        if last is not None and last >= newest:
+            rows = []
+        else:
+            want = 3 if last is None or newest - last <= 2 else min(READ_BACK_MAX, newest - last + 2)
+            rows = [r for r in self._read(sym, want, point) if r[0] <= newest and (last is None or r[0] > last)]
+        for r in rows:
+            ser.push(*r)
+            self.last_bar[sym] = r[0]
+            self._walk(sym, r)
+            self.done_t[sym] = r[0]
+        # positions whose market is no longer read still need walking: nothing to walk them with
+        return len(rows)
+
+    def _walk(self, sym: str, r: tuple) -> None:
+        t, o, h, l, c, s, _v = r
+        for key in [k for k in self.open if k[1] == sym]:
+            op = self.open[key]
+            if t <= op.last_t:
+                continue
+            pos = op.pos
+            inst = self.inst(sym)
+            sp = max(float(s), float(self.series[sym].hours[(t // 60) % 24])) if s > 0 else max(
+                inst.dflt_spread, float(self.series[sym].hours[(t // 60) % 24]))
+            gap = t - op.last_t
+            if gap > FEED_GAP_MINUTES and op.last_t >= pos.t_open:
+                self._book(op, sim.feed_gap_fill(pos, float(c), sp), t)
+                continue
+            off_roster = op.cid not in self.slots
+            last = (t + 1 >= flat_min(op.day)) or off_roster
+            fill = sim.step(pos, t, float(o), float(h), float(l), float(c), sp, last)
+            op.last_t = t
+            if fill is not None:
+                self._book(op, fill, t)
+            else:
+                self._update_open(op)
+
+    def _signals(self, sym: str, now_min: int) -> list:
+        """The roster's signals on this market's newest finished bar."""
+        ser = self.series[sym]
+        if not ser.n:
+            return []
+        i = ser.n - 1
+        t_i = ser.t[i]
+        if t_i != now_min - 1:                         # not the bar that has just finished: too late to act
+            return []
+        out = []
+        dvs = None
+        for slot in self.slots.values():
+            if sym not in slot.symbols:
+                continue
+            if dvs is None:
+                dvs = ser.dayviews()
+            dv = dvs[-1] if dvs else None
+            if dv is None or not (dv.i0 <= i < dv.i1):
+                continue
+            if dt.date.fromisoformat(dv.uk).weekday() >= 5:
+                continue
+            c = slot.cand
+            if c.news == "AVOID_15M" and not self._news_known(dv.uk):
+                self.skip("news_unknown_day")
+                continue
+            lo, hi = dv.span(c.session)
+            if hi - lo < 2 or not (lo <= i < hi):
+                continue
+            news = ser.f("news_min") if (c.news == "AVOID_15M" or "NEWS" in slot.family.code) else None
+            try:
+                sigs = slot.family.signals(dv, slot.params, (lo, hi), news)
+            except Exception as exc:
+                self.log(f"{slot.cid} {sym}: the family's signals failed: {exc}")
+                continue
+            for sg in sigs:
+                if sg.i == i:
+                    out.append((slot, sym, i, sg, dv))
+        return out
+
+    def _news_known(self, day: str) -> bool:
+        if self.calendar is None:
+            return False
+        if self._news_days is None or day not in self._news_days:
+            try:
+                self._news_days = FEAT.known_days(self.calendar)
+            except Exception:
+                self._news_days = set()
+        return day in self._news_days
+
+    def _enter(self, wants: list, now_min: int) -> int:
+        """Fill the signals on ONE ticks call: the real ask for a buy, the bid for a
+        sell, plus slippage; the same caps as the past test, and the lab's own."""
+        ok_wants = []
+        for slot, sym, i, sg, dv in wants:
+            ser = self.series[sym]
+            if (slot.cid, sym) in self.open:
+                self.skip("busy_or_cooldown")
+                continue
+            if ser.t[i] < slot.next_ok.get(sym, 0):
+                self.skip("busy_or_cooldown")
+                continue
+            if sum(1 for k in self.open if k[0] == slot.cid) >= MAX_OPEN_PER_CANDIDATE:
+                self.skip("max_open")
+                continue
+            if len(self.open) >= MAX_OPEN_LAB:
+                self.skip("lab_max_open")
+                continue
+            dkey = f"{sym}|{dv.uk}"
+            if slot.entries.get(dkey, 0) >= MAX_ENTRIES_PER_DAY:
+                self.skip("day_cap")
+                continue
+            if slot.cand.news == "AVOID_15M":
+                nm = ser.f("news_min")[i]
+                if 0 <= nm <= NEWS_AVOID_MINUTES:
+                    self.skip("news_soon")
+                    continue
+            if ser.t[i] + 1 >= flat_min(dv.uk):
+                self.skip("late_entry")
+                continue
+            ok_wants.append((slot, sym, i, sg, dv))
+        if not ok_wants:
+            return 0
+        ticks = self.feed.ticks(sorted({w[1] for w in ok_wants})) or {}
+        n = 0
+        for slot, sym, i, sg, dv in ok_wants:
+            if len(self.open) >= MAX_OPEN_LAB:
+                self.skip("lab_max_open")
+                continue
+            tk = ticks.get(sym)
+            if tk is None or not tk.bid or not tk.ask:
+                self.skip("no_tick")
+                continue
+            ser, inst = self.series[sym], self.inst(sym)
+            pt = inst.point
+            bid, ask = tk.bid / pt, tk.ask / pt
+            hour_med = float(ser.hours[(now_min // 60) % 24])
+            spread = max(ask - bid, hour_med, 0.0)
+            slip = max(SLIP_MIN_POINTS, SLIP_SPREAD_SHARE * spread)
+            price = ask + slip if sg.side > 0 else bid - slip
+            c = slot.cand
+            vw = float(ser.f(f"vwap_{c.session}")[i]) if c.exit == "vwap" else 0.0
+            pos = sim.enter(inst, c.exit, c.risk_gbp, sg.side, float(ser.c[i]), sg.stop_points,
+                            float(ser.f("atr5")[i]), price, spread, False, ser.day_median_spread(dv),
+                            now_min, now_min, vwap=vw, entry_price=price)
+            if isinstance(pos, str):
+                self.skip(pos)
+                continue
+            if pos.stop is None:                    # every practice position has a stop
+                self.skip("no_stop")
+                continue
+            pos.fill_source = "tick"
+            pos.ref = sg.ref
+            o = Open(slot.cid, sym, pos, dv.uk, iso_utc(ser.t[i]),
+                     json.dumps({"bid": tk.bid, "ask": tk.ask, "time": tk.time.isoformat() if tk.time else ""}),
+                     now_min - 1)
+            self.open[(slot.cid, sym)] = o
+            dkey = f"{sym}|{dv.uk}"
+            slot.entries[dkey] = slot.entries.get(dkey, 0) + 1
+            self._record_open(o)
+            n += 1
+            self.log(f"{slot.cid} {sym}: opened {'BUY' if sg.side > 0 else 'SELL'} {pos.vol} at "
+                     f"{price * pt:.{inst.digits}f}, stop {pos.stop * pt:.{inst.digits}f} ({sg.ref})")
+        return n
+
+    # --------------------------------------------------------------- status --
+    def status(self, now: Optional[dt.datetime] = None) -> dict:
+        now = now or self.now_fn()
+        today = now.astimezone(TZ_LONDON).date().isoformat()
+        roster = []
+        for slot in self.slots.values():
+            row = self.ledger.one("SELECT net_gbp, trades FROM practice_days WHERE candidate_id=? AND day=?",
+                                  (slot.cid, today))
+            roster.append({"id": slot.cid, "name": slot.name, "stage": slot.stage, "symbols": slot.symbols,
+                           "open": sum(1 for k in self.open if k[0] == slot.cid),
+                           "today_trades": int(row["trades"]) if row else 0,
+                           "today_gbp": float(row["net_gbp"]) if row else 0.0})
+        opened = []
+        for (cid, sym), o in self.open.items():
+            p, pt = o.pos, self.inst(sym).point
+            opened.append({"id": cid, "name": self.slots[cid].name if cid in self.slots else "", "symbol": sym,
+                           "side": int(p.side), "volume": p.vol,
+                           "entry": round(p.entry * pt, 8), "stop": round(p.stop * pt, 8),
+                           "target": None if p.target is None else round(p.target * pt, 8),
+                           "opened_utc": iso_utc(p.t_open)})
+        newest = max(self.last_bar.values()) if self.last_bar else None
+        age = None if newest is None else round((now - minute_to_dt(newest + 1)).total_seconds(), 1)
+        weekend = now.astimezone(TZ_LONDON).weekday() >= 5
+        return {"mode": self.settings.mode, "practice": True, "roster": roster, "open_positions": opened,
+                "last_bar_utc": {s: iso_utc(t) for s, t in sorted(self.last_bar.items())},
+                "feed_ok": self.feed_ok, "feed_age_s": age, "last_error": self.last_error,
+                "resting": "the weekend: nothing practises on a Saturday or Sunday" if weekend else "",
+                "synthetic": self.source == "SYNTHETIC", "skipped": dict(self.skipped),
+                "note": "practice: live prices, no money; the lab cannot place an order"}
+
+    def write(self, now: Optional[dt.datetime] = None) -> None:
+        """The status file (the watchdog's sign of life) and the practice figures."""
+        now = now or self.now_fn()
+        write_status(self.paths, self.status(now), now)
+        try:
+            refresh_practice(self.paths, self.ledger, list(self.universe.values()), now)
+        except Exception as exc:
+            self.log(f"summary refresh failed: {exc}")
+
+    # ------------------------------------------------------------------ run --
+    def run(self, *, sleep: Callable[[float], None] = time.sleep, max_ticks: Optional[int] = None) -> int:
+        """Every 30 seconds: the status; at 3 s past each minute, the minute's work
+        first. Stops (exit 0) when data/lab.json says OFF."""
+        ticks = 0
+        self.write()
+        while True:
+            self.settings = LabSettings.load(self.paths.data_dir)
+            if self.settings.mode == "OFF":
+                self.log("data/lab.json says OFF: practice stops (open practice positions resume on the next start)")
+                self.write()
+                return 0
+            now = self.now_fn()
+            sec = now.second + now.microsecond / 1e6
+            nxt = AT_SECOND if sec < AT_SECOND else (AT_SECOND + STATUS_EVERY_S if sec < AT_SECOND + STATUS_EVERY_S
+                                                   else 60 + AT_SECOND)
+            sleep(max(0.0, nxt - sec))
+            now = self.now_fn()
+            if int(round(nxt)) % 60 == AT_SECOND:
+                try:
+                    self.minute(now)
+                except Exception as exc:
+                    self.last_error = f"{type(exc).__name__}: {exc}"
+                    self.log(f"minute failed: {self.last_error}")
+            self.write(now)
+            ticks += 1
+            if max_ticks is not None and ticks >= max_ticks:
+                return 0
+
+
+def _take_pid(paths: LabPaths) -> bool:
+    """Write our pid; refuse when another practice process holds it."""
+    try:
+        other = int(paths.pid.read_text().strip())
+    except (OSError, ValueError):
+        other = 0
+    if other and other != os.getpid() and pid_alive(other):
+        try:
+            with open(f"/proc/{other}/cmdline", "rb") as fh:
+                if b"mintel.lab.practice" not in fh.read():
+                    other = 0
+        except OSError:
+            pass
+    if other and other != os.getpid() and pid_alive(other):
+        return False
+    paths.pid.parent.mkdir(parents=True, exist_ok=True)
+    paths.pid.write_text(str(os.getpid()))
+    return True
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    ap = argparse.ArgumentParser(description="the lab's practice: live prices, no money")
+    ap.add_argument("--config", default="data/config.json")
+    args = ap.parse_args(argv)
+    from ..config import Config
+    cfg = Config.load(args.config)
+    paths = LabPaths(cfg.ops.data_dir, cfg.ops.log_dir)
+    settings = LabSettings.load(paths.data_dir)
+    if settings.mode == "OFF":
+        print("the lab is OFF (data/lab.json): practice does not start", flush=True)
+        return 0
+    if not paths.universe.exists():
+        print("the lab has no markets yet (data/lab/universe.json): practice waits for the first night",
+              flush=True)
+        return 0
+    if not _take_pid(paths):
+        print("another lab practice process is running", flush=True)
+        return 3
+    try:
+        os.nice(10)
+    except (AttributeError, OSError):
+        pass
+    from .prices import from_config
+    feed = from_config(cfg)
+    feed.ping()                                     # learns whether the bridge is a simulated one
+    calendar = None
+    p = cfg.news.store_path
+    cal_path = p if os.path.isabs(p) else str(paths.data_dir / os.path.basename(p))
+    if os.path.exists(cal_path):
+        try:
+            from ..news.calendar_store import CalendarStore
+            calendar = CalendarStore(cal_path)
+        except Exception:
+            calendar = None
+    eng = Practice(paths, feed, settings=settings, calendar=calendar)
+    eng.log("started (nice 10): live prices, no money")
+    try:
+        return eng.run()
+    finally:
+        try:
+            if paths.pid.read_text().strip() == str(os.getpid()):
+                paths.pid.unlink()
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())
