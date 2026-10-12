@@ -81,6 +81,7 @@ class BandBreakerConfig:
     max_entries_per_day: int = 3         # per market, counting reversals
     risk_money: float = 10.0             # money at the initial stop
     paper_slippage_points: float = 1.0
+    min_stop_noise: float = 0.5          # a VWAP stop nearer than this share of the hour's noise move gives way to the far band
 
 
 @dataclass
@@ -407,7 +408,10 @@ class BandBreaker:
                 else:
                     stop = (max(lb, vw) if vw > 0 else lb) if want is Side.BUY else (min(ub, vw) if vw > 0 else ub)
                     mark = bid if want is Side.BUY else ask        # the stop must clear the price we would be closed at
-                    if (mark - stop) * want.sign <= 0:
+                    # a stop inside the noise is a coin toss (12 Oct: a USTEC short with VWAP
+                    # 4 points away, 3.1 lots, stopped in 5 seconds): too near, the far band
+                    floor = self.cfg.min_stop_noise * sigma * (bands.day_open or mark)
+                    if (mark - stop) * want.sign <= 0 or (mark - stop) * want.sign < floor:
                         stop = lb if want is Side.BUY else ub
                     if (mark - stop) * want.sign <= 0:
                         decision = "signal, but no room for a stop"

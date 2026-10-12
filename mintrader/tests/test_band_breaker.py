@@ -125,6 +125,19 @@ class TestTheTrade:
         assert p.stop == pytest.approx(4960.08)
         assert p.volume == pytest.approx(10.0 / (p.entry - p.stop), abs=0.01)
 
+    def test_a_vwap_stop_inside_the_noise_gives_way_to_the_far_band(self, tmp_path):
+        e = engine(tmp_path)
+        today = [("09:30", 5000, 5030, 4995, 5025), ("10:00", 5025, 5035, 5020, 5030)]
+        # VWAP 5028 is under the bid but under 10 points away (half the 20-point noise move)
+        self._run(e, at(TODAY, 10, 30), 5030.0, today, (10, 30), m1_price=5028.0)
+        assert e.open["US500"].stop == pytest.approx(4960.08)
+
+    def test_a_vwap_stop_clear_of_the_noise_is_kept(self, tmp_path):
+        e = engine(tmp_path)
+        today = [("09:30", 5000, 5030, 4995, 5025), ("10:00", 5025, 5035, 5020, 5030)]
+        self._run(e, at(TODAY, 10, 30), 5030.0, today, (10, 30), m1_price=5015.0)
+        assert e.open["US500"].stop == pytest.approx(5015.0)
+
     def test_inside_the_band_is_noise_no_trade(self, tmp_path):
         e = engine(tmp_path)
         today = [("09:30", 5000, 5012, 4995, 5010), ("10:00", 5010, 5015, 5005, 5012)]

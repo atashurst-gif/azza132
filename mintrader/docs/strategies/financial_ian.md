@@ -381,3 +381,4 @@ which case it was.
 | Day | Mode | Trades | Wins | Net (the broker's figure) | Notes |
 |---|---|---|---|---|---|
 | 9 Oct | LIVE (Binance public book) | 6 | 2 | -3.73 (no commission) | No data until the 16:36 UK restart ("feed none" before). Then 6 BTCUSD trades 16:38-16:59 UK, risk 9.00-10.64 each, average win +5.35 vs loss -3.61; then its 6-entries-a-day limit for the market. All 171 ETHUSD signals refused on cost (spread 33% of the target, limit 30%: the 3x-spread stop floor with a 1:1 target). Two short data blips (17:51 and 19:02 UK). 6 of 30 trades before judging |
+| 12 Oct | LIVE (Binance public book) | 12 | 1 | -7.81 (the account's UK day) | One win of about +21 against eleven small losses of about -2.80 (at 21:10 UK: 11 trades, -6.61, average win +21.18, average loss -2.78). Feed LIVE all day. The whole account's result for the day. Weekend 10-11 Oct: about -11.89 |
