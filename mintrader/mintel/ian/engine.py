@@ -213,8 +213,14 @@ def _clip(x: float, lo: float = -1.0, hi: float = 1.0) -> float:
 class IanEngine:
     def __init__(self, data_dir: str | Path, cfg: Optional[IanConfig] = None, broker=None,
                  feed: Optional[FeedAdapter] = None, clock: Callable[[], dt.datetime] = utcnow, executor=None,
-                 spec_fn: Optional[Callable[[str], object]] = None, wall: Callable[[], dt.datetime] = utcnow):
+                 spec_fn: Optional[Callable[[str], object]] = None, wall: Callable[[], dt.datetime] = utcnow,
+                 coach_gate=None):
         self.cfg = cfg or IanConfig()
+        # 12 Oct, the coach (mintel/coach/gate.py, built in run.py): asked before each new LIVE entry. It can
+        # only stop an entry (HALT, its day pause, its drawdown pause, no headroom) or lower the money a
+        # trade; this bot's own daily limit is untouched. None: no coach, exactly as before.
+        self.coach_gate = coach_gate
+        self._coach_cap: Optional[float] = None        # the coach's money cap for the order being sent
         if str(self.cfg.mode).upper() == "LIVE" and int(self.cfg.magic) != MAGIC:
             # checked before anything is opened or any LIVE executor is built: the sweep closes every
             # position carrying this magic that it has no record of
@@ -761,7 +767,7 @@ class IanEngine:
             root = opp.root
             # asked again for every candidate: a fill closed at once earlier in this pass is booked as a loss
             # and can take this bot past its own daily loss limit
-            why_all = self._entry_block(now, root)
+            why_all = self._entry_block(now, root, opp)
             if why_all:
                 self.notes[root] = f"{opp.reasoning} Not entered: {why_all}"
                 continue
@@ -789,7 +795,7 @@ class IanEngine:
             self.journal.record_signal(sig, "NEW", mode=self.mode)
             buf = self.spot_ticks.get(opp.spot_symbol)
             hist = list(buf.ticks) if buf is not None else []
-            rep = self.bridge.submit(sig, tick, now, hist, spec)
+            rep = self._submit(sig, tick, now, hist, spec)
             self.last_report = rep.to_dict()
             self.journal.signal_update(sig.signal_id, rep.status, rep.message, rep.to_dict(), rep.latency)
             if rep.ok and rep.status == FILLED_S and opp.spot_symbol not in self.open:
@@ -812,7 +818,7 @@ class IanEngine:
                 break
         return notes
 
-    def _entry_block(self, now: dt.datetime, root: str = "") -> str:
+    def _entry_block(self, now: dt.datetime, root: str = "", opp: Optional[Opportunity] = None) -> str:
         if self.synthetic and not self.cfg.allow_paper_on_synthetic:
             return "synthetic data: nothing is ever placed"
         if len(self.open) >= self.cfg.max_open:
@@ -826,7 +832,67 @@ class IanEngine:
         lost = sum(float(r.get("net_pnl") or 0.0) for r in rows)
         if lost <= -abs(self.cfg.max_daily_loss_money):
             return f"this bot has lost {lost:.2f} today (its own limit {self.cfg.max_daily_loss_money:g}); no new trades until tomorrow"
+        self._coach_cap = None
+        d = self._coach_decision(now, root, opp)
+        if d is not None:
+            if d.route in ("SKIP", "PRACTICE"):
+                return d.why or "the coach has paused new real-money entries"
+            if d.money_gbp is not None and d.route in ("BASELINE", "REAL"):
+                if float(d.money_gbp) <= 0:
+                    return d.why or "the coach's money cap is nothing"
+                self._coach_cap = float(d.money_gbp)
         return ""
+
+    # ------------------------------------------------------------ the coach --
+    def _open_real_risk(self) -> list:
+        """(opened, money at the first stop) for each open LIVE trade."""
+        out = []
+        for tr in self.open.values():
+            try:
+                spec = self._spec(tr.spot_symbol)
+                money = spec.money_per_lot(abs(float(tr.entry) - float(tr.initial_stop))) * float(tr.volume)
+            except Exception:
+                money = float(self.cfg.risk_money)
+            out.append((tr.opened, float(money)))
+        return out
+
+    def _coach_decision(self, now: dt.datetime, root: str, opp: Optional[Opportunity]):
+        """The coach's gate for a new LIVE entry (None: no gate, PAPER - practice is never gated - or an
+        error: this bot's own settings)."""
+        gate = getattr(self, "coach_gate", None)
+        if gate is None or not self.live:
+            return None
+        try:
+            from ..coach import RiskCtx
+            kind = "CRYPTO" if root in getattr(self, "crypto", {}) else ""
+            sym = opp.spot_symbol if opp is not None else self.spot_of.get(root, "")
+            if not kind:
+                from ..contracts import infer_group
+                kind = infer_group(sym or root)
+            condition = str(getattr(getattr(opp, "regime", None), "regime", "") or "*") if opp is not None else "*"
+            side = getattr(opp, "direction", 0) if opp is not None else 0
+            # no equity: this bot has no real-money grant in v1, its money can only go down
+            ctx = RiskCtx(equity=0.0, own_open=tuple(self._open_real_risk()), has_paper=False,
+                          planned_gbp=float(self.cfg.risk_money))
+            return gate.decide("*", kind, condition, sym, side, getattr(opp, "score", None), None, now, True, ctx)
+        except Exception as exc:
+            log.error("%s: the coach's gate failed (%s); its own settings", STRATEGY_LABEL, exc)
+            return None
+
+    def _submit(self, sig, tick, now: dt.datetime, hist, spec) -> ExecutionReport:
+        """The bridge's submit, with the coach's money cap for this one order (only ever lower)."""
+        cap = getattr(self, "_coach_cap", None)
+        if cap is None:
+            return self.bridge.submit(sig, tick, now, hist, spec)
+        import dataclasses
+        base = self.bridge.cfg
+        try:
+            self.bridge.cfg = dataclasses.replace(base, risk_money=min(float(base.risk_money), cap),
+                                                  max_risk_money=min(float(base.max_risk_money), cap))
+            return self.bridge.submit(sig, tick, now, hist, spec)
+        finally:
+            self.bridge.cfg = base
+            self._coach_cap = None
 
     def _market_block(self, opp: Opportunity, now: dt.datetime) -> str:
         if opp.spot_symbol in self.open:

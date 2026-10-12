@@ -178,6 +178,31 @@ knows keeps every market on paper. Stop changes and closes follow the
 ticket, so each position stays with the side it was opened on. Set with
 ``python -m mintel.ops.modes --tnb-live-tactics MOMENTUM_CONTINUATION``.
 
+The coach (12 Oct)
+------------------
+``OrderRequest.coach_route`` says what the coach's gate decided for a new
+order (``mintel/coach/gate.py``): "" leaves it to Aaron's own settings
+(``static_goes_real``: the live groups and live approaches above, exactly as
+before); "PRACTICE" (or "SKIP") keeps it on paper whatever those say; "REAL"
+sends it to the real broker only when ``coach_confirm`` - an independent
+re-check against Aaron's envelope that the trader attaches - agrees (kind of
+market allowed, not pinned, not Formula 1's minor pairs while it is pinned,
+not the live Momentum Runner's idea). Without ``coach_confirm`` a coach REAL
+order stays on paper. Every ticket the coach sent real is kept in the
+``coach_real`` table of the same file, so its stop can be moved and it can be
+closed at the real broker after a restart, like a live group's (C3).
+
+Every coach REAL order is checked once more before it is sent, when the
+trader has attached ``ceiling_pct`` (the account's ceiling, config.json's
+``risk.max_risk_pct`` or the coach's demo ceiling): the money at its stop at
+the current price, ``spec.money_per_lot(abs(price - sl)) x volume``, may not
+be above that percent of the equity (with a small allowance,
+``mintel.coach.SEND_CHECK_SLACK``, for the price and equity moving in the
+seconds after the trader sized it under the ceiling). Above it: refused,
+nothing sent, logged CRITICAL. An order on Aaron's own settings (no coach
+route, or PRACTICE) is never checked here: it goes exactly as before the
+coach, sized by ``RiskManager.size`` under config.json's ceiling.
+
 Tickets
 -------
 Paper tickets (positions and deals share one sequence) start at
@@ -262,6 +287,7 @@ CREATE TABLE IF NOT EXISTS deals (
 CREATE INDEX IF NOT EXISTS ix_paper_deals_time ON deals(time_utc);
 CREATE INDEX IF NOT EXISTS ix_paper_deals_position ON deals(position);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS coach_real (ticket INTEGER PRIMARY KEY, opened_utc TEXT, key TEXT);
 """
 
 
@@ -426,6 +452,11 @@ class PaperBroker:
         self._book: dict[int, _Open] = {}
         self._deals: list[_Deal] = []
         self._paper_tickets: set[int] = set()       # every position ever born on paper
+        self._coach_real: dict[int, str] = {}        # real tickets the coach sent (ticket -> key), C3
+        # attached by the trader (12 Oct, the coach): the envelope re-check for a coach REAL order, and the
+        # account's ceiling in percent of equity for the check on every order that goes real
+        self.coach_confirm: Optional[Callable[..., bool]] = None
+        self.ceiling_pct: Optional[Callable[[], Optional[float]]] = None
         self._last_tick: dict[str, Tick] = {}
         self._replay_failing: dict[str, dt.datetime] = {}  # symbol -> when its history first failed to read
         self._replay_wait: dict[str, dt.datetime] = {}     # symbol -> no unforced retry before this
@@ -492,6 +523,12 @@ class PaperBroker:
                     float(r["profit"] or 0.0), float(r["commission"] or 0.0), float(r["swap"] or 0.0),
                     bool(r["is_entry"]), _parse(r["time_utc"]) or self._now_utc(), str(r["reason"] or "")))
                 self._paper_tickets.add(int(r["position"]))
+            self._coach_real.clear()
+            try:
+                for r in self.db.execute("SELECT ticket, key FROM coach_real"):
+                    self._coach_real[int(r["ticket"])] = str(r["key"] or "")
+            except sqlite3.Error:
+                pass                                        # a read-only view of an older file: none yet
             row = self.db.execute("SELECT value FROM meta WHERE key='next_ticket'").fetchone()
             top = max([self._next - 1, int(row[0]) - 1 if row else 0]
                       + list(self._book) + [d.deal for d in self._deals] + [d.position for d in self._deals])
@@ -547,17 +584,97 @@ class PaperBroker:
             return False
         return market_kind(symbol, spec if spec is not None else self._spec(symbol)) in self.live_groups
 
-    def goes_real(self, req: OrderRequest, spec: Optional[SymbolSpec] = None) -> bool:
-        """Does this NEW order go to the real broker? Only on a live market
-        and, when tnb.live_tactics is set, only for a listed approach; an
-        order that does not say its approach stays on paper (10 Oct)."""
-        if not self._in_live_group(req.symbol, spec):
+    def static_goes_real(self, symbol: str, tactic: str = "", spec: Optional[SymbolSpec] = None) -> bool:
+        """Would a NEW order go to the real broker on Aaron's own settings?
+        Only on a live market and, when tnb.live_tactics is set, only for a
+        listed approach; an order that does not say its approach stays on
+        paper (10 Oct). The rule as it was before the coach, unchanged."""
+        if not self._in_live_group(symbol, spec):
             return False
         if not self.live_tactics:
             return True                                   # every approach on a live market (9 Oct)
         from ..engine.tactics import approach_of
-        approach = approach_of(getattr(req, "tactic", "") or "")
+        approach = approach_of(tactic or "")
         return bool(approach) and approach in self.live_tactics
+
+    def goes_real(self, req: OrderRequest, spec: Optional[SymbolSpec] = None) -> bool:
+        """Does this NEW order go to the real broker? A coach REAL order only
+        when ``coach_confirm`` agrees; otherwise Aaron's own settings
+        (``static_goes_real``), unless the coach said PRACTICE or SKIP."""
+        route = str(getattr(req, "coach_route", "") or "").upper()
+        if route == "REAL" and self._coach_confirms(req, spec):
+            return True
+        if route in ("PRACTICE", "SKIP"):
+            return False
+        return self.static_goes_real(req.symbol, getattr(req, "tactic", "") or "", spec)
+
+    def _coach_confirms(self, req: OrderRequest, spec: Optional[SymbolSpec]) -> bool:
+        fn = self.coach_confirm
+        if not callable(fn):
+            return False
+        try:
+            return bool(fn(req, kind=market_kind(req.symbol, spec)))
+        except Exception as exc:
+            log.error("PAPER %s: the coach's order check failed (%s); the order stays on paper", LABEL, exc)
+            return False
+
+    def is_coach_real(self, ticket: int) -> bool:
+        """Did the coach send this ticket to the real broker (C3)?"""
+        with self._lock:
+            return int(ticket) in self._coach_real
+
+    def note_coach_real(self, ticket: int, key: str = "", opened: Optional[dt.datetime] = None) -> None:
+        """Remember a real ticket the coach sent (the trader calls this with the position's ticket after
+        the fill), so its stop can be moved and it can be closed at the real broker, after a restart too."""
+        ticket = int(ticket)
+        if self.read_only or ticket <= 0 or self.is_paper(ticket):
+            return
+        when = _iso(opened if opened is not None else self._now_utc())
+        with self._lock:
+            known = self._coach_real.get(ticket)
+            if known and not key:
+                return
+            self._coach_real[ticket] = key or known or ""
+            try:
+                self.db.execute("INSERT OR REPLACE INTO coach_real VALUES (?,?,?)", (ticket, when, key or known or ""))
+                self.db.commit()
+            except sqlite3.Error as exc:
+                log.error("PAPER %s: could not record the coach's real ticket %s: %s", LABEL, ticket, exc)
+
+    def _ceiling_refusal(self, req: OrderRequest, spec: SymbolSpec) -> Optional[OrderResult]:
+        """The last of the three cap checks, for a coach REAL order: its money at the stop at the current
+        price against the account's ceiling. None when it may go, when no ceiling is attached, and always for
+        an order on Aaron's own settings (it goes exactly as before the coach)."""
+        fn = self.ceiling_pct
+        if not callable(fn):
+            return None
+        coach = str(getattr(req, "coach_route", "") or "").upper() == "REAL"
+        if not coach:
+            return None                                   # Aaron's own order: as before
+        try:
+            pct = fn()
+            pct = float(pct) if pct is not None else 0.0
+            equity = float(self.inner.account().equity)
+            price = float(req.price or 0.0)
+            if price <= 0:
+                t = self.inner.tick(req.symbol)
+                price = float((t.ask if req.side is Side.BUY else t.bid) if t is not None else 0.0)
+            if pct <= 0 or equity <= 0 or price <= 0 or not req.sl:
+                raise ValueError("the ceiling, the equity, the price or the stop is not known")
+            risk = spec.money_per_lot(abs(price - float(req.sl))) * float(req.volume)
+        except Exception as exc:
+            log.critical("PAPER %s: a coach REAL order on %s could not be checked against the ceiling (%s); "
+                         "refused, nothing sent", LABEL, req.symbol, exc)
+            return self._refuse(RetCode.REJECT, f"refused: the ceiling could not be checked ({exc})", req)
+        from ..coach import SEND_CHECK_SLACK
+        ceiling = equity * pct / 100.0
+        if risk > ceiling * (1.0 + SEND_CHECK_SLACK) + 0.01:
+            log.critical("PAPER %s: REFUSED a real order on %s: %.2f at its stop is above the ceiling of %.2f%% "
+                         "(%.2f of %.2f); nothing was sent (a coach grant)", LABEL, req.symbol, risk, pct, ceiling,
+                         equity)
+            return self._refuse(RetCode.REJECT, f"refused: {risk:.2f} at the stop is above the ceiling of "
+                                                f"{pct:g}% ({ceiling:.2f}); nothing was sent", req)
+        return None
 
     def _fresh(self, tick: Tick) -> bool:
         try:
@@ -1046,13 +1163,15 @@ class PaperBroker:
     def _route_real(self, ticket: int) -> Optional[Position]:
         """The REAL position this wrapper may pass a stop change or close for:
         carrying this magic and in a live group (or any market, with
-        ``manage_leftovers``). None for everything else."""
-        if not self.live_groups and not self.cfg.manage_leftovers:
+        ``manage_leftovers``), or one the coach sent real (C3). None for
+        everything else."""
+        coach = self.is_coach_real(ticket)
+        if not self.live_groups and not self.cfg.manage_leftovers and not coach:
             return None
         try:
             for p in self.inner.positions(self.magic) or []:
                 if int(p.ticket) == int(ticket) and int(p.magic) == self.magic:
-                    ok = self.cfg.manage_leftovers or self._in_live_group(p.symbol)
+                    ok = self.cfg.manage_leftovers or self._in_live_group(p.symbol) or coach
                     return p if ok else None
         except Exception:
             return None
@@ -1081,7 +1200,16 @@ class PaperBroker:
         if spec is None:
             return self._refuse(RetCode.REJECT, "no symbol spec", req)
         if self.goes_real(req, spec):
-            return self.inner.send(req)                   # LIVE group: the real order, unchanged
+            refused = self._ceiling_refusal(req, spec)
+            if refused is not None:
+                return refused
+            res = self.inner.send(req)                    # LIVE group (or a confirmed coach grant): the real order
+            if str(getattr(req, "coach_route", "") or "").upper() == "REAL" and getattr(res, "ok", False) \
+                    and int(getattr(res, "ticket", 0) or 0) > 0:
+                from ..engine.tactics import approach_of
+                self.note_coach_real(int(res.ticket), f"tnb|{approach_of(req.tactic or '') or '*'}|"
+                                                      f"{market_kind(req.symbol, spec)}|*")
+            return res
         with self._lock:
             tick = self._evaluate(req.symbol)             # PAPER: the book first, then the fill
             if tick is None:
@@ -1389,12 +1517,14 @@ class PaperBroker:
             real_open = self._real_own()
             for p in real_open:
                 live = self._in_live_group(p.symbol)
-                managed = live or bool(self.cfg.manage_leftovers)
+                coach = self.is_coach_real(p.ticket)
+                managed = live or bool(self.cfg.manage_leftovers) or coach
                 out["open"].append({"origin": "REAL", "ticket": p.ticket, "symbol": p.symbol, "side": p.side.value,
                                     "volume": p.volume, "entry": p.entry_price, "stop": p.sl, "target": p.tp,
                                     "profit": p.profit, "opened": _utc(p.open_time).isoformat(),
                                     "managed": managed,
                                     "note": ("live market: managed at the real broker" if live else
+                                             "the coach's real-money grant: managed at the real broker" if coach else
                                              "left from before the switch to paper: being wound down at the real "
                                              "broker" if managed else
                                              "left from before the switch to paper: its stop and target stay at "

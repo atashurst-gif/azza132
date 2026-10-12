@@ -145,6 +145,11 @@ class OrderRequest:
     # e.g. "MOMENTUM_CONTINUATION"; "" when not said). Only the PAPER
     # wrapper reads it (tnb.live_tactics); it is never sent to the broker.
     tactic: str = ""
+    # 12 Oct (the coach): "" (Aaron's own settings route the order, as
+    # always), "REAL" (a coach grant, re-checked by the PAPER wrapper against
+    # Aaron's envelope) or "PRACTICE" (the coach sends it to paper). Only the
+    # PAPER wrapper reads it; it is never sent to the broker.
+    coach_route: str = ""
 
 
 class RetCode(int, Enum):

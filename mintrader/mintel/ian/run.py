@@ -120,7 +120,15 @@ def main(argv=None) -> int:
                 return 0
         from .instruments import parse_crypto
         feed = build_feed(icfg.feed, data, icfg.instruments, parse_crypto(icfg.crypto_instruments))
-        engine = IanEngine(data, icfg, broker, feed)
+        # 12 Oct, the coach's gate (mintel/coach/gate.py): HALT, the coach's pauses and headroom, and money
+        # that can only go down. Its own £50 day limit is untouched. If it cannot be built: as before.
+        coach_gate = None
+        try:
+            from ..coach.gate import build as build_coach_gate
+            coach_gate = build_coach_gate("ian", data, cfg, account_login=int(cfg.account_login or 0))
+        except Exception as exc:
+            log.error("the coach's gate could not be built (%s): %s runs on its own settings", exc, STRATEGY_LABEL)
+        engine = IanEngine(data, icfg, broker, feed, coach_gate=coach_gate)
         engine.journal.event("START", f"mode {engine.mode}, feed {icfg.feed.get('vendor', 'none')}")
         n = 0
         last_beat = 0.0

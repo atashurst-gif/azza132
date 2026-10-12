@@ -157,6 +157,13 @@ def exposure_key(symbol: str, side: Side) -> tuple[str, ...]:
     return tuple(keys)
 
 
+def base_risk(risk_cfg: RiskConfig) -> tuple[float, float]:
+    """Trend & Breakout's normal size: (percent of the account, money cap a
+    trade; 0 = no cap). 12 Oct: the coach's "base" step and its demo trials
+    (mintel/coach) read it here, so these two numbers keep their one reader."""
+    return float(risk_cfg.base_risk_pct), float(getattr(risk_cfg, "max_risk_money", 0.0) or 0.0)
+
+
 class RiskManager:
     def __init__(self, cfg: Config, journal=None):
         self.cfg = cfg
@@ -193,6 +200,12 @@ class RiskManager:
         # Scanner.commission_money_per_lot). Without it: risk.commission_per_lot,
         # else risk.commission_fallback_per_lot, nothing on indices.
         self.round_turn_commission: Optional[Callable[[str], float]] = None
+        # 12 Oct (the coach, spec section 21): callable() -> the account-level
+        # limits in force (mintel.coach.Limits, from CoachGate.effective_limits).
+        # config.json's own values unless a valid lease carries demo values and
+        # the account is a demo; a value is only ever LIFTED from config's.
+        # None (the default) reads cfg.risk exactly as before.
+        self.limits: Optional[Callable[[], object]] = None
 
     # -------------------------------------------------------------- bookkeeping
     def register_open_risk(self, ticket: int, symbol: str, side: Side,
@@ -222,11 +235,26 @@ class RiskManager:
         self.peak_equity = max(self.peak_equity, account.equity)
 
     # ----------------------------------------------------------------- breakers
+    def effective_risk(self) -> RiskConfig:
+        """cfg.risk, or a copy with the coach's lifted demo limits (``limits``)
+        when there are any: the daily-loss stop, the drawdown breaker and the
+        exposure caps, each only ever higher. Anything unreadable: cfg.risk."""
+        fn = self.limits
+        if fn is None:
+            return self.cfg.risk
+        try:
+            got = fn()
+            lifted = got.lifted(self.cfg.risk) if got is not None else {}
+        except Exception as exc:
+            log.warning("the coach's limits could not be read (%s): config.json's own apply", exc)
+            return self.cfg.risk
+        return dataclasses.replace(self.cfg.risk, **lifted) if lifted else self.cfg.risk
+
     def snapshot(self, account: AccountInfo, positions: Sequence[Position],
                  now: Optional[dt.datetime] = None) -> RiskSnapshot:
         now = to_utc(now or utcnow())
         self._roll_day(account, now)
-        r = self.cfg.risk
+        r = self.effective_risk()
         equity = max(account.equity, 1e-9)
 
         open_risk_money = 0.0
@@ -283,7 +311,7 @@ class RiskManager:
 
         trip("MANUAL_HALT", bool(self._manual_halt), self._manual_halt, False)
         trip("DAILY_LOSS", daily_pct <= -abs(r.max_daily_loss_pct),
-             self._daily_loss_words(daily_pct, sides, account.equity - daily_pnl),
+             self._daily_loss_words(daily_pct, sides, account.equity - daily_pnl, r),
              False)
         trip("MAX_DRAWDOWN", dd >= r.max_drawdown_pct,
              f"{dd:.2f}% below the equity peak (limit {r.max_drawdown_pct:.2f}%)",
@@ -360,10 +388,11 @@ class RiskManager:
             return real                                   # a practice profit never covers a real loss
         return real + practice
 
-    def _daily_loss_words(self, daily_pct: float, sides: Optional[tuple[float, float]], base: float) -> str:
+    def _daily_loss_words(self, daily_pct: float, sides: Optional[tuple[float, float]], base: float,
+                          r: Optional[RiskConfig] = None) -> str:
         """The DAILY_LOSS line, saying which part is down when the day is read
         in two parts: "real money down 3.16% today (limit 3.00%)"."""
-        r = self.cfg.risk
+        r = r if r is not None else self.cfg.risk
         limit = f"(limit {r.max_daily_loss_pct:.2f}%)"
         if sides is None:
             return f"down {abs(daily_pct):.2f}% today {limit}"

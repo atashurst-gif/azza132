@@ -217,6 +217,19 @@ class Trader:
         self.scanner.losses_today = self.losses_today
         self.executor = Executor(broker, cfg, self.journal, self.risk, clock)
         self.flowlock = FlowLock(cfg.flowlock)
+        # 12 Oct, the coach (mintel/coach; docs/conductor/spec.md section 11):
+        # its gate is asked at each entry decision, here and by the other bots
+        # (_bot_kwargs). Off, broken or absent, it gives Aaron's own settings:
+        # every order, size and daily-loss figure exactly as before. None in a
+        # dry run (it never sends an order) or when it cannot be built.
+        self.coach_gate = self._build_coach_gate(data_dir)
+        self._weather_at: Optional[dt.datetime] = None
+        # {ticket: Runner copy volume} for the trades whose ride the coach
+        # lowered or refused, kept in memory so a trade closed by management
+        # in the same pass that the Runner first sees it still carries the
+        # coach's word (its journal row is no longer among the open rows).
+        # Empty whenever the coach changed nothing: then exactly as before.
+        self._coach_copies: dict[int, float] = {}
         # Momentum Runner: a paper shadow of this bot's index trades, on its
         # own tab. It reads prices and writes its own file; it never trades.
         self.runner = None
@@ -766,6 +779,7 @@ class Trader:
             log.error("scan failed: %s", exc)
             states = []
         self.top_opportunities = tuple(states[:self.cfg.scan.top_n_reported])
+        self._write_weather(now, states, account)
 
         blocked: list[str] = []
         entries_allowed = report.entries_allowed
@@ -922,9 +936,16 @@ class Trader:
                 regimes = {int(r["ticket"]): r.get("regime") for r in rows}
                 copies = {int(r["ticket"]): float(r["runner_volume"]) for r in rows
                           if r.get("runner_volume") is not None}
+                coach_copies = getattr(self, "_coach_copies", None) or {}
+                for t, v in coach_copies.items():
+                    copies.setdefault(int(t), float(v))        # the coach's word on a trade closed above
                 for note in self.runner.observe(positions, stops, self._tick_quietly, now, tactics,
                                                 regimes=regimes, copy_volumes=copies):
                     log.info("%s", note)
+                if coach_copies:
+                    seen = {int(p.ticket) for p in positions}
+                    for t in [t for t in coach_copies if int(t) not in seen]:
+                        coach_copies.pop(t, None)
             except Exception as exc:
                 log.debug("Momentum Runner skipped this pass: %s", exc)
         if self.bandbreaker is not None:
@@ -956,8 +977,27 @@ class Trader:
         if "broker" in params:
             out["broker"] = real_broker(self.broker)
         if "entries_allowed" in params:
-            out["entries_allowed"] = self._bots_may_enter
+            # 12 Oct: and the coach's gate for that bot (HALT, its pauses) - asked
+            # only once the account gate has said yes
+            name = self._COACH_BOT_NAMES.get(getattr(kls, "__name__", ""), "")
+            out["entries_allowed"] = ((lambda n=name: self._bots_may_enter() and self._coach_may_enter(n))
+                                      if name else self._bots_may_enter)
         return out
+
+    _COACH_BOT_NAMES = {"MomentumRunner": "runner", "BandBreaker": "bandbreaker", "CrowdFader": "crowd"}
+
+    def _coach_may_enter(self, name: str) -> bool:
+        """The coach's word for a bot inside this process (``CoachGate.bot_may_enter``):
+        always True for a bot that is not LIVE on Aaron's settings (practice is
+        never gated), when there is no gate, and on any error."""
+        gate = getattr(self, "coach_gate", None)
+        if gate is None:
+            return True
+        try:
+            return bool(gate.bot_may_enter(name, to_utc(self.clock())))
+        except Exception as exc:
+            log.error("the coach's gate failed for %s (%s): your own settings", name, exc)
+            return True
 
     def _bots_may_enter(self) -> bool:
         """The account-level gate the other bots share with Trend & Breakout:
@@ -1391,6 +1431,29 @@ class Trader:
                 reasons = tuple(reasons) + (top_why,)
             sizing = self.risk.size(state, spec, account, positions, risk_pct,
                                     snapshot, margin_per_lot, top=top)
+            # 12 Oct, the coach's gate (None when there is no gate). BASELINE
+            # and PIN: everything below runs exactly as before. PRACTICE: this
+            # size, on paper. REAL: sized at the grant's money instead.
+            coach = self._coach_decide(state, spec, account, snapshot, positions, sizing, now)
+            coach_route = ""
+            if coach is not None and (coach.route == "SKIP"
+                                      or (coach.route == "PRACTICE" and not isinstance(self.broker, PaperBroker))):
+                blocked.append(f"{state.symbol}: {coach.why}")
+                continue
+            if coach is not None and coach.route == "REAL":
+                granted, refused = self._coach_size(coach, state, spec, account, positions, snapshot, margin_per_lot)
+                if granted is not None:
+                    sizing, coach_route = granted, "REAL"
+                elif not isinstance(self.broker, PaperBroker):
+                    blocked.append(f"{state.symbol}: {refused}")
+                    continue
+                else:
+                    coach_route = "PRACTICE"
+                    reasons = tuple(reasons) + (refused,)
+            elif coach is not None and coach.route == "PRACTICE":
+                coach_route = "PRACTICE"
+            if coach is not None and coach.route == coach_route:
+                reasons = tuple(reasons) + (coach.why,)       # the decision's sentence, for the ENTRY event
             if not sizing.ok:
                 blocked.append(f"{state.symbol}: {sizing.rejected}")
                 continue
@@ -1419,17 +1482,31 @@ class Trader:
             # out before this trade's own risk is booked, as T&B's was
             runner_volume = self._runner_copy_volume(state, spec, account, positions, conf, kelly,
                                                      snapshot, margin_per_lot, top)
+            static_runner_volume = runner_volume
+            runner_volume = self._coach_runner_volume(state, spec, account, snapshot, sizing, runner_volume, now)
             state, twin = apply_twin(state, self.cfg.scan, self._twin_counts)
-            report = self.executor.submit(state, spec, sizing.volume)
+            if coach_route:
+                report = self.executor.submit(state, spec, sizing.volume, coach_route=coach_route)
+            else:
+                report = self.executor.submit(state, spec, sizing.volume)
             if not report.ok:
                 blocked.append(f"{state.symbol}: {report.message}")
                 self.journal.log_event("ENTRY_FAILED", report.message,
                                        "WARNING", {"symbol": state.symbol})
+                if coach is not None and "ceiling" in str(report.message):
+                    try:
+                        self.coach_gate.note_refused(coach, report.message, symbol=state.symbol, now=now)
+                    except Exception:
+                        pass
                 continue
 
             position = report.position
             self.risk.register_open_risk(position.ticket, state.symbol,
                                          state.side, sizing.risk_money)
+            if coach is not None:
+                self._coach_filled(coach, coach_route, position, state, now, equity=account.equity)
+            if runner_volume != static_runner_volume:
+                self._coach_copies[int(position.ticket)] = float(runner_volume)
             tracker = self.flowlock.adopt(position, state.stop, now,
                                           profile="2X" if twin else "")
             strength = self.thesis.register(position.ticket, state)
@@ -1487,6 +1564,215 @@ class Trader:
             log.debug("the Momentum Runner's copy of %s could not be sized: %s", state.symbol, exc)
             return None
         return float(sized.volume) if sized.ok else 0.0
+
+    # ------------------------------------------------------------ the coach --
+    def _build_coach_gate(self, data_dir: Path):
+        """The coach's gate (mintel/coach/gate.py) for Trend & Breakout, with
+        the PAPER wrapper's envelope re-check and ceiling and the daily-loss
+        check's limits attached. None in a dry run or when it cannot be built:
+        then everything runs on Aaron's own settings, as before."""
+        if self.dry_run:
+            return None
+        login = int(getattr(self.cfg, "account_login", 0) or 0)
+        if not login:
+            try:
+                login = int(self.real_broker.account().login or 0)
+            except Exception:
+                login = 0
+        try:
+            from ..coach.gate import build
+            gate = build("tnb", data_dir, self.cfg, clock=self.clock, account_login=login)   # HALT always holds
+        except Exception as exc:
+            log.error("the coach's gate could not be built (%s): your own settings", exc)
+            return None
+        if isinstance(self.broker, PaperBroker) and not self.broker.read_only:
+            self.broker.coach_confirm = gate.confirm_order
+            self.broker.ceiling_pct = lambda: gate.effective_limits().max_risk_pct
+        self.risk.limits = gate.effective_limits
+        return gate
+
+    def _real_ticket(self, ticket: int) -> bool:
+        return not (isinstance(self.broker, PaperBroker) and self.broker.is_paper(int(ticket)))
+
+    def _live_headroom(self, snapshot) -> Optional[float]:
+        """B5, this process's own figure: the daily stop's room on the broker's
+        day, real money only, less the real risk this bot has open."""
+        try:
+            limit = float(self.risk.effective_risk().max_daily_loss_pct) / 100.0
+            e0 = float(snapshot.equity) - float(snapshot.daily_pnl)
+            real_today = snapshot.daily_real_pnl if snapshot.daily_real_pnl is not None else snapshot.daily_pnl
+            open_real = sum(float(m) for t, (_, _, m) in list(self.risk._open_risk.items())
+                            if self._real_ticket(t))
+            return limit * e0 + min(0.0, float(real_today)) - open_real
+        except Exception:
+            return None
+
+    def _coach_ctx(self, account, snapshot, positions, planned: Optional[float], *, has_paper: bool):
+        from ..coach import RiskCtx
+        own = []
+        for p in positions:
+            if self._real_ticket(p.ticket):
+                money = self.risk._open_risk.get(p.ticket, (None, None, 0.0))[2]
+                own.append((p.open_time, float(money or 0.0)))
+        magic = int(self.cfg.magic)
+
+        def others():
+            return [p for p in (real_broker(self.broker).positions(None) or [])
+                    if int(getattr(p, "magic", 0) or 0) != magic]
+        return RiskCtx(equity=float(account.equity), live_headroom_gbp=self._live_headroom(snapshot),
+                       own_open=tuple(own), others=others, has_paper=has_paper, planned_gbp=planned)
+
+    def _coach_decide(self, state: MarketState, spec, account, snapshot, positions, sizing,
+                      now: dt.datetime):
+        """The gate's Decision for this entry, or None (no gate, or it failed:
+        Aaron's own settings). ``sizing``: the size on Aaron's own settings."""
+        gate = self.coach_gate
+        if gate is None:
+            return None
+        try:
+            from .tactics import approach_of
+            paper = isinstance(self.broker, PaperBroker)
+            static_real = (self.broker.static_goes_real(state.symbol, state.tactic, spec) if paper else True)
+            planned = float(sizing.risk_money) if sizing is not None and sizing.ok else None
+            ctx = self._coach_ctx(account, snapshot, positions, planned, has_paper=paper)
+            return gate.decide(approach_of(state.tactic), self.risk.market_kind(spec, state.symbol),
+                               state.regime.value, state.symbol, state.side, state.opportunity,
+                               state.reward_risk, now, static_real, ctx)
+        except Exception as exc:
+            log.error("the coach's gate failed for %s (%s): your own settings", state.symbol, exc)
+            return None
+
+    def _coach_size(self, coach, state: MarketState, spec, account, positions, snapshot, margin_per_lot):
+        """(sizing, "") for a coach REAL grant: sized at its money, never above
+        it or the ceiling after lot rounding; (None, why) when it cannot be."""
+        import dataclasses
+        try:
+            money = float(coach.money_gbp or 0.0)
+            if money <= 0:
+                return None, "the coach's grant has no money left: practice"
+            r = dataclasses.replace(self.cfg.risk, max_risk_money=money)
+            if coach.ceiling_pct and float(coach.ceiling_pct) > r.max_risk_pct:
+                r = dataclasses.replace(r, max_risk_pct=float(coach.ceiling_pct))
+            if coach.exposure:
+                corr, tot = coach.exposure
+                r = dataclasses.replace(r, max_correlated_risk_pct=max(r.max_correlated_risk_pct, float(corr)),
+                                        max_total_risk_pct=max(r.max_total_risk_pct, float(tot)))
+            pct = money / max(float(account.equity), 1e-9) * 100.0
+            sizing = self.risk.size(state, spec, account, positions, pct, snapshot, margin_per_lot,
+                                    top=False, risk=r)
+            ceiling = float(account.equity) * float(r.max_risk_pct) / 100.0
+            if not sizing.ok:
+                return None, f"the coach's grant could not be sized ({sizing.rejected}): practice"
+            if sizing.risk_money > money + 0.01 or sizing.risk_money > ceiling + 0.01:
+                log.critical("the coach's grant on %s sized at %.2f, above its %.2f or the ceiling %.2f: practice",
+                             state.symbol, sizing.risk_money, money, ceiling)
+                return None, "the coach's grant sized above its money or the ceiling: practice"
+            return sizing, ""
+        except Exception as exc:
+            log.error("the coach's grant on %s could not be sized (%s): practice", state.symbol, exc)
+            return None, "the coach's grant could not be sized: practice"
+
+    def _coach_runner_volume(self, state: MarketState, spec, account, snapshot, sizing,
+                             runner_volume: Optional[float], now: dt.datetime) -> Optional[float]:
+        """The coach's word on the LIVE Momentum Runner's copy of this trade:
+        SKIP gives 0.0 (no ride, C8); a lower money cap gives at most that much
+        at the stop, rounded down to the lot step. Unchanged otherwise, and
+        always unchanged for a Runner that is not LIVE (practice is never gated)."""
+        gate = self.coach_gate
+        if gate is None or self.runner is None:
+            return runner_volume
+        try:
+            rc = getattr(self.cfg, "runner", None)
+            if str(getattr(rc, "mode", "") or "").strip().upper() != "LIVE" or not self.runner.wants(state.symbol):
+                return runner_volume
+            from .tactics import approach_of
+            copy = float(runner_volume) if runner_volume is not None else float(sizing.volume)
+            per_lot = spec.money_per_lot(abs(state.entry - state.stop))
+            planned = copy * per_lot if per_lot > 0 else None
+            ctx = self._coach_ctx(account, snapshot, (), planned, has_paper=False)
+            ctx.others = None                              # B6 is for Trend & Breakout's granted keys
+            d = gate.decide(approach_of(state.tactic), self.risk.market_kind(spec, state.symbol),
+                            state.regime.value, state.symbol, state.side, state.opportunity,
+                            state.reward_risk, now, True, ctx, bot="runner")
+            if d.route in ("SKIP", "PRACTICE"):
+                log.info("Momentum Runner: no ride on %s - %s", state.symbol, d.why)
+                return 0.0
+            if d.money_gbp is not None and per_lot > 0:
+                capped = spec.normalise_volume(min(copy, float(d.money_gbp) / per_lot))
+                if capped < copy - 1e-12:
+                    return capped
+            return runner_volume
+        except Exception as exc:
+            log.error("the coach's gate failed for the Momentum Runner (%s): your own settings", exc)
+            return runner_volume
+
+    def _coach_filled(self, coach, coach_route: str, position: Position, state: MarketState,
+                      now: dt.datetime, equity: Optional[float] = None) -> None:
+        """After a fill: a coach-real ticket remembered by the PAPER wrapper
+        (C3), and the ticket in the gate's log."""
+        try:
+            real = self._real_ticket(position.ticket)
+            if coach_route == "REAL" and real and isinstance(self.broker, PaperBroker):
+                self.broker.note_coach_real(position.ticket, coach.key, now)
+            if real or coach_route:
+                paper = isinstance(self.broker, PaperBroker)
+                static_real = (self.broker.static_goes_real(state.symbol, state.tactic, self.broker.spec(state.symbol))
+                               if paper else True)
+                self.coach_gate.note_fill(position.ticket, coach, symbol=state.symbol, real=real, now=now,
+                                          static_real=static_real, equity=equity)
+        except Exception as exc:
+            log.warning("the coach's fill record failed for %s: %s", position.ticket, exc)
+
+    def _write_weather(self, now: dt.datetime, states: Sequence[MarketState], account) -> None:
+        """Every 60 s: data/coach/weather.json (atomically), the market board
+        from the latest scan - one entry per scanned symbol - and whether the
+        broker reports a demo account (section 21's demo test reads it)."""
+        if self.dry_run or getattr(self.coach_gate, "paths", None) is None:
+            return
+        if self._weather_at is not None and (now - self._weather_at).total_seconds() < 60.0:
+            return
+        self._weather_at = now
+        try:
+            import json
+            import os
+            by_symbol: dict[str, list[MarketState]] = {}
+            for st in states:
+                by_symbol.setdefault(st.symbol, []).append(st)
+            uni = self.scanner.universe
+            symbols = list(uni.symbols) if uni else sorted(by_symbol)
+            rows = []
+            for sym in symbols:
+                spec = uni.specs.get(sym) if uni else None
+                got = by_symbol.get(sym, [])
+                best = got[0] if got else None
+                label = str(best.regime_label) if best is not None else ""
+                vol = label.split("/")[-1].replace("VOL", "").strip() if "/" in label else None
+                news = None
+                if best is not None:
+                    news = "BLOCKED" if any("news" in str(b).lower() for st in got for b in st.blockers) else "CLEAR"
+                rows.append({"symbol": sym, "kind": self.risk.market_kind(spec, sym),
+                             "regime": best.regime.value if best is not None else None,
+                             "confidence": None, "vol_state": vol or None, "spread_points": None,
+                             "news_state": news, "tradable": any(st.tradable for st in got),
+                             "as_of_utc": to_utc(best.as_of).isoformat() if best is not None else None})
+            is_demo = bool(getattr(account, "is_demo", False)) if account is not None else False
+            server = str(getattr(account, "server", "") or "") if account is not None else ""
+            doc = {"schema": 1, "bot": "tnb", "as_of_utc": to_utc(now).isoformat(),
+                   "account_demo": bool(account is not None and is_demo and "demo" in server.lower()),
+                   "account_is_demo": is_demo, "account_server": server,
+                   "account_login": int(getattr(account, "login", 0) or 0) if account is not None else 0,
+                   "config_mode": str(self.cfg.effective_mode), "tnb_mode": self.tnb_mode_detail,
+                   "scanned": len(symbols), "symbols": rows}
+            path = self.coach_gate.paths.weather
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(json.dumps(doc, sort_keys=True, default=str))
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+        except Exception as exc:
+            log.warning("the market board (weather.json) could not be written: %s", exc)
 
     def _add_model_evidence(self, state: MarketState) -> MarketState:
         """Fold the calibrated model in as one more evidence family.

@@ -144,7 +144,8 @@ class Executor:
 
     def submit(self, state: MarketState, spec: SymbolSpec, volume: float,
                *, max_attempts: int = 3,
-               deviation_points: int = 0) -> ExecutionReport:
+               deviation_points: int = 0,
+               coach_route: str = "") -> ExecutionReport:
         """Send one entry, then verify the broker actually holds a stop.
 
         Requote-class rejections are retried with a refreshed price; everything
@@ -152,6 +153,9 @@ class Executor:
         the broker dropped it, re-applied immediately - a position without a
         broker-side stop is the single most dangerous state this system can be
         in.
+
+        ``coach_route`` (12 Oct, the coach): copied into the request for the
+        PAPER wrapper ("" = Aaron's own settings route it, as always).
         """
         key = make_key(state, spec)
         existing = self.already_submitted(key)
@@ -195,7 +199,8 @@ class Executor:
                 # 10 Oct: on PAPER the wrapper sends an order on a live
                 # market to the real broker only for an approach in
                 # tnb.live_tactics (when set); it is never sent on
-                tactic=str(state.tactic or ""))
+                tactic=str(state.tactic or ""),
+                coach_route=str(coach_route or ""))
             try:
                 result = self.broker.send(req)
             except Exception as exc:
