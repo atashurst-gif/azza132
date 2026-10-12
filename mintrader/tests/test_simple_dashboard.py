@@ -53,15 +53,34 @@ def account_figs(page: str) -> dict:
 
 
 def row_of(page: str, label: str) -> str:
-    """One bot's row on the main page."""
-    name = f'<span class="s-name">{label}</span>'
+    """One bot's line on the main page's leaderboard."""
+    name = f'<span class="lb-name">{label}</span>'
     assert page.count(name) == 1, label
-    start = page.rindex('<a class="s-bot"', 0, page.index(name))
+    start = page.rindex('<a class="lb-row"', 0, page.index(name))
     return page[start:page.index("</a>", page.index(name)) + 4]
 
 
 def row_figs(row: str) -> dict:
-    return {unescape(k): money(v) for k, v in re.findall(r'<div class="s-k">([^<]*)</div><div class="s-m">(.*?)</div>', row)}
+    """{column: number} of a line's money - the column is the cell's title ("Today", "Overall (practice)" ...)."""
+    return {unescape(k): money(v) for k, v in re.findall(r'<div class="lb-m[^"]*" title="([^"]*)">(.*?)</div>', row)}
+
+
+def row_trades(row: str) -> tuple[str, str]:
+    """(its title, its count) of a line's trades cell."""
+    m = re.search(r'<div class="lb-t[^"]*" title="([^"]*)">([^<]*)</div>', row)
+    assert m, row
+    return unescape(m.group(1)), m.group(2)
+
+
+def row_word(row: str) -> tuple[str, str, str]:
+    """(the verdict word, its dot's colour, the headline in its title) of a line."""
+    m = re.search(r'<div class="lb-v" title="([^"]*)"><i class="dot ([a-z]+)"></i>([^<]*)</div>', row)
+    assert m, row
+    return unescape(m.group(3)), m.group(2), unescape(m.group(1))
+
+
+def names_in_order(page: str) -> list[str]:
+    return [unescape(x) for x in re.findall(r'<span class="lb-name">([^<]*)</span>', page)]
 
 
 def text_of(page: str) -> str:
@@ -174,8 +193,12 @@ class TestTheAccountIsStandingsOwnFigures:
                     want[f"{v['label']} (practice)"] = p_sel[bid]
                 assert figs == want, (k, bid)
         rider = row_of(pages["today"], "Rapid Momentum Rider")
-        assert ">2 trades, 50% won<" in rider and ">Trades today<" in rider          # 10.17 won, -3.04 lost
+        assert row_trades(rider) == ("Trades today", "2")                             # 10.17 won, -3.04 lost
         assert row_figs(rider) == {"Today": 7.13, "Overall": 7.08}
+        # each line's trades: period_view's real count for a LIVE bot, its practice count for a PAPER one
+        sel = period_view(d.sd, d.deals, "today", now=NOW)
+        assert row_trades(row_of(pages["today"], "Momentum Runner"))[1] == str(sel["bots"]["momentum_runner"]["trades"])
+        assert row_trades(row_of(pages["today"], "Band Breaker")) == ("Trades today (practice)", "1")
 
     def test_practice_trades_are_counted_exactly_as_the_practice_figure(self, tmp_path):
         d = a_day(tmp_path)
@@ -204,7 +227,8 @@ class TestTheAccountIsStandingsOwnFigures:
         assert 'class="s-p on" href="/?period=week"' in page                        # the chosen period still shows
         for label in ("Trend &amp; Breakout", "Rapid Momentum Rider", "Momentum Runner", "Band Breaker",
                       "Crowd Fader", "Financial Ian"):
-            assert f'<span class="s-name">{label}</span>' in page
+            assert f'<span class="lb-name">{label}</span>' in page
+        assert "£" not in page.split("<h2>Leaderboard</h2>")[1].split("</section>")[0]   # no money guessed on a line
 
 
     def test_before_metatrader_is_read_each_bots_practice_is_still_the_chosen_periods(self, tmp_path):
@@ -215,12 +239,14 @@ class TestTheAccountIsStandingsOwnFigures:
         finally:
             httpd.shutdown()
         band = row_of(week, "Band Breaker")
-        assert ">Trades this week<" in band and ">1 practice trade, 100% won<" in band   # the made-up 9 Oct trade
-        assert ">no practice trades<" in row_of(yesterday, "Band Breaker")
+        assert row_trades(band) == ("Trades this week (practice)", "1")                 # the made-up 9 Oct trade
+        assert row_trades(row_of(yesterday, "Band Breaker")) == ("Trades yesterday (practice)", "0")
         assert "What happened - This week" in detail
         assert "1 practice trade this week, 1 won, +£4.20 after costs (practice, not money)." in unescape(detail)
         rider = row_of(week, "Rapid Momentum Rider")
-        assert '<div class="s-m">-</div>' in rider and "No verdict just now" in rider    # never a guess at real money
+        # its mode is not known until MetaTrader is read: no money on its line at all - never a guess at real money
+        assert "£" not in rider and re.findall(r'<div class="lb-m[^"]*" title="[^"]*">([^<]*)</div>', rider) == ["-", "-"]
+        assert '<span class="lb-st unk" title="Mode not known yet">-</span>' in rider
 
 
 # ================================ a bot's own page: period_view's own money --
@@ -247,7 +273,8 @@ class TestABotsOwnPageCarriesTheSameMoney:
         rider, tnb = tot["bots"]["momentum_rider"]["made"], tot["bots"]["market_intelligence"]["made"]
         assert (rider, tnb) == (7.08, 34.70)                       # the main page's Overall for each
         assert row_figs(row_of(home, "Rapid Momentum Rider"))["Overall"] == rider
-        assert "overall +£34.70." in row_of(home, "Trend &amp; Breakout")
+        # Trend & Breakout is on PAPER here: its line is practice; its real money from its LIVE days is on its page
+        assert "Real money from its LIVE days: overall +£34.70." in pages["market_intelligence"]
         # What happened - Total: the same figure, never the closed trades added up (+7.13 and +34.30)
         assert "2 trades in total, 1 won, +£7.08 after costs." in pages["momentum_rider"]
         assert ("Its 2 closed trades on their own come to +£7.13; the Overall figure (+£7.08) also counts £0.05 of "
@@ -284,23 +311,27 @@ class TestPracticeIsLabelled:
         httpd, get = serve(d)
         try:
             today, yesterday = get("/"), get("/?period=yesterday")
+            band_page, crowd_page, tnb_page = (unescape(get("/?bot=band_breaker")),
+                                               unescape(get("/?bot=crowd_fader&period=yesterday")),
+                                               unescape(get("/?bot=market_intelligence")))
         finally:
             httpd.shutdown()
         band = row_of(today, "Band Breaker")
-        assert '<div class=s-prac><div class="s-k">Today (practice)</div><div class="s-m">' in band
+        assert '<div class="lb-m lb-p prac" title="Today (practice)">' in band            # grey, and says so
+        assert '<div class="lb-m lb-o prac" title="Overall (practice)">' in band
         assert row_figs(band) == {"Today (practice)": 4.20, "Overall (practice)": 4.20}
-        assert ">1 practice trade, 100% won<" in band and "Practice only (PAPER), not real money." in band
-        crowd = row_of(yesterday, "Crowd Fader")
+        assert row_trades(band) == ("Trades today (practice)", "1")
+        assert '<span class="lb-st practice" title="Practice (PAPER) - not real money">PRACTICE</span>' in band
+        # what is real and what is practice, in words, is on each bot's own page
+        assert "Practice only (PAPER), not real money." in band_page
         assert ("Practice only, not real money. Real money from its LIVE days: yesterday -£9.36 (1 trade), "
-                "overall -£9.36.") in crowd
-        tnb = row_of(today, "Trend &amp; Breakout")
-        assert "Real money from its LIVE days: today +£14.70 (1 trade), overall +£14.70." in tnb
+                "overall -£9.36.") in crowd_page
+        assert "Real money from its LIVE days: today +£14.70 (1 trade), overall +£14.70." in tnb_page
         for label in ("Rapid Momentum Rider", "Momentum Runner", "Financial Ian"):        # LIVE: money, no practice
             row = row_of(today, label)
-            nums = row.split('<div class="s-nums">')[1]                 # its figures: real money only
-            assert "practice" not in nums and "s-prac" not in row, label
-            assert '<span class="s-mode live">LIVE</span>' in row
-        assert '<span class="s-mode">PAPER</span>' in band
+            cells = row.split('<div class="lb-v"')[0]                     # its figures (the word's title is its headline)
+            assert "practice" not in cells and "prac" not in cells, label                # its figures: real money only
+            assert '<span class="lb-st live" title="Real money">LIVE</span>' in row
 
 
 class TestRealAndPracticeAreNamedApart:
@@ -313,7 +344,8 @@ class TestRealAndPracticeAreNamedApart:
         finally:
             httpd.shutdown()
         row = row_of(home, "Rapid Momentum Rider")
-        assert "Too early to tell: 3 trades (2 real, 1 practice) so far" in unescape(row)
+        assert row_word(row)[:2] == ("Too early", "grey")
+        assert "Too early to tell: 3 trades (2 real, 1 practice) so far" in row_word(row)[2]
         assert "Its whole record, real and practice together: 3 trades (2 real, 1 practice) over 1 UK day" in page
         s = V.stats(made_up([[1.0] * 6]) + made_up([[1.0] * 6], kind="practice"))
         assert V.headline(V.PROMISING, s, None, "", (6, 6)).startswith(
@@ -634,13 +666,16 @@ class TestThePlan:
         doc = (Path(V.PLAN_FILE).parent / "strategies" / "v2-commission-first.md").read_text()
         assert "17 trades, -13.87 after 17.48 commission" in doc and "| FX majors | 74 | 49% | -83.73 |" in doc
 
-    def test_the_plan_renders_on_the_main_page(self, tmp_path):
+    def test_the_plan_renders_on_the_coach_page(self, tmp_path):
+        """12 Oct: the plan moved off "/" (Aaron: "its just a load of writing") to /coach, whole."""
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            page = get("/")
+            page, home = get("/coach"), get("/")
         finally:
             httpd.shutdown()
+        assert "<h2>The plan</h2>" not in home and "The focus now" not in home
+        assert 'href="/coach">The coach, the plan and what changed</a>' in home
         plan, _ = V.load_plan()
         raw = page.split("<h2>The plan</h2>")[1].split("</section>")[0]
         box = text_of(raw)
@@ -662,18 +697,21 @@ class TestThePlan:
         assert "Check:" not in box                                       # nothing disagrees on this made-up day
 
     def test_the_bots_come_first_and_the_plans_reasons_fold_away(self, tmp_path):
-        """One screen: the account, then the bots, then the plan - its aim, focus and next steps in view, each
-        Bin/Change/Keep item one line with its reason folded under it, and its sources folded at the end."""
+        """"/": the account, the coach's line, then the leaderboard, then the lab's line. /coach: the coach, what
+        changed, then the plan - its aim, focus and next steps in view, each Bin/Change/Keep item one line with its
+        reason folded under it, and its sources folded at the end."""
         from html import escape
         from mintel.ops.dashboard import KEEP_OPEN_JS
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            page = get("/")
+            home, page = get("/"), get("/coach")
         finally:
             httpd.shutdown()
         plan, _ = V.load_plan()
-        assert page.index('<div class="s-acct">') < page.index("<h2>The bots") < page.index("<h2>The plan</h2>")
+        assert (home.index('<div class="s-acct">') < home.index('<a class="s-line" href="/coach">Coach: ')
+                < home.index("<h2>Leaderboard</h2>") < home.index('<a class="s-line" href="/lab">'))
+        assert page.index("<h2>What changed since yesterday</h2>") < page.index("<h2>The plan</h2>")
         raw = page.split("<h2>The plan</h2>")[1].split("</section>")[0]
         for bucket in ("bin", "change", "keep"):
             for k, item in enumerate(plan[bucket]):
@@ -691,14 +729,14 @@ class TestThePlan:
         research_file(d.data, "financial_ian", code="NO EDGE", trades=40)   # MADE-UP research: no edge
         httpd, get = serve(d)
         try:
-            page, ian = get("/"), get("/?bot=financial_ian")
+            page, ian, home = get("/coach"), get("/?bot=financial_ian"), get("/")
         finally:
             httpd.shutdown()
         flag = "The plan says keep testing Financial Ian, but its record now says NO EDGE."
         box = text_of(page.split("<h2>The plan</h2>")[1].split("</section>")[0])
         assert f"Check: {flag}" in box
-        assert flag in unescape(ian)
-        assert '<span class="s-chip amber">NO EDGE</span>' in row_of(page, "Financial Ian")
+        assert flag in unescape(ian) and '<span class="s-chip amber">NO EDGE</span>' in ian
+        assert row_word(row_of(home, "Financial Ian"))[:2] == ("Losing", "red")
 
     def test_disagreement_wording_for_each_stance(self):
         plan = {"bin": [{"bot": "momentum_rider", "stance": "bin", "says": "take {name} off live trading", "text": "x"}],
@@ -740,8 +778,10 @@ class TestThePlan:
         (tmp_path / "plan.json").write_text("{not json")
         plan, err = V.load_plan(tmp_path / "plan.json")
         assert plan is None and "could not be read" in err
+        from mintel.ops.dashboard import _plan_html
+        assert "No plan to show: the plan file could not be read" in _plan_html(None, err, {})   # on /coach
         page = render_home({"standing": {}}, None, {}, None, err)
-        assert "No plan to show: the plan file could not be read" in page
+        assert "dashboard error" not in page and "<h2>Leaderboard</h2>" in page
 
 
 # =================================================== one bot, in detail --
@@ -769,27 +809,36 @@ class TestOneBotInDetail:
         assert "Rapid Momentum Rider - trades closed today - 3" in page[box_end:]
         assert "Rapid Momentum Rider - open trades right now - 1 open" in page[box_end:]
         assert "<th>Market</th><th>Direction</th><th>Score</th><th>State</th><th>Reason</th>" in page[box_end:]
+        # its place on the ladder and its five checks moved here from the main page (12 Oct)
+        assert "<h2>On the ladder</h2>" in page and '<span class="s-stage">LIVE TRIAL</span>' in page
+        assert page.index("<h2>Recommendation</h2>") < page.index("<h2>The five checks</h2>") < box_end
+        assert len(re.findall(r'<span class="s-ck [a-z]+" title="[^"]*">', page.split("<h2>The five checks</h2>")[1]
+                              .split("</div>")[0])) == 5
+        # on "/": one line - its verdict in one word, its headline in the word's title, no paragraph
         row = row_of(home, "Rapid Momentum Rider")
-        assert '<span class="s-chip amber">NO EDGE</span>' in row
-        assert "No edge: its own 10-day test on real past prices lost 1.33 pips a trade over 1,073 trades." in row
-        assert ("<b>What to do:</b> Take it off live trading - put it back on PAPER (or bin it).") in row
+        word, dot, why = row_word(row)
+        assert (word, dot) == ("Losing", "red")
+        assert "No edge: its own 10-day test on real past prices lost 1.33 pips a trade over 1,073 trades." in why
+        assert "What to do" not in row and "s-checks" not in row and row.count("<p") == 0
 
-    def test_every_row_on_the_main_page_says_what_to_do(self, tmp_path):
+    def test_every_line_opens_its_bot_whose_page_says_what_to_do(self, tmp_path):
         d = a_day(tmp_path)
         research_file(d.data, "momentum_rider")                          # MADE-UP research: no edge
         httpd, get = serve(d)
         try:
             page = get("/")
+            tot = period_view(d.sd, d.deals, "total", now=NOW)
+            sel = period_view(d.sd, d.deals, "today", now=NOW)
+            vs = V.all_verdicts(d.sd, sel, tot, str(d.data), NOW, V.load_plan()[0], deals=d.deals)
+            for bid, v in vs.items():
+                row = row_of(page, v["label"].replace("&", "&amp;"))
+                assert row.startswith(f'<a class="lb-row" href="/?period=today&bot={bid}"'), bid
+                assert v["headline"].replace("&", "&amp;") in row, bid           # its headline, in the word's title
+                detail = get(f"/?bot={bid}")
+                assert v["recommendation"] and (f'<h2>Recommendation</h2><p>'
+                                                 f'{v["recommendation"].replace("&", "&amp;")}</p>') in detail, bid
         finally:
             httpd.shutdown()
-        tot = period_view(d.sd, d.deals, "total", now=NOW)
-        sel = period_view(d.sd, d.deals, "today", now=NOW)
-        vs = V.all_verdicts(d.sd, sel, tot, str(d.data), NOW, V.load_plan()[0], deals=d.deals)
-        for bid, v in vs.items():
-            row = row_of(page, v["label"].replace("&", "&amp;"))
-            assert v["recommendation"] and (f'<div class="s-rec"><b>What to do:</b> '
-                                             f'{v["recommendation"].replace("&", "&amp;")}</div>') in row, bid
-        assert "<b>What to do:</b> Take it off live trading" in row_of(page, "Rapid Momentum Rider")
 
     def test_on_a_phone_each_wide_table_scrolls_by_itself(self, tmp_path):
         """A bot's old detail (its trades, its scanner) keeps its tables; on a 390px phone each scrolls sideways on
@@ -817,8 +866,12 @@ class TestOneBotInDetail:
         assert '<meta name="viewport" content="width=device-width,initial-scale=1">' in page
         assert "background:#fff" in page                                  # white, calm
         assert '<a href="/details?period=today">All the technical detail</a>' in page
-        for link in ('href="/rider"', 'href="/ian"', 'href="/health"'):
+        for link in ('href="/rider"', 'href="/ian"', 'href="/health"', 'href="/coach"', 'href="/lab"'):
             assert link in page
+        # 12 Oct: short - no paragraphs per bot, no checks, no standouts card, no plan, no "what changed"
+        for absent in ("What to do", 'class="s-checks"', "Today's standouts", "<h2>The plan</h2>", "What changed",
+                       'class="s-hl"', "s-scout", "The coach's call", 'class="s-extra"', '<span class="s-ck'):
+            assert absent not in page, absent
 
     def test_the_quiet_banner_is_on_a_live_bots_view_and_details_only(self, tmp_path):
         d = quiet_day(tmp_path)
@@ -906,13 +959,14 @@ class TestEverythingIsEscaped:
         research_file(d.data, "financial_ian", code="NO EDGE", trades=40)   # flags the keep item, with its "<b>"
         httpd, get = serve(d)
         try:
-            pages = [get("/"), get("/?bot=financial_ian"), get("/?bot=momentum_rider")]
+            pages = [get("/coach"), get("/?bot=financial_ian"), get("/?bot=momentum_rider"), get("/")]
         finally:
             httpd.shutdown()
         for page in pages:
             assert "<script>alert" not in page and "<b>Financial Ian</b>" not in page
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in pages[0]
         assert "The plan says &lt;b&gt;Financial Ian&lt;/b&gt;, but its record now says NO EDGE." in pages[0]
+        assert "The plan says &lt;b&gt;Financial Ian&lt;/b&gt;, but its record now says NO EDGE." in pages[1]
         assert "&lt;b&gt;breaking&lt;/b&gt;" in pages[2] and "<b>breaking</b>" not in pages[2]   # the Rider's scanner
 
 
@@ -931,7 +985,7 @@ class TestTheRefreshKeepsTheChoice:
             assert '<form class="dates" method="get" action="/">' in page      # never wiped while typing a date
             assert 'http-equiv="refresh" content="10;' not in page             # no refresh that drops the query
         assert 'class="s-p on" href="/?period=week"' in week
-        assert '<a class="s-bot" href="/?period=week&bot=band_breaker">' in week     # rows keep the period
+        assert '<a class="lb-row" href="/?period=week&bot=band_breaker">' in week    # rows keep the period
         assert 'class="s-p on" href="/?period=yesterday&bot=crowd_fader"' in crowd   # buttons keep the bot
         assert 'href="/?period=today&bot=crowd_fader"' in crowd
         assert '<input type="hidden" name="bot" value="crowd_fader">' in crowd

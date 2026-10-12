@@ -45,18 +45,16 @@ from .standing import _money, uk_date, uk_midnight
 # ------------------------------------------------------------- the words --
 TEST_DATA = "TEST DATA - not a result"
 NOT_RUN = "The lab has not run yet."
-NO_STANDOUTS = "No standouts today. Nothing has earned it yet - that is the test working."
 NOTHING_MOVED = "Nothing moved."
 NO_SUCH_IDEA = "No such idea."
 STAGE_NOTE = ("Past test = tried on old prices. Fresh test = tried once on prices it had never seen. On the bench = "
               "passed both, waiting for a practice place. Practice = live prices, no money. Ready for live = the "
               "lab's work is done; Aaron's call. Live trial = a little real money, judged after 20 trades. Proven = "
               "keep and grow. Binned = out, not retried.")
-LADDER_TITLE = "The bots and the lab's candidates - tap one for what happened, what to do and the evidence"
 SYNTHETIC_WHAT_TO_DO = "Nothing - this is test data made up to check the lab works, not a result."
 UNREADABLE = "MetaTrader's records could not be read just now - nothing is shown rather than a guess."
 
-# the three groups of the ladder on "/", in order, and the stages each holds (in order)
+# the three groups of the ladder on /lab, in order, and the stages each holds (in order)
 REAL_MONEY, PRACTISING, BINNED_GROUP = "Real money", "Practising", "Binned"
 GROUPS = ((REAL_MONEY, (PROVEN, LIVE_TRIAL)), (PRACTISING, (READY_FOR_LIVE, PRACTICE, ON_THE_BENCH)),
           (BINNED_GROUP, (BINNED,)))
@@ -73,7 +71,7 @@ LAB_NONE, LAB_BROKEN, LAB_COLLECTING, LAB_READY = "none", "broken", "collecting"
 WINDOW_DAYS = 10                    # standouts look at the last 10 UK trading days ...
 WINDOW_MIN_TRADES = 10              # ... and need at least 10 closed trades in them
 STANDOUTS_MAX = 3                   # never more, never padded
-BINNED_SHOWN_DAYS = 7               # candidates binned this recently sit in the Binned group on "/"
+BINNED_SHOWN_DAYS = 7               # candidates binned this recently sit on "/" (the leaderboard, as OFF)
 CHANGES_HOURS = 24                  # "What changed since yesterday"
 CHANGES_MAX = 5
 STANDOUT_STAGES = (PRACTICE, READY_FOR_LIVE, LIVE_TRIAL, PROVEN)
@@ -1015,3 +1013,102 @@ def practice_now_line(lab: dict, now: dt.datetime) -> str:
     if st.get("last_error"):
         out += f" Last problem: {st.get('last_error')}."
     return out
+
+
+# ------------------------------------------------- the one-line leaderboard (12 Oct) --
+# Aaron, 12 Oct 2026: "The ui is confusing, it should be combined bots but still talks about and breaks down only the
+# old ones, we need to clean it up, its just a load of writing". "/" is now ONE list - the bots and the lab's ideas
+# treated the same, one line each; everything else moved to each one's own page.
+_MARKET_SHORT = (("the minor pairs", "minor pairs"), ("the major pairs", "major pairs"),
+                 ("the stock indices", "stock indices"), ("gold", "gold"))
+
+
+def _family_label(c: dict) -> str:
+    """The idea's family in a few words: the summary's own family_label, else the lab's family registry by its
+    code, else the start of its name."""
+    got = str(c.get("family_label") or "").strip()
+    if got:
+        return got
+    code = str(c.get("family") or "")
+    if code:
+        try:
+            from ..lab.families import all_families
+            got = next((f.label for f in all_families(True) if f.code == code), "")
+        except Exception:                                    # never a reason to fail the page
+            got = ""
+        if got:
+            return got
+    name = str(c.get("name") or c.get("id") or "")
+    return re.split(r"[(,;]", name, maxsplit=1)[0].strip() or name
+
+
+def short_name(c: dict) -> str:
+    """A lab idea's short name for the one-line list: its family and its markets, e.g. "Momentum burst · minor
+    pairs". The full name stays on its own page (and in the row's title)."""
+    name = str(c.get("name") or "")
+    fam = _family_label(c)
+    market = next((short for long, short in _MARKET_SHORT if long in name), "")
+    return f"{fam} · {market}" if market and market not in fam else fam
+
+
+def short_names(cands: Sequence[dict]) -> dict:
+    """{id: short name} for a list of ideas; two ideas that would read the same get (1), (2) ... in list order,
+    so no two rows look alike."""
+    base = {str(c.get("id")): short_name(c) for c in cands}
+    seen: dict = {}
+    count = {}
+    for n in base.values():
+        count[n] = count.get(n, 0) + 1
+    out = {}
+    for c in cands:
+        cid = str(c.get("id"))
+        n = base[cid]
+        if count[n] > 1:
+            seen[n] = seen.get(n, 0) + 1
+            n = f"{n} ({seen[n]})"
+        out[cid] = n
+    return out
+
+
+def lab_line(lab: dict, now: dt.datetime) -> str:
+    """The lab in one short line on "/": "Lab: 632 ideas tested · 14 passed · 5 practising · 623 binned" - from the
+    summary's funnel only; its own words when it has not run, could not be read or is still collecting; TEST DATA
+    for a made-up run."""
+    if lab.get("state") != LAB_READY:
+        return str(lab.get("line") or NOT_RUN)
+    sm = lab.get("summary") or {}
+    if lab.get("synthetic") or sm.get("synthetic"):
+        return f"Lab: {TEST_DATA}"
+    f = sm.get("funnel") if isinstance(sm.get("funnel"), dict) else {}
+    if not f:
+        return "Lab: nothing tried yet."
+    tried = _int(f.get("past_tested"))
+    tried = tried if tried is not None else _int(f.get("ideas"))
+    bits = [f"{_count(tried)} ideas tested", f"{_count(f.get('past_passed'))} passed",
+            f"{_count(f.get('practice'))} practising"]
+    for key, words in (("ready", "ready for live"), ("live", "on a live trial"), ("proven", "proven")):
+        if (_int(f.get(key)) or 0) > 0:
+            bits.append(f"{_count(f.get(key))} {words}")
+    bits.append(f"{_count(f.get('binned'))} binned")
+    line = "Lab: " + " · ".join(bits)
+    if run_missed(sm.get("nightly"), now):
+        line += " · last night's run missed"
+    return line
+
+
+def lab_period_figures(c: dict, key: str, written: Optional[dt.datetime], now: dt.datetime) -> tuple:
+    """(money, trades) of an idea's PRACTICE in the page's chosen period, from the summary's own figures - or
+    (None, None) when the summary does not hold that period: it is written once a night, so its "today" is
+    only today's when it was written today (UK), and its "this week" (from Monday, UK) likewise.
+    Total is its whole practice record. Never a guess."""
+    f = c.get("figures") if isinstance(c.get("figures"), dict) else {}
+    if key == "total":
+        return _num(f.get("overall_gbp")), _int(f.get("trades"))
+    if written is None:
+        return None, None
+    wd, today = uk_date(written), uk_date(to_utc(now))
+    if key == "today" and wd == today:
+        return _num(f.get("today_gbp")), _int(f.get("today_trades"))
+    if key == "week" and wd == today:
+        return _num(f.get("week_gbp")), None
+    return None, None

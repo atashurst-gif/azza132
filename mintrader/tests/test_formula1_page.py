@@ -37,7 +37,7 @@ from mintel.ops import verdicts as V
 from mintel.ops.dashboard import formula1_line
 from mintel.ops.standing import account_standing, open_rows, period_view, practice_figures
 from tests.test_page_figures import DEALS, NOW, TNB, Broker, deal, open_now, serve, t, write_records
-from tests.test_simple_dashboard import research_file, row_figs, row_of, text_of
+from tests.test_simple_dashboard import research_file, row_figs, row_of, row_trades, row_word, text_of
 
 UTC = dt.timezone.utc
 LIVE_SINCE = t(2026, 10, 9, 7, 30)                   # MADE-UP: 08:30 UK on Friday 9 Oct
@@ -100,6 +100,7 @@ def _pages(d: NS, *paths):
 
 
 def _plan_box(page: str) -> str:
+    """The plan's box - on /coach since 12 Oct."""
     return text_of(page.split("<h2>The plan</h2>")[1].split("</section>")[0])
 
 
@@ -131,7 +132,7 @@ class TestFormula1sLiveCountIsMetaTradersAlone:
                      t(2026, 10, 9, 8, 0).isoformat(), 999.0, "BUY", 1.0, 0.99, 1.01, "DEMO"))
         con.commit()
         con.close()
-        (page,) = _pages(d, "/")
+        (page,) = _pages(d, "/coach")
         box = _plan_box(page)
         assert ("Live so far: 2 trades closed since 09 Oct 08:30 UK, 1 won, +£2.80 after all costs (£0.80 of "
                 "commission); 1 day up, 0 down - 2 of 20 toward the judgement. From MetaTrader's records. 1 open now, "
@@ -141,19 +142,19 @@ class TestFormula1sLiveCountIsMetaTradersAlone:
 
     def test_no_live_trades_yet_says_so(self, tmp_path):
         d = a_formula1_day(tmp_path, since=t(2026, 10, 9, 8, 45))     # MADE-UP: live from 09:45 UK, after them all
-        (page,) = _pages(d, "/")
+        (page,) = _pages(d, "/coach")
         assert ("Live so far: no live trades yet (live since 09 Oct 09:45 UK) - 0 of 20 toward the judgement."
                 in _plan_box(page))
 
     def test_when_it_cannot_count_it_says_why_rather_than_guess(self, tmp_path):
         d = a_formula1_day(tmp_path, since=None)                       # live, but no start time recorded
-        (page,) = _pages(d, "/")
+        (page,) = _pages(d, "/coach")
         assert "Live so far: its live start time is not recorded, so its live trades are not counted yet." in \
             _plan_box(page)
         d = a_formula1_day(tmp_path / "b")
         httpd, get = serve(d, standing={}, deals=[])                   # MetaTrader not read yet
         try:
-            box = _plan_box(get("/"))
+            box = _plan_box(get("/coach"))
         finally:
             httpd.shutdown()
         assert ("Live so far: MetaTrader's records could not be read just now - no live figure is shown rather than "
@@ -184,25 +185,25 @@ class TestFormula1sLiveCountIsMetaTradersAlone:
 class TestTrendAndBreakoutsRow:
     def test_its_row_leads_with_real_money_and_labels_the_practice(self, tmp_path):
         d = a_formula1_day(tmp_path)
-        today, total = _pages(d, "/", "/?period=total")
+        today, total, own = _pages(d, "/", "/?period=total", "/?bot=market_intelligence")
         row = row_of(today, "Trend &amp; Breakout")
-        assert '<span class="s-mode live">LIVE: minor pairs (Formula 1) - rest PAPER</span>' in row
-        assert '<span class="s-mode">PAPER</span>' not in row and ">PAPER<" not in row
+        assert '<span class="lb-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
+        assert "PRACTICE" not in row and ">PAPER<" not in row
         sel = period_view(d.sd, d.deals, "today", now=NOW)
         tot = period_view(d.sd, d.deals, "total", now=NOW)
         # its REAL money: MetaTrader's, magic 990311, period_view's own figures - as a LIVE bot's row
         assert row_figs(row) == {"Today": sel["bots"]["market_intelligence"]["made"],
                                  "Overall": tot["bots"]["market_intelligence"]["made"]}
         n = sel["bots"]["market_intelligence"]["trades"]
-        assert f">{n} real trades, " in row and "s-prac" not in row.split('<div class="s-extra">')[0]
-        # its practice: the paper record's, in the grey line, labelled - never added
+        assert row_trades(row) == ("Trades today", str(n)) and "prac" not in row.split('<div class="lb-v"')[0]
+        # its practice: the paper record's, on its own page in the grey line, labelled - never added
         p_sel = practice_figures(str(d.data), dt.datetime.fromisoformat(sel["start"]), NOW, "GBP",
                                  end=dt.datetime.fromisoformat(sel["end"]))
         p_tot = practice_figures(str(d.data), dt.datetime.fromisoformat(tot["start"]), NOW, "GBP",
                                  end=dt.datetime.fromisoformat(tot["end"]))
-        extra = unescape(row.split('<div class="s-extra">')[1].split("</div>")[0])
-        assert extra.startswith("The money above is real (MetaTrader's): its minor pairs (Formula 1) trade LIVE. "
-                                "The rest is practice (PAPER), not real money")
+        extra = unescape(own.split('<p class="s-extra">')[1].split("</p>")[0])
+        assert extra.startswith("Its money on the main page is real (MetaTrader's): its minor pairs (Formula 1) trade "
+                                "LIVE. The rest is practice (PAPER), not real money")
         money = lambda v: ("+" if v > 0 else "-" if v < 0 else "") + f"£{abs(v):,.2f}"   # noqa: E731
         assert f"overall {money(p_tot.get('market_intelligence', 0.0))}" in extra
         assert f"today {money(p_sel.get('market_intelligence', 0.0))}" in extra
@@ -245,8 +246,10 @@ class TestTrendAndBreakoutsRow:
         d = a_formula1_day(tmp_path, live_groups=None)
         (page,) = _pages(d, "/")
         row = row_of(page, "Trend &amp; Breakout")
-        assert '<span class="s-mode">PAPER</span>' in row and "Overall (practice)" in row
-        assert "Live so far: not live on this computer yet" in _plan_box(page)
+        assert '<span class="lb-st practice" title="Practice (PAPER) - not real money">PRACTICE</span>' in row
+        assert 'title="Overall (practice)"' in row
+        (coach,) = _pages(d, "/coach")
+        assert "Live so far: not live on this computer yet" in _plan_box(coach)
 
     def test_the_live_setting_is_read_as_the_trader_reads_it(self, tmp_path):
         def setting(block):
@@ -269,29 +272,32 @@ class TestTheRiderSwitchedOff:
     def test_its_row_says_switched_off_and_binned_and_its_money_still_counts(self, tmp_path):
         d = a_formula1_day(tmp_path, rider="OFF")
         research_file(d.data, "momentum_rider")                          # MADE-UP research: no edge
-        today, total = _pages(d, "/", "/?period=total")
+        today, total, own, coach = _pages(d, "/", "/?period=total", "/?bot=momentum_rider", "/coach")
         row = row_of(today, "Rapid Momentum Rider")
-        assert '<span class="s-mode">OFF</span>' in row and '<span class="s-chip amber">NO EDGE</span>' in row
+        assert '<span class="lb-st off" title="Switched off - it places no trades">OFF</span>' in row
+        assert row_word(row)[:2] == ("Off", "grey")
+        assert '<span class="s-chip amber">NO EDGE</span>' in own and '<span class="s-mode">OFF</span>' in own
         sel = period_view(d.sd, d.deals, "today", now=NOW)
         tot = period_view(d.sd, d.deals, "total", now=NOW)
         assert row_figs(row) == {"Today": sel["bots"]["momentum_rider"]["made"],
                                  "Overall": tot["bots"]["momentum_rider"]["made"]}          # real money, not grey
-        assert "practice" not in row.split('<div class="s-nums">')[1].split('<div class="s-extra">')[0]
+        assert "prac" not in row.split('<div class="lb-v"')[0]
         assert ("Switched off - it places no trades; binned: its own test on real past prices found no edge. Its real "
-                "money from its LIVE days still counts in the account's figures.") in row
-        assert "<b>What to do:</b> Leave it off - it is binned: do not put money on it." in row
+                "money from its LIVE days still counts in the account's figures.") in unescape(own)
+        assert "<h2>Recommendation</h2><p>Leave it off - it is binned: do not put money on it.</p>" in own
         # the account still holds its money: Overall is the balance less the 2,000 at the reset, its trades in it
         assert tot["made"] == d.sd["made"] and tot["bots"]["momentum_rider"]["made"] != 0.0
-        assert "Check:" not in _plan_box(today)                          # the plan bins it: no disagreement
-        assert "Check:" not in _plan_box(total)
+        assert "Check:" not in _plan_box(coach)                          # the plan bins it: no disagreement
+        assert "Check:" not in own
 
     def test_never_a_waiting_that_reads_as_if_it_will_trade_again(self, tmp_path):
         d = a_formula1_day(tmp_path, rider="OFF")                        # no research on this computer
         (home, page) = _pages(d, "/", "/?bot=momentum_rider")
         row = unescape(row_of(home, "Rapid Momentum Rider"))
-        assert "Switched off: it places no trades, so there is nothing new to judge." in row
+        assert "Switched off: it places no trades, so there is nothing new to judge." in row_word(row_of(
+            home, "Rapid Momentum Rider"))[2]                            # its headline, on its one word
         assert "until it can trade" not in row and "until it can trade" not in unescape(page)
-        assert "Nothing to judge while it is switched off." in row
+        assert "Nothing to judge while it is switched off." in unescape(page)
         assert "No trades" in text_of(page) or "trades today" in text_of(page)
         v = V.bot_verdict("momentum_rider", "Rapid Momentum Rider", "OFF", 990_811, sel=None, tot=None,
                           data_dir=str(d.data), now=NOW)
@@ -356,11 +362,11 @@ class TestWhatToDoNeverCountsWhatItCannotCount:
             home, page = get("/"), get("/?bot=market_intelligence")
         finally:
             httpd.shutdown()
-        row = text_of(row_of(home, "Trend &amp; Breakout"))
+        row = unescape(row_of(home, "Trend &amp; Breakout"))
         assert "so far)" not in row
-        assert ("judge it after 20 live trades (they cannot be counted just now: MetaTrader's records could not be "
-                "read)") in row
         rec = text_of(page).split("Recommendation")[1].split("The evidence")[0]
+        assert ("judge it after 20 live trades (they cannot be counted just now: MetaTrader's records could not be "
+                "read)") in rec
         assert "so far)" not in rec and "cannot be counted just now" in rec
 
     def test_no_live_start_time(self, tmp_path):
@@ -370,14 +376,14 @@ class TestWhatToDoNeverCountsWhatItCannotCount:
                 raw = json.loads((d.data / "config.json").read_text())
                 raw["tnb"]["live_since_utc"] = since
                 (d.data / "config.json").write_text(json.dumps(raw))
-            (home,) = _pages(d, "/")
-            row = text_of(row_of(home, "Trend &amp; Breakout"))
+            (home,) = _pages(d, "/?bot=market_intelligence")
+            row = text_of(home).split("Recommendation")[1].split("The evidence")[0]
             assert "live trades (0 so far)" not in row, since
             assert "(they are not counted yet: its live start time is not recorded)" in row, since
 
     def test_counted_it_says_the_count_as_before(self, tmp_path):
-        (home,) = _pages(a_formula1_day(tmp_path), "/")
-        assert "judge it after 20 live trades (2 so far)" in text_of(row_of(home, "Trend &amp; Breakout"))
+        (home,) = _pages(a_formula1_day(tmp_path), "/?bot=market_intelligence")
+        assert "judge it after 20 live trades (2 so far)" in text_of(home).split("Recommendation")[1]
 
 
 class TestTheQuietBannerSeesFormula1:
@@ -438,8 +444,8 @@ class TestTheVerdictSaysWhatItCovers:
     def test_the_headline_and_the_action_say_as_a_whole(self, tmp_path):
         d = a_formula1_day(tmp_path)
         (home, page) = _pages(d, "/", "/?bot=market_intelligence")
-        row = text_of(row_of(home, "Trend &amp; Breakout"))
-        assert "As a whole (practice and real together; Formula 1 is judged on its own below):" in row
+        word, _dot, why = row_word(row_of(home, "Trend &amp; Breakout"))
+        assert why.startswith("As a whole (practice and real together; Formula 1 is judged on its own below):")
         verdict = text_of(page).split("Verdict:")[1].split("What happened")[0]
         assert "for Trend & Breakout as a whole - Formula 1 is judged on its own" in verdict
         v = V.bot_verdict("momentum_runner", "Momentum Runner", "LIVE", 990_511, sel=None, tot=None,
@@ -478,11 +484,12 @@ class TestTheRowStaysPartLiveIfItsVerdictFails:
             return real(bid, *a, **k)
         monkeypatch.setattr(V, "bot_verdict", boom)
         d = a_formula1_day(tmp_path)
-        (home,) = _pages(d, "/")
+        home, own = _pages(d, "/", "/?bot=market_intelligence")
         row = row_of(home, "Trend &amp; Breakout")
-        assert '<span class="s-mode live">LIVE: minor pairs (Formula 1) - rest PAPER</span>' in row
+        assert '<span class="lb-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
         assert "Overall (practice)" not in row and "from its LIVE days" not in row
-        assert "The money above is real (MetaTrader's)" in unescape(row)
+        assert "Its money on the main page is real (MetaTrader's)" in unescape(own)
+        assert "from its LIVE days" not in unescape(own).split("<h2>Its detail</h2>")[0]
 
 
 class TestThePlanNeverDatesTheStartItself:

@@ -58,7 +58,7 @@ from typing import Callable, Optional
 
 from ..clock import TZ_LONDON, fx_market_open, to_utc, utcnow
 from .standing import UK_DAYS_NOTE, uk_date, uk_day_start
-from . import coach_page          # 12 Oct: the coach's card on "/", /coach and coach_progress in /api
+from . import coach_page          # 12 Oct: the coach's line on "/", /coach and coach_progress in /api
 
 log = logging.getLogger("mintel.dashboard")
 
@@ -2018,17 +2018,39 @@ vertical-align:middle;margin-left:6px;background:#f3f4f6;color:#374151;white-spa
 .s-ck{padding:1px 9px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;white-space:nowrap}
 .s-ck.ok{color:#047857}.s-ck.no{color:#b91c1c}.s-ck.run{color:#075985}.s-ck.ny{color:#9ca3af}
 .s .s-group{margin:22px 0 2px;color:#6b7280}
-.s-scout{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.s-scout>h2,.s-scout>h3,.s-scout>p,.s-scout>ul{grid-column:1/-1;margin-bottom:0}
-.s-scout>h3{margin-top:8px}
-.s-pick{display:block;border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;color:#111827 !important}
-.s-pick:hover{background:#f9fafb}
-.s-pick-name{font-size:16px}
 .s-cname{font-weight:600;font-size:16px}
 .s-sim{font-size:14px;color:#6b7280;text-align:right;flex:1 1 100%}
-.s-funnel{margin:22px 0 4px;padding:12px 14px;background:#f9fafb;border-radius:10px;font-size:14px;color:#374151}
-.s-funnel summary{cursor:pointer}
-.s-funnel div{margin-top:8px}
+.s-line{display:block;margin:0 0 16px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:12px;font-size:15px;
+color:#111827 !important}
+.s-line:hover{background:#f9fafb}
+.s-line::after{content:" \\203A";color:#9ca3af}
+.lb{padding:16px 20px 8px}
+.lb h2{margin-bottom:4px}
+.lb-row{display:grid;grid-template-columns:minmax(0,1fr) 92px 104px 104px 60px 112px;
+grid-template-areas:"n s p o t v";gap:0 12px;align-items:center;padding:11px 4px;border-top:1px solid #f0f1f3;
+color:#111827 !important}
+.lb-total .lb-row{grid-template-columns:minmax(0,1fr) 92px 104px 60px 112px;grid-template-areas:"n s o t v"}
+.lb-row:hover{background:#f9fafb}
+.lb-h,.lb-h:hover{border-top:0;background:none;font-size:12px;color:#6b7280;padding-bottom:4px}
+.lb-n{grid-area:n;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lb-name{font-weight:600}
+.lb-star{color:#d97706;margin-left:6px}
+.lb-s{grid-area:s}.lb-p{grid-area:p}.lb-o{grid-area:o}.lb-t{grid-area:t}.lb-v{grid-area:v}
+.lb-m,.lb-t{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.lb-m{font-weight:700}
+.lb-h .lb-m{font-weight:400}
+.lb-m.prac,.lb-t.prac,.lb-m.prac .pos,.lb-m.prac .neg{color:#9ca3af}
+.lb-test{grid-column:p-start/t-end;text-align:right;font-size:13px;color:#6b7280}
+.lb-total .lb-test{grid-column:o-start/t-end}
+.lb-v{font-size:14px;white-space:nowrap}
+.lb-st{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
+border:1px solid #d1d5db;color:#4b5563;white-space:nowrap}
+.lb-st.live{background:#111827;border-color:#111827;color:#fff}
+.lb-st.practice{border-color:#d1d5db;color:#6b7280}
+.lb-st.testing{border-style:dashed;color:#6b7280}
+.lb-st.off{background:#f3f4f6;border-color:#f3f4f6;color:#9ca3af}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#d1d5db}
+.dot.green{background:#10b981}.dot.red{background:#ef4444}.dot.amber{background:#f59e0b}.dot.blue{background:#3b82f6}
 .s-none{font-size:14px;color:#4b5563;margin:0}
 .s-changes{margin:0;padding-left:18px;font-size:14px}
 .s-changes li{margin-bottom:4px}
@@ -2043,8 +2065,22 @@ vertical-align:top}
 .s-bot{grid-template-columns:1fr;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
 .s-bot:first-of-type{border-top:1px solid #e5e7eb}
 .s-nums{justify-content:flex-start;text-align:left}
-.s-scout{grid-template-columns:1fr}
 .s-sim{text-align:left}
+.s-acct{grid-template-columns:1fr 1fr;gap:14px}
+.s-acct>div:first-child,.s-acct>div:last-child:nth-child(2){grid-column:1/-1}
+.lb{padding:12px 14px 4px}
+.lb-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px 92px;grid-template-areas:"n n n s" "p o t v";
+gap:2px 8px;padding:10px 2px}
+.lb-total .lb-row{grid-template-columns:minmax(0,1fr) 44px 92px;grid-template-areas:"n n s" "o t v"}
+.lb-n{white-space:normal}
+.lb-s{text-align:right}
+.lb-h{grid-template-areas:"p o t v"}
+.lb-total .lb-h{grid-template-areas:"o t v"}
+.lb-h .lb-n,.lb-h .lb-s{display:none}
+.lb-m,.lb-t{text-align:left;font-size:15px}
+.lb-h .lb-m,.lb-h .lb-t{font-size:12px}
+.lb-test{text-align:left}
+.lb-v{text-align:right}
 }
 """
 
@@ -2092,8 +2128,9 @@ def render_home_periods(view: Optional[dict], bot: str = "all") -> str:
 
 
 def _home_account(snap: dict, top: dict, cur: str) -> str:
-    """The account: balance, the chosen period and Overall - MetaTrader's own
-    figures (``standing.period_view``), never worked out another way."""
+    """The account: three big numbers - the balance, the chosen period and
+    Overall - MetaTrader's own figures (``standing.period_view``), never worked
+    out another way; one short line under them only when trades are open."""
     e = html.escape
     sd = snap.get("standing") or {}
     sel, tot = top.get("sel"), top.get("tot")
@@ -2101,7 +2138,7 @@ def _home_account(snap: dict, top: dict, cur: str) -> str:
         why = e(str(sd.get("error") or "the page has not heard from MetaTrader yet"))
         return (f'<section class="s-card"><div class="s-k">Account</div><div class="s-big">-</div>'
                 f'<p class="s-note">MetaTrader\'s records could not be read just now ({why}). No figure is shown '
-                f'rather than a wrong one; it comes back on its own. {e(UK_DAYS_NOTE)}.</p></section>')
+                f'rather than a wrong one; it comes back on its own.</p></section>')
     total = sel.get("key") == "total"
     label = str(sel.get("label") or "Today")
     figs = []
@@ -2112,30 +2149,23 @@ def _home_account(snap: dict, top: dict, cur: str) -> str:
     trades_txt = ("no trades closed" if not n else f"{n} trade{'' if n == 1 else 's'} closed, {w} won")
     if not total:
         figs.append(f'<div><div class="s-k">{e(label)}</div><div class="s-big">{_gbp_html(sel.get("made"), cur)}</div>'
-                    f'<div class="s-sub">{e(trades_txt)}, after commission</div></div>')
+                    f'<div class="s-sub">{e(trades_txt)}</div></div>')
     began = _uk(sd.get("start") or "", "%d %b")
     start_bal = sd.get("start_balance")
-    since = (f"since {began}, the balance less {_fmt_money(float(start_bal), cur).lstrip('+')}"
-             if began and start_bal is not None else "since the account started")
+    since = f"since the reset on {began}" if began else "since the account started"
+    why = (f"The balance less {_fmt_money(float(start_bal), cur).lstrip('+')} at the reset"
+           if start_bal is not None else "")
     figs.append(f'<div><div class="s-k">{"Total (Overall)" if total else "Overall"}</div>'
-                f'<div class="s-big">{_gbp_html(tot.get("made"), cur)}</div><div class="s-sub">{e(since)}'
+                f'<div class="s-big">{_gbp_html(tot.get("made"), cur)}</div><div class="s-sub"'
+                + (f' title="{e(why)}"' if why else "") + f'>{e(since)}'
                 + (f"; {e(trades_txt)}" if total else "") + '</div></div>')
-    notes = [f"{UK_DAYS_NOTE}."]
-    # who made most of the period's trades: the plainest answer to "a load of trades"
-    bots = sel.get("bots") or {}
-    labels = {b.get("id"): str(b.get("label")) for b in sd.get("bots") or ()}
-    counted = [(bid, v) for bid, v in bots.items() if isinstance(v, dict) and v.get("trades")]
-    if n and counted:
-        bid, v = max(counted, key=lambda kv: (kv[1]["trades"], kv[0]))
-        notes.append(f"{labels.get(bid, bid)} made {v['trades']} of the {n} trades {_in_period(sel)} "
-                     f"({_fmt_money(float(v.get('made') or 0.0), cur)}).")
+    line = ""
     open_live = snap.get("open_live")
     if open_live:
         opened = round(sum(float(r.get("profit") or 0.0) for r in open_live), 2)
-        notes.append(f"{len(open_live)} trade{'' if len(open_live) == 1 else 's'} open now, "
-                     f"{_fmt_money(opened, cur)} not banked yet.")
-    return (f'<section class="s-card"><div class="s-acct">{"".join(figs)}</div>'
-            f'<p class="s-note">{e(" ".join(notes))}</p></section>')
+        line = (f'<p class="s-note">{len(open_live)} trade{"" if len(open_live) == 1 else "s"} open now, '
+                f'{e(_fmt_money(opened, cur))} not banked yet.</p>')
+    return f'<section class="s-card"><div class="s-acct">{"".join(figs)}</div>{line}</section>'
 
 
 def formula1_line(v: Optional[dict], focus: Optional[dict] = None) -> str:
@@ -2233,56 +2263,21 @@ def _plan_html(plan: Optional[dict], plan_error: str, verdicts: dict) -> str:
     return "".join(out)
 
 
-def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str, ladder: Optional[dict] = None) -> str:
-    """One bot on the main page: name, LIVE/PAPER, the chosen period and
-    Overall (real money for a LIVE bot; practice in grey, labelled, for a
-    PAPER one), its trades and win rate in the period, its verdict and its
-    one-line headline. The whole row opens the bot.
-
-    ``ladder`` (``showcase.bot_ladder``, 12 Oct: the lab's showcase) adds its
-    stage after the chip and its five checks under the figures; its figures,
-    pill, chip and words stay exactly as they were. Every row says what to
-    do: the verdict's recommendation, or the ladder's word when it has none."""
+def _real_practice_note(b: dict, v: dict, top: dict, view: dict, cur: str) -> str:
+    """On a bot's own page: which of its money is real and which is practice -
+    Trend & Breakout part LIVE (Formula 1), a switched-off bot whose real money
+    still counts, a PAPER bot's practice and any real money left from its LIVE
+    days. The same words the main page's rows carried until 12 Oct."""
     e = html.escape
-    bid, label, mode = b.get("id"), str(b.get("label") or v.get("label") or ""), str(b.get("mode") or v.get("mode") or "")
-    # 9 Oct evening: Trend & Breakout on PAPER with its minor currency pairs LIVE (Formula 1) is part real money:
-    # its real money leads, as a LIVE bot's, and its practice follows in grey, labelled - never plain "PAPER"
+    bid, mode = b.get("id"), str(b.get("mode") or v.get("mode") or "")
     mixed = bool(v.get("live_groups")) and mode != "LIVE"
-    off = mode == "OFF"                         # switched off (the Rider, 9 Oct): its real money still counts
+    off = mode == "OFF"
     live = mode == "LIVE" or mixed or off
     sel, tot = top.get("sel") or {}, top.get("tot") or {}
     total = (view or {}).get("key") == "total"
     plabel = str((view or {}).get("label") or "Today")
     vs = (sel.get("bots") or {}).get(bid) or {}
     vt = (tot.get("bots") or {}).get(bid) or {}
-
-    def fig(k, val, practice=False):
-        return (f'<div{" class=s-prac" if practice else ""}><div class="s-k">{e(k)}</div>'
-                f'<div class="s-m">{_gbp_html(val, cur)}</div></div>')
-    figs = []
-    if live:
-        if not total:
-            figs.append(fig(plabel, vs.get("made")))
-        figs.append(fig("Overall", vt.get("made")))
-        n, w = vs.get("trades"), vs.get("wins")
-        kind = "real " if (mixed or off) else ""
-    else:
-        p_sel, p_tot = top.get("p_sel") or {}, top.get("p_tot") or {}
-        if not total:
-            figs.append(fig(f"{plabel} (practice)", p_sel.get(bid), True))
-        figs.append(fig("Overall (practice)", p_tot.get(bid), True))
-        ps = ((v.get("period") or {}).get("practice") or {})
-        n, w = ps.get("trades"), ps.get("wins")
-        kind = "practice "
-    if n is None:
-        trades = "-"
-    elif not n:
-        trades = f"no {kind}trades"
-    else:
-        trades = f"{n} {kind}trade{'' if n == 1 else 's'}, {round(100.0 * (w or 0) / n):.0f}% won"
-    figs.append(f'<div{"" if live else " class=s-prac"}><div class="s-k">'
-                f'{e("Trades " + _in_period(view or {}))}</div><div class="s-m0">{e(trades)}</div></div>')
-    extra = ""
     if mixed:
         p_sel, p_tot = top.get("p_sel") or {}, top.get("p_tot") or {}
         pn = int(((v.get("period") or {}).get("practice") or {}).get("trades") or 0)
@@ -2291,38 +2286,25 @@ def _bot_row(b: dict, v: dict, top: dict, view: dict, cur: str, ladder: Optional
             bits.append(f"{plabel.lower()} {_fmt_money(float(p_sel[bid]), cur)} ({pn} trade{'' if pn == 1 else 's'})")
         if p_tot.get(bid) is not None:
             bits.append(f"overall {_fmt_money(float(p_tot[bid]), cur)}")
-        extra = (f'<div class="s-extra">The money above is real (MetaTrader\'s): its '
-                 f'{e(str(v.get("live_kinds") or "chosen markets"))} trade LIVE. The rest is practice (PAPER), not real '
-                 f'money' + (f": {e(', '.join(bits))}." if bits else ".") + '</div>')
-    elif off:
+        return (f'<p class="s-extra">Its money on the main page is real (MetaTrader\'s): its '
+                f'{e(str(v.get("live_kinds") or "chosen markets"))} trade LIVE. The rest is practice (PAPER), not real '
+                f'money' + (f": {e(', '.join(bits))}." if bits else ".") + '</p>')
+    if off:
         why = f"; binned: {v.get('why')}" if v.get("code") == "NO EDGE" and v.get("why") else ""
-        extra = (f'<div class="s-extra">Switched off - it places no trades{e(why)}. Its real money from its LIVE days '
-                 f'still counts in the account\'s figures.</div>')
-    elif not live:
+        return (f'<p class="s-extra">Switched off - it places no trades{e(why)}. Its real money from its LIVE days '
+                f'still counts in the account\'s figures.</p>')
+    if not live:
         real_t = vt.get("made")
         if real_t is not None and abs(float(real_t)) >= 0.005:
             real_p = vs.get("made") if not total else None
             n_p = int(vs.get("trades") or 0) if not total else 0
-            extra = ('<div class="s-extra">Practice only, not real money. Real money from its LIVE days: '
-                     + (f"{e(plabel.lower())} {e(_fmt_money(float(real_p), cur))}"
-                        f" ({n_p} trade{'' if n_p == 1 else 's'}), "
-                        if real_p is not None and (abs(float(real_p)) >= 0.005 or n_p) else "")
-                     + f"overall {e(_fmt_money(float(real_t), cur))}.</div>")
-        else:
-            extra = '<div class="s-extra">Practice only (PAPER), not real money.</div>'
-    chip = f'<span class="s-chip {e(str(v.get("colour") or "grey"))}">{e(str(v.get("code") or ""))}</span>'
-    words = str(v.get("mode_words") or "") if mixed else mode
-    pill = f'<span class="s-mode{" live" if (mode == "LIVE" or mixed) else ""}">{e(words or "-")}</span>'
-    rec = str(v.get("recommendation") or "")
-    stage = checks = ""
-    if ladder is not None:
-        stage = f'<span class="s-stage">{e(str(ladder.get("stage")))}</span>' if ladder.get("stage") else ""
-        checks = _checks_html(ladder.get("checks"))
-        rec = rec or str(ladder.get("what_to_do") or "")
-    return (f'<a class="s-bot" href="/{_home_query(view, bid)}"><div><span class="s-name">{e(label)}</span>{pill}'
-            f'{chip}{stage}<div class="s-hl">{e(str(v.get("headline") or ""))}</div>'
-            + (f'<div class="s-rec"><b>What to do:</b> {e(rec)}</div>' if rec else "") + '</div>'
-            f'<div class="s-nums">{"".join(figs)}</div>{extra}{checks}</a>')
+            return ('<p class="s-extra">Practice only, not real money. Real money from its LIVE days: '
+                    + (f"{e(plabel.lower())} {e(_fmt_money(float(real_p), cur))}"
+                       f" ({n_p} trade{'' if n_p == 1 else 's'}), "
+                       if real_p is not None and (abs(float(real_p)) >= 0.005 or n_p) else "")
+                    + f"overall {e(_fmt_money(float(real_t), cur))}.</p>")
+        return '<p class="s-extra">Practice only (PAPER), not real money.</p>'
+    return ""
 
 
 # ------------------------------------------------ the lab's showcase (12 Oct) --
@@ -2411,79 +2393,173 @@ def _cand_row(r: dict) -> str:
             f'<div class="s-nums">{nums}</div>{_checks_html(r.get("checks"), syn)}</a>')
 
 
-def _scout_html(picks: list, moved: list, view: Optional[dict]) -> str:
-    """Today's standouts (``showcase.standouts``: at most 3, never padded) and
-    what changed since yesterday (at most 5 lines)."""
+def _changes_html(moved: list) -> str:
+    """What changed since yesterday (``showcase.changes``: at most 5 lines) - on
+    /coach since 12 Oct, off the main page."""
     from . import showcase as S
     e = html.escape
-    out = []
-    for p in picks:
-        r = p["row"]
-        href = f"/{_home_query(view, r['id'])}" if r.get("kind") == "bot" else _lab_href(r.get("id"))
-        out.append(f'<a class="s-pick" href="{href}"><b class="s-pick-name">{e(str(r.get("name")))}</b> '
-                   f'<span class="s-stage">{e(str(r.get("stage")))}</span><div class="s-hl">Why: {e(p["why"])}</div>'
-                   f'<div class="s-rec"><b>Next:</b> {e(str(p.get("next") or ""))}</div></a>')
-    picks_html = "".join(out) or f'<p class="s-none">{e(S.NO_STANDOUTS)}</p>'
     if moved:
         lines = "".join(f'<li>{e(S.uk_time(m.get("when"), "%a %d %b %H:%M") + " UK: " if m.get("when") else "")}'
                         f'{e(m["text"])}</li>' for m in moved)
-        moved_html = f'<ul class="s-changes">{lines}</ul>'
+        inner = f'<ul class="s-changes">{lines}</ul>'
     else:
-        moved_html = f'<p class="s-none">{e(S.NOTHING_MOVED)}</p>'
-    return (f'<section class="s-card s-scout"><h2>Today\'s standouts</h2>{picks_html}'
-            f'<h3>What changed since yesterday</h3>{moved_html}</section>')
+        inner = f'<p class="s-none">{e(S.NOTHING_MOVED)}</p>'
+    return f'<section class="s-card" id="changed"><h2>What changed since yesterday</h2>{inner}</section>'
 
 
-def _funnel_html(lab: dict) -> str:
-    """The lab in one folded line on "/": the funnel, last night and the prices;
-    open it for the bench, what was binned this week and the link to /lab. Or,
-    plainly, that it has not run, could not be read, or is still collecting."""
+# ------------------------------------------------- the leaderboard on "/" (12 Oct) --
+# Aaron, 12 Oct 2026: "The ui is confusing, it should be combined bots but still talks about and breaks down only the
+# old ones, we need to clean it up, its just a load of writing". One list: the bots and the lab's ideas treated the
+# same, ONE line each - a short name, LIVE / PRACTICE / TESTING / OFF, the period and Overall in £ (practice in grey;
+# computer-test money never), trades, one verdict word. Everything else is on each one's own page.
+LB_LIVE, LB_PRACTICE, LB_TESTING, LB_OFF, LB_UNKNOWN = "LIVE", "PRACTICE", "TESTING", "OFF", "-"
+_BOT_WORDS = {"PROVEN": ("Winning", "green"), "PROMISING": ("Promising", "green"), "BREAK-EVEN": ("Flat", "amber"),
+              "NO EDGE": ("Losing", "red"), "WAITING": ("Waiting", "grey"), "NOT ENOUGH DATA": ("Too early", "grey")}
+
+
+def _bot_entry(b: dict, v: dict, top: dict, view: dict, info: dict) -> dict:
+    """A current bot on the leaderboard: its real money (LIVE, part LIVE or
+    switched off - period_view's figures) or its practice (PAPER -
+    practice_figures, grey), its trades in the period and one verdict word."""
+    bid, label = b.get("id"), str(b.get("label") or v.get("label") or "")
+    mode = str(b.get("mode") or v.get("mode") or "")
+    mixed = bool(v.get("live_groups")) and mode != "LIVE"     # Trend & Breakout's minor pairs LIVE (Formula 1)
+    off = mode == "OFF"
+    live = mode == "LIVE" or mixed or off
+    sel, tot = top.get("sel") or {}, top.get("tot") or {}
+    if live:
+        vs = (sel.get("bots") or {}).get(bid) or {}
+        vt = (tot.get("bots") or {}).get(bid) or {}
+        period, overall, trades = vs.get("made"), vt.get("made"), vs.get("trades")
+    else:
+        period, overall = (top.get("p_sel") or {}).get(bid), (top.get("p_tot") or {}).get(bid)
+        trades = ((v.get("period") or {}).get("practice") or {}).get("trades")
+    status = (LB_LIVE if (mode == "LIVE" or mixed) else LB_OFF if off else
+              LB_PRACTICE if mode == "PAPER" else LB_UNKNOWN)
+    if off:
+        word, dot = "Off", "grey"
+    else:
+        word, dot = _BOT_WORDS.get(str(v.get("code") or ""), ("No verdict", "grey"))
+    st_title = (str(v.get("mode_words") or "") if mixed else
+                {LB_LIVE: "Real money", LB_OFF: "Switched off - it places no trades",
+                 LB_PRACTICE: "Practice (PAPER) - not real money"}.get(status, "Mode not known yet"))
+    return {"kind": "bot", "id": bid, "name": label, "full": label, "status": status, "status_title": st_title,
+            "practice": not live, "period": period, "overall": overall, "trades": trades, "word": word, "dot": dot,
+            "why": str(v.get("headline") or ""), "synthetic": False, "info": info}
+
+
+def _cand_entry(r: dict, short: str, key: str, written, now: dt.datetime) -> dict:
+    """A lab idea on the leaderboard: its PRACTICE money only (the lab has no
+    live path), grey; an idea still being tested shows no money (its computer
+    tests are never a result); TEST DATA for a made-up summary."""
     from . import showcase as S
-    e = html.escape
-    now = lab.get("now") or utcnow()
-    body = []
-    if lab.get("state") == S.LAB_NONE:
-        body.append("<div>Each night (23:10, Monday to Saturday) it will try trading ideas on old prices, then once on "
-                    "prices they have never seen, then on live prices with no money - and say plainly which earned a "
-                    "place.</div>")
-    elif lab.get("state") == S.LAB_READY and not lab.get("synthetic"):
-        bench = [c for c in S.candidates_of(lab) if c.get("stage") == S.ON_THE_BENCH]
-        body.append("<div><b>On the bench:</b> " + (", ".join(
-            f'<a href="{_lab_href(c.get("id"))}">{e(str(c.get("name") or c.get("id")))}</a>' for c in bench)
-            or "none") + "</div>")
-        week = [b for b in (lab.get("summary") or {}).get("binned_recent") or ()
-                if isinstance(b, dict) and S.binned_lately({"stage_since": b.get("when")}, now)]
-        body.append("<div><b>Binned this week:</b> " + ("; ".join(
-            f'<a href="{_lab_href(b.get("id"))}">{e(str(b.get("name") or b.get("id")))}</a> - '
-            f'{e(S.pounds(b.get("reason") or ""))}' for b in week) or "none") + "</div>")
-    body.append('<div><a href="/lab">The lab in full</a></div>')
-    return (f'<details class="s-funnel" id="lab-funnel"><summary>{e(str(lab.get("line") or ""))}</summary>'
-            f'{"".join(body)}</details>')
+    c = r.get("candidate") or {}
+    syn = bool(r.get("synthetic"))
+    stage = str(r.get("stage") or "")
+    if stage in (S.PRACTICE, S.READY_FOR_LIVE, S.LIVE_TRIAL, S.PROVEN):
+        status = LB_PRACTICE
+    elif stage == S.BINNED:
+        status = LB_OFF
+    else:
+        status = LB_TESTING
+    period = overall = trades = None
+    if not syn and status != LB_TESTING:
+        period, trades = S.lab_period_figures(c, key, written, now)
+        f = c.get("figures") if isinstance(c.get("figures"), dict) else {}
+        overall = S._num(f.get("overall_gbp"))
+    checks = r.get("checks") or []
+    if syn:
+        word, dot = "Test data", "grey"
+    elif status == LB_OFF:
+        word, dot = "Binned", "grey"
+    elif status == LB_TESTING:
+        word, dot = "Waiting", "grey"
+    elif stage == S.READY_FOR_LIVE:
+        word, dot = "Your call", "blue"
+    elif any(k.get("state") == S.FAILED for k in checks):
+        word, dot = "Failing", "red"
+    elif checks and all(k.get("state") == S.PASSED for k in checks):
+        word, dot = "Passed", "green"
+    else:
+        word, dot = "Too early", "grey"
+    st_title = {LB_PRACTICE: "Practice - live prices, no money", LB_OFF: "Binned - out, not retried",
+                LB_TESTING: "Tested on old prices only - not practising yet, no money"}[status]
+    why = S.TEST_DATA if syn else S.pounds(c.get("headline") or "")
+    return {"kind": "candidate", "id": r.get("id"), "name": short, "full": str(r.get("name") or ""),
+            "status": status,
+            "status_title": f"{st_title} - {stage.lower()}" if stage not in ("", S.PRACTICE, S.BINNED) else st_title,
+            "practice": True, "period": period, "overall": overall, "trades": trades, "word": word, "dot": dot,
+            "why": why, "synthetic": syn, "info": r}
 
 
-def _showcase_html(entries: list, lab: dict) -> str:
-    """The bots and the lab's candidates together, in three groups - Real money,
-    Practising, Binned - with the lab's funnel folded between the last two and
-    the stage words explained underneath."""
-    from . import showcase as S
+def _lb_sort_key(x: dict) -> tuple:
+    """LIVE first, then by Overall (highest first); switched off and binned last; no figure after a figure."""
+    rank = 0 if x["status"] == LB_LIVE else 2 if x["status"] == LB_OFF else 1
+    o = x.get("overall")
+    try:
+        o = None if o is None else float(o)
+    except (TypeError, ValueError):
+        o = None
+    return (rank, o is None, -(o or 0.0), str(x.get("name") or ""), str(x.get("id") or ""))
+
+
+def _lb_row(x: dict, view: dict, cur: str, star: str = "") -> str:
+    """One line: name (a star for a standout), status, the period and Overall in
+    £ (practice grey), trades, a verdict word with its dot. The whole row opens
+    the bot's page (/?bot=...) or the idea's (/lab?id=...)."""
     e = html.escape
-    by_row = {id(info): row for info, row in entries}
-    parts = [f'<section class="s-card"><h2>{e(S.LADDER_TITLE, quote=False)}</h2>']
-    for name, rows in S.grouped([info for info, _row in entries]):
-        inner = "".join(by_row[id(r)] for r in rows) or '<p class="s-none">Nothing here just now.</p>'
-        parts.append(f'<h3 class="s-group">{e(name)}</h3><div class="s-rows">{inner}</div>')
-        if name == S.PRACTISING:
-            parts.append(_funnel_html(lab))
-    parts.append(f'<p class="s-src">{e(S.STAGE_NOTE)}</p></section>')
-    return "".join(parts)
+    total = (view or {}).get("key") == "total"
+    plabel = str((view or {}).get("label") or "Today")
+    prac = x["practice"]
+    tag = " (practice)" if prac else ""
+    href = f"/{_home_query(view, x['id'])}" if x["kind"] == "bot" else _lab_href(x["id"])
+    star_html = (f'<span class="lb-star" title="{e("Standout: " + star)}" aria-label="standout">&#9733;</span>'
+                 if star else "")
+    cells = [f'<div class="lb-n"><span class="lb-name">{e(x["name"])}</span>{star_html}</div>',
+             f'<div class="lb-s"><span class="lb-st {x["status"].lower() if x["status"] != LB_UNKNOWN else "unk"}" '
+             f'title="{e(x["status_title"])}">{e(x["status"])}</span></div>']
+    if x["synthetic"]:
+        cells.append(f'<div class="lb-test">{e(_test_data_words())}</div>')
+    else:
+        pc = " prac" if prac else ""
+        if not total:
+            cells.append(f'<div class="lb-m lb-p{pc}" title="{e(plabel + tag)}">{_gbp_html(x["period"], cur)}</div>')
+        cells.append(f'<div class="lb-m lb-o{pc}" title="{e("Overall" + tag)}">{_gbp_html(x["overall"], cur)}</div>')
+        n = x.get("trades")
+        cells.append(f'<div class="lb-t{pc}" title="{e("Trades " + _in_period(view or {}) + tag)}">'
+                     f'{e("-" if n is None else str(n))}</div>')
+    cells.append(f'<div class="lb-v" title="{e(x["why"])}"><i class="dot {e(x["dot"])}"></i>{e(x["word"])}</div>')
+    title = x["full"] if x["full"] != x["name"] else ""
+    return (f'<a class="lb-row" href="{href}"' + (f' title="{e(title)}"' if title else "") + f'>{"".join(cells)}</a>')
+
+
+def _test_data_words() -> str:
+    from .showcase import TEST_DATA
+    return TEST_DATA
+
+
+def _leaderboard_html(entries: list, stars: dict, view: dict, cur: str) -> str:
+    e = html.escape
+    total = (view or {}).get("key") == "total"
+    plabel = str((view or {}).get("label") or "Today")
+    head = ['<div class="lb-n">Name</div>', '<div class="lb-s"></div>']
+    if not total:
+        head.append(f'<div class="lb-m lb-p">{e(plabel)}</div>')
+    head += ['<div class="lb-m lb-o">Overall</div>', '<div class="lb-t">Trades</div>', '<div class="lb-v"></div>']
+    rows = "".join(_lb_row(x, view, cur, stars.get((x["kind"], str(x["id"])), "")) for x in entries)
+    return (f'<section class="s-card lb{" lb-total" if total else ""}"><h2>Leaderboard</h2>'
+            f'<div class="lb-row lb-h">{"".join(head)}</div>{rows or "<p class=s-none>Nothing to show yet.</p>"}'
+            f'</section>')
 
 
 def _home_foot(view: Optional[dict], updated) -> str:
     q = _home_query(view, "all")
     when = _uk(str(updated), "%H:%M:%S") if updated else ""
-    return (f'<footer class="s-foot"><a href="/details{q}">All the technical detail</a>'
-            f'<span>Own pages: </span><a href="/rider">Rapid Momentum Rider</a><a href="/ian">Financial Ian</a>'
-            f'<a href="/lab">The lab</a><a href="/health">Health (for the watchdog)</a>'
+    return (f'<footer class="s-foot"><a href="/coach">The coach, the plan and what changed</a><a href="/lab">The lab</a>'
+            f'<a href="/details{q}">All the technical detail</a><a href="/rider">Rapid Momentum Rider</a>'
+            f'<a href="/ian">Financial Ian</a><a href="/health">Health (for the watchdog)</a>'
+            f'<div>{html.escape(UK_DAYS_NOTE)}. Money is after commission; grey is practice, not real money; '
+            f'&#9733; = one of today\'s standouts. Tap a row for what happened, what to do and the checks.</div>'
             f'<div>{("Figures from " + html.escape(when) + " UK. ") if when else ""}This page refreshes itself every '
             f'10 seconds and keeps the period you chose.</div></footer>')
 
@@ -2515,22 +2591,53 @@ def _home_page(title: str, body: str, old_css: bool = False) -> str:
             f'{REFRESH_JS}</body></html>')
 
 
-def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[dict] = None,
-                plan_error: str = "", deals=None, lab: Optional[dict] = None) -> str:
-    """The main page: the period buttons, the account, today's standouts and
-    what changed since yesterday, then the bots and the lab's candidates on
-    one ladder - Real money, Practising (the lab's funnel folded under it),
-    Binned - each row with its verdict or stage, what to do and its five
-    checks, then the plan. Nothing else (the scanner, the tiles, the notes,
-    the "Now:" lines are on each bot's own view and /details).
-
-    12 Oct (the lab's showcase): the bots' rows keep every figure and word
-    they had; the lab never enters the account. ``deals``: the account's deal
-    rows (Formula 1's trades for its checks); ``lab``: ``showcase.load_lab``
-    (read from the data folder when not given). Renders whatever is missing
-    as missing; everything is escaped."""
+def _ladder_infos(sd: dict, top: dict, verdicts: dict, deals, plan: Optional[dict], now: dt.datetime,
+                  data_dir: str, only: Optional[str] = None) -> list:
+    """[(bot, verdict, its ladder info)] for every active bot - its stage and
+    five checks (``showcase.bot_ladder``), never a reason to fail the page."""
     from . import showcase as S
     from .standing import ACTIVE_BOTS
+    focus = (plan or {}).get("focus") if isinstance((plan or {}).get("focus"), dict) else {}
+    try:
+        from .verdicts import FORMULA1_JUDGE_AFTER
+        judge = int(focus.get("judge_after") or FORMULA1_JUDGE_AFTER)
+    except (TypeError, ValueError):
+        judge = 20
+    by_id = {b.get("id"): b for b in sd.get("bots") or () if isinstance(b, dict)}
+    out = []
+    for bid, label in ACTIVE_BOTS:
+        if only is not None and bid != only:
+            continue
+        v = verdicts.get(bid) or {"label": label, "code": "", "headline": ""}
+        b = by_id.get(bid) or {"id": bid, "label": label, "mode": v.get("mode") or ""}
+        try:
+            info = S.bot_ladder(bid, v, sd=sd, top=top, data_dir=data_dir, now=now, deals=deals, judge_after=judge)
+        except Exception as exc:                             # never a reason to fail the page
+            log.warning("ladder of %s: %s", bid, exc)
+            info = {"kind": "bot", "id": bid, "name": label, "stage": S.bot_stage(v), "checks": [],
+                    "what_to_do": "Nothing until it can be worked out - it comes back on its own.",
+                    "verdict": str(v.get("code") or ""), "trades": None, "synthetic": False}
+        out.append((b, v, info))
+    return out
+
+
+def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[dict] = None,
+                plan_error: str = "", deals=None, lab: Optional[dict] = None) -> str:
+    """The main page, short (Aaron, 12 Oct: "its just a load of writing"): the
+    period buttons, three big numbers (balance, the chosen period, Overall -
+    ``standing.period_view``), the coach in one line, ONE leaderboard of the
+    bots and the lab's ideas together (one line each, LIVE first then by
+    Overall; a star for each of today's standouts), the lab in one line, and
+    the footer. What happened, what to do, the five checks and the sources
+    are on each bot's page (/?bot=...) and each idea's (/lab?id=...); the
+    plan and what changed are on /coach; everything technical on /details.
+
+    The lab never enters the account; the lab's computer tests are never
+    shown as money here; a made-up lab summary shows TEST DATA. ``deals``:
+    the account's deal rows (Formula 1's trades for its checks); ``lab``:
+    ``showcase.load_lab`` (read from the data folder when not given).
+    Renders whatever is missing as missing; everything is escaped."""
+    from . import showcase as S
     top = top or {}
     sd = snap.get("standing") or {}
     cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
@@ -2541,62 +2648,60 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
             f'{html.escape(_uk(str(snap.get("updated") or ""), "%a %d %b, %H:%M UK"))}</span></div>')
     if lab is None:
         lab = S.load_lab(data_dir, now)
-    focus = (plan or {}).get("focus") if isinstance((plan or {}).get("focus"), dict) else {}
+    entries, infos = [], []
+    for b, v, info in _ladder_infos(sd, top, verdicts, deals, plan, now, data_dir):
+        infos.append(info)
+        try:
+            entries.append(_bot_entry(b, v, top, view, info))
+        except Exception as exc:                             # never a reason to fail the page
+            log.warning("row of %s: %s", b.get("id"), exc)
+            entries.append({"kind": "bot", "id": b.get("id"), "name": str(b.get("label") or b.get("id")),
+                            "full": str(b.get("label") or ""), "status": LB_UNKNOWN,
+                            "status_title": "could not be shown just now", "practice": False, "period": None,
+                            "overall": None, "trades": None, "word": "No verdict", "dot": "grey",
+                            "why": f"It could not be shown just now ({exc}).", "synthetic": False, "info": info})
+    cands = S.ladder_candidates(lab, now)
+    shorts = S.short_names([r.get("candidate") or {"id": r.get("id"), "name": r.get("name")} for r in cands])
+    written = S._when((lab.get("summary") or {}).get("written_utc"))
+    for r in cands:
+        infos.append(r)
+        try:
+            entries.append(_cand_entry(r, shorts.get(str(r.get("id"))) or str(r.get("name")),
+                                       str(view.get("key") or "today"), written, now))
+        except Exception as exc:                             # never a reason to fail the page
+            log.warning("lab row of %s: %s", r.get("id"), exc)
     try:
-        from .verdicts import FORMULA1_JUDGE_AFTER
-        judge = int(focus.get("judge_after") or FORMULA1_JUDGE_AFTER)
-    except (TypeError, ValueError):
-        judge = 20
-    by_id = {b.get("id"): b for b in sd.get("bots") or () if isinstance(b, dict)}
-    entries = []                                         # (its place on the ladder, its row)
-    for bid, label in ACTIVE_BOTS:
-        v = verdicts.get(bid) or {"label": label, "code": "", "headline": ""}
-        b = by_id.get(bid) or {"id": bid, "label": label, "mode": v.get("mode") or ""}
-        try:
-            info = S.bot_ladder(bid, v, sd=sd, top=top, data_dir=data_dir, now=now, deals=deals, judge_after=judge)
-        except Exception as exc:                             # never a reason to fail the page
-            log.warning("ladder of %s: %s", bid, exc)
-            info = {"kind": "bot", "id": bid, "name": label, "stage": S.bot_stage(v), "checks": [],
-                    "what_to_do": "Nothing until it can be worked out - it comes back on its own.",
-                    "verdict": str(v.get("code") or ""), "trades": None, "synthetic": False}
-        try:
-            row = _bot_row(b, v, top, view, cur, info)
-        except Exception as exc:                             # never a reason to fail the page
-            log.warning("row of %s: %s", bid, exc)
-            row = (f'<div class="s-bot">{html.escape(label)}: could not be shown just now '
-                   f'({html.escape(str(exc))}).<div class="s-rec"><b>What to do:</b> Nothing - it comes back on its '
-                   f'own.</div></div>')
-        entries.append((info, row))
-    for info in S.ladder_candidates(lab, now):
-        try:
-            entries.append((info, _cand_row(info)))
-        except Exception as exc:                             # never a reason to fail the page
-            log.warning("lab row of %s: %s", info.get("id"), exc)
-    try:
-        scout = _scout_html(S.standouts([info for info, _row in entries], now), S.changes(lab, data_dir, now), view)
+        stars = {("bot" if p["row"].get("kind") == "bot" else "candidate", str(p["row"].get("id"))): p["why"]
+                 for p in S.standouts(infos, now)}
     except Exception as exc:                                 # never a reason to fail the page
         log.warning("standouts: %s", exc)
-        scout = (f'<section class="s-card s-scout"><h2>Today\'s standouts</h2><p class="s-none">They could not be '
-                 f'worked out just now ({html.escape(str(exc))}).</p></section>')
-    coach = coach_page.render_card(data_dir, sd, deals, now)     # 12 Oct: the coach, right after the standouts
+        stars = {}
+    entries.sort(key=_lb_sort_key)
+    coach = (f'<a class="s-line" href="/coach">{html.escape(coach_page.one_line(data_dir, now))}</a>')
+    lab_line = f'<a class="s-line" href="/lab">{html.escape(S.lab_line(lab, now))}</a>'
     body = (head + _home_problem(snap) + render_home_periods(view, "all") + _home_account(snap, top, cur)
-            + scout + coach + _showcase_html(entries, lab) + _plan_html(plan, plan_error, verdicts)
+            + coach + _leaderboard_html(entries, stars, view, cur) + lab_line
             + _home_foot(view, snap.get("updated")))
     return _home_page("Trading bots", body)
 
 
 def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, plan: Optional[dict] = None,
-                      verdicts: Optional[dict] = None) -> str:
+                      verdicts: Optional[dict] = None, deals=None) -> str:
     """One bot: its verdict, What happened in the chosen period, the
-    Recommendation and the evidence (each with its source and dates), then
-    its existing detail - its card with the "Now:" line, its trades in the
-    period, its open trades and its own live view (``render_bot_view``). A
-    LIVE bot also gets the quiet banner when the live bots have gone quiet."""
+    Recommendation, its place on the ladder (stage, which of its money is real
+    and which practice, why it stands out today, its five checks - moved here
+    from the main page on 12 Oct) and the evidence (each with its source and
+    dates), then its existing detail - its card with the "Now:" line, its
+    trades in the period, its open trades and its own live view
+    (``render_bot_view``). A LIVE bot also gets the quiet banner when the live
+    bots have gone quiet."""
     from .verdicts import plan_disagreements
     e = html.escape
     top = top or {}
     sd = snap.get("standing") or {}
     view = top.get("sel") or top.get("period") or {"key": "today"}
+    cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
+    now = to_utc(top["now"]) if isinstance(top.get("now"), dt.datetime) else utcnow()
     v = verdict or {}
     label = str(v.get("label") or bot)
     mode = str(v.get("mode") or "")
@@ -2613,13 +2718,27 @@ def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, 
                  + (f"; dates: {e(str(x.get('period')))}" if x.get("period") else "") + '</div></li>'
                  for x in v.get("evidence") or [])
     plabel = str(view.get("label") or "Today")
+    # its place on the ladder and its five checks (on "/" until 12 Oct)
+    ladder = ""
+    try:
+        b = next((x for x in sd.get("bots") or () if isinstance(x, dict) and x.get("id") == bot),
+                 {"id": bot, "label": label, "mode": mode})
+        info = next((i for _b, _v, i in _ladder_infos(sd, top, {bot: v}, deals, plan, now,
+                                                      str(top.get("data_dir") or ""), only=bot)), None)
+        if info is not None:
+            ladder = ('<h2>On the ladder</h2><p>'
+                      + (f'<span class="s-stage">{e(str(info.get("stage")))}</span>' if info.get("stage")
+                         else "Its mode is not known yet.") + '</p>' + _real_practice_note(b, v, top, view, cur)
+                      + '<h2>The five checks</h2>' + _checks_html(info.get("checks")))
+    except Exception as exc:                                 # never a reason to fail the page
+        log.warning("ladder of %s: %s", bot, exc)
     box = (f'<section class="s-card s-v"><h1>{e(label)}{pill}{chip}</h1>'
            f'<p class="s-hl" style="font-size:16px">{e(str(v.get("headline") or ""))}</p>'
            f'<div class="s-k">Verdict: {e(str(v.get("code") or "-"))}'
            + (f' - {e(str(v.get("action")))}' if v.get("action") and v.get("action") != v.get("code") else "")
            + '</div>'
            f'<h2>What happened - {e(plabel)}</h2><p>{e(str(v.get("what_happened") or "Nothing to say yet."))}</p>'
-           f'<h2>Recommendation</h2><p>{e(str(v.get("recommendation") or "-"))}</p>{flags}'
+           f'<h2>Recommendation</h2><p>{e(str(v.get("recommendation") or "-"))}</p>{flags}{ladder}'
            f'<h2>The evidence</h2><ul class="s-ev">{ev or "<li>No trades on record yet.</li>"}</ul>'
            f'<p class="s-src">The rule: {e(str(v.get("rule") or ""))}</p></section>')
     quiet = ""
@@ -3674,7 +3793,7 @@ class _Handler(BaseHTTPRequestHandler):
             mode = next((str(b.get("mode") or "") for b in sd.get("bots") or () if b.get("id") == bot), "")
             return render_bot_detail(snap, headline, bot,
                                      verdicts.get(bot) or {"label": dict(BOTS).get(bot, bot), "mode": mode},
-                                     plan, verdicts)
+                                     plan, verdicts, deals=deals)
         return render_home(snap, headline, verdicts, plan, plan_error, deals=deals)
 
     def _lab_page(self) -> str:
@@ -3689,17 +3808,36 @@ class _Handler(BaseHTTPRequestHandler):
             return render_candidate(data_dir, (q.get("id") or [""])[0], now)
         return render_lab_board(data_dir, now)
 
-    def _coach_page(self) -> str:
+    def _coach_page(self, snap: dict) -> str:
         """/coach: the coach's full record, read only (data/coach.json, data/coach/status.json and the
-        account's own figures for the one real number)."""
+        account's own figures for the one real number); then what changed since yesterday and the plan
+        (moved off "/" on 12 Oct)."""
+        from . import showcase as S
+        from .verdicts import all_verdicts, load_plan
         with self.state.lock:
             data_dir = self.state.data_dir
             sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
         now = self.state.now()
-        body = (_lab_head(now) + coach_page.render_page_body(data_dir, sd, deals, now)
+        extra = ""
+        try:
+            lab = S.load_lab(data_dir, now)
+            extra += _changes_html(S.changes(lab, data_dir, now))
+        except Exception as exc:                 # never a reason to fail the page
+            log.warning("what changed: %s", exc)
+        plan, plan_error = load_plan()
+        try:
+            _snap, headline, sd2, deals2 = self._figures(snap, "today", "", "", "all")
+            verdicts = all_verdicts(sd2, headline.get("sel"), headline.get("tot"), headline.get("data_dir") or "",
+                                    headline["now"], plan, period=headline.get("period"), deals=deals2)
+        except Exception as exc:                 # never a reason to fail the page
+            log.warning("verdicts: %s", exc)
+            verdicts = {}
+        extra += f'<div id="plan">{_plan_html(plan, plan_error, verdicts)}</div>'
+        body = (_lab_head(now) + coach_page.render_page_body(data_dir, sd, deals, now) + extra
                 + '<footer class="s-foot"><a href="/">All bots</a><a href="/lab">The lab</a><div>This page only '
-                  'reads the coach\'s status (data/coach/status.json) and its switch (data/coach.json); it changes '
-                  'nothing. It refreshes itself every 10 seconds.</div></footer>')
+                  'reads the coach\'s status (data/coach/status.json) and its switch (data/coach.json), the lab\'s '
+                  'summary and the plan (docs/plan.json); it changes nothing. It refreshes itself every 10 seconds.'
+                  '</div></footer>')
         return _home_page("The coach", body, old_css=True)
 
     def _coach_progress(self, snap: dict) -> dict:
@@ -3740,7 +3878,7 @@ class _Handler(BaseHTTPRequestHandler):
             elif self.path.split("?", 1)[0].rstrip("/") == "/lab":
                 self._send(self._lab_page())
             elif self.path.split("?", 1)[0].rstrip("/") == "/coach":
-                self._send(self._coach_page())
+                self._send(self._coach_page(snap))
             else:
                 self._send(self._home_page(snap))
         except Exception as exc:      # never let the page kill the process

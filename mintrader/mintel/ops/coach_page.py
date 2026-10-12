@@ -1,10 +1,11 @@
 """The coach on the page, in plain words (spec section 15, with section 21).
 
-* :func:`render_card` - one card on "/", directly after the lab's "Today's
-  standouts": what the coach did today and why, what is on real money, what it
-  is watching, what needs Aaron's yes, the one real figure against his £100 a
-  day aim, and how to switch it off. It keeps the "/" pins of the lab's
-  showcase: no ``<table``, no ``class="tile"``.
+* :func:`one_line` - the coach on "/" in ONE line (12 Oct: the main page is
+  short): its state and how many changes it made today, linking to /coach.
+* :func:`render_card` - the card at the top of /coach: what the coach did
+  today and why, what is on real money, what it is watching, what needs
+  Aaron's yes, the one real figure against his £100 a day aim, and how to
+  switch it off. No ``<table``, no ``class="tile"``.
 * :func:`render_page_body` - ``/coach``: the full record (each piece of work,
   tonight's plan, the decisions, the brakes, the data checks, the policy's age,
   the luck check, the scorecard, the honest arithmetic, the sources). Tables
@@ -299,6 +300,32 @@ def headline(c: dict) -> tuple[str, str]:
     if mode == "OFF":
         return "Switched off", OFF_WORDS
     return mode.lower() or "unknown", str(st.get("words") or "")
+
+
+def one_line(data_dir, now: Optional[dt.datetime] = None, coach: Optional[dict] = None) -> str:
+    """The coach in ONE line for "/" (12 Oct: the main page is short): its state and how many changes it made
+    today, e.g. "Coach: watching only · no changes today" or "Coach: in charge within your limits · 2 changes
+    today - see why". The rest is on /coach. Never raises; never a money figure."""
+    now = _utc(now) or dt.datetime.now(UTC)
+    try:
+        c = coach or load(data_dir, now)
+        state = c.get("state")
+        if state == "NONE":
+            return "Coach: not switched on yet"
+        if state in ("BROKEN", "OFF"):
+            return "Coach: switched off - the bots are on your own settings"
+        if state in ("NO_STATUS", "STALE"):
+            title, _sub = headline(c)
+            return f"Coach: {title.lower()} - the bots are on your own settings"
+        title, _sub = headline(c)
+        n = len(_today_changes(c.get("status") or {}, now, limit=10_000))
+        line = f"Coach: {title} · " + (f"{n} change{'' if n == 1 else 's'} today - see why" if n else
+                                        "no changes today")
+        if c.get("synthetic"):
+            line += f" ({TEST_DATA})"
+        return line
+    except Exception as exc:                               # never a reason to fail the page
+        return f"Coach: could not be read just now ({exc})"
 
 
 def _key_name(k: dict) -> str:

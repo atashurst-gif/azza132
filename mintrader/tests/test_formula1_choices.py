@@ -782,8 +782,8 @@ class TestThePageAgreesWithThePlan:
         from tests.test_formula1_page import _pages, _plan_box
         from tests.test_simple_dashboard import row_of
         d = _four_choices_day(tmp_path)
-        home, detail = _pages(d, "/", "/?bot=market_intelligence")
-        box = _plan_box(home)
+        home, detail, coach = _pages(d, "/", "/?bot=market_intelligence", "/coach")
+        box = _plan_box(coach)                                                       # the plan: on /coach
         assert ("In force now (config.json): only its momentum continuation trades on minor pairs use real money "
                 "(tnb.live_tactics); the top-opportunity size is OFF, so every trade risks the normal amount, never "
                 "the bigger size (risk.top_size_enabled); no new Trend & Breakout entry in the 15 minutes before a "
@@ -794,11 +794,13 @@ class TestThePageAgreesWithThePlan:
         plan, _ = V.load_plan()
         assert plan["focus"]["what"] in box and plan["steps"][0]["text"] in box
         row = row_of(home, "Trend &amp; Breakout")
-        assert "LIVE: minor pairs (Formula 1, momentum continuation only) - rest PAPER" in row
+        assert ('<span class="lb-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
+                'PAPER">LIVE</span>') in row
+        rec = detail.split("<h2>Recommendation</h2>")[1].split("</p>")[0]          # what to do: on its own page
         assert ("Formula 1 - its momentum continuation trades on minor pairs - is LIVE: judge it after 20 live "
-                "trades") in row
+                "trades") in rec
         assert "Keep it and grow it only if it is positive after costs with more up days than down; otherwise " \
-               "back to PAPER and test the next candidate." in row
+               "back to PAPER and test the next candidate." in rec
         assert "Formula 1 LIVE - its momentum continuation trades on minor pairs with real money" in detail
 
     @pytest.mark.parametrize("over, missing", [
@@ -811,7 +813,7 @@ class TestThePageAgreesWithThePlan:
     def test_a_choice_the_plan_names_but_config_lacks_is_said_plainly(self, tmp_path, over, missing):
         from tests.test_formula1_page import _pages, _plan_box
         d = _four_choices_day(tmp_path, **over)
-        box = _plan_box(_pages(d, "/")[0])
+        box = _plan_box(_pages(d, "/coach")[0])
         assert "In force now (config.json): " in box
         assert "Not in config.json here yet, though the plan says so: " + missing + "." in box
         assert "Check:" not in box

@@ -842,8 +842,8 @@ class TestThePageSaysWhichApproachesAreReal:
         (d.data / "config.json").write_text(json.dumps(raw))
         (page,) = _pages(d, "/")
         row = row_of(page, "Trend &amp; Breakout")
-        assert ('<span class="s-mode live">LIVE: minor pairs (Formula 1, momentum continuation only) - rest PAPER'
-                '</span>') in row
+        assert ('<span class="lb-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
+                'PAPER">LIVE</span>') in row
 
 
 class TestTheStartWindowsSayWhichApproachesAreReal:
@@ -1153,7 +1153,8 @@ class TestFormula1sLinesNameTheTradesThatAreReal:
         d = _f1_day_with(tmp_path, tactics=[MC])
         home, detail = _pages(d, "/", "/?bot=market_intelligence")
         row = row_of(home, "Trend &amp; Breakout")
-        assert "Formula 1 - its momentum continuation trades on minor pairs - is LIVE: judge it after 20" in row
+        rec = detail.split("<h2>Recommendation</h2>")[1].split("</p>")[0]          # what to do: on its own page
+        assert "Formula 1 - its momentum continuation trades on minor pairs - is LIVE: judge it after 20" in rec
         assert "its minor-pair trades" not in row
         assert "Formula 1 - its momentum continuation trades on minor pairs - is LIVE" in detail
         assert "Formula 1 LIVE - its momentum continuation trades on minor pairs with real money" in detail
@@ -1164,7 +1165,10 @@ class TestFormula1sLinesNameTheTradesThatAreReal:
         from tests.test_simple_dashboard import row_of
         d = _f1_day_with(tmp_path)
         home, detail = _pages(d, "/", "/?bot=market_intelligence")
-        assert "Formula 1 - its minor-pair trades - is LIVE: judge it after 20" in row_of(home, "Trend &amp; Breakout")
+        assert "Formula 1 - its minor-pair trades - is LIVE: judge it after 20" in detail.split(
+            "<h2>Recommendation</h2>")[1].split("</p>")[0]
+        assert '<span class="lb-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row_of(
+            home, "Trend &amp; Breakout")
         assert "Formula 1 LIVE - its minor-pair trades with real money" in detail
 
 
@@ -1176,7 +1180,7 @@ class TestThePlanBoxSaysWhatConfigNowHolds:
     def test_both_answers_applied(self, tmp_path):
         from tests.test_formula1_page import _pages, _plan_box
         d = _f1_day_with(tmp_path, tactics=[MC], top_size=False)
-        (home,) = _pages(d, "/")
+        (home,) = _pages(d, "/coach")                                  # the plan: on /coach since 12 Oct
         box = _plan_box(home)
         assert ("In force now (config.json): only its momentum continuation trades on minor pairs use real money "
                 "(tnb.live_tactics); the top-opportunity size is OFF, so every trade risks the normal amount, never "
@@ -1187,7 +1191,7 @@ class TestThePlanBoxSaysWhatConfigNowHolds:
     def test_one_answer_applied(self, tmp_path):
         from tests.test_formula1_page import _pages, _plan_box
         d = _f1_day_with(tmp_path, top_size=False)
-        box = _plan_box(_pages(d, "/")[0])
+        box = _plan_box(_pages(d, "/coach")[0])
         assert "In force now (config.json): the top-opportunity size is OFF" in box
         assert (self.NOT_YET + "only its momentum continuation trades on minor pairs with real money "
                 "(tnb.live_tactics);") in box
@@ -1195,7 +1199,7 @@ class TestThePlanBoxSaysWhatConfigNowHolds:
     def test_with_every_default_the_box_says_none_of_the_plans_choices_is_set(self, tmp_path):
         from tests.test_formula1_page import _pages, _plan_box
         d = _f1_day_with(tmp_path, tactics=[], top_size=True)
-        box = _plan_box(_pages(d, "/")[0])
+        box = _plan_box(_pages(d, "/coach")[0])
         assert ("In force now (config.json): none of the plan's choices - not in config.json here yet, though the "
                 "plan says so: only its momentum continuation trades on minor pairs with real money") in box
 
