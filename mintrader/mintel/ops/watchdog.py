@@ -274,6 +274,48 @@ def own_file_mode(path: str | Path, default: str = "PAPER") -> str:
         return default
 
 
+COACH_STATUS_MAX_AGE_S = 180.0      # the policy's lease: the coach rewrites its status every 60 s
+
+
+def coach_switched_on(envelope: str | Path) -> bool:
+    """Should the watchdog run the coach? Only while Aaron's envelope (data/coach.json) exists and its mode
+    is not OFF. A file that is there but cannot be read counts as on: the coach then runs only to say so on
+    the page (an unreadable envelope means OFF to every bot's gate). Never raises."""
+    p = Path(envelope)
+    try:
+        if not p.exists():
+            return False
+        raw = json.loads(p.read_text())
+    except Exception:
+        return True
+    mode = str(raw.get("mode") or "").strip().upper() if isinstance(raw, dict) else ""
+    return mode != "OFF"
+
+
+def coach_status_fresh(path: str | Path, max_age_s: float = COACH_STATUS_MAX_AGE_S,
+                       clock: Optional[Callable[[], dt.datetime]] = None) -> Callable[[], Optional[bool]]:
+    """The watchdog's probe for the coach (it writes no heartbeat): True while data/coach/status.json was
+    written within ``max_age_s`` (its own ``written_utc``, else the file's time); False when older, missing
+    or unreadable (acted on only after the grace period, so a coach just started has time to write)."""
+    p = Path(path)
+
+    def probe() -> Optional[bool]:
+        now = clock() if clock else dt.datetime.now(dt.timezone.utc)
+        try:
+            when = None
+            try:
+                raw = json.loads(p.read_text())
+                t = dt.datetime.fromisoformat(str(raw.get("written_utc")).replace("Z", "+00:00"))
+                when = t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+            except Exception:
+                when = dt.datetime.fromtimestamp(p.stat().st_mtime, dt.timezone.utc)
+            return (now - when).total_seconds() <= max_age_s
+        except Exception:
+            return False
+
+    return probe
+
+
 def rider_live_left(data_dir: str | Path) -> bool:
     """Does data/rider.sqlite hold an open LIVE trade? Read only, the way
     the Rider's own OFF start reads it (no file: no). True when it cannot
@@ -772,6 +814,26 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
             kill_pattern="mintel.lab.practice",
             probe=status_fresh(data / "lab-status.json", STATUS_MAX_AGE_S),
             enabled=lambda: own_file_mode(lab_mode) != "OFF" and lab_universe.exists(),
+            max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
+
+    # The coach (12 Oct): decides which of the bots' own trades use real money and how much, within
+    # Aaron's envelope (data/coach.json). It has no broker and cannot place an order. It writes NO
+    # heartbeat (a stale heartbeat the trader does not know would stop its entries); it is judged by
+    # the freshness of data/coach/status.json, which it rewrites every minute. Run gently (nice 10),
+    # and looked after only while data/coach.json exists and does not say OFF.
+    if (Path(project) / "mintel" / "coach" / "run.py").exists():
+        envelope = data / "coach.json"
+        nice = [] if IS_WINDOWS or not shutil.which("nice") else ["nice", "-n", "10"]
+        processes.append(ManagedProcess(
+            name="coach",
+            command=nice + [python, "-m", "mintel.coach", "run", "--config", config_path],
+            pid_file=str(data / "coach.pid"),
+            cwd=project,
+            log_file=str(Path(cfg.ops.log_dir) / "coach.out.log"),
+            grace_seconds=120.0,
+            kill_pattern="mintel.coach run",
+            probe=coach_status_fresh(data / "coach" / "status.json", COACH_STATUS_MAX_AGE_S),
+            enabled=lambda: coach_switched_on(envelope),
             max_restarts_per_hour=cfg.ops.max_restarts_per_hour))
 
     mt5_cmd: list[str] = []

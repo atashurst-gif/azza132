@@ -1362,6 +1362,105 @@ apply_lab_2026_10_11() {
   return 0
 }
 
+# The coach (12 Oct; Aaron, 12 Oct: "make tweaks to all bots ... make as much
+# profit after commission as possible", and "remove [limits] as and when as
+# this is not REAL money"): switched on once, with the marker written only when
+# every part worked (the next double-click tries again otherwise). Its folder
+# (data/coach/, the only one it writes) and Aaron's envelope, data/coach.json:
+# PILOT, but watching only until the end of the first full UK trading day after
+# this install (it takes charge at the next 06:30 UK release, if that day's
+# checks passed); the bots it governs; Formula 1 pinned at a flat 13 a trade
+# until its 20-live-trade judgement; the demo caps of section 21 (5% a trade,
+# a 10% daily stop - reached only step by step, on a demo account, as the
+# evidence earns it). An envelope already there is Aaron's and is never
+# overwritten. The coach's CLI has no envelope writer, so a small Python block
+# writes it atomically and checks it with the coach's own reader first. The
+# coach never writes config.json and cannot place an order. A restart is
+# remembered so the watchdog that runs the coach is the new one.
+COACH_MARKER_NAME=".coach-2026-10-12"
+apply_coach_2026_10_12() {
+  local marker
+  local out
+  marker="$DATA_DIR/$COACH_MARKER_NAME"
+  [[ -f "$marker" ]] && return 0
+  step "The coach"
+  if ! mkdir -p "$DATA_DIR/coach"; then
+    warn "Could not make $DATA_DIR/coach, so the coach is not switched on yet (the next double-click tries again)."
+    return 0
+  fi
+  # 12 Oct: no heredoc inside $( ) - bash 3.2 misreads a quote in its body there
+  local outfile
+  outfile="$DATA_DIR/coach/.install.out"
+  if ! "$VENV_DIR/bin/python" - "$DATA_DIR" "$APP_DIR" > "$outfile" 2>&1 <<'PYEOF'
+import datetime as dt, json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[2])
+from mintel.coach import F1_JUDGE_AFTER, F1_KEY, F1_PIN_WHY, TZ_UK, UTC, next_release_utc
+from mintel.coach import envelope as E
+from mintel.coach.records import baseline_config
+
+data = Path(sys.argv[1])
+path = data / "coach.json"
+now = dt.datetime.now(UTC)
+if os.environ.get("MINTEL_COACH_INSTALL_UTC"):     # tests only: the install's clock
+    now = dt.datetime.fromisoformat(os.environ["MINTEL_COACH_INSTALL_UTC"]).astimezone(UTC)
+if path.exists():
+    print("kept: an envelope is already there (yours); it was not changed")
+    sys.exit(0)
+cfg = baseline_config(data)                      # config.json read with json alone (never the secrets file)
+ceiling = float(cfg.risk.max_risk_pct)
+stop = float(cfg.risk.max_daily_loss_pct)
+# the end of the first FULL UK trading day after now: midnight UK at its end
+day = now.astimezone(TZ_UK).date() + dt.timedelta(days=1)
+while day.weekday() >= 5:
+    day += dt.timedelta(days=1)
+end = day + dt.timedelta(days=1)
+until = dt.datetime(end.year, end.month, end.day, tzinfo=TZ_UK).astimezone(UTC)
+step = min(1.5, ceiling)
+line, pause = (1.5, 2.25) if stop > 2.25 else (round(stop * 0.5, 4), round(stop * 0.75, 4))
+env = {"schema": 1, "mode": "PILOT", "watch_until_utc": until.isoformat(),
+       "govern": ["tnb", "runner", "ian", "bandbreaker", "crowd"],
+       "tnb_real_kinds": ["FX_MINOR", "FX_MAJOR", "INDEX", "GOLD"],
+       "trial_risk_pct": min(0.35, step), "trial_max_gbp": 8.0, "max_trials": 2, "trial_loss_budget_gbp_week": 40.0,
+       "max_step_pct": step, "announce_steps": True,
+       "day_line_pct": line, "day_pause_pct": pause, "week_line_pct": 5.0,
+       "drawdown_line_pct": 5.0, "drawdown_pause_pct": 8.0,
+       "pins": [{"key": F1_KEY, "why": F1_PIN_WHY, "judge_after": F1_JUDGE_AFTER}],
+       "demo_max_step_pct": 5.0, "demo_max_daily_stop_pct": 10.0,
+       "set_by": "installer, Aaron's request of 12 Oct 2026", "set_utc": now.isoformat()}
+E.parse(env, ceiling, stop)                      # the coach's own check: an envelope it would refuse is never written
+tmp = path.with_name(".coach.json.tmp")
+with open(tmp, "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(env, indent=1, sort_keys=True) + "\n")
+    fh.flush()
+    os.fsync(fh.fileno())
+os.replace(tmp, path)
+if E.read(path, ceiling, stop).error:            # read back exactly as the coach and the bots' gate read it
+    path.unlink()
+    raise SystemExit("the written envelope did not read back")
+starts = next_release_utc(until).astimezone(TZ_UK)
+print("written: watching only until the end of " + day.strftime("%a %d %b")
+      + ", then in charge within your limits from 06:30 UK on " + starts.strftime("%a %d %b"))
+PYEOF
+  then
+    tail -3 "$outfile" 2>/dev/null | sed 's/^/      /'
+    rm -f "$outfile"
+    rm -f "$DATA_DIR/.coach.json.tmp"
+    warn "Could not write the coach's settings ($DATA_DIR/coach.json), so the coach is not switched on yet (the next double-click tries again)."
+    return 0
+  fi
+  out="$(tail -1 "$outfile" 2>/dev/null)"
+  rm -f "$outfile"
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  CODE_CHANGED="yes"                         # the watchdog restarts with the coach in its care
+  remember_restart
+  case "$out" in
+    kept:*) good "The coach is switched on with your own settings for it ($DATA_DIR/coach.json was already there and is unchanged)" ;;
+    *) good "The coach is switched on: ${out#written: }. It decides which of the bots' own trades use real money and how much; it cannot place an order and never changes config.json (its own icon: The Coach)" ;;
+  esac
+  return 0
+}
+
 # tnb_live_groups - the kinds of market whose Trend & Breakout orders go to
 # the account while it is on PAPER (config.json "tnb" -> "live_groups"), as
 # FX_MINOR or FX_MINOR,INDEX; empty when it is LIVE or none are set.
@@ -2048,6 +2147,25 @@ install_lab_icon() {
   return 0
 }
 
+# The Coach's own icon (12 Oct): placed once, like the others, and never put
+# back after that.
+install_coach_icon() {
+  local desktop
+  local marker
+  local src
+  desktop="${1:-$HOME/Desktop}"
+  marker="$DATA_DIR/.desktop-icon-coach-placed"
+  src="$APP_DIR/deploy/mac/The Coach.command"
+  [[ -f "$marker" ]] && return 0
+  [[ -d "$desktop" && -f "$src" ]] || return 0
+  cp -f "$src" "$desktop/The Coach.command" || return 0
+  chmod +x "$desktop/The Coach.command"
+  xattr -d com.apple.quarantine "$desktop/The Coach.command" >/dev/null 2>&1
+  mkdir -p "$DATA_DIR" && : > "$marker"
+  good "The Coach placed on your Desktop (what the coach is doing; switch it off, HALT, veto)"
+  return 0
+}
+
 # ------------------------------------------------------------ start / check --
 is_running() {
   # NOTE: each `local` gets its own statement on purpose. macOS ships bash 3.2,
@@ -2247,6 +2365,10 @@ PYEOF
   if [[ -d "$DATA_DIR/lab" ]]; then
     say "    $(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.lab show --one-line --config "$CONFIG" 2>/dev/null | tail -1)"
   fi
+  # the coach in one line (it decides which trades use real money; it cannot place an order)
+  if [[ -f "$DATA_DIR/coach.json" ]]; then
+    say "    $(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.coach show --once --config "$CONFIG" 2>/dev/null | tail -1)"
+  fi
 }
 
 open_dashboard() {
@@ -2386,6 +2508,10 @@ stop_everything() {
   # nightly LaunchAgent is left alone: it only tests on stored prices.
   pkill -f "mintel.lab.practice" 2>/dev/null || true
   rm -f "$DATA_DIR/lab.pid"
+  # The coach (it has no broker and no orders): stopped with the bots. Without
+  # it every bot keeps its last restrictions, and its grants lapse in 3 minutes.
+  pkill -f "mintel.coach run" 2>/dev/null || true
+  rm -f "$DATA_DIR/coach.pid"
   # The retired Rapid Scalper's last report goes too (see start_everything).
   rm -f "$DATA_DIR/heartbeats/scalper.heartbeat.json"
   if [[ -f "$DATA_DIR/caffeinate.pid" ]]; then

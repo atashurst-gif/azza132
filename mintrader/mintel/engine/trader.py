@@ -922,6 +922,9 @@ class Trader:
         for ticket in list(self.flowlock.trackers):
             if ticket not in live:
                 self._finalise(ticket, now)
+        # 12 Oct: the tickets this pass closes (_manage_one), so the Momentum
+        # Runner below is never shown a trade that is already gone.
+        self._closed_this_pass: set[int] = set()
         for p in positions:
             try:
                 notes.extend(self._manage_one(p, now))
@@ -939,7 +942,9 @@ class Trader:
                 coach_copies = getattr(self, "_coach_copies", None) or {}
                 for t, v in coach_copies.items():
                     copies.setdefault(int(t), float(v))        # the coach's word on a trade closed above
-                for note in self.runner.observe(positions, stops, self._tick_quietly, now, tactics,
+                closed = self._closed_this_pass
+                still_open = [p for p in positions if int(p.ticket) not in closed]
+                for note in self.runner.observe(still_open, stops, self._tick_quietly, now, tactics,
                                                 regimes=regimes, copy_volumes=copies):
                     log.info("%s", note)
                 if coach_copies:
@@ -1093,6 +1098,7 @@ class Trader:
         if decision.close:
             res = self.executor.close_position(position, decision.close_reason)
             if res.ok:
+                getattr(self, "_closed_this_pass", set()).add(int(position.ticket))
                 notes.append(f"closed {position.symbol}: "
                              f"{decision.close_reason}")
                 self.journal.log_event(

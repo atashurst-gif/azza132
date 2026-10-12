@@ -1,0 +1,38 @@
+{
+ "schema": 1,
+ "synthetic": true,
+ "test_data_note": "MADE UP by hand to test the page. No figure here is a result of any bot, key or account.",
+ "written_utc": "2026-10-16T09:14:20+00:00",
+ "mode": "PILOT",
+ "words": "in charge within your limits",
+ "policy": {"seq": 1842, "written_utc": "2026-10-16T09:14:20+00:00", "valid_s": 180, "sha256": "made-up"},
+ "grants_allowed": true,
+ "data": {"ok": true, "failed": [], "broker_check": {"ok": true, "records_today": -12.40, "page_today": -12.40}},
+ "account": {"equity": 1853.21, "e0": 1865.61, "real_today": -12.40, "open_real_risk": 13.0, "peak": 1870.02},
+ "brakes": {"day": "OPEN", "week": "OPEN", "drawdown": "OPEN", "trial_budget_left_gbp": 40.0},
+ "brake_words": {},
+ "headroom_gbp": 30.57,
+ "stop_pct": 3.0,
+ "demo": {"test": true, "why": "config.json says DEMO and the broker reports a demo account", "limits": null},
+ "demo_line": "Demo mode: limits are lifted step by step as the bots earn it (your instruction of 12 Oct). Every trade still has a stop. Coach-sized trades today +£64.00; at real-money sizes +£19.00.",
+ "keys": [
+  {"key": "tnb|MOMENTUM_CONTINUATION|FX_MINOR|*", "words": "Trend & Breakout: momentum continuation on minor pairs", "state": "PINNED", "step": null, "route": "PIN", "money": null, "rule": null, "why": null, "p_plus": 0.93, "lcb80": 0.11, "p_plus_real": 0.91, "trades": 44, "real_trades": 44},
+  {"key": "runner|*|*|*", "words": "Momentum Runner", "state": "PLACED", "step": null, "route": "BASELINE", "money": 10.0, "rule": null, "why": "waiting for New York (14:30 UK)", "p_plus": null, "lcb80": null, "p_plus_real": null, "trades": 2, "real_trades": 2},
+  {"key": "ian|*|*|*", "words": "Financial Ian", "state": "PLACED", "step": null, "route": "BASELINE", "money": 10.0, "rule": null, "why": "8 real trades - too few to judge (judged at 30)", "p_plus": null, "lcb80": null, "p_plus_real": null, "trades": 8, "real_trades": 8},
+  {"key": "tnb|BREAKOUT_ACCEPTANCE|FX_MAJOR|*", "words": "Trend & Breakout: breakout acceptance on major pairs", "state": "BANNED_REAL", "step": null, "route": "PRACTICE", "money": null, "rule": "S1", "why": "negative on 3 days traded", "p_plus": 0.31, "lcb80": -0.22, "p_plus_real": null, "trades": 31, "real_trades": 0},
+  {"key": "bandbreaker|*|INDEX|*", "words": "Band Breaker: on indices", "state": "PRACTICE", "step": null, "route": "BASELINE", "money": null, "rule": null, "why": null, "p_plus": 0.40, "lcb80": -0.15, "p_plus_real": null, "trades": 6, "real_trades": 0}
+ ],
+ "plan": {"date": "2026-10-15", "release_utc": "2026-10-16T05:30:00+00:00", "items": [{"item": 1, "words": "Trend & Breakout: session expansion on indices in trending markets earns a live trial at the trial size (£6.53 a trade).", "rule": "G1", "key": "tnb|SESSION_EXPANSION|INDEX|TREND"}], "notes": [], "floors": [], "luck": {}},
+ "changes": [
+  {"ts_utc": "2026-10-16T08:42:00+00:00", "kind": "pause", "target": "ian|*|*|*", "rule": "B2", "words": "Financial Ian paused until midnight: the account is down £42.10 today, past the coach's line of £41.98 (2.25%). Its open trades are still managed.", "by": "coach"},
+  {"ts_utc": "2026-10-15T21:20:00+00:00", "kind": "plan", "target": "tnb|SESSION_EXPANSION|INDEX|TREND", "rule": "G1", "words": "Announced for 06:30 UK: a live trial at £6.53 a trade.", "by": "coach"}
+ ],
+ "needs_you": [],
+ "needs_your_yes": ["Formula 1's judgement after 20 live trades (14 to go).", "Let the 3% stop also count Financial Ian (it does not today; 8 real Financial Ian trades on record).", "Apply the headroom check to Formula 1 too, so stacked stops can never take a day past 3% (not measured yet).", "Lab ideas ready for live: none yet."],
+ "suggestions": ["Add NZDCHF to universe.excluded_symbols at the next install (made up)."],
+ "luck": {"date": "2026-10-15", "shuffles": 200, "pass_rate": 0.0, "blocked": 0},
+ "scorecard": {"date": "2026-10-15", "saved_gbp": 9.3, "added_gbp": -1.2, "trades": 4},
+ "board": "Markets now (London morning): FX minors: 5 of 14 in a fast market.",
+ "phase": "LONDON_AM",
+ "sources": {"money": "MetaTrader's record through the page's standing block (every bot, after commission)", "evidence": "each bot's own closed trades, read only (journal, runner, bandbreaker, crowd, ian)", "markets": "data/coach/weather.json, written by Trend & Breakout every 60 s", "envelope": "data/coach.json (Aaron's)"}
+}

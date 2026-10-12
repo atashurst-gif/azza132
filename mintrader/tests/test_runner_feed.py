@@ -284,6 +284,8 @@ class TestTagged:
         assert [r["ticket"] for r in rows] == [mine[0].ticket] and feed.is_feed_trade(rows[0])
         entry = [e for e in tr.journal.recent_events(50) if e["kind"] == "ENTRY"]
         assert entry and json.loads(entry[0]["detail_json"])["runner_feed"] is True
+        from tests.test_tnb_paper_wiring import hold_open
+        hold_open(tr)                                       # not closed by this pass (the Runner never rides a closed one)
         tr.manage_cycle()                                   # the Runner sees the fresh index entry
         runner = sim.positions(MAGIC_RUNNER)
         assert len(runner) == 1 and runner[0].symbol == "US500" and runner[0].comment == "RUNNER"

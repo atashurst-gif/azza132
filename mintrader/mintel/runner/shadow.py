@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -46,7 +47,13 @@ from ..clock import to_utc, utcnow
 from ..contracts import infer_group
 from . import STRATEGY_ID, STRATEGY_LABEL, TAGLINE
 
+log = logging.getLogger(__name__)
+
 TAG = "RUNNER"                                  # the order comment on every LIVE order
+# 12 Oct: when the trader hands over its approaches, a trade it has none for
+# (closed earlier in the pass, or never journalled) is not ridden: an unknown
+# approach must never slip past skip_tactics.
+UNKNOWN_APPROACH = "its approach is unknown (no open Trend & Breakout row for it), so it is not ridden"
 PAPER_FIRST_TICKET = 700_000_001                # the paper executor's own sequence (unused by the shadow itself)
 ORPHAN_SWEEP_SECONDS = 30.0                     # how often LIVE looks for stray positions when nothing is open
 MISSES_BEFORE_ESTIMATE = 3                      # reads in a row without the position (and no deal) before a row is estimated
@@ -107,7 +114,8 @@ class RunnerConfig:
     # 3 R trail lost on momentum continuation (33 index trades, -14.4 R, down
     # on 7 of 9 days) and earned on the rest (64 trades, +43.5 R); the
     # Runner's own record: momentum continuation 7 trades -27.48, session
-    # expansion 1 trade +56.67. A trade whose approach is unknown is ridden.
+    # expansion 1 trade +56.67. From 12 Oct a trade whose approach the trader
+    # does not know is NOT ridden (observe(); UNKNOWN_APPROACH).
     skip_tactics: tuple[str, ...] = ("MOMENTUM_CONTINUATION",)
     # 0 = enter with the real trade. Above 0: wait until the real trade is this
     # many R ahead, then enter at that price with the stop one of the real
@@ -358,12 +366,13 @@ class MomentumRunner:
     # --------------------------------------------------------------- flow --
     def adopt(self, position, initial_stop: float, now: dt.datetime, tactic: str = "",
               tick: Optional[Tick] = None, regime: str = "",
-              copy_volume: Optional[float] = None) -> Optional[Shadow]:
+              copy_volume: Optional[float] = None, approach_known: bool = True) -> Optional[Shadow]:
         """Ride a real trade, once. PAPER starts a shadow of it; LIVE sends the
         Runner's own order at ``tick``. Returns the row, or None (``_why`` says why).
         ``copy_volume``: what the trader worked out for the Runner to copy
         (Trend & Breakout's size at the Runner's copy settings, 10 Oct);
-        None copies Trend & Breakout's volume (see _copy_base)."""
+        None copies Trend & Breakout's volume (see _copy_base).
+        ``approach_known`` False (observe(), 12 Oct): never ridden."""
         self._why = ""
         self._size_note = ""
         regime = str(regime or "").upper()
@@ -378,6 +387,9 @@ class MomentumRunner:
             return None                                  # already finished with this one
         stop = float(initial_stop or position.sl or 0.0)
         if stop <= 0 or abs(position.entry_price - stop) <= 0:
+            return None
+        if not approach_known:
+            self._why = UNKNOWN_APPROACH                 # said once per trade by observe(); nothing recorded
             return None
         skip = self._skipped_tactic(tactic)
         if skip:
@@ -1047,7 +1059,8 @@ class MomentumRunner:
                 s = self.adopt(p, float(initial_stops.get(p.ticket) or p.sl or 0.0), now,
                                tactic=str((tactics or {}).get(p.ticket) or ""), tick=tick,
                                regime=str((regimes or {}).get(p.ticket) or ""),
-                               copy_volume=(copy_volumes or {}).get(p.ticket))
+                               copy_volume=(copy_volumes or {}).get(p.ticket),
+                               approach_known=(tactics is None or bool(str(tactics.get(p.ticket) or "").strip())))
                 if s is not None:
                     self._noted = {k for k in self._noted if k[0] != int(p.ticket)}
                     if s.mode == "LIVE":
@@ -1060,6 +1073,9 @@ class MomentumRunner:
                 elif self._why and (int(p.ticket), self._why) not in self._noted:
                     self._noted.add((int(p.ticket), self._why))
                     notes.append(f"{STRATEGY_LABEL}: {p.symbol} not entered: {self._why}")
+                    if self._why == UNKNOWN_APPROACH:
+                        log.warning("%s: %s real trade %s not entered: %s", STRATEGY_LABEL, p.symbol,
+                                    p.ticket, UNKNOWN_APPROACH)
             except Exception as exc:                       # never let the Runner disturb the real bot
                 notes.append(f"{STRATEGY_LABEL}: could not ride {getattr(p, 'symbol', '?')}: {exc}")
         live: Optional[dict] = None

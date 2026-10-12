@@ -58,6 +58,7 @@ from typing import Callable, Optional
 
 from ..clock import TZ_LONDON, fx_market_open, to_utc, utcnow
 from .standing import UK_DAYS_NOTE, uk_date, uk_day_start
+from . import coach_page          # 12 Oct: the coach's card on "/", /coach and coach_progress in /api
 
 log = logging.getLogger("mintel.dashboard")
 
@@ -2577,8 +2578,9 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
         log.warning("standouts: %s", exc)
         scout = (f'<section class="s-card s-scout"><h2>Today\'s standouts</h2><p class="s-none">They could not be '
                  f'worked out just now ({html.escape(str(exc))}).</p></section>')
+    coach = coach_page.render_card(data_dir, sd, deals, now)     # 12 Oct: the coach, right after the standouts
     body = (head + _home_problem(snap) + render_home_periods(view, "all") + _home_account(snap, top, cur)
-            + scout + _showcase_html(entries, lab) + _plan_html(plan, plan_error, verdicts)
+            + scout + coach + _showcase_html(entries, lab) + _plan_html(plan, plan_error, verdicts)
             + _home_foot(view, snap.get("updated")))
     return _home_page("Trading bots", body)
 
@@ -3687,6 +3689,28 @@ class _Handler(BaseHTTPRequestHandler):
             return render_candidate(data_dir, (q.get("id") or [""])[0], now)
         return render_lab_board(data_dir, now)
 
+    def _coach_page(self) -> str:
+        """/coach: the coach's full record, read only (data/coach.json, data/coach/status.json and the
+        account's own figures for the one real number)."""
+        with self.state.lock:
+            data_dir = self.state.data_dir
+            sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
+        now = self.state.now()
+        body = (_lab_head(now) + coach_page.render_page_body(data_dir, sd, deals, now)
+                + '<footer class="s-foot"><a href="/">All bots</a><a href="/lab">The lab</a><div>This page only '
+                  'reads the coach\'s status (data/coach/status.json) and its switch (data/coach.json); it changes '
+                  'nothing. It refreshes itself every 10 seconds.</div></footer>')
+        return _home_page("The coach", body, old_css=True)
+
+    def _coach_progress(self, snap: dict) -> dict:
+        """/api's coach_progress: real money since 12 Oct, the page's own arithmetic (never a projection)."""
+        with self.state.lock:
+            sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
+        try:
+            return coach_page.progress(sd, deals, self.state.now())
+        except Exception as exc:                 # never a reason to fail the page
+            return {"ok": False, "why": str(exc)}
+
     def do_GET(self):
         try:
             snap = self.state.snapshot()
@@ -3708,12 +3732,15 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(json.dumps(snap, indent=2, default=str),
                            "application/json", code)
             elif self.path.startswith("/api"):
+                snap["coach_progress"] = self._coach_progress(snap)
                 self._send(json.dumps(snap, indent=2, default=str),
                            "application/json")
             elif self.path.startswith("/details"):
                 self._send(self._details_page(snap))
             elif self.path.split("?", 1)[0].rstrip("/") == "/lab":
                 self._send(self._lab_page())
+            elif self.path.split("?", 1)[0].rstrip("/") == "/coach":
+                self._send(self._coach_page())
             else:
                 self._send(self._home_page(snap))
         except Exception as exc:      # never let the page kill the process

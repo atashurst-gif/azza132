@@ -4,6 +4,7 @@ other bots on the REAL broker, and a real trade left open at the switch
 wound down at the real broker to its natural end."""
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import logging
@@ -73,6 +74,19 @@ def act(tr, sim, state):
     acted, msg, blocked = tr.act([state], acct, snap, tr.broker.positions(TNB), sim.now)
     assert acted is not None, blocked
     return acted
+
+
+def hold_open(tr):
+    """Trend & Breakout's trade is not closed by its management pass (the
+    simulator's synthetic bars break the thesis at once): from 12 Oct the
+    Runner never rides a trade closed earlier in the same pass."""
+    real = tr.flowlock.update
+
+    def update(position, **kw):
+        d = real(position, **kw)
+        return dataclasses.replace(d, close=False, close_reason="") if d.close else d
+    tr.flowlock.update = update
+    return tr
 
 
 def tnb_orders(sim):
@@ -312,6 +326,7 @@ class TestPaperTrader:
         tr = trader_on(pb, sim, cfg)
         act(tr, sim, entry(sim, "US500", 30.0))
         paper_trade = pb.positions(TNB)[0]
+        hold_open(tr)
         tr.manage_cycle()
         runner = sim.positions(MAGIC_RUNNER)
         assert len(runner) == 1 and runner[0].magic == MAGIC_RUNNER and runner[0].comment == "RUNNER"
@@ -492,6 +507,7 @@ class TestTheAccountGate:
         pb = paper_on(sim, cfg)
         tr = trader_on(pb, sim, cfg)
         act(tr, sim, entry(sim, "US500", 30.0))                 # a fresh paper index entry for the Runner
+        hold_open(tr)
         tr.risk.realised_today = lambda: -1000.0                # far past the 3% daily-loss stop
         tr.cycle()
         assert any(r.startswith("DAILY_LOSS") for r in tr._last_snapshot.blocking_reasons())

@@ -39,6 +39,11 @@ and publishes the latest state to the reports branch:
                                 status (data/lab-status.json), whitelisted,
                                 scrubbed, under 20 KB; only once the lab
                                 has run; practice and tests, never money
+    reports/live/coach.json     the coach (``coach_json``): its status
+                                (data/coach/status.json) and the page's
+                                coach_progress (real money since 12 Oct),
+                                whitelisted, scrubbed, under 20 KB; only
+                                once the coach is switched on
 
 The nightly report copies the day's pulse lines into
 ``reports/<date>/uptime.log`` and sums the gaps, so an outage is a number
@@ -64,6 +69,8 @@ BOTS_PATH = "reports/live/bots.json"
 BOTS_MAX_BYTES = 60_000
 LAB_PATH = "reports/live/lab.json"
 LAB_MAX_BYTES = 20_000
+COACH_PATH = "reports/live/coach.json"
+COACH_MAX_BYTES = 20_000
 
 
 # --------------------------------------------------------------- observe --
@@ -391,9 +398,10 @@ def _gap(outage: list[str], open_ended: bool = False) -> tuple[str, str, int, st
 
 
 def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
-                lab: Optional[str] = None) -> dict[str, str]:
+                lab: Optional[str] = None, coach: Optional[str] = None) -> dict[str, str]:
     """The files the pulse publishes; ``bots`` (bots_json's text) adds
-    reports/live/bots.json, ``lab`` (lab_json's text) reports/live/lab.json."""
+    reports/live/bots.json, ``lab`` (lab_json's text) reports/live/lab.json,
+    ``coach`` (coach_json's text) reports/live/coach.json."""
     status = p.get("status")
     slim = {k: v for k, v in p.items() if k != "status"}
     files = {
@@ -405,6 +413,8 @@ def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
         files[BOTS_PATH] = bots
     if lab is not None:
         files[LAB_PATH] = lab
+    if coach is not None:
+        files[COACH_PATH] = coach
     return files
 
 
@@ -858,6 +868,108 @@ def lab_json(cfg: Config, max_bytes: int = LAB_MAX_BYTES) -> Optional[str]:
         return json.dumps({"unavailable": f"the lab's report could not be built: {exc}"}) + "\n"
 
 
+# -------------------------------------------------------------- the coach --
+# The coach (12 Oct): its status (data/coach/status.json, written every minute) and the page's
+# coach_progress (real money since 12 Oct, from /api), copied key by key - never a whole file -
+# through _scrub, for the nightly review. Trimmed in order: the decision log, then keys beyond 12.
+COACH_STATUS_KEYS = ("schema", "written_utc", "synthetic", "test_data_note", "mode", "words", "policy",
+                     "grants_allowed", "data", "account", "brakes", "brake_words", "headroom_gbp", "stop_pct", "demo",
+                     "demo_line", "keys", "plan", "changes", "needs_you", "needs_your_yes", "suggestions", "luck",
+                     "scorecard", "board", "phase", "outlook", "envelope_error", "error", "sources")
+COACH_KEY_KEYS = ("key", "words", "state", "step", "route", "money", "rule", "why", "p_plus", "lcb80", "p_plus_real",
+                  "trades", "real_trades")
+COACH_CHANGE_KEYS = ("ts_utc", "kind", "target", "rule", "words", "by")
+COACH_PROGRESS_KEYS = ("from", "to", "until", "ok", "why", "total", "trades", "trading_days", "days_left", "a_day",
+                       "need_a_day", "pace", "target_gbp_day", "target_days", "source", "complete", "days")
+
+
+def _coach_trim_steps():
+    """Applied in turn while coach.json is over its cap: the decision log first, then keys beyond 12."""
+    def changes(rep):
+        st = rep.get("status", {})
+        if isinstance(st.get("changes"), list) and st["changes"]:
+            st["changes_left_out"] = len(st["changes"])
+            st["changes"] = []
+
+    def beyond_12(rep):
+        st = rep.get("status", {})
+        if isinstance(st.get("keys"), list) and len(st["keys"]) > 12:
+            st["keys_left_out"] = len(st["keys"]) - 12
+            st["keys"] = st["keys"][:12]
+
+    def lean(rep):
+        st = rep.get("status", {})
+        for k in ("suggestions", "plan", "brake_words", "sources"):
+            st.pop(k, None)
+        if isinstance(rep.get("progress"), dict):
+            rep["progress"].pop("days", None)
+
+    return [changes, beyond_12, lean]
+
+
+def coach_json(cfg: Config, p: Optional[dict] = None, max_bytes: int = COACH_MAX_BYTES) -> Optional[str]:
+    """reports/live/coach.json: the coach's status and the page's coach_progress (from this pulse's /api
+    read, ``p["status"]``), whitelisted and scrubbed, under ``max_bytes``. None when the coach is not
+    switched on (no data/coach.json). Never raises: a file that cannot be read is a line saying so."""
+    data = Path(cfg.ops.data_dir)
+    if not (data / "coach.json").exists():
+        return None
+    rep: dict = {"note": "the coach: which trades use real money and how much, within Aaron's envelope; every "
+                         "money figure from MetaTrader's record or the bots' own records"}
+    st, why = _read_status_file(data / "coach" / "status.json")
+    if st is None:
+        rep["status_unavailable"] = why
+    else:
+        out = {k: st[k] for k in COACH_STATUS_KEYS if k in st}
+        if isinstance(out.get("keys"), list):
+            out["keys"] = [_pick(k, COACH_KEY_KEYS) for k in out["keys"] if isinstance(k, dict)]
+        if isinstance(out.get("changes"), list):
+            out["changes"] = [_pick(c, COACH_CHANGE_KEYS) for c in out["changes"] if isinstance(c, dict)]
+        rep["status"] = out
+    page = (p or {}).get("status") if isinstance((p or {}).get("status"), dict) else None
+    prog = page.get("coach_progress") if page and "unavailable" not in page else None
+    if isinstance(prog, dict):
+        rep["progress"] = _pick(prog, COACH_PROGRESS_KEYS)
+    else:
+        rep["progress_unavailable"] = ("the trader's page did not answer" if page is None or "unavailable" in page
+                                       else "the page has no coach_progress (an older build)")
+    try:
+        rep = _scrub(rep)
+        text = json.dumps(rep, indent=1, default=str) + "\n"
+        for step in _coach_trim_steps():
+            if len(text.encode("utf-8")) <= max_bytes:
+                break
+            step(rep)
+            rep["trimmed"] = "some details were left out to keep this file under its size cap"
+            text = json.dumps(rep, indent=1, default=str) + "\n"
+        if len(text.encode("utf-8")) > max_bytes:
+            text = json.dumps({"unavailable": "the coach's report was too big to publish"}) + "\n"
+        return text
+    except Exception as exc:
+        return json.dumps({"unavailable": f"the coach's report could not be built: {exc}"}) + "\n"
+
+
+def coach_night_files(cfg: Config) -> tuple[str, dict[str, str]]:
+    """The coach's latest nightly digest not yet sent (data/coach/reports/<date>/, no ``.sent`` in it), as
+    (date, {repository path: text}); ("", {}) when there is none. The coach has no token, so the pulse,
+    which holds it, sends them through the same uploader (``mintel.coach.report.upload_files``)."""
+    root = Path(cfg.ops.data_dir) / "coach" / "reports"
+    try:
+        dates = sorted((d.name for d in root.iterdir() if d.is_dir() and not (d / ".sent").exists()), reverse=True)
+    except OSError:
+        return "", {}
+    for date in dates[:1]:
+        try:
+            from ..coach import Paths
+            from ..coach.report import upload_files
+            files = upload_files(Paths.of(cfg.ops.data_dir), date)
+        except Exception:
+            files = {}
+        if files:
+            return date, files
+    return "", {}
+
+
 # ------------------------------------------------------------------ main --
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="record whether the bot is up, and publish it")
@@ -878,7 +990,8 @@ def main(argv=None) -> int:
         return 0
     bots = bots_json(cfg, p)                       # never raises: a broken bot is an entry saying so
     lab = lab_json(cfg)                            # never raises; None when the lab has never run
-    files = pulse_files(p, uptime_lines(cfg), bots, lab)
+    coach = coach_json(cfg, p)                     # never raises; None when the coach is not switched on
+    files = pulse_files(p, uptime_lines(cfg), bots, lab, coach)
     try:
         # the same upload as the nightly report: a clash with another writer is retried with a fresh read
         n = upload(files, cfg.report_repo, cfg.report_branch, token, day="live")
@@ -890,6 +1003,15 @@ def main(argv=None) -> int:
     except Exception as exc:
         print(f"(not published: {exc})")
         return 1
+    # the coach's nightly digest, once (reports/coach/<date>/): the coach holds no token, the pulse does
+    date, night = coach_night_files(cfg)
+    if night:
+        try:
+            upload(night, cfg.report_repo, cfg.report_branch, token, day=f"coach/{date}")
+            (Path(cfg.ops.data_dir) / "coach" / "reports" / date / ".sent").write_text(utcnow().isoformat())
+            print(f"published the coach's digest of {date}")
+        except Exception as exc:
+            print(f"(the coach's digest of {date} not published: {exc}; the next pulse tries again)")
     return 0
 
 

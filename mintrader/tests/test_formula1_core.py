@@ -318,7 +318,7 @@ def at_stop(b, pos) -> float:
 
 class TestTheRunnersCap:
     def test_a_paper_fed_index_entry_sized_at_thirteen_gives_a_ride_risking_ten_at_most(self, tmp_path):
-        from tests.test_tnb_paper_wiring import act, entry, paper_on, setup, trader_on
+        from tests.test_tnb_paper_wiring import act, entry, hold_open, paper_on, setup, trader_on
         sim, cfg = setup(tmp_path, symbols=("EURGBP", "US500"))
         cfg.tnb.live_groups = ("FX_MINOR",)
         pb = paper_on(sim, cfg)
@@ -329,12 +329,16 @@ class TestTheRunnersCap:
         spec = sim.spec("US500")
         paper_risk = spec.money_per_lot(abs(paper.entry_price - paper.sl)) * paper.volume
         assert 10.0 < paper_risk <= 13.0 + 1e-9                         # Trend & Breakout: about 13 a trade
+        hold_open(tr)
         tr.manage_cycle()
         mine = sim.positions(MAGIC_RUNNER)
         assert len(mine) == 1 and mine[0].volume < paper.volume
         assert at_stop(sim, mine[0]) <= 10.0 + 1e-9                     # the Runner: 10 at most, as before
         assert abs(mine[0].volume / spec.volume_step - round(mine[0].volume / spec.volume_step)) < 1e-6
-        assert "held to" in tr.runner.last_note and "under its cap of 10.00" in tr.runner.last_note
+        # sized by runner.copy_risk_pct (the journal's runner_volume, 0.5%): 0.33 lots, already under the cap
+        # of 10 (before 12 Oct this pass rode the trade after closing it, so with no row it copied the full
+        # 0.43 and the cap held it to 10)
+        assert "sized as before 9 Oct: 0.33 lots" in tr.runner.last_note and mine[0].volume == pytest.approx(0.33)
         tr.journal.close()
         pb.close_db()
 
