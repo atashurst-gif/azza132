@@ -1,5 +1,5 @@
 {
- "ts_utc": "2026-10-12T21:51:25+00:00",
+ "ts_utc": "2026-10-12T22:01:33+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
  "trader_up": true,
  "trader_reason": "",
@@ -36,98 +36,92 @@
     "count": 0,
     "source": "the paper record (tnb_paper.sqlite), read-only: simulated orders, not money"
    },
-   "health": "RUNNING: 1 problem(s) found; new trades are paused",
+   "health": "RUNNING: running with 1 warning(s)",
    "build": "a3ec539961",
-   "last_scan": "21:50:52 UTC",
+   "last_scan": "22:01:27 UTC",
    "last_trade": "JP225 2026-10-12T14:15",
    "not_trading_because": [
-    "PROBLEM: this machine's clock is 33s out of step with the broker - session and news timing cannot be trusted",
-    "WARNING: these parts of the system have stopped reporting: rider (196790s)"
+    "no new entries during the rollover window (21:45-23:30 UTC)"
    ],
    "positions_on_page": [],
    "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus its real positions - its FX_MINOR trades, which are LIVE, and any left from LIVE; the real ones are also under open_on_account",
    "thinking": [
     {
      "rank": 1,
-     "symbol": "GBPUSD",
+     "symbol": "EURCHF",
      "direction": "LONG",
-     "score": 34.11,
+     "score": 31.64,
      "tier": "NO_TRADE",
-     "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-     "regime": "RANGE / LOW VOL",
-     "reason": "GBPUSD: RANGE / LOW VOL market. Best idea is buy using liquidity sweep reversal. Execution argues against it (0/100; spread 5.4 pips (18.0x normal), commission 0.7 pips). Structure supports it (80/100; range structure on M5). Regime supports it (72/100; RANGE / LOW VOL). Momentum argues against it (32/100; efficiency 0.21, ADX 13). Room to the first obstacle is 6 pips, giving about -3.8 to 1 after 53.4 pips of cost. Blocked because: spread is 18.0x its normal size; reward:risk only -3.76 after costs; costs would be 395% of the stop distance (limit 20%) - too small a trade to pay for itself; entry is 6.7 ATR from the level that invalidates this idea - the move has been missed.",
+     "tactic": "BREAKOUT_RETEST",
+     "regime": "UNCLEAR / HIGH VOL",
+     "reason": "EURCHF: UNCLEAR / HIGH VOL market. Best idea is buy using breakout retest. Execution supports it (85/100; spread 0.5 pips (1.0x normal), commission 0.6 pips). Volatility supports it (79/100; volatility at the 98th percentile). Momentum supports it (71/100; efficiency 0.01, ADX 39). Structure supports it (70/100; range structure on M5). Room to the first obstacle is 1 pips, giving about 0.9 to 1 after 1.2 pips of cost. Blocked because: reward:risk only 0.89 after costs; costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "spread is 18.0x its normal size",
-      "reward:risk only -3.76 after costs",
-      "costs would be 395% of the stop distance (limit 20%) - too small a trade to pay for itself",
-      "entry is 6.7 ATR from the level that invalidates this idea - the move has been missed"
+      "reward:risk only 0.89 after costs",
+      "costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": -3.761
+     "reward_risk": 0.891
     },
     {
      "rank": 2,
-     "symbol": "GBPNZD",
+     "symbol": "AUDUSD",
      "direction": "SHORT",
-     "score": 29.35,
-     "tier": "NO_TRADE",
-     "tactic": "MOMENTUM_CONTINUATION",
-     "regime": "HIGH_VOL / HIGH VOL",
-     "reason": "GBPNZD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Structure supports it (100/100; down structure on M5). Execution argues against it (0/100; spread 35.1 pips (70.2x normal), commission 1.3 pips). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (78/100; volatility at the 95th percentile). Room to the first obstacle is 2 pips, giving about -23.7 to 1 after 1259.6 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 29); spread is 70.2x its normal size; reward:risk only -23.68 after costs; costs would be 2390% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-     "blockers": [
-      "momentum continuation needs a score of 70+ (this is 29)",
-      "spread is 70.2x its normal size",
-      "reward:risk only -23.68 after costs",
-      "costs would be 2390% of the stop distance (limit 20%) - too small a trade to pay for itself"
-     ],
-     "reward_risk": -23.682
-    },
-    {
-     "rank": 3,
-     "symbol": "EURAUD",
-     "direction": "SHORT",
-     "score": 29.11,
-     "tier": "NO_TRADE",
-     "tactic": "BREAKOUT_ACCEPTANCE",
-     "regime": "SQUEEZE / LOW VOL",
-     "reason": "EURAUD: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Execution argues against it (0/100; spread 10.5 pips (21.0x normal), commission 1.0 pips). Structure supports it (92/100; unclear structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Volatility argues against it (30/100; volatility at the 0th percentile). Room to the first obstacle is 16 pips, giving about -5.1 to 1 after 119.2 pips of cost. Blocked because: spread is 21.0x its normal size; reward:risk only -5.14 after costs; costs would be 547% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-     "blockers": [
-      "spread is 21.0x its normal size",
-      "reward:risk only -5.14 after costs",
-      "costs would be 547% of the stop distance (limit 20%) - too small a trade to pay for itself"
-     ],
-     "reward_risk": -5.141
-    },
-    {
-     "rank": 4,
-     "symbol": "EURCHF",
-     "direction": "SHORT",
-     "score": 26.12,
-     "tier": "NO_TRADE",
-     "tactic": "BREAKOUT_ACCEPTANCE",
-     "regime": "SQUEEZE / LOW VOL",
-     "reason": "EURCHF: SQUEEZE / LOW VOL market. Best idea is sell using breakout acceptance. Execution argues against it (0/100; spread 7.0 pips (14.0x normal), commission 0.6 pips). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Cross Market supports it (72/100; 0 related markets with a usable relationship; EUR 19 vs CHF 75). Momentum argues against it (29/100; efficiency 0.11, ADX 39). Room to the first obstacle is 5 pips, giving about -4.0 to 1 after 54.9 pips of cost. Blocked because: spread is 14.0x its normal size; reward:risk only -4.02 after costs; costs would be 453% of the stop distance (limit 20%) - too small a trade to pay for itself.",
-     "blockers": [
-      "spread is 14.0x its normal size",
-      "reward:risk only -4.02 after costs",
-      "costs would be 453% of the stop distance (limit 20%) - too small a trade to pay for itself"
-     ],
-     "reward_risk": -4.016
-    },
-    {
-     "rank": 5,
-     "symbol": "GBPCHF",
-     "direction": "SHORT",
-     "score": 23.02,
+     "score": 30.13,
      "tier": "NO_TRADE",
      "tactic": "BREAKOUT_ACCEPTANCE",
      "regime": "UNCLEAR / NORMAL VOL",
-     "reason": "GBPCHF: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution argues against it (0/100; spread 13.7 pips (34.2x normal), commission 0.6 pips). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Momentum argues against it (34/100; efficiency 0.17, ADX 44). Cross Market supports it (65/100; 0 related markets with a usable relationship; GBP 37 vs CHF 75). Room to the first obstacle is 1 pips, giving about -11.7 to 1 after 245.5 pips of cost. Blocked because: spread is 34.3x its normal size; reward:risk only -11.72 after costs; costs would be 1198% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "reason": "AUDUSD: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution supports it (82/100; spread 0.1 pips (1.0x normal), commission 0.7 pips). Structure supports it (80/100; range structure on M5). Multi Tf supports it (80/100; 6 timeframes weighed, higher ones first). Momentum supports it (67/100; efficiency 0.10, ADX 50). Room to the first obstacle is 1 pips, giving about 0.5 to 1 after 0.8 pips of cost. Blocked because: reward:risk only 0.47 after costs; costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "spread is 34.3x its normal size",
-      "reward:risk only -11.72 after costs",
-      "costs would be 1198% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "reward:risk only 0.47 after costs",
+      "costs would be 24% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": -11.718
+     "reward_risk": 0.472
+    },
+    {
+     "rank": 3,
+     "symbol": "CADJPY",
+     "direction": "LONG",
+     "score": 28.29,
+     "tier": "NO_TRADE",
+     "tactic": "VWAP_REVERSION",
+     "regime": "RANGE / HIGH VOL",
+     "reason": "CADJPY: RANGE / HIGH VOL market. Best idea is buy using vwap reversion. Momentum supports it (79/100; efficiency 0.03, ADX 14). Volatility supports it (78/100; volatility at the 96th percentile). Structure supports it (70/100; range structure on M5). Execution supports it (70/100; spread 0.4 pips (1.3x normal), commission 1.2 pips). Room to the first obstacle is 1 pips, giving about 0.4 to 1 after 1.7 pips of cost. Blocked because: reward:risk only 0.40 after costs; costs would be 66% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only 0.40 after costs",
+      "costs would be 66% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 0.403
+    },
+    {
+     "rank": 4,
+     "symbol": "EURUSD",
+     "direction": "LONG",
+     "score": 20.13,
+     "tier": "NO_TRADE",
+     "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+     "regime": "UNCLEAR / NORMAL VOL",
+     "reason": "EURUSD: UNCLEAR / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Execution argues against it (0/100; spread 0.0 pips (0.0x normal), commission 0.7 pips). Structure supports it (80/100; range structure on M5). Volatility supports it (63/100; volatility at the 57th percentile). Momentum argues against it (38/100; efficiency 0.19, ADX 30). Room to the first obstacle is 1 pips, giving about 1.4 to 1 after 0.7 pips of cost. Blocked because: no spread quoted; reward:risk only 1.35 after costs; costs would be 40% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "no spread quoted",
+      "reward:risk only 1.35 after costs",
+      "costs would be 40% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 1.355
+    },
+    {
+     "rank": 5,
+     "symbol": "HK50",
+     "direction": "SHORT",
+     "score": 14.66,
+     "tier": "NO_TRADE",
+     "tactic": "SQUEEZE_RELEASE",
+     "regime": "SQUEEZE / NORMAL VOL",
+     "reason": "HK50: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution argues against it (0/100; spread 900.0 pips (1.0x normal)). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Participation argues against it (35/100; 0.4x median tick volume). Regime supports it (62/100; SQUEEZE / NORMAL VOL). Room to the first obstacle is 250 pips, giving about 0.8 to 1 after 1125.0 pips of cost. Blocked because: price data is 11306s old (limit 20s); reward:risk only 0.80 after costs; costs would be 68% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "price data is 11306s old (limit 20s)",
+      "reward:risk only 0.80 after costs",
+      "costs would be 68% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 0.804
     }
    ],
    "today": {
@@ -154,7 +148,7 @@
    "mode": "PAPER",
    "status_file": "rider-status.json",
    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
-   "report_age_seconds": 196820.8,
+   "report_age_seconds": 197428.8,
    "running": false,
    "health": "RAPID MOMENTUM RIDER - OFF (rider.json says OFF, so it is not started)",
    "entries_allowed": false,
@@ -720,10 +714,10 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-12T21:51:10.771003+00:00",
-   "report_age_seconds": 14.2,
+   "updated_utc": "2026-10-12T22:01:32.216630+00:00",
+   "report_age_seconds": 0.8,
    "running": true,
-   "health": "WATCHING, LIVE, last report 14 s ago",
+   "health": "WATCHING, LIVE, last report 1 s ago",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
@@ -747,10 +741,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-12T21:51:10.771003+00:00",
-   "report_age_seconds": 14.2,
+   "updated_utc": "2026-10-12T22:01:32.216630+00:00",
+   "report_age_seconds": 0.8,
    "running": true,
-   "health": "OUTSIDE SESSION, PAPER, last report 14 s ago",
+   "health": "OUTSIDE SESSION, PAPER, last report 1 s ago",
    "status": "OUTSIDE SESSION",
    "open_trades": [],
    "today": {
@@ -776,10 +770,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-12T21:51:10.771003+00:00",
-   "report_age_seconds": 14.2,
+   "updated_utc": "2026-10-12T22:01:32.216630+00:00",
+   "report_age_seconds": 0.8,
    "running": true,
-   "health": "IN TRADE, PAPER, last report 14 s ago",
+   "health": "IN TRADE, PAPER, last report 1 s ago",
    "status": "IN TRADE",
    "open_trades": [
     {
@@ -789,9 +783,9 @@
      "entry": 60.256,
      "stop": 60.696,
      "initial_stop": 60.696,
-     "r_now": -0.14,
+     "r_now": -0.19,
      "peak_r": 0.26,
-     "pnl": -1.43,
+     "pnl": -1.93,
      "opened": "2026-10-12T14:17:58.222933+00:00",
      "mode": "PAPER"
     }
@@ -819,8 +813,8 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-12T21:51:24.891234+00:00",
-   "report_age_seconds": 0.1,
+   "updated_utc": "2026-10-12T22:01:31.371286+00:00",
+   "report_age_seconds": 1.6,
    "running": true,
    "health": "FINANCIAL IAN - HEALTHY, LIVE, feed LIVE",
    "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
@@ -829,7 +823,7 @@
     "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 10 USDT steps, ETHUSDT in 0.25 USDT steps",
     "vendor": "binance",
     "synthetic": false,
-    "events": 532537
+    "events": 604478
    },
    "data_label": "LIVE",
    "metatrader_connected": true,
