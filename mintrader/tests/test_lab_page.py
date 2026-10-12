@@ -82,10 +82,12 @@ def pages(d, *paths):
 
 
 def lab_rows(page: str) -> dict:
-    """{id: its row} of every lab candidate's row on a page: its one line on "/" (the leaderboard), or its row on
-    /lab (with its five checks)."""
+    """{id: its row} of every lab candidate's row on a page: its tile on "/" (the Bots card), or its row on /lab
+    (with its five checks - /lab's own tiles, the Ideas card, are left out here; see ``idea_tiles``)."""
     out = {}
-    for m in re.finditer(r'<a class="(?:s-bot|lb-row)" href="/lab\?id=([^"]+)"[^>]*>', page):
+    if '<h2>Ideas</h2>' in page:
+        page = page.split('<h2>Ideas</h2>')[0] + page.split('<h2>Ideas</h2>')[1].split("</section>", 1)[1]
+    for m in re.finditer(r'<a class="(?:s-bot|bt(?: prac)?)" href="/lab\?id=([^"]+)"[^>]*>', page):
         out[unescape(m.group(1))] = page[m.start():page.index("</a>", m.start()) + 4]
     return out
 
@@ -93,7 +95,7 @@ def lab_rows(page: str) -> dict:
 def line_cells(row: str) -> dict:
     """{title: text} of a line's money and trades cells on "/" (tags stripped)."""
     return {unescape(k): unescape(re.sub(r"<[^>]+>", "", v)) for k, v in
-            re.findall(r'<div class="lb-[mt][^"]*" title="([^"]*)">(.*?)</div>', row)}
+            re.findall(r'<div class="bt-[mt][^"]*" title="([^"]*)" data-k="[^"]*">(.*?)</div>', row)}
 
 
 def line_word(row: str) -> str:
@@ -101,11 +103,11 @@ def line_word(row: str) -> str:
 
 
 def line_status(row: str) -> str:
-    return re.search(r'<span class="lb-st [a-z]+" title="[^"]*">([^<]*)</span>', row).group(1)
+    return re.search(r'<span class="bt-st [a-z]+" title="[^"]*">([^<]*)</span>', row).group(1)
 
 
 def hrefs_in_order(page: str) -> list[str]:
-    return [unescape(x) for x in re.findall(r'<a class="lb-row" href="([^"]+)"', page)]
+    return [unescape(x) for x in re.findall(r'<a class="bt(?: prac)?" href="([^"]+)"', page)]
 
 
 def pills(row: str) -> list[tuple[str, str]]:
@@ -117,7 +119,7 @@ def pills(row: str) -> list[tuple[str, str]]:
 
 def board_of(page: str) -> str:
     """The leaderboard on "/"."""
-    return page.split("<h2>Leaderboard</h2>")[1].split("</section>")[0]
+    return page.split('<section class="card" id="bots">')[1].split("</section>")[0]
 
 
 def changed(page: str) -> str:
@@ -126,7 +128,17 @@ def changed(page: str) -> str:
 
 
 def lab_line(page: str) -> str:
-    return unescape(page.split('<a class="s-line" href="/lab">')[1].split("</a>")[0])
+    """The words of the lab's small card on "/" (after its title): its count and when it first tests, how many
+    days of prices it holds, or its funnel's numbers."""
+    card = page.split('<a class="card lab-card" href="/lab" id="lab">')[1].split("</a>")[0]
+    return text_of(card.split('</span></div>', 1)[1]).strip()
+
+
+def idea_tiles(page: str) -> dict:
+    """{id: its tile} of /lab's Ideas card (the same tiles as on "/", the lab's ideas only)."""
+    box = page.split('<h2>Ideas</h2>')[1].split("</section>", 1)[0]
+    return {unescape(m.group(1)): box[m.start():box.index("</a>", m.start()) + 4]
+            for m in re.finditer(r'<a class="bt(?: prac)?" href="/lab\?id=([^"]+)"[^>]*>', box)}
 
 
 def eligible_row(name="x", pf=2.0, trades=12, net=40.0, up=6, down=2, stage=PRACTICE, kind="candidate", **kw):
@@ -244,10 +256,10 @@ class TestTheMainPage:
         put_lab(d.data, made_up_summary())
         page, coach = pages(d, "/", "/coach")
         rows = lab_rows(page)
-        starred = [cid for cid, row in rows.items() if 'class="lb-star"' in row]
+        starred = [cid for cid, row in rows.items() if 'class="bt-star"' in row]
         assert sorted(starred) == sorted([A, E])
-        assert page.count('class="lb-star"') == 2                    # no bot here has earned one
-        assert ('<span class="lb-star" title="Standout: Ahead +£54.90 after costs over the last 10 trading days: 16 '
+        assert page.count('class="bt-star"') == 2                    # no bot here has earned one
+        assert ('<span class="bt-star" title="Standout: Ahead +£54.90 after costs over the last 10 trading days: 16 '
                 'practice trades, 7 days up, 2 down; no check has failed; its luck check is worked out but not passed '
                 'yet." aria-label="standout">&#9733;</span>') in rows[A]
         assert "Today's standouts" not in page and "What changed" not in page
@@ -259,14 +271,15 @@ class TestTheMainPage:
         assert f"{name[F]}: passed its one fresh look - ON THE BENCH" in moved
         assert moved.index(name[E]) < moved.index(name[F])          # newest first
         assert "older than a day" not in moved                       # 6 Oct: more than 24 hours before Fri 09:49
-        # one short screen: the account, the coach's line, the leaderboard, the lab's line
-        assert (page.index('<div class="s-acct">') < page.index('<a class="s-line" href="/coach">')
-                < page.index("<h2>Leaderboard</h2>") < page.index('<a class="s-line" href="/lab">'))
+        # one short screen: the account's cards, the Bots card, then the lab's and the coach's small cards
+        assert (page.index('s-acct">') < page.index('<section class="card" id="bots">')
+                < page.index('<a class="card lab-card" href="/lab" id="lab">')
+                < page.index('<a class="card coach-card" href="/coach" id="coach">'))
 
     def test_no_standouts_and_nothing_moved_say_so(self, tmp_path):
         d = a_day(tmp_path)
         page, coach = pages(d, "/", "/coach")                        # no lab, and no bot with ten trades
-        assert 'class="lb-star"' not in page
+        assert 'class="bt-star"' not in page
         assert '<p class="s-none">Nothing moved.</p>' in changed(coach)
 
     def test_changes_are_capped_at_five_and_formula_1_going_live_is_one(self, tmp_path):
@@ -293,7 +306,7 @@ class TestTheMainPage:
         put_lab(d.data, made_up_summary())
         (page,) = pages(d, "/")
         for label in BOT_LABELS:
-            assert page.count(f'<span class="lb-name">{label}</span>') == 1, label
+            assert page.count(f'<span class="bt-name">{label}</span>') == 1, label
         bot = lambda b: f"/?period=today&bot={b}"                     # noqa: E731
         lab = lambda c: f"/lab?id={c}"                                # noqa: E731
         assert hrefs_in_order(board_of(page)) == [
@@ -303,7 +316,7 @@ class TestTheMainPage:
             lab(G), lab(F),                                           # no figure yet: practising, testing
             bot("momentum_rider"), lab(H)]                            # switched off (+7.08 real), binned 6 Oct
         status = {h: line_status(r) for h, r in zip(hrefs_in_order(page), re.findall(
-            r'<a class="lb-row" href="[^"]*"[^>]*>.*?</a>', board_of(page), flags=re.S))}
+            r'<a class="bt(?: prac)?" href="[^"]*"[^>]*>.*?</a>', board_of(page), flags=re.S))}
         assert status == {bot("market_intelligence"): "LIVE", bot("financial_ian"): "LIVE",
                           bot("momentum_runner"): "LIVE", lab(D): "PRACTICE", lab(B): "PRACTICE",
                           lab(E): "PRACTICE", lab(A): "PRACTICE", lab(C3): "PRACTICE", bot("band_breaker"): "PRACTICE",
@@ -314,13 +327,13 @@ class TestTheMainPage:
         full = {c["id"]: c["name"] for c in sm["candidates"]}
         rows = lab_rows(page)
         assert S.short_name(next(c for c in sm["candidates"] if c["id"] == C3)) == "Trend pullback · major pairs"
-        assert '<span class="lb-name">Trend pullback · major pairs</span>' in rows[C3]
+        assert '<span class="bt-name">Trend pullback · major pairs</span>' in rows[C3]
         # two ideas that would read the same are numbered, never two identical lines
-        assert '<span class="lb-name">Momentum burst · minor pairs (1)</span>' in rows[A]
-        assert '<span class="lb-name">Momentum burst · minor pairs (2)</span>' in rows[D]
+        assert '<span class="bt-name">Momentum burst · minor pairs (1)</span>' in rows[A]
+        assert '<span class="bt-name">Momentum burst · minor pairs (2)</span>' in rows[D]
         for cid, row in rows.items():
             assert f'title="{full[cid]}"'.replace("'", "&#x27;") in row, cid    # the full name on hover
-        for row in re.findall(r'<a class="lb-row" href.*?</a>', page, flags=re.S):   # one line: no paragraph
+        for row in re.findall(r'<a class="bt(?: prac)?" href.*?</a>', page, flags=re.S):   # one tile: no paragraph
             assert "<p" not in row and "s-checks" not in row and "What to do" not in row
 
     def test_every_one_has_its_page_with_what_to_do_and_the_five_checks_in_order(self, tmp_path):
@@ -329,7 +342,7 @@ class TestTheMainPage:
         d = a_formula1_day(tmp_path)
         put_lab(d.data, made_up_summary())
         home, board = pages(d, "/", "/lab")
-        rows = re.findall(r'<a class="lb-row" href="([^"]*)"', home)
+        rows = re.findall(r'<a class="bt(?: prac)?" href="([^"]*)"', home)
         assert len(rows) == 6 + 8                                    # the six bots, and 8 ideas (I: binned 20 days ago)
         detail = pages(d, *[unescape(h) for h in rows])
         for href, page in zip(rows, detail):
@@ -426,11 +439,11 @@ class TestTheMainPage:
         assert "£" not in g and set(line_cells(g).values()) == {"-"}
         assert all(state == NOT_YET for k, state in pills(lab_rows(board)[G]) if k != "Fresh prices")
         a = lab_rows(home)[A]                                        # one with a record: practice, in grey, labelled
-        assert '<div class="lb-m lb-o prac" title="Overall (practice)"><span class="pos">+£64.10</span></div>' in a
+        assert '<div class="bt-m bt-o prac" title="Overall (practice)" data-k="Overall"><span class="pos">+£64.10</span></div>' in a
         # the summary was written last night (8 Oct): it does not hold today's practice - no figure, never a guess
         assert line_cells(a) == {"Today (practice)": "-", "Overall (practice)": "+£64.10",
                                  "Trades today (practice)": "-"}
-        assert '<span class="lb-st practice" title="Practice - live prices, no money">PRACTICE</span>' in a
+        assert '<span class="bt-st practice" title="Practice - live prices, no money">PRACTICE</span>' in a
         assert line_cells(lab_rows(total)[A]) == {"Overall (practice)": "+£64.10", "Trades in total (practice)": "19"}
 
     def test_an_ideas_today_and_this_week_come_from_a_summary_written_today_only(self, tmp_path):
@@ -509,12 +522,14 @@ class TestEmptyAndTestData:
         rows = lab_rows(home)
         assert len(rows) == 8
         for cid, row in rows.items():
-            assert '<div class="lb-test">TEST DATA - not a result</div>' in row, cid
+            assert '<div class="bt-test">TEST DATA - not a result</div>' in row, cid
             assert "£" not in row and "GBP" not in row, cid
-            assert "Running (" not in row and 'class="lb-m' not in row, cid    # not even a count
-            assert 'class="lb-star"' not in row, cid                 # test data never stands out
+            assert "Running (" not in row and 'class="bt-m' not in row, cid    # not even a count
+            assert 'class="bt-star"' not in row, cid                 # test data never stands out
             assert line_word(row) == "Test data", cid
-        assert lab_line(home) == "Lab: TEST DATA - not a result"
+        assert lab_line(home) == "TEST DATA - not a result"
+        assert len(idea_tiles(board)) == 8 and all(                  # /lab's tiles: test data, no money either
+            '<div class="bt-test">TEST DATA - not a result</div>' in t for t in idea_tiles(board).values())
         assert "The lab: TEST DATA - not a result." in text_of(changed(coach))
         assert "£" not in board and "TEST DATA - not a result" in board
         assert '<p class="s-test"><b>TEST DATA - not a result.</b>' in board
@@ -526,7 +541,10 @@ class TestEmptyAndTestData:
     def test_no_lab_folder_says_it_has_not_run_and_nothing_else_changes(self, tmp_path):
         d = a_day(tmp_path)
         home, board, one = pages(d, "/", "/lab", f"/lab?id={A}")
-        assert '<a class="s-line" href="/lab">The lab has not run yet.</a>' in home
+        # before its first night: how many ideas wait (its registered grid, never a guess) and when it first tests
+        from mintel.lab.families import all_families
+        n = sum(f.GRID_SIZE for f in all_families())
+        assert n == 632 and lab_line(home) == f"{n} ideas waiting first test tonight 23:10"
         assert not lab_rows(home)
         assert "The lab has not run yet." in board
         assert "No such idea." in one
@@ -535,7 +553,7 @@ class TestEmptyAndTestData:
         d = a_day(tmp_path)
         put_lab(d.data, raw="{not json")
         home, board = pages(d, "/", "/lab")
-        line = re.search(r'<a class="s-line" href="/lab">(The lab&#x27;s summary could not be read \(.*?\)\.)</a>', home)
+        line = re.search(r'<div class="lab-one">(The lab&#x27;s summary could not be read \(.*?\)\.)</div>', home)
         # in plain words, never a raw Python error
         assert line and "JSONDecodeError" not in line.group(1)
         assert "it is not complete or not valid - the next nightly run writes it again" in line.group(1)
@@ -555,7 +573,8 @@ class TestEmptyAndTestData:
         sm["store"]["complete_days"] = 31
         put_lab(d.data, sm)
         (home,) = pages(d, "/")
-        assert lab_line(home) == "The lab is collecting past prices: 31 of 40 days needed."
+        assert lab_line(home) == "Collecting prices: 31 of 40 days"
+        assert '<div class="prog"><span style="width:78%"></span></div>' in home
         assert not lab_rows(home)
         assert S.load_lab(str(d.data), NOW)["state"] == S.LAB_COLLECTING
 
@@ -563,7 +582,7 @@ class TestEmptyAndTestData:
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
         home, board = pages(d, "/", "/lab")
-        assert lab_line(home) == "Lab: 632 ideas tested · 14 passed · 5 practising · 1 ready for live · 623 binned"
+        assert lab_line(home) == "632 Tested 14 Passed 5 Practising 1 Ready 623 Binned"     # its funnel's numbers
         # the whole funnel, the bench and what was binned lately are on /lab
         assert S.funnel_line(made_up_summary(), NOW) == (
             "The lab: 632 ideas tried on past prices - 14 passed; 12 of 30 fresh looks used, 7 passed; 1 on the "
@@ -579,7 +598,7 @@ class TestEmptyAndTestData:
         sm["nightly"]["date"], sm["nightly"]["started"] = "2026-10-06", "2026-10-06T22:10:00+00:00"
         put_lab(d.data, sm)
         home, board = pages(d, "/", "/lab")
-        assert lab_line(home).endswith(" · last night's run missed")
+        assert lab_line(home).endswith(" Last night's run missed")
         assert "<b>Last night's run: missed.</b>" in board
 
 
@@ -622,7 +641,7 @@ class TestTheLabPages:
         sm = made_up_summary()
         a = next(c for c in sm["candidates"] if c["id"] == A)
         txt = text_of(page)
-        assert '<a href="/lab">&larr; The lab</a>' in page
+        assert '<a class="back" href="/lab">&larr; The lab</a>' in page
         assert (f'<h1>{a["name"]}<span class="s-stage">PRACTICE</span><span class="s-chip grey">TESTING</span></h1>'
                 in unescape(page))
         assert "Practising for 11 days: +£64 after costs over 19 practice trades, 9 days up, 2 down." in txt
@@ -656,15 +675,23 @@ class TestTheLabPages:
             assert REFRESH_JS in p and "location.reload()" in p        # reloads this very address, ?id= and all
             assert 'http-equiv="refresh" content="10;' not in p
         assert "<b>&#10003; Luck check: Passed</b>" in page
-        assert '<a href="/lab">The lab</a>' in pages(d, "/")[0]       # the footer link
+        assert '<a href="/lab"><svg' in pages(d, "/")[0]              # the sidebar's link
 
-    def test_the_footer_keeps_its_links(self, tmp_path):
+    def test_the_sidebar_keeps_its_links_on_every_page(self, tmp_path):
+        """12 Oct: the footer's links became the hub-like sidebar, the same on every page; the Rider's and Ian's
+        own pages are linked from their bots' pages."""
         d = a_day(tmp_path)
-        (home,) = pages(d, "/")
-        foot = home.split('<footer class="s-foot">')[1]
-        for link in ('<a href="/details?period=today">All the technical detail</a>', 'href="/rider"', 'href="/ian"',
-                     'href="/health"', '<a href="/lab">The lab</a>'):
-            assert link in foot, link
+        put_lab(d.data, made_up_summary())
+        home, board, one, coach, details, rider, ian, rider_page = pages(
+            d, "/", "/lab", f"/lab?id={A}", "/coach", "/details", "/?bot=momentum_rider", "/?bot=financial_ian", "/rider")
+        for page, on in ((home, "/"), (board, "/lab"), (one, "/lab"), (coach, "/coach"), (details, "/details")):
+            nav = page.split('<nav class="nav">')[1].split("</nav>")[0]
+            for link in ('href="/"', 'href="/?show=live"', 'href="/?show=practice"', 'href="/lab"', 'href="/coach"',
+                         'href="/details"', 'href="/health"'):
+                assert link in nav, (on, link)
+            assert nav.count('class="on"') == 1 and f'href="{on}" class="on"' in nav, on
+        assert 'href="/rider"' in rider and 'href="/ian"' in ian
+        assert '<nav class="nav">' in rider_page and "Rapid Momentum Rider" in rider_page
 
 
 # ========================================================== escaping and phones --
@@ -711,24 +738,27 @@ class TestEscapingAndPhones:
         put_lab(d.data, made_up_summary())
         (home,) = pages(d, "/")
         assert '<meta name="viewport" content="width=device-width,initial-scale=1">' in home
-        assert ".s-checks{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1;font-size:13px}" in HOME_CSS
-        assert (".s-ck.ok{color:#047857}.s-ck.no{color:#b91c1c}.s-ck.run{color:#075985}"
-                ".s-ck.ny{color:#9ca3af}") in HOME_CSS
-        phone = HOME_CSS.split("@media (max-width:700px){")[1].split("\n}\n")[0]
-        # on a phone each line of the leaderboard wraps onto two clean lines: name and status, then the figures
-        assert '.lb-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px 92px;grid-template-areas:"n n n s" "p o t v";' in phone
-        assert ".lb-n{white-space:normal}" in phone
+        assert ".s-checks{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1;font-size:12.5px}" in HOME_CSS
+        assert (".s-ck.ok{color:var(--good)}.s-ck.no{color:var(--bad)}.s-ck.run{color:var(--info)}"
+                ".s-ck.ny{color:var(--text-3)}") in HOME_CSS
+        phone = HOME_CSS.split("@media (max-width:760px){")[1].split("\n}\n")[0]
+        # on a phone the sidebar becomes a top bar (its links in one row) and the tiles stack, one a line
+        assert ".side{position:sticky;top:0;z-index:20;width:100%;height:auto;flex-direction:row;" in phone
+        assert ".side nav{flex-direction:row;overflow-x:auto;" in phone
+        assert ".bt-grid{grid-template-columns:minmax(0,1fr);" in phone
+        assert ".bt-name{font-weight:650;font-size:14px;line-height:1.35;min-width:0;overflow-wrap:anywhere}" in HOME_CSS
         assert ".s-old table{display:block;max-width:100%;overflow-x:auto}" in HOME_CSS
-        for cls in (".s-stage", ".s-group", ".s-cname", ".s-sim", ".lb-row", ".lb-st", ".dot", ".lb-star", ".s-line"):
+        for cls in (".s-stage", ".s-group", ".s-cname", ".s-sim", ".bt", ".bt-st", ".dot", ".bt-star", ".kpi",
+                    ".funnel", ".side", ".nav-label"):
             assert cls + "{" in HOME_CSS or cls + " " in HOME_CSS, cls
         for absent in ("<table", 'class="tile"', 'id="more"', '<div class="hc', 'class="quiet"', "BOT: RUNNING"):
             assert absent not in home, absent
-        assert "background:#fff" in home
+        assert "--bg:#f4f6fa" in home                                # the hub's light grey page
 
     def test_render_functions_never_fail_without_a_data_folder(self):
         page = render_home({"standing": {}}, None, {}, None, "none")
-        assert "The lab has not run yet." in page and "Coach: not switched on yet" in page
-        assert 'class="lb-star"' not in page
+        assert "ideas waiting" in page and ">Not switched on yet<" in page
+        assert 'class="bt-star"' not in page
         assert "The lab has not run yet." in render_lab_board("", NOW)
         assert "No such idea." in render_candidate("", A, NOW)
         assert CHECK_LABELS["luck"] == "Luck check"

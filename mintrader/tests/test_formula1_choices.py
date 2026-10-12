@@ -794,7 +794,7 @@ class TestThePageAgreesWithThePlan:
         plan, _ = V.load_plan()
         assert plan["focus"]["what"] in box and plan["steps"][0]["text"] in box
         row = row_of(home, "Trend &amp; Breakout")
-        assert ('<span class="lb-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
+        assert ('<span class="bt-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
                 'PAPER">LIVE</span>') in row
         rec = detail.split("<h2>Recommendation</h2>")[1].split("</p>")[0]          # what to do: on its own page
         assert ("Formula 1 - its momentum continuation trades on minor pairs - is LIVE: judge it after 20 live "

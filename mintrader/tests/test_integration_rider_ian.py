@@ -308,8 +308,14 @@ class TestTheServer:
             rider, ian, main = get("/rider"), get("/ian"), get("/")
             assert "RAPID MOMENTUM RIDER" in rider and "GBPJPY" in rider
             assert "FINANCIAL IAN" in ian and "NOT CONFIGURED" in ian
-            for page in (rider, ian, main, get("/results")):
-                assert '<a href="/rider">Rapid Momentum Rider</a>' in page and '<a href="/ian">Financial Ian</a>' in page
+            assert '<a href="/rider">Rapid Momentum Rider</a>' in get("/results")      # the old page's own links
+            assert '<a href="/ian">Financial Ian</a>' in get("/results")
+            # 12 Oct: every page sits in the hub-like shell; the main page's tiles open each bot's page, and
+            # those link to the Rider's and Ian's own pages
+            for page in (rider, ian, main):
+                assert '<nav class="nav">' in page and 'href="/?show=live"' in page
+            assert 'href="/?period=today&bot=momentum_rider"' in main and 'href="/?period=today&bot=financial_ian"' in main
+            assert 'href="/rider"' in get("/?bot=momentum_rider") and 'href="/ian"' in get("/?bot=financial_ian")
             state.update(data_dir="")
             assert "Not started yet" in get("/rider") and "Not started yet" in get("/ian")
         finally:

@@ -309,19 +309,23 @@ class TestEmptyStates:
 # ============================================================ the page ("/") --
 class TestOnThePage:
     def test_on_the_main_page_the_coach_is_one_line_linking_to_its_page(self, tmp_path):
-        """12 Oct (Aaron: "its just a load of writing"): "/" carries the coach in ONE line, right under the
-        account - its state and how many changes it made today - linking to /coach, where the card is in full."""
+        """12 Oct (Aaron: "its just a load of writing"; then "Put the layout similar to the ai hub"): "/" carries
+        the coach in ONE line on its own small card under the Bots card - its state and how many changes it made
+        today - linking to /coach, where the card is in full."""
         d = day(tmp_path)
         st = made_up_status(written_utc=FRI.isoformat())
         put_coach(d.data, st)
         home, page = pages(d, FRI, "/", "/coach")
-        assert home.index('<div class="s-acct">') < home.index('<a class="s-line" href="/coach">') < home.index(
-            "<h2>Leaderboard</h2>")
-        line = unescape(home.split('<a class="s-line" href="/coach">')[1].split("</a>")[0])
+        assert home.index('s-acct">') < home.index('<section class="card" id="bots">') < home.index(
+            '<a class="card coach-card" href="/coach" id="coach">')
+        card = home.split('<a class="card coach-card" href="/coach" id="coach">')[1].split("</a>")[0]
+        assert '<div class="mini-title">The coach<span class="go">' in card
+        line = unescape(card.split('<div class="lab-one">')[1].split("</div>")[0])
         n = len(C._today_changes(st, FRI, limit=10_000))
         title, _sub = C.headline(C.load(str(d.data), FRI))
-        assert line == C.one_line(str(d.data), FRI) == (
-            f"Coach: {title} · " + (f"{n} change{'' if n == 1 else 's'} today - see why" if n else "no changes today"))
+        words = f"{title} · " + (f"{n} change{'' if n == 1 else 's'} today - see why" if n else "no changes today")
+        assert C.one_line(str(d.data), FRI) == "Coach: " + words
+        assert line == words[:1].upper() + words[1:]                 # its card's title says "The coach"
         assert "£" not in line
         for absent in ("<table", 'class="tile"', 's-coach', "The coach's call", "Needs your yes"):
             assert absent not in home, absent
@@ -341,8 +345,8 @@ class TestOnThePage:
         put_coach(d.data, made_up_status(written_utc=FRI.isoformat()))
         (with_,) = pages(d, FRI, "/")
         assert account_section(without) == account_section(with_)
-        strip = re.compile(r'<a class="s-line" href="/coach">[^<]*</a>|<span class="s-upd">[^<]*</span>'
-                           r'|Figures from [^<]* UK\. ', re.S)                # the refresh's own clock aside
+        strip = re.compile(r'<a class="card coach-card" href="/coach" id="coach">.*?</a>'
+                           r'|<span class="stamp">[^<]*</span>', re.S)        # the refresh's own clock aside
         assert strip.sub("", without) == strip.sub("", with_)          # nothing else on "/" moves
 
     def test_everything_is_escaped(self, tmp_path):

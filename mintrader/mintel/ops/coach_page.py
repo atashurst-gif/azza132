@@ -504,7 +504,7 @@ def _page(c: dict, sd, deals, now) -> str:
     st = c.get("status") or {}
     syn = bool(c.get("synthetic"))
     prog = progress(sd, deals, now)
-    out = ['<h1 style="margin-bottom:16px">The coach</h1>', render_card(None, sd, deals, now, coach=c, prog=prog)]
+    out = [render_card(None, sd, deals, now, coach=c, prog=prog)]       # the title is the shell's (12 Oct)
     if c.get("state") in ("NONE", "BROKEN"):
         out.append(_arithmetic(sd, syn))
         return "".join(out)

@@ -1917,18 +1917,17 @@ def render_status(snap: dict, strategy: str = "overall", headline: Optional[dict
             f'the broker\'s.)</p>'
             f'{parts.get("tabs", "")}<div class="grid"><div>{col1}</div><div>{col2}</div><div>{col3}</div></div>'
             f'</details>')
-    return f"""<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<noscript><meta http-equiv="refresh" content="10"></noscript><title>Trading bot status</title>
-<style>{CSS}</style></head><body><div class="wrap">
-<div class="top">{NAV}
+    body = f"""<div class="legacy"><div class="top">
 <div class="banner {banner_cls}">{html.escape(banner_txt)}</div></div>
 {prob_html}
 {render_standing(snap, headline, strategy, bot, base)}
 {more}
 <p class="small">{build_html}Updated {html.escape(str(snap.get('updated')))} (UTC).
 This page refreshes itself every 10 seconds.</p>
-</div>{KEEP_OPEN_JS}{REFRESH_JS}</body></html>"""
+</div>"""
+    view = (headline or {}).get("sel") or (headline or {}).get("period") or {"key": "today"}
+    return _shell("Trading bot status", body, active="details", q=_period_q(view), old_css=True,
+                  heading="Technical detail", stamp=_stamp(snap.get("updated")))
 
 
 # ------------------------------------------------------- the simple page --
@@ -1942,147 +1941,326 @@ This page refreshes itself every 10 seconds.</p>
 # evidence, above its existing detail. Every money figure is the same one the full page shows (standing.period_view
 # for real money, standing.practice_figures for practice); "/details" is the full page, unchanged.
 HOME_CSS = """
-body{background:#fff;color:#111827;margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,
-Arial,sans-serif;font-size:16px;line-height:1.5}
-.s{max-width:980px;margin:0 auto;padding:20px 16px 40px;box-sizing:border-box}
-.s *{box-sizing:border-box}
-.s a{color:#1d4ed8;text-decoration:none}
-.s h1{font-size:24px;margin:0;font-weight:700;letter-spacing:-.01em}
-.s h2{font-size:13px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;font-weight:600}
-.s h3{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;color:#374151}
-.s-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-.s-upd{font-size:13px;color:#6b7280}
-.s-periods{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:24px}
-.s-p{padding:7px 14px;border:1px solid #d1d5db;border-radius:999px;color:#111827 !important;font-size:14px;
-white-space:nowrap;background:#fff}
-.s-p.on{background:#111827;color:#fff !important;border-color:#111827}
-.s-periods form{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;color:#374151}
-.s-periods input{padding:5px 6px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit}
-.s-periods button{padding:6px 14px;border:1px solid #d1d5db;border-radius:999px;background:#fff;font-size:14px;
-cursor:pointer;font-family:inherit}
-.s-periods button.on{background:#111827;color:#fff;border-color:#111827}
-.s-card{border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-bottom:24px;background:#fff}
-.s-acct{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px}
-.s-k{font-size:13px;color:#6b7280;margin-bottom:2px}
-.s-big{font-size:40px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.s-sub{font-size:14px;color:#4b5563;margin-top:4px}
-.s-note{font-size:14px;color:#4b5563;margin:16px 0 0}
-.pos{color:#047857}.neg{color:#b91c1c}
-.s-prac,.s-prac .pos,.s-prac .neg{color:#9ca3af}
-.s-aim{font-size:20px;font-weight:600;margin:0 0 16px}
-.s-focus{background:#f9fafb;border-radius:10px;padding:14px 16px;margin-bottom:16px}
-.s-small{font-size:14px;color:#4b5563;margin-top:4px}
-.s-steps{margin:4px 0 18px;padding-left:22px}
+:root{--bg:#f4f6fa;--surface:#ffffff;--surface-2:#f7f8fc;--line:#e3e7ef;--text:#16213e;--text-2:#45506b;
+--text-3:#7b869e;--navy:#1c2f5e;--accent:#f0368a;--accent-soft:#fdeaf3;--good:#0e9f6e;--good-soft:#e2f6ee;
+--bad:#d92d20;--bad-soft:#fdeceb;--warn:#b7791f;--warn-soft:#fdf3dc;--info:#2f6fed;--info-soft:#e8f0fe;
+--prac:#9aa3b8;--shadow:0 1px 2px rgba(22,33,62,.05)}
+:root[data-theme="dark"]{--bg:#0f1524;--surface:#171f33;--surface-2:#1d2740;--line:#2a3552;--text:#e8ecf5;
+--text-2:#b4bdd2;--text-3:#8490ab;--navy:#9db4ee;--accent:#ff5fa5;--accent-soft:#3a1c2d;--good:#34d399;
+--good-soft:#123328;--bad:#f87171;--bad-soft:#3b1a1a;--warn:#fbbf24;--warn-soft:#3a2d10;--info:#7aa2ff;
+--info-soft:#1a2748;--prac:#6b7590;--shadow:none}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;overflow-x:hidden;max-width:100%;-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--info);text-decoration:none}
+h1,h2,h3{font-weight:650;letter-spacing:-.01em;margin:0}
+/* the shell: a sidebar like the AI hub's */
+.app{display:flex;min-height:100vh}
+.side{width:216px;flex:none;background:var(--surface);border-right:1px solid var(--line);display:flex;
+flex-direction:column;position:sticky;top:0;height:100vh}
+.side-top{padding:20px 18px 14px}
+.brand{font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-.01em;white-space:nowrap}
+.brand i{color:var(--accent);font-style:normal}
+.side-top small{display:block;color:var(--text-3);font-size:12px;margin-top:2px}
+.side nav{padding:6px 10px;display:flex;flex-direction:column;gap:2px;flex:1;overflow:auto;font-size:14px}
+.nav-label{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);
+padding:14px 10px 6px}
+.side nav a{display:flex;align-items:center;gap:10px;margin:0;border-radius:9px;padding:9px 10px;
+color:var(--text-2);font-weight:550;white-space:nowrap}
+.side nav a:hover{background:var(--surface-2);text-decoration:none}
+.side nav a.on{background:var(--navy);color:#fff}
+:root[data-theme="dark"] .side nav a.on{background:var(--surface-2);color:var(--text)}
+.side nav svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;
+stroke-linejoin:round}
+.side-foot{padding:14px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--text-3);display:flex;
+align-items:center;justify-content:space-between;gap:8px}
+.linkbtn{background:none;border:0;color:var(--text-3);cursor:pointer;font:inherit;font-size:12.5px;padding:0}
+.linkbtn:hover{color:var(--text);text-decoration:underline}
+.main{flex:1;min-width:0;overflow-x:hidden}
+.topbar{display:flex;align-items:center;gap:12px;padding:18px 28px 0;flex-wrap:wrap}
+.topbar h1{font-size:22px;flex:1;min-width:0}
+.topbar .grow{flex:1}
+.topbar .back{font-size:13px;font-weight:600;white-space:nowrap}
+.stamp{color:var(--text-3);font-size:12.5px;white-space:nowrap}
+.content{padding:18px 28px 60px;max-width:1240px}
+/* building blocks */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);
+margin-bottom:16px;color:var(--text)}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px;
+flex-wrap:wrap}
+.card-head h2{font-size:15px}
+.sub{color:var(--text-3);font-size:12.5px}
+a.card:hover{box-shadow:0 6px 18px rgba(22,33,62,.08);text-decoration:none}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.g2.top{align-items:start}
+.g2>.card{margin-bottom:0}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.kpis.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.kpis>.card{margin-bottom:0}
+.kpi .label{font-size:12.5px;color:var(--text-3);font-weight:600}
+.kpi .value{font-size:28px;font-weight:700;letter-spacing:-.02em;margin:2px 0;font-variant-numeric:tabular-nums;
+white-space:nowrap}
+.kpi .foot{font-size:12px;color:var(--text-3);margin-top:6px}
+.kpi-note{font-size:12.5px;color:var(--text-3);margin:-4px 0 16px}
+.pos{color:var(--good)}.neg{color:var(--bad)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--text-3);flex:none}
+.dot.green{background:var(--good)}.dot.red{background:var(--bad)}.dot.amber{background:var(--warn)}
+.dot.blue{background:var(--info)}.dot.grey{background:var(--line)}
+/* the period buttons: the hub's segmented control */
+.periodbar{display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap;margin-bottom:16px}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:9px;overflow:hidden;
+background:var(--surface)}
+.seg a,.seg span{padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--text-3);white-space:nowrap}
+.seg a:hover{background:var(--surface-2);text-decoration:none}
+.seg .on{background:var(--navy);color:#fff}
+:root[data-theme="dark"] .seg .on{color:#0f1524}
+.periodbar form{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0;font-size:12.5px;
+color:var(--text-3)}
+.periodbar input[type=date]{padding:4px 8px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+color:var(--text);font:inherit;font-size:12.5px}
+:root[data-theme="dark"] .periodbar input[type=date]{color-scheme:dark}
+.periodbar button{padding:5px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);
+color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.periodbar button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+/* every bot and every lab idea as a tile */
+.bt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.bt{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--line);
+border-radius:12px;padding:13px 14px;color:var(--text);transition:box-shadow .12s,transform .12s;min-width:0}
+.bt:hover{box-shadow:0 6px 18px rgba(22,33,62,.08);transform:translateY(-1px);text-decoration:none}
+.bt.prac{background:var(--surface-2)}
+.bt-head{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.bt-name{font-weight:650;font-size:14px;line-height:1.35;min-width:0;overflow-wrap:anywhere}
+.bt-star{color:var(--accent);font-size:13px}
+.bt-st{margin-left:auto;display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.05em;padding:2px 8px;
+border-radius:999px;white-space:nowrap;background:var(--surface-2);color:var(--text-3)}
+.bt-st.live{background:var(--navy);color:#fff}
+:root[data-theme="dark"] .bt-st.live{color:#0f1524}
+.bt-st.practice{background:var(--info-soft);color:var(--info)}
+.bt-st.testing{background:var(--warn-soft);color:var(--warn)}
+.bt-st.off{background:var(--surface-2);color:var(--text-3);border:1px solid var(--line)}
+.bt-figs{display:grid;grid-template-columns:1fr 1fr 52px;gap:8px}
+.bt-figs.two{grid-template-columns:1fr 52px}
+.bt-m,.bt-t{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;min-width:0}
+.bt-t{text-align:right}
+.bt-m::before,.bt-t::before{content:attr(data-k);display:block;font-size:11px;font-weight:600;color:var(--text-3);
+letter-spacing:.02em}
+.bt-m.prac,.bt-t.prac,.bt-m.prac .pos,.bt-m.prac .neg{color:var(--prac)}
+.bt-test{font-size:12.5px;font-weight:650;color:var(--text-3);padding:6px 0}
+.bt-v{font-size:13px;font-weight:650;display:flex;align-items:center;color:var(--text-3);margin-top:auto}
+.bt-v.green{color:var(--good)}.bt-v.red{color:var(--bad)}.bt-v.amber{color:var(--warn)}.bt-v.blue{color:var(--info)}
+.bt-none{color:var(--text-3);font-size:13.5px;margin:0}
+/* the lab and the coach, small */
+.mini-title{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:650;
+margin-bottom:10px}
+.mini-title .go{color:var(--text-3);font-size:13px;font-weight:600}
+.lab-big{font-size:28px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.lab-big small{font-size:14px;font-weight:600;color:var(--text-2);letter-spacing:0;margin-left:6px}
+.lab-one{font-size:14px;font-weight:600;color:var(--text)}
+.prog{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden;margin-top:10px}
+.prog span{display:block;height:100%;background:var(--accent);border-radius:999px}
+.funnel{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px}
+.funnel div{background:var(--surface-2);border-radius:10px;padding:8px 10px}
+.funnel b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.funnel span{font-size:11.5px;color:var(--text-3);font-weight:600}
+.grey-line{font-size:12.5px;color:var(--text-3);margin:8px 0 0}
+.flag{display:flex;gap:12px;align-items:center;border-radius:14px;padding:12px 16px;margin-bottom:16px;
+background:var(--bad-soft);color:var(--bad);border:1px solid var(--line);font-size:13.5px}
+.flag .light{width:10px;height:10px;border-radius:50%;flex:none;background:var(--bad)}
+/* the detail pages' content (each bot, /lab, /coach) */
+.s-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;
+box-shadow:var(--shadow)}
+.s-card h1,.s-v h1{font-size:20px;margin:0 0 6px}
+.s-card h2{font-size:12px;margin:0 0 10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);
+font-weight:650}
+.s-card h3,.s-group{font-size:11.5px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;
+color:var(--text-3)}
+.s-k{font-size:12.5px;color:var(--text-3);font-weight:600;margin-bottom:2px}
+.s-big{font-size:28px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.s-sub,.s-note,.s-small{font-size:13px;color:var(--text-2);margin:4px 0 0}
+.s-prac,.s-prac .pos,.s-prac .neg{color:var(--prac)}
+.s-aim{font-size:17px;font-weight:650;margin:0 0 12px}
+.s-focus{background:var(--surface-2);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.s-steps{margin:4px 0 16px;padding-left:22px}
 .s-steps li{margin-bottom:6px}
 .s-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
-.s-cols ul{margin:0;padding-left:18px;font-size:14px}
+.s-cols ul{margin:0;padding-left:18px;font-size:13.5px}
 .s-cols li{margin-bottom:8px}
 .s-cols summary,.s-more summary{cursor:pointer}
 .s-cols details .s-why{display:block;margin:2px 0 0 14px}
-.s-more{margin-top:14px;font-size:13px;color:#6b7280}
+.s-more{margin-top:14px;font-size:13px;color:var(--text-3)}
 .s-more .s-src{margin-top:6px}
-.s-why{color:#4b5563}
-.s-flag{margin-top:16px;padding:10px 14px;border-radius:10px;background:#fff7ed;color:#7c2d12;font-size:14px}
-.s-src{font-size:12px;color:#6b7280;margin:14px 0 0}
-.s-bot{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:8px 24px;padding:16px 4px;
-border-top:1px solid #f0f1f3;color:#111827 !important}
+.s-why{color:var(--text-2)}
+.s-flag{margin-top:14px;padding:10px 14px;border-radius:10px;background:var(--warn-soft);color:var(--warn);
+font-size:13.5px}
+.s-src{font-size:12px;color:var(--text-3);margin:14px 0 0}
+.s-bot{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:8px 24px;padding:14px 6px;
+border-top:1px solid var(--line);color:var(--text)}
 .s-bot:first-of-type{border-top:0}
-.s-bot:hover{background:#f9fafb}
-.s-name{font-weight:600;font-size:17px}
-.s-hl{font-size:14px;color:#374151;margin-top:4px}
-.s-rec{font-size:14px;color:#111827;margin-top:4px}
+.s-bot:hover{background:var(--surface-2);text-decoration:none}
+.s-hl{font-size:13.5px;color:var(--text-2);margin-top:4px}
+.s-rec{font-size:13.5px;color:var(--text);margin-top:4px}
 .s-nums{display:flex;gap:20px;flex-wrap:wrap;justify-content:flex-end;text-align:right}
-.s-m{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
-.s-m0{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
-.s-extra{grid-column:1/-1;font-size:13px;color:#9ca3af}
-.s-mode{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
-vertical-align:middle;margin-left:6px;border:1px solid #9ca3af;color:#4b5563}
-.s-mode.live{background:#111827;border-color:#111827;color:#fff}
-.s-chip{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.04em;padding:3px 10px;border-radius:999px;
-vertical-align:middle;margin-left:6px;white-space:nowrap}
-.s-chip.blue{background:#dbeafe;color:#1e3a8a}.s-chip.sky{background:#e0f2fe;color:#075985}
-.s-chip.sand{background:#fef3c7;color:#78350f}.s-chip.amber{background:#ffedd5;color:#9a3412}
-.s-chip.grey{background:#f3f4f6;color:#374151}
+.s-m{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.s-m0{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.s-extra{grid-column:1/-1;font-size:13px;color:var(--text-3)}
+.s-mode{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 9px;border-radius:999px;
+vertical-align:middle;margin-left:8px;background:var(--surface-2);color:var(--text-3)}
+.s-mode.live{background:var(--navy);color:#fff}
+.s-chip{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.04em;padding:2px 9px;
+border-radius:999px;vertical-align:middle;margin-left:8px;white-space:nowrap}
+.s-chip.blue{background:var(--info-soft);color:var(--info)}.s-chip.sky{background:var(--good-soft);color:var(--good)}
+.s-chip.sand{background:var(--warn-soft);color:var(--warn)}.s-chip.amber{background:var(--bad-soft);color:var(--bad)}
+.s-chip.grey{background:var(--surface-2);color:var(--text-3)}
 .s-v p{margin:0 0 14px}
 .s-v h2{margin-top:20px}
 .s-ev{list-style:none;margin:0;padding:0}
-.s-ev li{padding:10px 0;border-top:1px solid #f0f1f3;font-size:14px}
+.s-ev li{padding:10px 0;border-top:1px solid var(--line);font-size:13.5px}
 .s-ev b{display:block;margin-bottom:2px}
-.s-foot{font-size:14px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:16px;margin-top:8px}
-.s-foot a{margin-right:16px;display:inline-block;margin-bottom:6px}
 .s-old{overflow-x:auto}
 .s-old table{display:block;max-width:100%;overflow-x:auto}
 .s-stage{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:6px;
-vertical-align:middle;margin-left:6px;background:#f3f4f6;color:#374151;white-space:nowrap}
-.s-checks{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1;font-size:13px}
-.s-ck{padding:1px 9px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;white-space:nowrap}
-.s-ck.ok{color:#047857}.s-ck.no{color:#b91c1c}.s-ck.run{color:#075985}.s-ck.ny{color:#9ca3af}
-.s .s-group{margin:22px 0 2px;color:#6b7280}
-.s-cname{font-weight:600;font-size:16px}
-.s-sim{font-size:14px;color:#6b7280;text-align:right;flex:1 1 100%}
-.s-line{display:block;margin:0 0 16px;padding:12px 16px;border:1px solid #e5e7eb;border-radius:12px;font-size:15px;
-color:#111827 !important}
-.s-line:hover{background:#f9fafb}
-.s-line::after{content:" \\203A";color:#9ca3af}
-.lb{padding:16px 20px 8px}
-.lb h2{margin-bottom:4px}
-.lb-row{display:grid;grid-template-columns:minmax(0,1fr) 92px 104px 104px 60px 112px;
-grid-template-areas:"n s p o t v";gap:0 12px;align-items:center;padding:11px 4px;border-top:1px solid #f0f1f3;
-color:#111827 !important}
-.lb-total .lb-row{grid-template-columns:minmax(0,1fr) 92px 104px 60px 112px;grid-template-areas:"n s o t v"}
-.lb-row:hover{background:#f9fafb}
-.lb-h,.lb-h:hover{border-top:0;background:none;font-size:12px;color:#6b7280;padding-bottom:4px}
-.lb-n{grid-area:n;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lb-name{font-weight:600}
-.lb-star{color:#d97706;margin-left:6px}
-.lb-s{grid-area:s}.lb-p{grid-area:p}.lb-o{grid-area:o}.lb-t{grid-area:t}.lb-v{grid-area:v}
-.lb-m,.lb-t{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.lb-m{font-weight:700}
-.lb-h .lb-m{font-weight:400}
-.lb-m.prac,.lb-t.prac,.lb-m.prac .pos,.lb-m.prac .neg{color:#9ca3af}
-.lb-test{grid-column:p-start/t-end;text-align:right;font-size:13px;color:#6b7280}
-.lb-total .lb-test{grid-column:o-start/t-end}
-.lb-v{font-size:14px;white-space:nowrap}
-.lb-st{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
-border:1px solid #d1d5db;color:#4b5563;white-space:nowrap}
-.lb-st.live{background:#111827;border-color:#111827;color:#fff}
-.lb-st.practice{border-color:#d1d5db;color:#6b7280}
-.lb-st.testing{border-style:dashed;color:#6b7280}
-.lb-st.off{background:#f3f4f6;border-color:#f3f4f6;color:#9ca3af}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#d1d5db}
-.dot.green{background:#10b981}.dot.red{background:#ef4444}.dot.amber{background:#f59e0b}.dot.blue{background:#3b82f6}
-.s-none{font-size:14px;color:#4b5563;margin:0}
-.s-changes{margin:0;padding-left:18px;font-size:14px}
+vertical-align:middle;margin-left:8px;background:var(--surface-2);color:var(--text-2);white-space:nowrap}
+.s-checks{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1;font-size:12.5px}
+.s-ck{padding:1px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);white-space:nowrap}
+.s-ck.ok{color:var(--good)}.s-ck.no{color:var(--bad)}.s-ck.run{color:var(--info)}.s-ck.ny{color:var(--text-3)}
+.s-group{margin:20px 0 2px}
+.s-cname{font-weight:650;font-size:15px}
+.s-sim{font-size:13px;color:var(--text-3);text-align:right;flex:1 1 100%}
+.s-none{font-size:13.5px;color:var(--text-3);margin:0}
+.s-changes{margin:0;padding-left:18px;font-size:13.5px}
 .s-changes li{margin-bottom:4px}
-.s-test{margin:0 0 20px;padding:10px 14px;border-radius:10px;background:#f3f4f6;color:#111827;font-size:15px}
-.s-lt th,.s-lt td{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid #f0f1f3;font-size:14px;
+.s-test{margin:0 0 16px;padding:10px 14px;border-radius:10px;background:var(--warn-soft);color:var(--warn);
+font-size:14px}
+.s-lt th,.s-lt td{text-align:left;padding:6px 12px 6px 0;border-bottom:1px solid var(--line);font-size:13px;
 vertical-align:top}
-.s-lt th{font-size:12px;color:#6b7280;font-weight:600}
+.s-lt th{font-size:11.5px;color:var(--text-3);font-weight:650}
 .s-lt pre{white-space:pre-wrap;font-size:12px;margin:0}
-@media (max-width:700px){
-.s-big{font-size:32px}
-.s-cols{grid-template-columns:1fr}
-.s-bot{grid-template-columns:1fr;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
-.s-bot:first-of-type{border-top:1px solid #e5e7eb}
+/* the older detail (each bot's cards, /details) inside the same shell */
+.legacy .card,.legacy .box,.legacy .hc{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow);color:var(--text)}
+.legacy .tile{background:var(--surface);border-color:var(--line);border-radius:12px}
+.legacy h2{color:var(--text-3)}
+.legacy th,.legacy td{border-bottom-color:var(--line)}
+.legacy .tab,.legacy .dates button{background:var(--surface);border-color:var(--line);color:var(--text)}
+.legacy .tab.on,.legacy .dates button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.legacy .small,.legacy .k,.legacy .fk,.legacy th{color:var(--text-3)}
+.legacy .st,.legacy .hc.paper,.legacy .st.big{background:var(--surface-2);border-color:var(--line)}
+:root[data-theme="dark"] .legacy .hero,:root[data-theme="dark"] .legacy .quiet{background:var(--surface);
+color:var(--text)}
+@media (max-width:980px){.kpis,.kpis.three{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g2{grid-template-columns:minmax(0,1fr)}.s-cols{grid-template-columns:1fr}}
+/* phones: the sidebar becomes a top bar */
+@media (max-width:760px){
+.app{flex-direction:column}
+.side{position:sticky;top:0;z-index:20;width:100%;height:auto;flex-direction:row;align-items:center;
+border-right:0;border-bottom:1px solid var(--line);min-width:0}
+.side-top{padding:10px 12px 10px 16px;flex:none}
+.side-top small,.nav-label,.side-foot{display:none}
+.brand{font-size:16px}
+.side nav{flex-direction:row;overflow-x:auto;padding:6px 16px 6px 4px;gap:2px;scrollbar-width:none;min-width:0}
+.side nav::-webkit-scrollbar{display:none}
+.side nav a{padding:7px 10px;font-size:13px}
+.side nav svg{display:none}
+.topbar{padding:14px 16px 0}
+.topbar h1{font-size:19px}
+.content{padding:14px 16px 40px}
+.seg{flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.kpi .value{font-size:22px}
+.kpis,.kpis.three{gap:10px}
+.kpis>.card{padding:14px}
+.bt-grid{grid-template-columns:minmax(0,1fr);gap:8px}
+#bots{padding:14px 12px}
+.bt{padding:11px 12px;gap:7px}
+.s-bot{grid-template-columns:1fr}
 .s-nums{justify-content:flex-start;text-align:left}
 .s-sim{text-align:left}
-.s-acct{grid-template-columns:1fr 1fr;gap:14px}
-.s-acct>div:first-child,.s-acct>div:last-child:nth-child(2){grid-column:1/-1}
-.lb{padding:12px 14px 4px}
-.lb-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px 92px;grid-template-areas:"n n n s" "p o t v";
-gap:2px 8px;padding:10px 2px}
-.lb-total .lb-row{grid-template-columns:minmax(0,1fr) 44px 92px;grid-template-areas:"n n s" "o t v"}
-.lb-n{white-space:normal}
-.lb-s{text-align:right}
-.lb-h{grid-template-areas:"p o t v"}
-.lb-total .lb-h{grid-template-areas:"o t v"}
-.lb-h .lb-n,.lb-h .lb-s{display:none}
-.lb-m,.lb-t{text-align:left;font-size:15px}
-.lb-h .lb-m,.lb-h .lb-t{font-size:12px}
-.lb-test{text-align:left}
-.lb-v{text-align:right}
+input,select{font-size:16px}
 }
 """
+
+
+# ------------------------------------------------ the shell, like the AI hub's (12 Oct) --
+# Aaron, 12 Oct 2026: "Put the layout similar to the ai hub, i don't like this it's just messy and i can't figure out
+# what's going on there's too much writing still". Every page sits in the same shell: a left sidebar (a top bar on
+# phones) with grouped links, a title bar, then white cards on a light grey page - the hub's look, inline only.
+THEME_JS = """<script>
+(function(){var t='light';try{t=localStorage.getItem('mintel-theme')||'light'}catch(e){}
+document.documentElement.setAttribute('data-theme',t);})();
+function toggleTheme(){var t=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
+try{localStorage.setItem('mintel-theme',t)}catch(e){}document.documentElement.setAttribute('data-theme',t);
+var b=document.getElementById('theme-btn');if(b)b.textContent=t==='dark'?'Light':'Dark';}
+</script>"""
+
+_ICONS = {
+    "home": '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
+    "live": '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.6-.8-1.6-1.2-2.8-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.5 6 '
+            '4.5 0 1.3-1.3 2.3-3 2.3-1.3 0-2.4-.5-3-1.3M12 6v2M12 16.8V18"/>',
+    "practice": '<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>',
+    "lab": '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 14h9"/>',
+    "coach": '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8M12 17h.01"/>',
+    "details": '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 '
+               '2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+    "health": '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+}
+NAV_GROUPS = (("Overview", (("home", "Home", "/"),)),
+              ("Bots", (("live", "Real money", "/?show=live"), ("practice", "Practice", "/?show=practice"),
+                        ("lab", "The lab", "/lab"))),
+              ("Behind the scenes", (("coach", "The coach", "/coach"), ("details", "Technical detail", "/details"),
+                                     ("health", "Health", "/health"))))
+
+
+def _period_q(view: Optional[dict]) -> str:
+    """'period=week' (and a custom period's dates) - what every link keeps; '' for Today."""
+    v = view or {}
+    if str(v.get("key") or "today") == "today":
+        return ""
+    return _keep(v, "all", "overall")
+
+
+def _with_q(href: str, q: str) -> str:
+    if not q or href in ("/health", "/coach", "/lab"):
+        return href
+    return f"{href}{'&' if '?' in href else '?'}{q}"
+
+
+def _nav_html(active: str, q: str = "") -> str:
+    """The sidebar's grouped links, the chosen period kept on the pages that show money."""
+    out = []
+    for label, links in NAV_GROUPS:
+        out.append(f'<div class="nav-label">{html.escape(label)}</div>')
+        for key, words, href in links:
+            on = ' class="on"' if key == active else ""
+            out.append(f'<a href="{_with_q(href, q)}"{on}><svg viewBox="0 0 24 24">{_ICONS[key]}</svg>'
+                       f'{html.escape(words)}</a>')
+    return f'<nav class="nav">{"".join(out)}</nav>'
+
+
+def _shell(title: str, body: str, active: str = "", q: str = "", stamp: str = "", back: str = "",
+           old_css: bool = False, refresh: str = "js", heading: Optional[str] = None) -> str:
+    """A whole page in the shell. ``refresh``: "js" (every 10 s, never while a date is half typed; KEEP_OPEN_JS
+    too), "meta" (a plain 10-second refresh) or "" (none). ``heading``: the title bar's words (the page's
+    title by default); ``back``: a ready-made link shown before them."""
+    e = html.escape
+    css = (CSS if old_css else "") + HOME_CSS
+    meta = ('<noscript><meta http-equiv="refresh" content="10"></noscript>' if refresh == "js" else
+            '<meta http-equiv="refresh" content="10">' if refresh == "meta" else "")
+    head_txt = e(title) if heading is None else heading
+    head_h = f'<h1>{head_txt}</h1>' if head_txt else '<span class="grow"></span>'
+    stamp_html = f'<span class="stamp">{e(stamp)}</span>' if stamp else ""
+    scripts = ("<script>(function(){var b=document.getElementById('theme-btn');b.addEventListener('click',toggleTheme);"
+               "if(document.documentElement.getAttribute('data-theme')==='dark')b.textContent='Light';})();</script>"
+               + ((KEEP_OPEN_JS + REFRESH_JS) if refresh == "js" else ""))
+    return (f'<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">{meta}<title>{e(title)}</title>'
+            f'{THEME_JS}<style>{css}</style></head><body><div class="app">'
+            f'<aside class="side"><div class="side-top"><a class="brand" href="{_with_q("/", q)}"><i>Trading</i> '
+            f'bots</a><small>Demo account</small></div>{_nav_html(active, q)}'
+            f'<div class="side-foot"><span>Refreshes every 10 s</span>'
+            f'<button class="linkbtn" id="theme-btn" type="button">Dark</button></div></aside>'
+            f'<div class="main"><div class="topbar">{back}{head_h}{stamp_html}</div>'
+            f'<div class="content">{body}</div></div></div>{scripts}</body></html>')
 
 
 def _gbp_html(v, cur: str = "GBP", cls: bool = True, signed: bool = True) -> str:
@@ -2105,67 +2283,78 @@ def _home_query(view: Optional[dict], bot: str = "all") -> str:
     return f"?{q}" if q else ""
 
 
-def render_home_periods(view: Optional[dict], bot: str = "all") -> str:
+def render_home_periods(view: Optional[dict], bot: str = "all", show: str = "") -> str:
     """The period buttons, the same eight choices as the full page (Today ...
-    Total, and Custom from/to). The chosen bot stays chosen. The custom form
-    is a "dates" form, so the 10-second refresh never wipes a date half typed."""
+    Total, and Custom from/to), as the hub's segmented control. The chosen bot
+    (or the chosen filter, ``show``) stays chosen. The custom form is a "dates"
+    form, so the 10-second refresh never wipes a date half typed."""
     from .standing import PERIOD_BUTTONS
     bot = _bot_choice(bot)
+    show = show if show in SHOWS else ""
     v = view or {}
     key = v.get("key") or "today"
-    keep_bot = f"&bot={html.escape(bot)}" if bot != "all" else ""
-    btns = "".join(f'<a class="s-p{" on" if k == key else ""}" href="/?period={k}{keep_bot}">{html.escape(lbl)}</a>'
+    keep = (f"&bot={html.escape(bot)}" if bot != "all" else "") + (f"&show={show}" if show else "")
+    btns = "".join(f'<a class="s-p{" on" if k == key else ""}" href="/?period={k}{keep}">{html.escape(lbl)}</a>'
                    for k, lbl in PERIOD_BUTTONS)
     f_val = html.escape(str(v.get("from") or ""))
     t_val = html.escape(str(v.get("to") or ""))
-    hidden = f'<input type="hidden" name="bot" value="{html.escape(bot)}">' if bot != "all" else ""
+    hidden = (f'<input type="hidden" name="bot" value="{html.escape(bot)}">' if bot != "all" else "") + (
+        f'<input type="hidden" name="show" value="{show}">' if show else "")
     custom = (f'<form class="dates" method="get" action="/"><input type="hidden" name="period" value="custom">{hidden}'
-              f'<span class="s-p{" on" if key == "custom" else ""}">Custom</span>'
-              f'<label>From <input type="date" name="from" value="{f_val}"></label>'
-              f'<label>To <input type="date" name="to" value="{t_val}"></label>'
-              f'<button type="submit"{" class=on" if key == "custom" else ""}>Show</button></form>')
-    return f'<div class="s-periods">{btns}{custom}</div>'
+              f'<input type="date" name="from" value="{f_val}" aria-label="From">'
+              f'<span>to</span><input type="date" name="to" value="{t_val}" aria-label="To">'
+              f'<button type="submit"{" class=on" if key == "custom" else ""}>Custom</button></form>')
+    return (f'<div class="periodbar s-periods" title="{html.escape(UK_DAYS_NOTE)}"><div class="seg">{btns}</div>'
+            f'{custom}</div>')
+
+
+def _kpi(label: str, value: str, foot: str = "", key: str = "") -> str:
+    """One KPI card: its label, its figure (already escaped html), one short grey line."""
+    e = html.escape
+    k = f' data-kpi="{e(key)}"' if key else ""
+    return (f'<div class="card kpi"{k}><div class="label">{e(label)}</div><div class="value">{value}</div>'
+            + (f'<div class="foot">{e(foot)}</div>' if foot else "") + '</div>')
 
 
 def _home_account(snap: dict, top: dict, cur: str) -> str:
-    """The account: three big numbers - the balance, the chosen period and
-    Overall - MetaTrader's own figures (``standing.period_view``), never worked
-    out another way; one short line under them only when trades are open."""
+    """The account as the hub's KPI cards: the balance, the chosen period, Overall
+    since the reset and today's trades - MetaTrader's own figures
+    (``standing.period_view``), never worked out another way. Practice never
+    enters them."""
     e = html.escape
     sd = snap.get("standing") or {}
     sel, tot = top.get("sel"), top.get("tot")
     if not sel or not tot or tot.get("made") is None:
-        why = e(str(sd.get("error") or "the page has not heard from MetaTrader yet"))
-        return (f'<section class="s-card"><div class="s-k">Account</div><div class="s-big">-</div>'
-                f'<p class="s-note">MetaTrader\'s records could not be read just now ({why}). No figure is shown '
-                f'rather than a wrong one; it comes back on its own.</p></section>')
+        why = str(sd.get("error") or "the page has not heard from MetaTrader yet")
+        return (f'<div class="kpis three s-acct">{_kpi("Balance", "-", "", "balance")}'
+                f'{_kpi("Overall", "-", "", "overall")}{_kpi("Trades today", "-", "", "trades")}</div>'
+                f'<p class="kpi-note">MetaTrader\'s records could not be read just now ({e(why)}) - no figure rather '
+                f'than a wrong one.</p>')
     total = sel.get("key") == "total"
     label = str(sel.get("label") or "Today")
-    figs = []
-    bal = sd.get("balance")
-    figs.append(f'<div><div class="s-k">Balance</div><div class="s-big">{_gbp_html(bal, cur, cls=False, signed=False)}'
-                f'</div><div class="s-sub">{e(cur)} demo account</div></div>')
-    n, w = sel.get("trades"), sel.get("wins")
-    trades_txt = ("no trades closed" if not n else f"{n} trade{'' if n == 1 else 's'} closed, {w} won")
+
+    def closed(v: dict) -> str:
+        n, w = v.get("trades"), v.get("wins")
+        return "no trades closed" if not n else f"{n} closed, {w} won"
+    cards = [_kpi("Balance", _gbp_html(sd.get("balance"), cur, cls=False, signed=False), f"{cur} demo account",
+                  "balance")]
     if not total:
-        figs.append(f'<div><div class="s-k">{e(label)}</div><div class="s-big">{_gbp_html(sel.get("made"), cur)}</div>'
-                    f'<div class="s-sub">{e(trades_txt)}</div></div>')
+        cards.append(_kpi(label, _gbp_html(sel.get("made"), cur), closed(sel), "period"))
     began = _uk(sd.get("start") or "", "%d %b")
-    start_bal = sd.get("start_balance")
     since = f"since the reset on {began}" if began else "since the account started"
-    why = (f"The balance less {_fmt_money(float(start_bal), cur).lstrip('+')} at the reset"
-           if start_bal is not None else "")
-    figs.append(f'<div><div class="s-k">{"Total (Overall)" if total else "Overall"}</div>'
-                f'<div class="s-big">{_gbp_html(tot.get("made"), cur)}</div><div class="s-sub"'
-                + (f' title="{e(why)}"' if why else "") + f'>{e(since)}'
-                + (f"; {e(trades_txt)}" if total else "") + '</div></div>')
-    line = ""
-    open_live = snap.get("open_live")
+    cards.append(_kpi("Total (Overall)" if total else "Overall", _gbp_html(tot.get("made"), cur),
+                      since + (f" · {closed(sel)}" if total else ""), "overall"))
+    today = top.get("today") if isinstance(top.get("today"), dict) else (sel if sel.get("key") == "today" else None)
+    n_today = (today or {}).get("trades")
+    open_live = snap.get("open_live") or []
+    foot = ""
     if open_live:
         opened = round(sum(float(r.get("profit") or 0.0) for r in open_live), 2)
-        line = (f'<p class="s-note">{len(open_live)} trade{"" if len(open_live) == 1 else "s"} open now, '
-                f'{e(_fmt_money(opened, cur))} not banked yet.</p>')
-    return f'<section class="s-card"><div class="s-acct">{"".join(figs)}</div>{line}</section>'
+        foot = f"{len(open_live)} open now, {_fmt_money(opened, cur)} not banked"
+    elif today is not None:
+        foot = closed(today)
+    cards.append(_kpi("Trades today", e("-" if n_today is None else str(n_today)), foot, "trades"))
+    return f'<div class="kpis{" three" if total else ""} s-acct">{"".join(cards)}</div>'
 
 
 def formula1_line(v: Optional[dict], focus: Optional[dict] = None) -> str:
@@ -2504,33 +2693,40 @@ def _lb_sort_key(x: dict) -> tuple:
 
 
 def _lb_row(x: dict, view: dict, cur: str, star: str = "") -> str:
-    """One line: name (a star for a standout), status, the period and Overall in
-    £ (practice grey), trades, a verdict word with its dot. The whole row opens
-    the bot's page (/?bot=...) or the idea's (/lab?id=...)."""
+    """One tile: its name (a star for a standout), a coloured status pill, the
+    period and Overall in £ (practice grey), its trades, one coloured word. No
+    sentences - the word's headline is in its title. The whole tile opens the
+    bot's page (/?bot=...) or the idea's (/lab?id=...)."""
     e = html.escape
     total = (view or {}).get("key") == "total"
     plabel = str((view or {}).get("label") or "Today")
     prac = x["practice"]
     tag = " (practice)" if prac else ""
     href = f"/{_home_query(view, x['id'])}" if x["kind"] == "bot" else _lab_href(x["id"])
-    star_html = (f'<span class="lb-star" title="{e("Standout: " + star)}" aria-label="standout">&#9733;</span>'
+    star_html = (f'<span class="bt-star" title="{e("Standout: " + star)}" aria-label="standout">&#9733;</span>'
                  if star else "")
-    cells = [f'<div class="lb-n"><span class="lb-name">{e(x["name"])}</span>{star_html}</div>',
-             f'<div class="lb-s"><span class="lb-st {x["status"].lower() if x["status"] != LB_UNKNOWN else "unk"}" '
-             f'title="{e(x["status_title"])}">{e(x["status"])}</span></div>']
+    st = x["status"].lower() if x["status"] != LB_UNKNOWN else "unk"
+    head = (f'<div class="bt-head"><span class="bt-name">{e(x["name"])}</span>{star_html}'
+            f'<span class="bt-st {st}" title="{e(x["status_title"])}">{e(x["status"])}</span></div>')
     if x["synthetic"]:
-        cells.append(f'<div class="lb-test">{e(_test_data_words())}</div>')
+        figs = f'<div class="bt-test">{e(_test_data_words())}</div>'
     else:
         pc = " prac" if prac else ""
+        cells = []
         if not total:
-            cells.append(f'<div class="lb-m lb-p{pc}" title="{e(plabel + tag)}">{_gbp_html(x["period"], cur)}</div>')
-        cells.append(f'<div class="lb-m lb-o{pc}" title="{e("Overall" + tag)}">{_gbp_html(x["overall"], cur)}</div>')
+            cells.append(f'<div class="bt-m bt-p{pc}" title="{e(plabel + tag)}" data-k="{e(plabel)}">'
+                         f'{_gbp_html(x["period"], cur)}</div>')
+        cells.append(f'<div class="bt-m bt-o{pc}" title="{e("Overall" + tag)}" data-k="Overall">'
+                     f'{_gbp_html(x["overall"], cur)}</div>')
         n = x.get("trades")
-        cells.append(f'<div class="lb-t{pc}" title="{e("Trades " + _in_period(view or {}) + tag)}">'
+        cells.append(f'<div class="bt-t{pc}" title="{e("Trades " + _in_period(view or {}) + tag)}" data-k="Trades">'
                      f'{e("-" if n is None else str(n))}</div>')
-    cells.append(f'<div class="lb-v" title="{e(x["why"])}"><i class="dot {e(x["dot"])}"></i>{e(x["word"])}</div>')
+        figs = f'<div class="bt-figs{" two" if total else ""}">{"".join(cells)}</div>'
+    word = (f'<div class="bt-v {e(x["dot"])}" title="{e(x["why"])}"><i class="dot {e(x["dot"])}"></i>'
+            f'{e(x["word"])}</div>')
     title = x["full"] if x["full"] != x["name"] else ""
-    return (f'<a class="lb-row" href="{href}"' + (f' title="{e(title)}"' if title else "") + f'>{"".join(cells)}</a>')
+    return (f'<a class="bt{" prac" if prac else ""}" href="{href}"' + (f' title="{e(title)}"' if title else "")
+            + f'>{head}{figs}{word}</a>')
 
 
 def _test_data_words() -> str:
@@ -2538,35 +2734,118 @@ def _test_data_words() -> str:
     return TEST_DATA
 
 
-def _leaderboard_html(entries: list, stars: dict, view: dict, cur: str) -> str:
+SHOWS = {"live": "Real money", "practice": "Practice"}
+
+
+def _shown(entries: list, show: str) -> list:
+    """The tiles a page shows: every one on Home; Real money - the bots whose money is real (LIVE, part LIVE,
+    or switched off with real money from their LIVE days); Practice - every PRACTICE tile, bots and ideas."""
+    if show == "live":
+        return [x for x in entries if x["kind"] == "bot" and not x["practice"]]
+    if show == "practice":
+        return [x for x in entries if x["status"] == LB_PRACTICE]
+    if show == "lab":
+        return [x for x in entries if x["kind"] == "candidate"]
+    return entries
+
+
+def _leaderboard_html(entries: list, stars: dict, view: dict, cur: str, title: str = "Bots") -> str:
+    """ONE card of tiles: the bots and the lab's ideas together, LIVE first then by Overall."""
+    tiles = "".join(_lb_row(x, view, cur, stars.get((x["kind"], str(x["id"])), "")) for x in entries)
+    legend = " · ".join(w for w, on in (
+        ("Grey = practice, not real money", any(x["practice"] for x in entries)),
+        ("&#9733; standout", any(stars.get((x["kind"], str(x["id"]))) for x in entries))) if on)
+    return (f'<section class="card" id="bots"><div class="card-head"><h2>{html.escape(title)}</h2>'
+            + (f'<span class="sub">{legend}</span>' if legend else "") + '</div>'
+            f'<div class="bt-grid">{tiles or "<p class=bt-none>Nothing here yet.</p>"}</div></section>')
+
+
+def _next_lab_run(now: dt.datetime) -> str:
+    """When the lab's first nightly run is due: 23:10 UK, Monday to Saturday (mintel/lab/nightly.py)."""
+    uk = to_utc(now).astimezone(TZ_LONDON)
+    before = (uk.hour, uk.minute) < (23, 10)
+    if uk.hour < 6 and (uk.date() - dt.timedelta(days=1)).weekday() < 6:
+        return "first test due by 06:00"                     # last night's run (23:10 to 06:00) is due by now
+    if uk.weekday() < 6 and before:
+        return "first test tonight 23:10"
+    if uk.weekday() < 6 and uk.hour >= 23:
+        return "first test due tonight from 23:10"
+    nxt = uk.date() + dt.timedelta(days=1)
+    while nxt.weekday() == 6:
+        nxt += dt.timedelta(days=1)
+    return f"first test {nxt.strftime('%A')} 23:10"
+
+
+def _lab_ideas_registered() -> Optional[int]:
+    """The ideas the lab's first night will test: its registered grid (mintel.lab.families), never a guess."""
+    try:
+        from ..lab.families import all_families
+        return sum(int(f.GRID_SIZE) for f in all_families())
+    except Exception as exc:                                 # never a reason to fail the page
+        log.warning("lab grid: %s", exc)
+        return None
+
+
+def _lab_card(lab: dict, now: dt.datetime, link: bool = True) -> str:
+    """The lab, small: before it has run, how many ideas wait and when the first test is; while it collects
+    prices, how many days of the 40; then its funnel's numbers. TEST DATA for a made-up run; one grey line."""
+    from . import showcase as S
     e = html.escape
-    total = (view or {}).get("key") == "total"
-    plabel = str((view or {}).get("label") or "Today")
-    head = ['<div class="lb-n">Name</div>', '<div class="lb-s"></div>']
-    if not total:
-        head.append(f'<div class="lb-m lb-p">{e(plabel)}</div>')
-    head += ['<div class="lb-m lb-o">Overall</div>', '<div class="lb-t">Trades</div>', '<div class="lb-v"></div>']
-    rows = "".join(_lb_row(x, view, cur, stars.get((x["kind"], str(x["id"])), "")) for x in entries)
-    return (f'<section class="s-card lb{" lb-total" if total else ""}"><h2>Leaderboard</h2>'
-            f'<div class="lb-row lb-h">{"".join(head)}</div>{rows or "<p class=s-none>Nothing to show yet.</p>"}'
-            f'</section>')
+    state = lab.get("state")
+    sm = lab.get("summary") or {}
+    syn = bool(lab.get("synthetic") or sm.get("synthetic"))
+    grey = ""
+    if state == S.LAB_NONE:
+        n = _lab_ideas_registered()
+        inner = (f'<div class="lab-big">{e(S._count(n)) if n is not None else "-"}<small>ideas waiting</small></div>'
+                 f'<p class="grey-line">{e(_next_lab_run(now))}</p>')
+    elif state == S.LAB_BROKEN:
+        inner = f'<div class="lab-one">{e(str(lab.get("line") or ""))}</div>'
+    elif state == S.LAB_COLLECTING:
+        st = sm.get("store") if isinstance(sm.get("store"), dict) else {}
+        have, need = S._int(st.get("complete_days")), S._int(st.get("needed_days")) or S.NEEDED_DAYS
+        if syn:
+            inner = f'<div class="lab-one">Collecting prices: {e(S.TEST_DATA)}</div>'
+        else:
+            pct = max(0, min(100, round(100.0 * (have or 0) / need))) if need else 0
+            inner = (f'<div class="lab-one">Collecting prices: {e(S._count(have))} of {e(S._count(need))} days</div>'
+                     f'<div class="prog"><span style="width:{pct}%"></span></div>')
+    else:
+        f = sm.get("funnel") if isinstance(sm.get("funnel"), dict) else {}
+        if syn:
+            inner = f'<div class="lab-one">{e(S.TEST_DATA)}</div>'
+        elif not f:
+            inner = '<div class="lab-one">Nothing tried yet</div>'
+        else:
+            tried = S._int(f.get("past_tested"))
+            tried = tried if tried is not None else S._int(f.get("ideas"))
+            cells = [("Tested", tried), ("Passed", f.get("past_passed")), ("Practising", f.get("practice"))]
+            for key, words in (("ready", "Ready"), ("live", "Live trial"), ("proven", "Proven")):
+                if (S._int(f.get(key)) or 0) > 0:
+                    cells.append((words, f.get(key)))
+            cells.append(("Binned", f.get("binned")))
+            inner = ('<div class="funnel">' + "".join(f'<div><b>{e(S._count(v))}</b><span>{e(k)}</span></div>'
+                                                      for k, v in cells) + '</div>')
+        if S.run_missed(sm.get("nightly"), now):
+            grey = "Last night's run missed"
+    tail = (f'<p class="grey-line">{e(grey)}</p>' if grey else "")
+    if not link:
+        return f'<section class="card lab-card" id="lab"><div class="mini-title">In numbers</div>{inner}{tail}</section>'
+    return (f'<a class="card lab-card" href="/lab" id="lab"><div class="mini-title">The lab<span class="go">'
+            f'Open &rarr;</span></div>{inner}{tail}</a>')
 
 
-def _home_foot(view: Optional[dict], updated) -> str:
-    q = _home_query(view, "all")
-    when = _uk(str(updated), "%H:%M:%S") if updated else ""
-    return (f'<footer class="s-foot"><a href="/coach">The coach, the plan and what changed</a><a href="/lab">The lab</a>'
-            f'<a href="/details{q}">All the technical detail</a><a href="/rider">Rapid Momentum Rider</a>'
-            f'<a href="/ian">Financial Ian</a><a href="/health">Health (for the watchdog)</a>'
-            f'<div>{html.escape(UK_DAYS_NOTE)}. Money is after commission; grey is practice, not real money; '
-            f'&#9733; = one of today\'s standouts. Tap a row for what happened, what to do and the checks.</div>'
-            f'<div>{("Figures from " + html.escape(when) + " UK. ") if when else ""}This page refreshes itself every '
-            f'10 seconds and keeps the period you chose.</div></footer>')
+def _coach_card(line: str) -> str:
+    """The coach in its one line (coach_page.one_line), under its own title."""
+    words = line[len("Coach: "):] if line.startswith("Coach: ") else line
+    words = words[:1].upper() + words[1:]
+    return (f'<a class="card coach-card" href="/coach" id="coach"><div class="mini-title">The coach<span class="go">'
+            f'Open &rarr;</span></div><div class="lab-one">{html.escape(words)}</div></a>')
 
 
 def _home_problem(snap: dict) -> str:
-    """One line, only when the trader itself says something is wrong (not
-    running, waiting for MetaTrader, safe mode); the detail is on /details."""
+    """One line at the top, only when the trader itself says something is wrong
+    (not running, waiting for MetaTrader, safe mode); the detail is on /details."""
     st = snap.get("status") or {}
     health = snap.get("health") or {}
     state = str(st.get("bot") or "")
@@ -2578,17 +2857,17 @@ def _home_problem(snap: dict) -> str:
         what = "starting - it has not reported yet"
     else:
         what = str(health.get("summary") or state.lower() or "a problem")
-    return (f'<div class="s-flag" style="margin:0 0 20px"><b>The trader:</b> {html.escape(what)} - '
-            f'<a href="/details">see the technical detail</a>.</div>')
+    return (f'<div class="flag s-flag"><span class="light"></span><span><b>The trader:</b> {html.escape(what)} - '
+            f'<a href="/details">see the technical detail</a>.</span></div>')
 
 
-def _home_page(title: str, body: str, old_css: bool = False) -> str:
-    css = (CSS if old_css else "") + HOME_CSS
-    return (f'<!doctype html><html><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<noscript><meta http-equiv="refresh" content="10"></noscript><title>{html.escape(title)}</title>'
-            f'<style>{css}</style></head><body><main class="s">{body}</main>{KEEP_OPEN_JS}'
-            f'{REFRESH_JS}</body></html>')
+def _stamp(updated) -> str:
+    return _uk(str(updated or ""), "%a %d %b, %H:%M UK") if updated else ""
+
+
+def _home_page(title: str, body: str, old_css: bool = False, active: str = "", q: str = "", stamp: str = "",
+               back: str = "", heading: Optional[str] = None) -> str:
+    return _shell(title, body, active=active, q=q, stamp=stamp, back=back, old_css=old_css, heading=heading)
 
 
 def _ladder_infos(sd: dict, top: dict, verdicts: dict, deals, plan: Optional[dict], now: dt.datetime,
@@ -2621,33 +2900,11 @@ def _ladder_infos(sd: dict, top: dict, verdicts: dict, deals, plan: Optional[dic
     return out
 
 
-def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[dict] = None,
-                plan_error: str = "", deals=None, lab: Optional[dict] = None) -> str:
-    """The main page, short (Aaron, 12 Oct: "its just a load of writing"): the
-    period buttons, three big numbers (balance, the chosen period, Overall -
-    ``standing.period_view``), the coach in one line, ONE leaderboard of the
-    bots and the lab's ideas together (one line each, LIVE first then by
-    Overall; a star for each of today's standouts), the lab in one line, and
-    the footer. What happened, what to do, the five checks and the sources
-    are on each bot's page (/?bot=...) and each idea's (/lab?id=...); the
-    plan and what changed are on /coach; everything technical on /details.
-
-    The lab never enters the account; the lab's computer tests are never
-    shown as money here; a made-up lab summary shows TEST DATA. ``deals``:
-    the account's deal rows (Formula 1's trades for its checks); ``lab``:
-    ``showcase.load_lab`` (read from the data folder when not given).
-    Renders whatever is missing as missing; everything is escaped."""
+def _tiles_of(snap: dict, top: dict, verdicts: dict, plan: Optional[dict], deals, lab: dict, view: dict,
+              now: dt.datetime, data_dir: str) -> tuple[list, dict]:
+    """(every tile's entry, sorted; the standouts' stars) - the bots and the lab's ideas together."""
     from . import showcase as S
-    top = top or {}
     sd = snap.get("standing") or {}
-    cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
-    view = top.get("sel") or top.get("period") or {"key": "today"}
-    now = to_utc(top["now"]) if isinstance(top.get("now"), dt.datetime) else utcnow()
-    data_dir = str(top.get("data_dir") or "")
-    head = (f'<div class="s-head"><h1>Trading bots</h1><span class="s-upd">'
-            f'{html.escape(_uk(str(snap.get("updated") or ""), "%a %d %b, %H:%M UK"))}</span></div>')
-    if lab is None:
-        lab = S.load_lab(data_dir, now)
     entries, infos = [], []
     for b, v, info in _ladder_infos(sd, top, verdicts, deals, plan, now, data_dir):
         infos.append(info)
@@ -2677,12 +2934,48 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
         log.warning("standouts: %s", exc)
         stars = {}
     entries.sort(key=_lb_sort_key)
-    coach = (f'<a class="s-line" href="/coach">{html.escape(coach_page.one_line(data_dir, now))}</a>')
-    lab_line = f'<a class="s-line" href="/lab">{html.escape(S.lab_line(lab, now))}</a>'
-    body = (head + _home_problem(snap) + render_home_periods(view, "all") + _home_account(snap, top, cur)
-            + coach + _leaderboard_html(entries, stars, view, cur) + lab_line
-            + _home_foot(view, snap.get("updated")))
-    return _home_page("Trading bots", body)
+    return entries, stars
+
+
+def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[dict] = None,
+                plan_error: str = "", deals=None, lab: Optional[dict] = None, show: str = "") -> str:
+    """The main page, in the AI hub's layout (Aaron, 12 Oct: "Put the layout
+    similar to the ai hub ... there's too much writing still"): the period
+    buttons; the account as four KPI cards (balance, the chosen period,
+    Overall since the reset, trades today - ``standing.period_view``); ONE
+    card "Bots" of tiles - every bot and every lab idea, LIVE first then by
+    Overall, each with its status, its period and Overall £ (practice grey),
+    its trades and one coloured word; then the lab and the coach, small.
+    ``show``: "live" (Real money) or "practice" - the same tiles filtered, no
+    KPI cards. What happened, what to do, the five checks and the sources are
+    on each bot's page (/?bot=...) and each idea's (/lab?id=...).
+
+    The lab never enters the account; the lab's computer tests are never
+    shown as money here; a made-up lab summary shows TEST DATA. ``deals``:
+    the account's deal rows (Formula 1's trades for its checks); ``lab``:
+    ``showcase.load_lab`` (read from the data folder when not given).
+    Renders whatever is missing as missing; everything is escaped."""
+    from . import showcase as S
+    top = top or {}
+    show = show if show in SHOWS else ""
+    sd = snap.get("standing") or {}
+    cur = str(sd.get("currency") or (snap.get("status") or {}).get("currency") or "GBP")
+    view = top.get("sel") or top.get("period") or {"key": "today"}
+    now = to_utc(top["now"]) if isinstance(top.get("now"), dt.datetime) else utcnow()
+    data_dir = str(top.get("data_dir") or "")
+    if lab is None:
+        lab = S.load_lab(data_dir, now)
+    entries, stars = _tiles_of(snap, top, verdicts, plan, deals, lab, view, now, data_dir)
+    title = SHOWS.get(show, "Home")
+    body = _home_problem(snap) + render_home_periods(view, "all", show)
+    if show:
+        body += _leaderboard_html(_shown(entries, show), stars, view, cur, title)
+    else:
+        coach = _coach_card(coach_page.one_line(data_dir, now))
+        body += (_home_account(snap, top, cur) + _leaderboard_html(entries, stars, view, cur)
+                 + f'<div class="g2">{_lab_card(lab, now)}{coach}</div>')
+    return _home_page("Trading bots" if not show else title, body, active=show or "home", q=_period_q(view),
+                      stamp=_stamp(snap.get("updated")), heading=title)
 
 
 def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, plan: Optional[dict] = None,
@@ -2707,8 +3000,7 @@ def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, 
     mode = str(v.get("mode") or "")
     mixed = bool(v.get("live_groups")) and mode != "LIVE"     # 9 Oct: Trend & Breakout's minor pairs LIVE
     live = mode == "LIVE" or mixed
-    head = (f'<div class="s-head"><a href="/{_home_query(view, "all")}">&larr; All bots</a><span class="s-upd">'
-            f'{e(_uk(str(snap.get("updated") or ""), "%a %d %b, %H:%M UK"))}</span></div>')
+    back = f'<a class="back" href="/{_home_query(view, "all")}">&larr; All bots</a>'
     chip = f'<span class="s-chip {e(str(v.get("colour") or "grey"))}">{e(str(v.get("code") or ""))}</span>'
     pill = f'<span class="s-mode{" live" if live else ""}">{e((v.get("mode_words") if mixed else mode) or "-")}</span>'
     flags = "".join(f'<div class="s-flag"><b>Check:</b> {e(d["text"])}</div>'
@@ -2756,20 +3048,20 @@ def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, 
         why = e(str(sd.get("error") or "the page has not heard from MetaTrader yet"))
         old = (f'<div class="card small bad">MetaTrader\'s records could not be read just now ({why}); its real trades '
                f'are not listed rather than listed wrong. They come back on their own.</div>' + old)
-    body = (head + _home_problem(snap) + render_home_periods(view, bot) + box
-            + f'<div class="s-old"><h2>Its detail</h2>{quiet}{old}</div>' + _home_foot(view, snap.get("updated")))
-    return _home_page(label, body, old_css=True)
+    body = (_home_problem(snap) + render_home_periods(view, bot) + box
+            + f'<div class="legacy"><div class="s-old"><h2>Its detail</h2>{quiet}{old}</div></div>')
+    real = live or mode == "OFF"
+    return _home_page(label, body, old_css=True, active="live" if real else "practice", q=_period_q(view),
+                      stamp=_stamp(snap.get("updated")), back=back, heading="")
 
 
-def _lab_foot() -> str:
-    return ('<footer class="s-foot"><a href="/">All bots</a><a href="/lab">The lab</a>'
-            '<div>This page only reads the lab\'s summary (data/lab/summary.json) and its practice status '
-            '(data/lab-status.json); it changes nothing. It refreshes itself every 10 seconds.</div></footer>')
+def _lab_back(back: str = "/", back_words: str = "All bots") -> str:
+    """The title bar's way back (the shell's)."""
+    return f'<a class="back" href="{back}">&larr; {html.escape(back_words)}</a>'
 
 
-def _lab_head(now: dt.datetime, back: str = "/", back_words: str = "All bots") -> str:
-    return (f'<div class="s-head"><a href="{back}">&larr; {html.escape(back_words)}</a><span class="s-upd">'
-            f'{html.escape(_uk(now.isoformat(), "%a %d %b, %H:%M UK"))}</span></div>')
+def _now_stamp(now: dt.datetime) -> str:
+    return _uk(now.isoformat(), "%a %d %b, %H:%M UK")
 
 
 def _lab_test_banner(lab: dict) -> str:
@@ -2791,15 +3083,18 @@ def render_lab_board(data_dir, now: Optional[dt.datetime] = None, lab: Optional[
     e = html.escape
     now = to_utc(now) if now is not None else utcnow()
     lab = lab or S.load_lab(data_dir, now)
-    head = _lab_head(now) + '<h1 style="margin-bottom:16px">The lab</h1>'
     state = lab.get("state")
     sm = lab.get("summary") or {}
     syn = bool(lab.get("synthetic"))
-    parts = [head, _lab_test_banner(lab)]
+    parts = [_lab_test_banner(lab)]
+
+    def page(parts: list) -> str:
+        return _home_page("The lab", "".join(parts), active="lab", stamp=_now_stamp(now))
     if state in (S.LAB_NONE, S.LAB_BROKEN):
-        parts.append(f'<section class="s-card"><p class="s-aim">{e(str(lab.get("line")))}</p>'
-                     f'<p class="s-small">{e(S.practice_now_line(lab, now))}</p></section>')
-        return _home_page("The lab", "".join(parts) + _lab_foot())
+        parts.append(f'<div class="g2 top">{_lab_card(lab, now, link=False)}'
+                     f'<section class="s-card"><p class="s-aim">{e(str(lab.get("line")))}</p>'
+                     f'<p class="s-small">{e(S.practice_now_line(lab, now))}</p></section></div>')
+        return page(parts)
     line = str(lab.get("line") or "") if state != S.LAB_READY else S.funnel_line(sm, now, prices=False)
     if syn:     # made-up prices: no research figure is shown, only that it is test data
         where = [line, S.coverage_line(sm), f"Ideas tried and fresh looks: {S.TEST_DATA}.", S.SMALL_EDGE,
@@ -2810,8 +3105,10 @@ def render_lab_board(data_dir, now: Optional[dt.datetime] = None, lab: Optional[
     f = sm.get("funnel") if isinstance(sm.get("funnel"), dict) else {}
     if S._int(f.get("waiting_for_calendar")):
         where.append(f"{S._count(f.get('waiting_for_calendar'))} ideas wait for enough news history to test.")
-    parts.append('<section class="s-card"><h2>Where it stands</h2>'
-                 + "".join(f'<p class="s-small">{e(x)}</p>' for x in where if x) + '</section>')
+    parts.append(f'<div class="g2 top">{_lab_card(lab, now, link=False)}<section class="s-card"><h2>Where it stands</h2>'
+                 + "".join(f'<p class="s-small">{e(x)}</p>' for x in where if x) + '</section></div>')
+    if state == S.LAB_READY:
+        parts.append(_lab_tiles(lab, now))
     if state == S.LAB_READY:
         rows = [S.candidate_ladder(c, syn) for c in S.candidates_of(lab)]
         live = [r for r in rows if r["stage"] in (S.PROVEN, S.LIVE_TRIAL, S.READY_FOR_LIVE, S.PRACTICE)]
@@ -2883,7 +3180,24 @@ def render_lab_board(data_dir, now: Optional[dt.datetime] = None, lab: Optional[
                      + (f'<tr><th>Its log</th><td><pre>{e(chr(10).join(str(x) for x in tail[-20:]))}</pre></td></tr>'
                         if tail and not syn else "")
                      + '</table></div></section>')
-    return _home_page("The lab", "".join(parts) + _lab_foot())
+    return page(parts)
+
+
+def _lab_tiles(lab: dict, now: dt.datetime) -> str:
+    """/lab's tiles: the lab's ideas on "/" (the same tiles, filtered), their practice in the UK day."""
+    from . import showcase as S
+    view = {"key": "today", "label": "Today"}
+    cands = S.ladder_candidates(lab, now)
+    shorts = S.short_names([r.get("candidate") or {"id": r.get("id"), "name": r.get("name")} for r in cands])
+    written = S._when((lab.get("summary") or {}).get("written_utc"))
+    entries = []
+    for r in cands:
+        try:
+            entries.append(_cand_entry(r, shorts.get(str(r.get("id"))) or str(r.get("name")), "today", written, now))
+        except Exception as exc:                             # never a reason to fail the page
+            log.warning("lab tile of %s: %s", r.get("id"), exc)
+    entries.sort(key=_lb_sort_key)
+    return _leaderboard_html(entries, {}, view, "GBP", "Ideas")
 
 
 def render_candidate(data_dir, cid: str, now: Optional[dt.datetime] = None, lab: Optional[dict] = None) -> str:
@@ -2896,12 +3210,15 @@ def render_candidate(data_dir, cid: str, now: Optional[dt.datetime] = None, lab:
     e = html.escape
     now = to_utc(now) if now is not None else utcnow()
     lab = lab or S.load_lab(data_dir, now)
-    head = _lab_head(now, "/lab", "The lab")
+    back = _lab_back("/lab", "The lab")
+
+    def page(title: str, body: str) -> str:
+        return _home_page(title, body, active="lab", stamp=_now_stamp(now), back=back, heading="")
     c = S.find_candidate(lab, str(cid or "")) if lab.get("state") in (S.LAB_READY, S.LAB_COLLECTING) else None
     if c is None:
         why = "" if lab.get("state") in (S.LAB_READY, S.LAB_COLLECTING) else f' {e(str(lab.get("line") or ""))}'
-        return _home_page("The lab", head + f'<section class="s-card"><p class="s-aim">{e(S.NO_SUCH_IDEA)}</p>'
-                                            f'<p class="s-small">{why.strip()}</p></section>' + _lab_foot())
+        return page("The lab", f'<section class="s-card"><p class="s-aim">{e(S.NO_SUCH_IDEA)}</p>'
+                               f'<p class="s-small">{why.strip()}</p></section>')
     syn = bool(lab.get("synthetic"))
     r = S.candidate_ladder(c, syn)
     name = str(r["name"])
@@ -2949,7 +3266,7 @@ def render_candidate(data_dir, cid: str, now: Optional[dt.datetime] = None, lab:
     sources = [str(x) for x in (c.get("sources") if isinstance(c.get("sources"), list) else []) if x]
     written = S.uk_time(S._when((lab.get("summary") or {}).get("written_utc")), "%a %d %b %H:%M UK")
     sources.append(f"data/lab/summary.json, written {written or '-'}")
-    body = (head + _lab_test_banner(lab)
+    body = (_lab_test_banner(lab)
             + f'<section class="s-card s-v"><h1>{e(name)}<span class="s-stage">{e(r["stage"] or "-")}</span>'
               f'{_lab_chip(c)}</h1><p class="s-hl" style="font-size:16px">{e(headline)}</p>'
             + "<h2>What happened</h2>" + "".join(f"<p>{e(x)}</p>" for x in S.what_happened(c, syn))
@@ -2959,7 +3276,7 @@ def render_candidate(data_dir, cid: str, now: Optional[dt.datetime] = None, lab:
             + f'<h2>Its story</h2><ul class="s-ev">{story or "<li>Nothing on record yet.</li>"}</ul>'
             + f'<h2>Its trades</h2>{trades}'
             + '<h2>Sources</h2><ul class="s-ev">' + "".join(f"<li>{e(x)}</li>" for x in sources) + "</ul></section>")
-    return _home_page(name, body + _lab_foot())
+    return page(name, body)
 
 
 def render_results(results: dict) -> str:
@@ -3072,13 +3389,10 @@ def _cls_of(v) -> str:
 
 
 def _page(title: str, body: str, refresh: bool = True) -> str:
-    meta = '<meta http-equiv="refresh" content="10">' if refresh else ""
-    return (f'<!doctype html><html><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1">{meta}'
-            f'<title>{html.escape(title)}</title><style>{CSS}</style></head><body><div class="wrap">'
-            f'<div class="top">{NAV}</div>{body}'
-            f'<p class="small">This page only reads the bot\'s own files; it changes nothing. '
-            f'It refreshes itself every 10 seconds.</p></div></body></html>')
+    """The Rider's and Financial Ian's own pages, in the same shell."""
+    return _shell(title, f'<div class="legacy">{body}<p class="small">This page only reads the bot\'s own files; '
+                         f'it changes nothing. It refreshes itself every 10 seconds.</p></div>',
+                  active="live", old_css=True, refresh="meta" if refresh else "", heading="")
 
 
 def _own_file(data, name: str) -> dict:
@@ -3727,6 +4041,7 @@ class _Handler(BaseHTTPRequestHandler):
                 headline = {"sel": sel, "tot": tot, "p_sel": {}, "p_tot": {}, "data_dir": data_dir, "now": now}
                 snap["open_charged"] = open_charged(deals, sd.get("open_tickets"))
                 today_v = sel if sel["key"] == "today" else period_view(sd, deals, "today", now=now)
+                headline["today"] = today_v              # "Trades today" on "/"
                 rider = next((b for b in sd.get("bots") or () if b.get("id") == "momentum_rider"), None)
                 if rider is not None and rider.get("made") is not None:
                     snap["bot_today"] = {"momentum_rider": bot_view(today_v, int(rider.get("magic") or 0))}
@@ -3794,7 +4109,9 @@ class _Handler(BaseHTTPRequestHandler):
             return render_bot_detail(snap, headline, bot,
                                      verdicts.get(bot) or {"label": dict(BOTS).get(bot, bot), "mode": mode},
                                      plan, verdicts, deals=deals)
-        return render_home(snap, headline, verdicts, plan, plan_error, deals=deals)
+        from urllib.parse import parse_qs, urlparse
+        show = (parse_qs(urlparse(self.path).query).get("show") or [""])[0]
+        return render_home(snap, headline, verdicts, plan, plan_error, deals=deals, show=show)
 
     def _lab_page(self) -> str:
         """/lab: the lab in full; /lab?id=<id>: one candidate. Read-only, from
@@ -3833,12 +4150,8 @@ class _Handler(BaseHTTPRequestHandler):
             log.warning("verdicts: %s", exc)
             verdicts = {}
         extra += f'<div id="plan">{_plan_html(plan, plan_error, verdicts)}</div>'
-        body = (_lab_head(now) + coach_page.render_page_body(data_dir, sd, deals, now) + extra
-                + '<footer class="s-foot"><a href="/">All bots</a><a href="/lab">The lab</a><div>This page only '
-                  'reads the coach\'s status (data/coach/status.json) and its switch (data/coach.json), the lab\'s '
-                  'summary and the plan (docs/plan.json); it changes nothing. It refreshes itself every 10 seconds.'
-                  '</div></footer>')
-        return _home_page("The coach", body, old_css=True)
+        body = coach_page.render_page_body(data_dir, sd, deals, now) + extra
+        return _home_page("The coach", body, old_css=True, active="coach", stamp=_now_stamp(now))
 
     def _coach_progress(self, snap: dict) -> dict:
         """/api's coach_progress: real money since 12 Oct, the page's own arithmetic (never a projection)."""

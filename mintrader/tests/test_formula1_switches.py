@@ -842,7 +842,7 @@ class TestThePageSaysWhichApproachesAreReal:
         (d.data / "config.json").write_text(json.dumps(raw))
         (page,) = _pages(d, "/")
         row = row_of(page, "Trend &amp; Breakout")
-        assert ('<span class="lb-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
+        assert ('<span class="bt-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
                 'PAPER">LIVE</span>') in row
 
 
@@ -1167,7 +1167,7 @@ class TestFormula1sLinesNameTheTradesThatAreReal:
         home, detail = _pages(d, "/", "/?bot=market_intelligence")
         assert "Formula 1 - its minor-pair trades - is LIVE: judge it after 20" in detail.split(
             "<h2>Recommendation</h2>")[1].split("</p>")[0]
-        assert '<span class="lb-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row_of(
+        assert '<span class="bt-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row_of(
             home, "Trend &amp; Breakout")
         assert "Formula 1 LIVE - its minor-pair trades with real money" in detail
 

@@ -187,7 +187,7 @@ class TestTrendAndBreakoutsRow:
         d = a_formula1_day(tmp_path)
         today, total, own = _pages(d, "/", "/?period=total", "/?bot=market_intelligence")
         row = row_of(today, "Trend &amp; Breakout")
-        assert '<span class="lb-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
+        assert '<span class="bt-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
         assert "PRACTICE" not in row and ">PAPER<" not in row
         sel = period_view(d.sd, d.deals, "today", now=NOW)
         tot = period_view(d.sd, d.deals, "total", now=NOW)
@@ -195,7 +195,7 @@ class TestTrendAndBreakoutsRow:
         assert row_figs(row) == {"Today": sel["bots"]["market_intelligence"]["made"],
                                  "Overall": tot["bots"]["market_intelligence"]["made"]}
         n = sel["bots"]["market_intelligence"]["trades"]
-        assert row_trades(row) == ("Trades today", str(n)) and "prac" not in row.split('<div class="lb-v"')[0]
+        assert row_trades(row) == ("Trades today", str(n)) and "prac" not in row.split('<div class="bt-v')[0]
         # its practice: the paper record's, on its own page in the grey line, labelled - never added
         p_sel = practice_figures(str(d.data), dt.datetime.fromisoformat(sel["start"]), NOW, "GBP",
                                  end=dt.datetime.fromisoformat(sel["end"]))
@@ -246,7 +246,7 @@ class TestTrendAndBreakoutsRow:
         d = a_formula1_day(tmp_path, live_groups=None)
         (page,) = _pages(d, "/")
         row = row_of(page, "Trend &amp; Breakout")
-        assert '<span class="lb-st practice" title="Practice (PAPER) - not real money">PRACTICE</span>' in row
+        assert '<span class="bt-st practice" title="Practice (PAPER) - not real money">PRACTICE</span>' in row
         assert 'title="Overall (practice)"' in row
         (coach,) = _pages(d, "/coach")
         assert "Live so far: not live on this computer yet" in _plan_box(coach)
@@ -274,14 +274,14 @@ class TestTheRiderSwitchedOff:
         research_file(d.data, "momentum_rider")                          # MADE-UP research: no edge
         today, total, own, coach = _pages(d, "/", "/?period=total", "/?bot=momentum_rider", "/coach")
         row = row_of(today, "Rapid Momentum Rider")
-        assert '<span class="lb-st off" title="Switched off - it places no trades">OFF</span>' in row
+        assert '<span class="bt-st off" title="Switched off - it places no trades">OFF</span>' in row
         assert row_word(row)[:2] == ("Off", "grey")
         assert '<span class="s-chip amber">NO EDGE</span>' in own and '<span class="s-mode">OFF</span>' in own
         sel = period_view(d.sd, d.deals, "today", now=NOW)
         tot = period_view(d.sd, d.deals, "total", now=NOW)
         assert row_figs(row) == {"Today": sel["bots"]["momentum_rider"]["made"],
                                  "Overall": tot["bots"]["momentum_rider"]["made"]}          # real money, not grey
-        assert "prac" not in row.split('<div class="lb-v"')[0]
+        assert "prac" not in row.split('<div class="bt-v')[0]
         assert ("Switched off - it places no trades; binned: its own test on real past prices found no edge. Its real "
                 "money from its LIVE days still counts in the account's figures.") in unescape(own)
         assert "<h2>Recommendation</h2><p>Leave it off - it is binned: do not put money on it.</p>" in own
@@ -486,7 +486,7 @@ class TestTheRowStaysPartLiveIfItsVerdictFails:
         d = a_formula1_day(tmp_path)
         home, own = _pages(d, "/", "/?bot=market_intelligence")
         row = row_of(home, "Trend &amp; Breakout")
-        assert '<span class="lb-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
+        assert '<span class="bt-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
         assert "Overall (practice)" not in row and "from its LIVE days" not in row
         assert "Its money on the main page is real (MetaTrader's)" in unescape(own)
         assert "from its LIVE days" not in unescape(own).split("<h2>Its detail</h2>")[0]
