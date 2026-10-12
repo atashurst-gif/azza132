@@ -1,10 +1,23 @@
 {
- "ts_utc": "2026-10-12T14:20:29+00:00",
+ "ts_utc": "2026-10-12T14:30:36+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
- "trader_up": false,
- "trader_reason": "trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running",
+ "trader_up": true,
+ "trader_reason": "",
  "account": {
-  "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
+  "currency": "GBP",
+  "start": "2026-10-05T11:30:42+00:00",
+  "open": 0,
+  "equity": 1862.16,
+  "balance": 1862.16,
+  "made": -137.84,
+  "error": "",
+  "source": "broker",
+  "day_start": "2026-10-11T23:00:00+00:00",
+  "today": 1.38,
+  "today_trades": 8,
+  "today_commission": 0.0,
+  "day_basis": "UK",
+  "about": "the page's standing block (MetaTrader's deal history): real money, every bot"
  },
  "bots": [
   {
@@ -12,8 +25,8 @@
    "label": "Trend & Breakout",
    "mode_set": "PAPER",
    "mode": "PAPER",
-   "running": false,
-   "mode_detail": "PAPER (FX_MINOR live)",
+   "running": true,
+   "mode_detail": "PAPER (FX_MINOR live, MOMENTUM_CONTINUATION only)",
    "live_groups": [
     "FX_MINOR"
    ],
@@ -23,10 +36,61 @@
     "count": 0,
     "source": "the paper record (tnb_paper.sqlite), read-only: simulated orders, not money"
    },
-   "health": "the trader's page did not answer: trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running",
+   "health": "RUNNING: running with 1 warning(s)",
+   "build": "4afa938109",
+   "last_scan": "14:30:28 UTC",
+   "last_trade": "JP225 2026-10-12T14:15",
+   "not_trading_because": [],
+   "positions_on_page": [],
+   "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus its real positions - its FX_MINOR trades, which are LIVE, and any left from LIVE; the real ones are also under open_on_account",
+   "thinking": [
+    {
+     "rank": 1,
+     "symbol": "AUDNZD",
+     "direction": "LONG",
+     "score": 32.71,
+     "tier": "NO_TRADE",
+     "tactic": "RANGE_REJECTION",
+     "regime": "RANGE / LOW VOL",
+     "reason": "AUDNZD: RANGE / LOW VOL market. Best idea is buy using range rejection. Execution supports it (89/100; spread 0.5 pips (0.8x normal), commission 1.3 pips). Structure supports it (82/100; unclear structure on M5). Multi Tf supports it (81/100; 6 timeframes weighed, higher ones first). Momentum supports it (78/100; efficiency 0.21, ADX 9). Room to the first obstacle is 0 pips, giving about 0.3 to 1 after 1.9 pips of cost. Blocked because: reward:risk only 0.29 after costs; costs would be 46% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only 0.29 after costs",
+      "costs would be 46% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 0.289
+    },
+    {
+     "rank": 2,
+     "symbol": "CADJPY",
+     "direction": "SHORT",
+     "score": 31.84,
+     "tier": "NO_TRADE",
+     "tactic": "VWAP_REVERSION",
+     "regime": "RANGE / LOW VOL",
+     "reason": "CADJPY: RANGE / LOW VOL market. Best idea is sell using vwap reversion. Execution supports it (92/100; spread 0.2 pips (0.7x normal), commission 1.2 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Momentum argues against it (27/100; efficiency 0.05, ADX 13). Participation argues against it (28/100; 0.1x median tick volume). Room to the first obstacle is 0 pips, giving about 0.6 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.56 after costs; costs would be 54% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only 0.56 after costs",
+      "costs would be 54% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 0.561
+    }
+   ],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990311,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-11T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": -12.41,
+    "trades": 1,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "momentum_rider",
@@ -35,7 +99,7 @@
    "mode": "PAPER",
    "status_file": "rider-status.json",
    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
-   "report_age_seconds": 169764.8,
+   "report_age_seconds": 170371.8,
    "running": false,
    "health": "RAPID MOMENTUM RIDER - OFF (rider.json says OFF, so it is not started)",
    "entries_allowed": false,
@@ -584,8 +648,16 @@
     "15:10:46 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
    ],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990811,
+    "mode": "OFF",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-11T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "open_on_account": []
   },
   {
    "id": "momentum_runner",
@@ -593,18 +665,26 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-12T14:20:23.368515+00:00",
-   "report_age_seconds": 5.6,
+   "updated_utc": "2026-10-12T14:30:34.397897+00:00",
+   "report_age_seconds": 1.6,
    "running": true,
-   "health": "WATCHING, LIVE, last report 6 s ago",
+   "health": "WATCHING, LIVE, last report 2 s ago",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
    "refused_today": 0,
    "skipped_today": 0,
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990511,
+    "mode": "LIVE",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-11T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "open_on_account": []
   },
   {
    "id": "band_breaker",
@@ -612,15 +692,42 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-12T14:20:23.368515+00:00",
-   "report_age_seconds": 5.6,
+   "updated_utc": "2026-10-12T14:30:34.397897+00:00",
+   "report_age_seconds": 1.6,
    "running": true,
-   "health": "WATCHING, PAPER, last report 6 s ago",
-   "status": "WATCHING",
-   "open_trades": [],
+   "health": "IN TRADE, PAPER, last report 2 s ago",
+   "status": "IN TRADE",
+   "open_trades": [
+    {
+     "ticket": 700000001,
+     "symbol": "USTEC",
+     "side": "SELL",
+     "entry": 30673.99,
+     "stop": 30721.08,
+     "initial_stop": 30721.08,
+     "r_now": 0.13,
+     "peak_r": 0.13,
+     "pnl": 0.91,
+     "opened": "2026-10-12T14:30:01.212925+00:00",
+     "mode": "PAPER"
+    }
+   ],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990611,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-11T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": 0,
+    "trades": 0,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "crowd_fader",
@@ -628,10 +735,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-12T14:20:23.368515+00:00",
-   "report_age_seconds": 5.6,
+   "updated_utc": "2026-10-12T14:30:34.397897+00:00",
+   "report_age_seconds": 1.6,
    "running": true,
-   "health": "IN TRADE, PAPER, last report 6 s ago",
+   "health": "IN TRADE, PAPER, last report 2 s ago",
    "status": "IN TRADE",
    "open_trades": [
     {
@@ -643,14 +750,27 @@
      "initial_stop": 60.696,
      "r_now": -0.4,
      "peak_r": 0.04,
-     "pnl": -4.02,
+     "pnl": -4.04,
      "opened": "2026-10-12T14:17:58.222933+00:00",
      "mode": "PAPER"
     }
    ],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990711,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-11T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": 30.87,
+    "trades": 3,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "financial_ian",
@@ -658,17 +778,17 @@
    "mode_set": "LIVE",
    "mode": "LIVE",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-12T14:20:28.298022+00:00",
-   "report_age_seconds": 0.7,
+   "updated_utc": "2026-10-12T14:30:36.006361+00:00",
+   "report_age_seconds": -0.0,
    "running": true,
    "health": "FINANCIAL IAN - HEALTHY, LIVE, feed LIVE",
    "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
    "feed": {
     "state": "LIVE",
-    "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 10 USDT steps, ETHUSDT in 0.5 USDT steps; this computer's clock is 1.2 s behind Binance's - check its time settings",
+    "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 20 USDT steps, ETHUSDT in 1 USDT steps",
     "vendor": "binance",
     "synthetic": false,
-    "events": 2561082
+    "events": 77912
    },
    "data_label": "LIVE",
    "metatrader_connected": true,
@@ -691,8 +811,16 @@
     "data_source": "LIVE FEED"
    },
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 5s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-12T07:58:54.042270+00:00 ian: started (pid 44118), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 1.38,
+    "trades": 8,
+    "magic": 990911,
+    "mode": "LIVE",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-11T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "open_on_account": []
   }
  ]
 }
