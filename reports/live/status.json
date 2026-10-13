@@ -87,7 +87,7 @@
     "strategy_name": "Commission First (version 5)",
     "build": "0d07d26946",
     "started": "2026-10-13 11:33 UTC",
-    "last_scan": "14:47:48 UTC",
+    "last_scan": "14:58:18 UTC",
     "last_trade": "US30 2026-10-13T14:19",
     "not_trading_because": [],
     "strategy_rules": {
@@ -98,11 +98,11 @@
       "max_new_positions_per_day": 0,
       "sessions": []
     },
-    "cycles": 2096,
-    "uptime_minutes": 194.7
+    "cycles": 2210,
+    "uptime_minutes": 205.2
   },
   "health": {
-    "as_of": "2026-10-13T14:47:48.577150+00:00",
+    "as_of": "2026-10-13T14:58:18.442958+00:00",
     "safe_mode": false,
     "entries_allowed": true,
     "summary": "running with 1 warning(s)",
@@ -110,9 +110,9 @@
       {
         "name": "DISK",
         "severity": "OK",
-        "message": "36476 MB of disk space free",
+        "message": "36471 MB of disk space free",
         "detail": {
-          "free_mb": 36476.5
+          "free_mb": 36470.7
         }
       },
       {
@@ -120,15 +120,15 @@
         "severity": "OK",
         "message": "memory 84% used",
         "detail": {
-          "percent": 84.4
+          "percent": 83.6
         }
       },
       {
         "name": "CLOCK",
         "severity": "OK",
-        "message": "clock agrees with the broker (within 5s)",
+        "message": "clock agrees with the broker (within 3s)",
         "detail": {
-          "skew_seconds": 4.6
+          "skew_seconds": 3.4
         }
       },
       {
@@ -164,16 +164,16 @@
         "severity": "OK",
         "message": "live prices arriving (0s old)",
         "detail": {
-          "freshest_age_seconds": 0.1,
+          "freshest_age_seconds": 0.2,
           "weekend": false
         }
       },
       {
         "name": "NEWS",
         "severity": "OK",
-        "message": "calendar live (45 events known)",
+        "message": "calendar live (46 events known)",
         "detail": {
-          "events_known": 45
+          "events_known": 46
         }
       },
       {
@@ -185,10 +185,10 @@
       {
         "name": "HEARTBEATS",
         "severity": "WARN",
-        "message": "these parts of the system have stopped reporting: rider (257805s)",
+        "message": "these parts of the system have stopped reporting: rider (258435s)",
         "detail": {
           "stale": {
-            "rider": 257805.3
+            "rider": 258435.1
           }
         }
       },
@@ -197,7 +197,7 @@
         "severity": "OK",
         "message": "markets scanned 6s ago",
         "detail": {
-          "age_seconds": 5.8
+          "age_seconds": 5.5
         }
       },
       {
@@ -211,63 +211,124 @@
   "thinking": [
     {
       "rank": 1,
-      "symbol": "AUDNZD",
-      "direction": "SHORT",
-      "score": 37.74,
-      "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "AUDNZD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Momentum supports it (74/100; efficiency 0.08, ADX 14). Execution supports it (70/100; spread 0.5 pips (1.7x normal), commission 1.3 pips). Regime supports it (65/100; RANGE / NORMAL VOL). Room to the first obstacle is 2 pips, giving about 0.7 to 1 after 2.1 pips of cost. Blocked because: reward:risk only 0.67 after costs; costs would be 62% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "symbol": "AUDCHF",
+      "direction": "LONG",
+      "score": 66.79,
+      "tier": "NORMAL",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "AUDCHF: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Structure supports it (98/100; up structure on M5). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (80/100; volatility at the 99th percentile). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Room to the first obstacle is 3 pips, giving about 1.5 to 1 after 1.1 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 67); NORMAL setup - only STRONG or better is traded; reward:risk only 1.48 after costs; costs would be 42% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.67 after costs",
-        "costs would be 62% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "momentum continuation needs a score of 70+ (this is 67)",
+        "NORMAL setup - only STRONG or better is traded",
+        "reward:risk only 1.48 after costs",
+        "costs would be 42% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.667
+      "reward_risk": 1.482
     },
     {
       "rank": 2,
-      "symbol": "EURGBP",
+      "symbol": "XAGEUR",
       "direction": "SHORT",
-      "score": 35.29,
-      "tier": "NO_TRADE",
-      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "EURGBP: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Momentum argues against it (19/100; efficiency 0.01, ADX 13). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Execution supports it (77/100; spread 0.3 pips (1.0x normal), commission 0.6 pips). Room to the first obstacle is 0 pips, giving about -0.1 to 1 after 0.9 pips of cost. Blocked because: reward:risk only -0.15 after costs.",
+      "score": 64.06,
+      "tier": "NORMAL",
+      "tactic": "BREAKOUT_ACCEPTANCE",
+      "regime": "UNCLEAR / NORMAL VOL",
+      "reason": "XAGEUR: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution supports it (98/100; spread 6.0 pips (0.4x normal), commission 6.6 pips). Structure supports it (92/100; unclear structure on M5). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Multi Tf supports it (75/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 121 pips, giving about 0.9 to 1 after 14.1 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.90 after costs.",
       "blockers": [
-        "reward:risk only -0.15 after costs"
+        "NORMAL setup - only STRONG or better is traded",
+        "reward:risk only 0.90 after costs"
       ],
-      "reward_risk": -0.146
+      "reward_risk": 0.895
     },
     {
       "rank": 3,
-      "symbol": "NZDUSD",
-      "direction": "SHORT",
-      "score": 29.24,
+      "symbol": "NZDCHF",
+      "direction": "LONG",
+      "score": 46.46,
       "tier": "NO_TRADE",
-      "tactic": "VWAP_REVERSION",
-      "regime": "RANGE / NORMAL VOL",
-      "reason": "NZDUSD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Regime supports it (85/100; RANGE / NORMAL VOL). Execution supports it (78/100; spread 0.1 pips (1.0x normal), commission 0.7 pips). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Cross Market argues against it (26/100; 0 related markets with a usable relationship; NZD 68 vs USD 6). Room to the first obstacle is 0 pips, giving about 0.9 to 1 after 0.8 pips of cost. Blocked because: reward:risk only 0.88 after costs; costs would be 33% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "NZDCHF: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Structure supports it (98/100; up structure on M5). Volatility supports it (79/100; volatility at the 98th percentile). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Regime supports it (76/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 2 pips, giving about 1.1 to 1 after 1.3 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 46); reward:risk only 1.14 after costs; costs would be 64% of the stop distance (limit 20%) - too small a trade to pay for itself.",
       "blockers": [
-        "reward:risk only 0.88 after costs",
-        "costs would be 33% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "momentum continuation needs a score of 70+ (this is 46)",
+        "reward:risk only 1.14 after costs",
+        "costs would be 64% of the stop distance (limit 20%) - too small a trade to pay for itself"
       ],
-      "reward_risk": 0.88
+      "reward_risk": 1.144
     },
     {
       "rank": 4,
-      "symbol": "WTI_Z6",
-      "direction": "LONG",
-      "score": 26.0,
+      "symbol": "US500",
+      "direction": "SHORT",
+      "score": 45.54,
       "tier": "NO_TRADE",
       "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-      "regime": "UNCLEAR / HIGH VOL",
-      "reason": "WTI_Z6: UNCLEAR / HIGH VOL market. Best idea is buy using liquidity sweep reversal. Execution argues against it (0/100; spread 4.0 pips (4.0x normal), commission 7.9 pips). Structure supports it (80/100; range structure on M5). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Volatility supports it (67/100; volatility at the 92th percentile). Room to the first obstacle is 11 pips, giving about 0.4 to 1 after 18.9 pips of cost. Blocked because: spread is 4.0x its normal size; reward:risk only 0.40 after costs; costs would be 37% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "regime": "RANGE / NORMAL VOL",
+      "reason": "US500: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (94/100; spread 30.0 pips (0.6x normal)). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Momentum argues against it (28/100; efficiency 0.04, ADX 13). Room to the first obstacle is 150 pips, giving about 0.0 to 1 after 37.5 pips of cost. Blocked because: reward:risk only 0.04 after costs.",
       "blockers": [
-        "spread is 4.0x its normal size",
-        "reward:risk only 0.40 after costs",
-        "costs would be 37% of the stop distance (limit 20%) - too small a trade to pay for itself"
+        "reward:risk only 0.04 after costs"
       ],
-      "reward_risk": 0.398
+      "reward_risk": 0.042
+    },
+    {
+      "rank": 5,
+      "symbol": "EURGBP",
+      "direction": "SHORT",
+      "score": 38.44,
+      "tier": "NO_TRADE",
+      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+      "regime": "RANGE / HIGH VOL",
+      "reason": "EURGBP: RANGE / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Structure supports it (100/100; down structure on M5). Execution supports it (85/100; spread 0.3 pips (1.0x normal), commission 0.6 pips). Volatility supports it (80/100; volatility at the 100th percentile). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Room to the first obstacle is 0 pips, giving about -0.2 to 1 after 0.9 pips of cost. Blocked because: reward:risk only -0.16 after costs.",
+      "blockers": [
+        "reward:risk only -0.16 after costs"
+      ],
+      "reward_risk": -0.16
+    },
+    {
+      "rank": 6,
+      "symbol": "NZDJPY",
+      "direction": "LONG",
+      "score": 32.85,
+      "tier": "NO_TRADE",
+      "tactic": "SQUEEZE_RELEASE",
+      "regime": "SQUEEZE / HIGH VOL",
+      "reason": "NZDJPY: SQUEEZE / HIGH VOL market. Best idea is buy using squeeze release. Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Volatility supports it (77/100; volatility at the 92th percentile). Multi Tf supports it (77/100; 6 timeframes weighed, higher ones first). Structure supports it (70/100; range structure on M5). Room to the first obstacle is 2 pips, giving about 1.4 to 1 after 1.9 pips of cost. Blocked because: reward:risk only 1.38 after costs; costs would be 43% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "reward:risk only 1.38 after costs",
+        "costs would be 43% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.379
+    },
+    {
+      "rank": 7,
+      "symbol": "EURAUD",
+      "direction": "SHORT",
+      "score": 29.22,
+      "tier": "NO_TRADE",
+      "tactic": "MOMENTUM_CONTINUATION",
+      "regime": "HIGH_VOL / HIGH VOL",
+      "reason": "EURAUD: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Structure supports it (98/100; down structure on M5). Volatility supports it (80/100; volatility at the 100th percentile). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Regime supports it (76/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 0 pips, giving about 1.7 to 1 after 1.8 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 29); reward:risk only 1.67 after costs; costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+      "blockers": [
+        "momentum continuation needs a score of 70+ (this is 29)",
+        "reward:risk only 1.67 after costs",
+        "costs would be 31% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      ],
+      "reward_risk": 1.674
+    },
+    {
+      "rank": 8,
+      "symbol": "GBPUSD",
+      "direction": "SHORT",
+      "score": 25.12,
+      "tier": "NO_TRADE",
+      "tactic": "VWAP_REVERSION",
+      "regime": "RANGE / HIGH VOL",
+      "reason": "GBPUSD: RANGE / HIGH VOL market. Best idea is sell using vwap reversion. Regime supports it (85/100; RANGE / HIGH VOL). Momentum argues against it (22/100; efficiency 0.06, ADX 18). Session supports it (78/100; session: LONDON,NEWYORK,US_CASH,LONDON_NY_OVERLAP). Volatility supports it (66/100; volatility at the 89th percentile). Room to the first obstacle is 2 pips, giving about 0.6 to 1 after 1.1 pips of cost. Blocked because: reward:risk only 0.63 after costs.",
+      "blockers": [
+        "reward:risk only 0.63 after costs"
+      ],
+      "reward_risk": 0.629
     }
   ],
   "results": {
@@ -1168,9 +1229,9 @@
       "id": "crowd_fader",
       "label": "Crowd Fader",
       "currency": "GBP",
-      "net_today": 22.67,
+      "net_today": 23.71,
       "realised": 7.48,
-      "unrealised": 15.19,
+      "unrealised": 16.23,
       "trades": 2,
       "wins": 1,
       "losses": 1,
@@ -1522,7 +1583,7 @@
       "strategy_id": "rapid_scalper",
       "label": "Rapid Scalper",
       "tagline": "High-Velocity Session Rider (version 3): seconds-level acceleration in a scalpable market; cut failed scalps fast, protect winners, give exceptional winners room.",
-      "status": "NOT RUNNING (last seen 6121 min ago)",
+      "status": "NOT RUNNING (last seen 6132 min ago)",
       "mode": "PAPER",
       "build": "3635e80773",
       "updated": "2026-10-09T08:46:48.494685+00:00",
@@ -1949,7 +2010,7 @@
       ],
       "planned_max_trade_risk_gbp": 10.0,
       "present": true,
-      "age_seconds": 367262.347893
+      "age_seconds": 367892.191236
     },
     "runner": {
       "strategy_id": "momentum_runner",
@@ -1965,7 +2026,7 @@
       "note": "",
       "orphans": [],
       "unmanaged": [],
-      "updated": "2026-10-13T14:47:48.570426+00:00",
+      "updated": "2026-10-13T14:58:18.439501+00:00",
       "trail_r": 3.0,
       "window_hours": 8.0,
       "skip_tactics": [
@@ -1981,7 +2042,7 @@
       "markets": "every index market the main bot trades",
       "open": [],
       "present": true,
-      "age_seconds": 2.3
+      "age_seconds": 2.2
     },
     "bandbreaker": {
       "strategy_id": "band_breaker",
@@ -1993,7 +2054,7 @@
       "executor_error": "",
       "refused": 0,
       "status": "WATCHING",
-      "updated": "2026-10-13T14:47:48.570426+00:00",
+      "updated": "2026-10-13T14:58:18.439501+00:00",
       "markets": [
         "US500",
         "US30",
@@ -2002,9 +2063,9 @@
       "session": "09:30-16:00 New York, flat by 15:55",
       "rule": "average noise of the last 14 sessions; checks every 30 min from 10:00; at most 3 entries a day per market; 10 at the stop",
       "markets_now": {
-        "US500": "band 7782.39 - 7825.13 (noise 0.22% by 10:30 NY), VWAP 7804.67, price 7802.35",
-        "US30": "band 51727.17 - 52458.26 (noise 0.23% by 10:30 NY), VWAP 51942.54, price 51845.45",
-        "USTEC": "band 30271.34 - 30793.77 (noise 0.40% by 10:30 NY), VWAP 30534.51, price 30528.05"
+        "US500": "band 7782.39 - 7825.13 (noise 0.22% by 10:30 NY), VWAP 7804.14, price 7796.35",
+        "US30": "band 51727.17 - 52458.26 (noise 0.23% by 10:30 NY), VWAP 51931.54, price 51794.45",
+        "USTEC": "band 30271.34 - 30793.77 (noise 0.40% by 10:30 NY), VWAP 30530.17, price 30484.15"
       },
       "open": [],
       "unmanaged": [],
@@ -2110,7 +2171,7 @@
         }
       ],
       "present": true,
-      "age_seconds": 2.3
+      "age_seconds": 2.2
     },
     "crowd": {
       "strategy_id": "crowd_fader",
@@ -2123,7 +2184,7 @@
       "refused": 0,
       "estimated_rows": 0,
       "status": "IN TRADE",
-      "updated": "2026-10-13T14:47:48.570426+00:00",
+      "updated": "2026-10-13T14:58:18.439501+00:00",
       "key_present": true,
       "markets": [
         "XAUUSD",
@@ -2136,87 +2197,87 @@
         "XBRUSD"
       ],
       "rule": "crowd 50% net one way and the winners not with them; score 60+; entry on a 15-min close beyond the last 8; stop beyond the last 4 bars; target the nearest cluster or 2 R; out after 24 h; at most 2 a day per market; 10 at the stop (the smallest size up to 30); reads every 10 min",
-      "last_poll": "2026-10-13T14:38:43.147062+00:00",
-      "polls": 19,
+      "last_poll": "2026-10-13T14:49:05.865088+00:00",
+      "polls": 20,
       "poll_error": "",
-      "api_calls": 304,
+      "api_calls": 320,
       "api_remaining": 49,
       "markets_now": {
-        "XAUUSD": "in trade: SELL from 4183.21, +1.20 R, stop 4193.86, target 4161.94",
-        "XAGUSD": "in trade: SELL from 59.97, +0.75 R, stop 60.457, target 58.802",
-        "US500": "crowd 62% long (2,478 wallets); Apex and Sharps balanced by money; 23.4m of longs liquidate below vs 67.8m of shorts above; not stretched: nothing to fade",
-        "JP225": "too few crowd wallets to read (135 < 200)",
+        "XAUUSD": "in trade: SELL from 4183.21, +1.30 R, stop 4193.86, target 4161.94",
+        "XAGUSD": "in trade: SELL from 59.97, +0.79 R, stop 60.457, target 58.802",
+        "US500": "crowd 62% long (2,483 wallets); Apex and Sharps balanced by money; 23.1m of longs liquidate below vs 67.7m of shorts above; not stretched: nothing to fade",
+        "JP225": "too few crowd wallets to read (134 < 200)",
         "EURUSD": "crowd 53% short (204 wallets); Apex and Sharps 59% long by money; 2.3m of longs liquidate below vs 3.2m of shorts above; not stretched: nothing to fade",
         "GBPUSD": "too few crowd wallets to read (58 < 200)",
-        "XTIUSD": "crowd 69% long (1,148 wallets); Apex and Sharps 14% short by money; 1.8m of longs liquidate below vs 676k of shorts above; not stretched: nothing to fade",
-        "XBRUSD": "crowd 56% long (1,131 wallets); Apex and Sharps 17% short by money; 6.9m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade"
+        "XTIUSD": "crowd 69% long (1,151 wallets); Apex and Sharps 15% short by money; 1.4m of longs liquidate below vs 808k of shorts above; not stretched: nothing to fade",
+        "XBRUSD": "crowd 56% long (1,133 wallets); Apex and Sharps 17% short by money; 6.7m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade"
       },
       "reads": {
         "XAUUSD": {
           "coin": "xyz:GOLD",
-          "at": "2026-10-13T14:38:43.147062+00:00",
+          "at": "2026-10-13T14:49:05.865088+00:00",
           "crowd_long_pct": 82.7,
-          "crowd_wallets": 2464,
+          "crowd_wallets": 2453,
           "crowd_bias": 0.65,
           "winners_bias": -0.1,
-          "fuel_below": 3427807,
-          "fuel_above": 138869,
+          "fuel_below": 4004709,
+          "fuel_above": 133098,
           "direction": -1,
           "score": 68.1,
-          "reason": "crowd 83% long (2,464 wallets); Apex and Sharps 10% short by money; 3.4m of longs liquidate below vs 139k of shorts above; lean SHORT, score 68/100",
-          "hl_price": 4167.0
+          "reason": "crowd 83% long (2,453 wallets); Apex and Sharps 10% short by money; 4.0m of longs liquidate below vs 133k of shorts above; lean SHORT, score 68/100",
+          "hl_price": 4166.7
         },
         "XAGUSD": {
           "coin": "xyz:SILVER",
-          "at": "2026-10-13T14:38:43.147062+00:00",
-          "crowd_long_pct": 81.7,
-          "crowd_wallets": 1152,
-          "crowd_bias": 0.63,
+          "at": "2026-10-13T14:49:05.865088+00:00",
+          "crowd_long_pct": 81.8,
+          "crowd_wallets": 1150,
+          "crowd_bias": 0.64,
           "winners_bias": -0.02,
-          "fuel_below": 3538916,
-          "fuel_above": 955,
+          "fuel_below": 3600292,
+          "fuel_above": 952,
           "direction": -1,
-          "score": 61.4,
-          "reason": "crowd 82% long (1,152 wallets); Apex and Sharps balanced by money; 3.5m of longs liquidate below vs 955 of shorts above; lean SHORT, score 61/100",
-          "hl_price": 59.51
+          "score": 61.5,
+          "reason": "crowd 82% long (1,150 wallets); Apex and Sharps balanced by money; 3.6m of longs liquidate below vs 952 of shorts above; lean SHORT, score 62/100",
+          "hl_price": 59.548
         },
         "US500": {
           "coin": "xyz:SP500",
-          "at": "2026-10-13T14:38:43.147062+00:00",
-          "crowd_long_pct": 62.1,
-          "crowd_wallets": 2478,
+          "at": "2026-10-13T14:49:05.865088+00:00",
+          "crowd_long_pct": 62.0,
+          "crowd_wallets": 2483,
           "crowd_bias": 0.24,
-          "winners_bias": 0.04,
-          "fuel_below": 23376922,
-          "fuel_above": 67817690,
+          "winners_bias": 0.05,
+          "fuel_below": 23141824,
+          "fuel_above": 67689448,
           "direction": 0,
-          "score": 15.1,
-          "reason": "crowd 62% long (2,478 wallets); Apex and Sharps balanced by money; 23.4m of longs liquidate below vs 67.8m of shorts above; not stretched: nothing to fade",
-          "hl_price": 7802.4
+          "score": 15.0,
+          "reason": "crowd 62% long (2,483 wallets); Apex and Sharps balanced by money; 23.1m of longs liquidate below vs 67.7m of shorts above; not stretched: nothing to fade",
+          "hl_price": 7800.2
         },
         "JP225": {
           "coin": "xyz:JP225",
-          "at": "2026-10-13T14:38:43.147062+00:00",
-          "crowd_long_pct": 67.4,
-          "crowd_wallets": 135,
-          "crowd_bias": 0.35,
+          "at": "2026-10-13T14:49:05.865088+00:00",
+          "crowd_long_pct": 67.9,
+          "crowd_wallets": 134,
+          "crowd_bias": 0.36,
           "winners_bias": 0.34,
-          "fuel_below": 176197,
-          "fuel_above": 296582,
+          "fuel_below": 175731,
+          "fuel_above": 296310,
           "direction": 0,
           "score": 0.0,
-          "reason": "too few crowd wallets to read (135 < 200)",
-          "hl_price": 67888.0
+          "reason": "too few crowd wallets to read (134 < 200)",
+          "hl_price": 67866.0
         },
         "EURUSD": {
           "coin": "xyz:EUR",
-          "at": "2026-10-13T14:38:43.147062+00:00",
+          "at": "2026-10-13T14:49:05.865088+00:00",
           "crowd_long_pct": 47.1,
           "crowd_wallets": 204,
           "crowd_bias": -0.06,
           "winners_bias": 0.59,
-          "fuel_below": 2257480,
-          "fuel_above": 3173610,
+          "fuel_below": 2256929,
+          "fuel_above": 3178840,
           "direction": 0,
           "score": 3.7,
           "reason": "crowd 53% short (204 wallets); Apex and Sharps 59% long by money; 2.3m of longs liquidate below vs 3.2m of shorts above; not stretched: nothing to fade",
@@ -2224,45 +2285,45 @@
         },
         "GBPUSD": {
           "coin": "xyz:GBP",
-          "at": "2026-10-13T14:38:43.147062+00:00",
+          "at": "2026-10-13T14:49:05.865088+00:00",
           "crowd_long_pct": 63.8,
           "crowd_wallets": 58,
           "crowd_bias": 0.28,
           "winners_bias": 0.92,
-          "fuel_below": 317723,
-          "fuel_above": 323817,
+          "fuel_below": 319056,
+          "fuel_above": 323803,
           "direction": 0,
           "score": 0.0,
           "reason": "too few crowd wallets to read (58 < 200)",
-          "hl_price": 1.3241
+          "hl_price": 1.3239
         },
         "XTIUSD": {
           "coin": "xyz:CL",
-          "at": "2026-10-13T14:38:43.147062+00:00",
-          "crowd_long_pct": 69.2,
-          "crowd_wallets": 1148,
+          "at": "2026-10-13T14:49:05.865088+00:00",
+          "crowd_long_pct": 69.0,
+          "crowd_wallets": 1151,
           "crowd_bias": 0.38,
-          "winners_bias": -0.14,
-          "fuel_below": 1772168,
-          "fuel_above": 675705,
+          "winners_bias": -0.15,
+          "fuel_below": 1431477,
+          "fuel_above": 808423,
           "direction": 0,
-          "score": 24.0,
-          "reason": "crowd 69% long (1,148 wallets); Apex and Sharps 14% short by money; 1.8m of longs liquidate below vs 676k of shorts above; not stretched: nothing to fade",
-          "hl_price": 92.67200000000001
+          "score": 23.7,
+          "reason": "crowd 69% long (1,151 wallets); Apex and Sharps 15% short by money; 1.4m of longs liquidate below vs 808k of shorts above; not stretched: nothing to fade",
+          "hl_price": 92.835
         },
         "XBRUSD": {
           "coin": "xyz:BRENTOIL",
-          "at": "2026-10-13T14:38:43.147062+00:00",
-          "crowd_long_pct": 56.1,
-          "crowd_wallets": 1131,
-          "crowd_bias": 0.12,
+          "at": "2026-10-13T14:49:05.865088+00:00",
+          "crowd_long_pct": 55.6,
+          "crowd_wallets": 1133,
+          "crowd_bias": 0.11,
           "winners_bias": -0.17,
-          "fuel_below": 6867595,
-          "fuel_above": 3317171,
+          "fuel_below": 6706986,
+          "fuel_above": 3337717,
           "direction": 0,
-          "score": 7.7,
-          "reason": "crowd 56% long (1,131 wallets); Apex and Sharps 17% short by money; 6.9m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade",
-          "hl_price": 102.98
+          "score": 7.0,
+          "reason": "crowd 56% long (1,133 wallets); Apex and Sharps 17% short by money; 6.7m of longs liquidate below vs 3.3m of shorts above; not stretched: nothing to fade",
+          "hl_price": 103.06
         }
       },
       "open": [
@@ -2274,9 +2335,9 @@
           "stop": 4193.86,
           "target": 4161.94,
           "initial_stop": 4193.86,
-          "r_now": 1.2,
+          "r_now": 1.3,
           "peak_r": 1.9,
-          "pnl": 9.65,
+          "pnl": 10.45,
           "opened": "2026-10-13T09:30:04.406732+00:00",
           "mode": "PAPER"
         },
@@ -2288,9 +2349,9 @@
           "stop": 60.457,
           "target": 58.802,
           "initial_stop": 60.457,
-          "r_now": 0.75,
+          "r_now": 0.79,
           "peak_r": 1.09,
-          "pnl": 5.54,
+          "pnl": 5.78,
           "opened": "2026-10-13T13:00:50.560196+00:00",
           "mode": "PAPER"
         }
@@ -2302,7 +2363,7 @@
         "XAUUSD": 1
       },
       "present": true,
-      "age_seconds": 2.3
+      "age_seconds": 2.2
     },
     "rider": {
       "strategy_id": "momentum_rider",
@@ -3167,8 +3228,8 @@
       ],
       "cycle_ms": 179.6,
       "present": true,
-      "age_seconds": 257806.6,
-      "status": "NOT RUNNING (last seen 4297 min ago)",
+      "age_seconds": 258436.4,
+      "status": "NOT RUNNING (last seen 4307 min ago)",
       "stale": true
     },
     "ian": {
@@ -3178,7 +3239,7 @@
       "magic": 990911,
       "mode": "PAPER",
       "running": true,
-      "updated": "2026-10-13T14:47:48.850802+00:00",
+      "updated": "2026-10-13T14:58:20.368003+00:00",
       "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
       "data_source": "LIVE FEED",
       "data_label": "LIVE",
@@ -3202,7 +3263,7 @@
         },
         "data_class": "EXCHANGE",
         "synthetic": false,
-        "events": 1681781,
+        "events": 1764219,
         "subscribed": [
           "BTCUSDT",
           "ETHUSDT"
@@ -3212,8 +3273,8 @@
           "ETHUSDT": "LIVE"
         },
         "latency_ms": {
-          "BTCUSDT": -91.2,
-          "ETHUSDT": -85.4
+          "BTCUSDT": -115.1,
+          "ETHUSDT": -113.8
         }
       },
       "mt5": {
@@ -3222,16 +3283,16 @@
         "note": "MT5 spot quotes, bars and calendar: RETAIL data, used for the chart, confirmation and execution only"
       },
       "top_opportunity": {
-        "instrument": "ETHUSDT",
-        "root": "ETHUSDT",
-        "spot_symbol": "ETHUSD",
-        "ts": "2026-10-13T14:47:48.850802+00:00",
+        "instrument": "BTCUSDT",
+        "root": "BTCUSDT",
+        "spot_symbol": "BTCUSD",
+        "ts": "2026-10-13T14:58:20.368003+00:00",
         "direction": -1,
         "spot_direction": -1,
         "spot_side": "SELL",
-        "score": 15.1,
-        "confidence": 0.151,
-        "strength": 0.068,
+        "score": 43.0,
+        "confidence": 0.43,
+        "strength": 0.194,
         "regime": {
           "regime": "BALANCED",
           "reasons": [
@@ -3246,51 +3307,51 @@
         "components": [
           {
             "name": "order_flow",
-            "value": -0.866,
+            "value": -0.997,
             "weight": 0.8,
             "group": "FLOW",
             "source": "EXCHANGE",
-            "note": "OFI -0.96 (5 s), -5.09 (30 s) touch-depths"
+            "note": "OFI -3.02 (5 s), -7.74 (30 s) touch-depths"
           },
           {
             "name": "aggressive",
-            "value": -0.063,
+            "value": -0.423,
             "weight": 1.2,
             "group": "FLOW",
             "source": "EXCHANGE",
-            "note": "aggression -0.76 (5 s) -0.04 (30 s), intensity 0.5x, large prints +0.11"
+            "note": "aggression -0.76 (5 s) -0.03 (30 s), intensity 3.9x, large prints +0.09"
           },
           {
             "name": "delta_footprint",
-            "value": -0.007,
+            "value": -0.023,
             "weight": 0.6,
             "group": "FLOW",
             "source": "EXCHANGE",
-            "note": "no stacked imbalance, delta slope -0.02"
+            "note": "no stacked imbalance, delta slope -0.06"
           },
           {
             "name": "book_pressure",
-            "value": -0.226,
+            "value": -0.172,
             "weight": 1.44,
             "group": "BOOK",
             "source": "EXCHANGE",
-            "note": "imbalance -0.20 now, -0.06 over 30 s, microprice -0.66"
+            "note": "imbalance -0.11 now, -0.11 over 30 s, microprice -0.43"
           },
           {
             "name": "liquidity_ahead",
-            "value": -0.471,
+            "value": 0.068,
             "weight": 0.5,
             "group": "BOOK",
             "source": "EXCHANGE",
-            "note": "near depth bid 84% / offer 118% of normal"
+            "note": "near depth bid 110% / offer 105% of normal"
           },
           {
             "name": "consumption",
-            "value": -0.012,
+            "value": -0.082,
             "weight": 1.0,
             "group": "CONSUMPTION",
             "source": "EXCHANGE",
-            "note": "consumed-vs-replenished -0.00, pulling -0.03, walls +0.00, sweep +0"
+            "note": "consumed-vs-replenished +0.01, pulling -0.29, walls +0.00, sweep +0"
           },
           {
             "name": "absorption",
@@ -3302,66 +3363,64 @@
           },
           {
             "name": "profile_vwap",
-            "value": 0.75,
+            "value": 0.5,
             "weight": 0.4,
             "group": "CONTEXT",
             "source": "EXCHANGE",
-            "note": "ABOVE VALUE, +15.3 ticks from VWAP"
+            "note": "IN VALUE, +5.1 ticks from VWAP"
           },
           {
             "name": "chart",
-            "value": 0.731,
+            "value": -0.147,
             "weight": 0.7,
             "group": "CHART",
             "source": "RETAIL",
-            "note": "the ETHUSD chart is rising, at the top of the day's range"
+            "note": "the BTCUSD chart is flat, inside the day's range"
           }
         ],
         "groups": {
-          "FLOW": -0.297,
-          "BOOK": -0.289,
-          "CONSUMPTION": -0.012,
+          "FLOW": -0.507,
+          "BOOK": -0.11,
+          "CONSUMPTION": -0.082,
           "ABSORPTION": 0.0,
-          "CONTEXT": 0.75,
-          "CHART": 0.731
+          "CONTEXT": 0.5,
+          "CHART": -0.147
         },
         "agree": [
-          "FLOW",
-          "BOOK"
+          "FLOW"
         ],
         "against": [
-          "CONTEXT",
-          "CHART"
+          "CONTEXT"
         ],
         "tradeable": false,
-        "why_not": "score 15 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT, CHART",
-        "reasoning": "The order flow at the top of the book favours sellers, the book leans to the offer (pressure -0.23) and has for 69% of the last 30 seconds, and there is little resting liquidity below the price. Binance's public ETHUSDT order book points to ETH falling, so ETHUSD SELL (the broker's CFD). Against it: context, chart.",
+        "why_not": "score 43 below 70; 1 independent groups agree (1 from the book); 3 (2) needed; strong evidence against: CONTEXT",
+        "reasoning": "The order flow at the top of the book favours sellers, sellers are hitting the BTC bids (51% of the last 30 seconds' aggressive volume), and the book leans to the offer (pressure -0.17) and has for 93% of the last 30 seconds. Binance's public BTCUSDT order book points to BTC falling, so BTCUSD SELL (the broker's CFD). Against it: context.",
         "data_class": "EXCHANGE"
       },
-      "reasoning": "The order flow at the top of the book favours sellers, the book leans to the offer (pressure -0.23) and has for 69% of the last 30 seconds, and there is little resting liquidity below the price. Binance's public ETHUSDT order book points to ETH falling, so ETHUSD SELL (the broker's CFD). Against it: context, chart.",
+      "reasoning": "The order flow at the top of the book favours sellers, sellers are hitting the BTC bids (51% of the last 30 seconds' aggressive volume), and the book leans to the offer (pressure -0.17) and has for 93% of the last 30 seconds. Binance's public BTCUSDT order book points to BTC falling, so BTCUSD SELL (the broker's CFD). Against it: context.",
       "opportunities": {
         "BTCUSDT": {
-          "score": 5.2,
-          "direction": 0,
+          "score": 43.0,
+          "direction": -1,
           "spot": "BTCUSD",
-          "spot_side": "",
+          "spot_side": "SELL",
           "regime": "BALANCED",
           "tradeable": false,
-          "why_not": "no side has the advantage; score 5 below 70; 0 independent groups agree (0 from the book); 3 (2) needed"
+          "why_not": "score 43 below 70; 1 independent groups agree (1 from the book); 3 (2) needed; strong evidence against: CONTEXT"
         },
         "ETHUSDT": {
-          "score": 15.1,
+          "score": 24.3,
           "direction": -1,
           "spot": "ETHUSD",
           "spot_side": "SELL",
           "regime": "BALANCED",
           "tradeable": false,
-          "why_not": "score 15 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT, CHART"
+          "why_not": "score 24 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT"
         }
       },
       "markets_now": {
-        "BTCUSDT": "BALANCED: no side has the advantage; score 5 below 70; 0 independent groups agree (0 from the book); 3 (2) needed",
-        "ETHUSDT": "BALANCED: score 15 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT, CHART"
+        "BTCUSDT": "BALANCED: score 43 below 70; 1 independent groups agree (1 from the book); 3 (2) needed; strong evidence against: CONTEXT",
+        "ETHUSDT": "BALANCED: score 24 below 70; 2 independent groups agree (2 from the book); 3 (2) needed; strong evidence against: CONTEXT"
       },
       "open_positions": [],
       "today": {
@@ -3398,18 +3457,18 @@
       },
       "last_report": null,
       "ladder": {
-        "instrument": "ETHUSDT",
+        "instrument": "BTCUSDT",
         "data_class": "EXCHANGE",
-        "tick": 1.0,
-        "bid": 2525.0,
-        "ask": 2526.0,
-        "mid": 2525.5,
-        "imbalance": -0.195,
+        "tick": 20.0,
+        "bid": 83540.0,
+        "ask": 83560.0,
+        "mid": 83550.0,
+        "imbalance": -0.114,
         "pressure": "balanced",
         "rows": [
           {
-            "price": 2535.0,
-            "ask": 137.4293,
+            "price": 83740.0,
+            "ask": 5.27677,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3417,8 +3476,8 @@
             "flags": []
           },
           {
-            "price": 2534.0,
-            "ask": 38.0384,
+            "price": 83720.0,
+            "ask": 4.93346,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3426,8 +3485,8 @@
             "flags": []
           },
           {
-            "price": 2533.0,
-            "ask": 170.4053,
+            "price": 83700.0,
+            "ask": 12.63199,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3435,8 +3494,8 @@
             "flags": []
           },
           {
-            "price": 2532.0,
-            "ask": 121.8814,
+            "price": 83680.0,
+            "ask": 13.20853,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3444,8 +3503,8 @@
             "flags": []
           },
           {
-            "price": 2531.0,
-            "ask": 282.2805,
+            "price": 83660.0,
+            "ask": 18.38458,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3453,8 +3512,8 @@
             "flags": []
           },
           {
-            "price": 2530.0,
-            "ask": 688.9977,
+            "price": 83640.0,
+            "ask": 17.48582,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3462,8 +3521,8 @@
             "flags": []
           },
           {
-            "price": 2529.0,
-            "ask": 469.454,
+            "price": 83620.0,
+            "ask": 28.16216,
             "bid": 0.0,
             "bought": 0.0,
             "sold": 0.0,
@@ -3471,117 +3530,119 @@
             "flags": []
           },
           {
-            "price": 2528.0,
-            "ask": 399.5435,
+            "price": 83600.0,
+            "ask": 23.48852,
             "bid": 0.0,
-            "bought": 9.1954,
+            "bought": 0.8387499999999998,
             "sold": 0.0,
-            "delta": 9.1954,
+            "delta": 0.8387499999999998,
             "flags": []
           },
           {
-            "price": 2527.0,
-            "ask": 380.9351,
+            "price": 83580.0,
+            "ask": 23.81698,
             "bid": 0.0,
-            "bought": 6.900599999999999,
-            "sold": 13.405000000000008,
-            "delta": -6.504400000000009,
+            "bought": 3.0085699999999997,
+            "sold": 1.6334500000000003,
+            "delta": 1.3751199999999995,
             "flags": []
           },
           {
-            "price": 2526.0,
-            "ask": 247.6823,
+            "price": 83560.0,
+            "ask": 11.66499,
             "bid": 0.0,
-            "bought": 2.3373,
-            "sold": 14.4378,
-            "delta": -12.1005,
+            "bought": 0.20941,
+            "sold": 1.5022000000000002,
+            "delta": -1.29279,
             "flags": []
           },
           {
-            "price": 2525.0,
+            "price": 83540.0,
             "ask": 0.0,
-            "bid": 51.3007,
+            "bid": 4.62408,
             "bought": 0.0,
-            "sold": 4.975900000000001,
-            "delta": -4.975900000000001,
+            "sold": 0.59143,
+            "delta": -0.59143,
             "flags": []
           },
           {
-            "price": 2524.0,
+            "price": 83520.0,
             "ask": 0.0,
-            "bid": 272.6666,
-            "bought": 0.0,
-            "sold": 0.0,
-            "delta": 0.0,
-            "flags": []
-          },
-          {
-            "price": 2523.0,
-            "ask": 0.0,
-            "bid": 460.2395,
+            "bid": 23.43905,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2522.0,
+            "price": 83500.0,
             "ask": 0.0,
-            "bid": 573.1867,
+            "bid": 23.19722,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2521.0,
+            "price": 83480.0,
             "ask": 0.0,
-            "bid": 310.6719,
+            "bid": 19.8094,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2520.0,
+            "price": 83460.0,
             "ask": 0.0,
-            "bid": 178.8804,
+            "bid": 22.32074,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2519.0,
+            "price": 83440.0,
             "ask": 0.0,
-            "bid": 9.4176,
+            "bid": 14.14777,
+            "bought": 0.0,
+            "sold": 0.0,
+            "delta": 0.0,
+            "flags": [
+              "VWAP"
+            ]
+          },
+          {
+            "price": 83420.0,
+            "ask": 0.0,
+            "bid": 7.33256,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2518.0,
+            "price": 83400.0,
             "ask": 0.0,
-            "bid": 151.1714,
+            "bid": 2.71016,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2517.0,
+            "price": 83380.0,
             "ask": 0.0,
-            "bid": 5.6489,
+            "bid": 10.51895,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
             "flags": []
           },
           {
-            "price": 2516.0,
+            "price": 83360.0,
             "ask": 0.0,
-            "bid": 320.2353,
+            "bid": 3.30436,
             "bought": 0.0,
             "sold": 0.0,
             "delta": 0.0,
@@ -3590,7 +3651,7 @@
         ]
       },
       "present": true,
-      "age_seconds": 2.0
+      "age_seconds": 0.3
     },
     "labels": {
       "overall": "Overall",
@@ -3726,12 +3787,12 @@
     "unknown_magics": []
   },
   "open_live": [],
-  "open_at": "2026-10-13T14:47:50.837913+00:00",
+  "open_at": "2026-10-13T14:58:20.681403+00:00",
   "bot_lines": {
     "momentum_rider": "OFF (rider.json says OFF, so it is not started)",
     "financial_ian": "HEALTHY, PAPER, feed LIVE"
   },
-  "updated": "2026-10-13T14:47:50.844155+00:00",
+  "updated": "2026-10-13T14:58:20.688842+00:00",
   "coach_progress": {
     "from": "2026-10-12",
     "to": "2026-10-13",
