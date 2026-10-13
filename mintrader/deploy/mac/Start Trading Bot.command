@@ -104,6 +104,7 @@ if is_running watchdog && is_running trader && ! source_changed "$SOURCE_DIR" \
    && [[ -f "$DATA_DIR/.formula1-2026-10-09" ]] && [[ -f "$DATA_DIR/.formula1-choices-2026-10-10" ]] \
    && [[ -f "$DATA_DIR/.lab-2026-10-11" ]] \
    && [[ -f "$DATA_DIR/.coach-2026-10-12" ]] \
+   && [[ -f "$DATA_DIR/.all-practice-2026-10-13" ]] \
    && [[ ! -f "$DATA_DIR/.restart-pending" ]]; then
   say ""
   say "  ${GREEN}It is already running.${RESET} Checking it over..."
@@ -151,6 +152,7 @@ apply_lab_2026_10_11     # 11 Oct: the strategy lab (practice only, no live path
 install_lab_icon         # 11 Oct: The Lab's own icon on the Desktop, placed once
 apply_coach_2026_10_12   # 12 Oct: the coach switched on - data/coach.json (PILOT after one watching day), restart remembered
 install_coach_icon       # 12 Oct: The Coach's own icon on the Desktop, placed once
+apply_all_practice_2026_10_13   # 13 Oct, Aaron: every bot on practice; the coach may grant no real money
 remember_restart     # 10 Oct: until the bots are restarted below, the next double-click never takes the fast path
 install_launch_agent
 install_desktop_icon

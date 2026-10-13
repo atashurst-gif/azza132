@@ -1461,6 +1461,81 @@ PYEOF
   return 0
 }
 
+# Everything to practice (13 Oct; Aaron: "put everything out of live and into
+# the lab, once they begin proving move the best each week into real money and
+# live"). Once only, the marker written only when every part worked (the next
+# double-click tries again otherwise):
+#   1. the modes command: the Momentum Runner, Band Breaker, Crowd Fader and
+#      Financial Ian on PAPER, and no Trend & Breakout market kept LIVE
+#      (Formula 1 off). The Rider is left as it is (sacked 9 Oct). Open real
+#      positions keep their stops at the broker.
+#   2. the coach's envelope (data/coach.json): no kind of market may be
+#      granted real money (tnb_real_kinds empty) and Formula 1's pin is gone
+#      (it is no longer live), so the coach can only take risk away until the
+#      weekly pick is built. Everything else in it is kept, and it is checked
+#      with the coach's own reader before it is written.
+ALL_PRACTICE_MARKER_NAME=".all-practice-2026-10-13"
+apply_all_practice_2026_10_13() {
+  local marker
+  local out
+  local outfile
+  marker="$DATA_DIR/$ALL_PRACTICE_MARKER_NAME"
+  [[ -f "$marker" ]] && return 0
+  [[ -f "$CONFIG" ]] || return 0
+  step "Everything to practice"
+  out="$(cd "$APP_DIR" && "$VENV_DIR/bin/python" -m mintel.ops.modes --config "$CONFIG" \
+      --paper runner bandbreaker crowd ian --tnb-live-groups none 2>&1)"
+  if (( $? != 0 )); then
+    printf '%s\n' "$out" | sed -e '/Restart the bot/d' -e 's/^/      /'
+    warn "Could not put every bot on practice (nothing was changed). Run: cd $APP_DIR && $VENV_DIR/bin/python -m mintel.ops.modes --config $CONFIG --paper runner bandbreaker crowd ian --tnb-live-groups none"
+    return 0
+  fi
+  outfile="$DATA_DIR/coach/.practice.out"
+  mkdir -p "$DATA_DIR/coach" 2>/dev/null
+  if ! "$VENV_DIR/bin/python" - "$DATA_DIR" "$APP_DIR" > "$outfile" 2>&1 <<'PYEOF'
+import datetime as dt, json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[2])
+from mintel.coach import UTC
+from mintel.coach import envelope as E
+from mintel.coach.records import baseline_config
+
+data = Path(sys.argv[1])
+path = data / "coach.json"
+if not path.exists():
+    print("none: no coach settings to change")
+    sys.exit(0)
+env = json.loads(path.read_text(encoding="utf-8"))
+env["tnb_real_kinds"] = []
+env["pins"] = []
+env["set_by"] = "installer, Aaron's request of 13 Oct 2026: everything on practice; real money only through the weekly pick"
+env["set_utc"] = dt.datetime.now(UTC).isoformat()
+cfg = baseline_config(data)
+E.parse(env, float(cfg.risk.max_risk_pct), float(cfg.risk.max_daily_loss_pct))
+tmp = path.with_name(".coach.json.tmp")
+with open(tmp, "w", encoding="utf-8") as fh:
+    fh.write(json.dumps(env, indent=1, sort_keys=True) + "\n")
+    fh.flush()
+    os.fsync(fh.fileno())
+os.replace(tmp, path)
+print("written: the coach may not grant real money to anything")
+PYEOF
+  then
+    tail -3 "$outfile" 2>/dev/null | sed 's/^/      /'
+    rm -f "$outfile" "$DATA_DIR/.coach.json.tmp"
+    warn "The bots are on practice, but the coach's settings could not be changed (the next double-click tries again)."
+    CODE_CHANGED="yes"
+    remember_restart
+    return 0
+  fi
+  rm -f "$outfile"
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$marker"
+  CODE_CHANGED="yes"                         # the bots read their modes at their start: restart them
+  remember_restart
+  good "Every bot is on practice now: no new trade uses real money. The best one each week can be moved to real money once it has proved itself"
+  return 0
+}
+
 # tnb_live_groups - the kinds of market whose Trend & Breakout orders go to
 # the account while it is on PAPER (config.json "tnb" -> "live_groups"), as
 # FX_MINOR or FX_MINOR,INDEX; empty when it is LIVE or none are set.
