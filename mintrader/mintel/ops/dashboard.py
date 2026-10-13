@@ -2223,14 +2223,18 @@ input,select{font-size:16px}
 # what's going on there's too much writing still". Every page sits in the same shell: a left sidebar (a top bar on
 # phones) with grouped links, a title bar, then white cards on a light grey page - the hub's look, inline only.
 THEME_JS = """<script>
-(function(){var t='light';try{t=localStorage.getItem('mintel-theme')||'light'}catch(e){}
-document.documentElement.setAttribute('data-theme',t);})();
+(function(){var t=null;try{t=localStorage.getItem('mintel-theme')}catch(e){}
+if(t!=='dark'&&t!=='light'){try{t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}
+catch(e){t='light'}}document.documentElement.setAttribute('data-theme',t);})();
 function toggleTheme(){var t=document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark';
 try{localStorage.setItem('mintel-theme',t)}catch(e){}document.documentElement.setAttribute('data-theme',t);
 var b=document.getElementById('theme-btn');if(b)b.textContent=t==='dark'?'Light':'Dark';}
 </script>"""
 
 _ICONS = {
+    "squad": '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 6h3a3 3 0 0 1-3 4M7 6H4a3 3 0 0 0 3 4"/>',
+    "demo": '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+    "factory": '<path d="M3 21V10l6 4V10l6 4V6l6 3v12H3z"/><path d="M7 17h2M12 17h2M17 17h1"/>',
     "home": '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
     "live": '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.6-.8-1.6-1.2-2.8-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.5 6 '
             '4.5 0 1.3-1.3 2.3-3 2.3-1.3 0-2.4-.5-3-1.3M12 6v2M12 16.8V18"/>',
@@ -2241,11 +2245,16 @@ _ICONS = {
                '2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
     "health": '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
 }
-NAV_GROUPS = (("Overview", (("home", "Home", "/"),)),
-              ("Bots", (("live", "Real money", "/?show=live"), ("practice", "Practice", "/?show=practice"),
-                        ("lab", "The lab", "/lab"))),
-              ("Behind the scenes", (("coach", "The coach", "/coach"), ("details", "Technical detail", "/details"),
-                                     ("health", "Health", "/health"))))
+# 13 Oct (the full frontend redesign): Squad, Demo and Factory are the new front pages (mintel/ops/squad.py, their
+# own top bar); everything that was on the old sidebar is kept, working, under ADVANCED. The old Home is "Overview"
+# at /advanced (a "/" address with the old ?period= / ?bot= / ?show= still opens the old pages, so old links work).
+NAV_GROUPS = (("Squad", (("squad", "Squad", "/"), ("demo", "Demo", "/demo"), ("factory", "Factory", "/factory"))),
+              ("Advanced", (("home", "Overview", "/advanced"), ("live", "Real money", "/?show=live"),
+                            ("practice", "Practice", "/?show=practice"), ("lab", "The lab", "/lab"),
+                            ("coach", "The coach", "/coach"), ("details", "Technical detail", "/details"),
+                            ("health", "Health", "/health"))))
+SQUAD_PAGES = ("/", "/demo", "/factory")             # their own timeline: never given the old ?period=
+LEGACY_HOME_PARAMS = frozenset({"bot", "show", "period", "from", "to", "strategy"})
 
 
 def _period_q(view: Optional[dict]) -> str:
@@ -2257,7 +2266,7 @@ def _period_q(view: Optional[dict]) -> str:
 
 
 def _with_q(href: str, q: str) -> str:
-    if not q or href in ("/health", "/coach", "/lab"):
+    if not q or href in ("/health", "/coach", "/lab") + SQUAD_PAGES:
         return href
     return f"{href}{'&' if '?' in href else '?'}{q}"
 
@@ -2292,8 +2301,8 @@ def _shell(title: str, body: str, active: str = "", q: str = "", stamp: str = ""
     return (f'<!doctype html><html lang="en-GB"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">{meta}<title>{e(title)}</title>'
             f'{THEME_JS}<style>{css}</style></head><body><div class="app">'
-            f'<aside class="side"><div class="side-top"><a class="brand" href="{_with_q("/", q)}"><i>Trading</i> '
-            f'bots</a><small>Demo account</small></div>{_nav_html(active, q)}'
+            f'<aside class="side"><div class="side-top"><a class="brand" href="/"><i>Trading</i> '
+            f'squad</a><small>Advanced</small></div>{_nav_html(active, q)}'
             f'<div class="side-foot"><span>Refreshes every 10 s</span>'
             f'<button class="linkbtn" id="theme-btn" type="button">Dark</button></div></aside>'
             f'<div class="main"><div class="topbar">{back}{head_h}{stamp_html}</div>'
@@ -3161,7 +3170,7 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
     if lab is None:
         lab = S.load_lab(data_dir, now)
     entries, stars = _tiles_of(snap, top, verdicts, plan, deals, lab, view, now, data_dir)
-    title = SHOWS.get(show, "Home")
+    title = SHOWS.get(show, "Overview")             # 13 Oct: the old Home, under ADVANCED at /advanced
     body = _home_problem(snap) + render_home_periods(view, "all", show)
     if show == "practice":
         # 13 Oct: the full breakdown first, every test winners at the top; each one's own page stays one tap away,
@@ -3206,7 +3215,7 @@ def render_bot_detail(snap: dict, top: Optional[dict], bot: str, verdict: dict, 
     mode = str(v.get("mode") or "")
     mixed = bool(v.get("live_groups")) and mode != "LIVE"     # 9 Oct: Trend & Breakout's minor pairs LIVE
     live = mode == "LIVE" or mixed
-    back = f'<a class="back" href="/{_home_query(view, "all")}">&larr; All bots</a>'
+    back = f'<a class="back" href="/advanced{_home_query(view, "all")}">&larr; All bots</a>'
     chip = f'<span class="s-chip {e(str(v.get("colour") or "grey"))}">{e(str(v.get("code") or ""))}</span>'
     pill = f'<span class="s-mode{" live" if live else ""}">{e((v.get("mode_words") if mixed else mode) or "-")}</span>'
     flags = "".join(f'<div class="s-flag"><b>Check:</b> {e(d["text"])}</div>'
@@ -4319,6 +4328,38 @@ class _Handler(BaseHTTPRequestHandler):
         show = (parse_qs(urlparse(self.path).query).get("show") or [""])[0]
         return render_home(snap, headline, verdicts, plan, plan_error, deals=deals, show=show)
 
+    def _squad_route(self) -> Optional[str]:
+        """Which squad page this address is (mintel/ops/squad.py): "squad" for "/" (unless it carries one of
+        the old Home's ?period= / ?bot= / ?show=, which keep opening the old pages), "bot", "demo", "factory";
+        None for every other page."""
+        from urllib.parse import parse_qs, urlparse
+        u = urlparse(self.path)
+        path = u.path.rstrip("/") or "/"
+        if path == "/":
+            return None if set(parse_qs(u.query)) & LEGACY_HOME_PARAMS else "squad"
+        return {"/bot": "bot", "/demo": "demo", "/factory": "factory"}.get(path)
+
+    def _squad_page(self, snap: dict, which: str) -> str:
+        """The TRADING SQUAD pages, read-only: every paper figure from the tests' own records, every demo
+        figure from MetaTrader's deal rows of this same refresh (``squad.board``)."""
+        from urllib.parse import parse_qs, urlparse
+        from . import squad as SQ
+        q = parse_qs(urlparse(self.path).query)
+        with self.state.lock:
+            data_dir = self.state.data_dir
+            sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
+        now = self.state.now()
+        known = bool(sd.get("start")) and sd.get("made") is not None      # MetaTrader has been read
+        b = SQ.board(data_dir, (q.get("t") or [""])[0], now, sd=sd, deals=deals if known else None)
+        health = SQ.health_of(snap)
+        if which == "bot":
+            return SQ.render_bot_page(b, (q.get("id") or [""])[0], health, data_dir)
+        if which == "demo":
+            return SQ.render_demo_page(b, health)
+        if which == "factory":
+            return SQ.render_factory_page(b, health)
+        return SQ.render_squad(b, health, show_all=(q.get("all") or [""])[0] == "1")
+
     def _lab_page(self) -> str:
         """/lab: the lab in full; /lab?id=<id>: one candidate. Read-only, from
         data/lab/summary.json and data/lab-status.json."""
@@ -4406,7 +4447,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(self._lab_page())
             elif self.path.split("?", 1)[0].rstrip("/") == "/coach":
                 self._send(self._coach_page(snap))
-            else:
+            elif self._squad_route() is not None:
+                self._send(self._squad_page(snap, self._squad_route()))
+            else:                                        # /advanced, and "/" with the old ?period= ?bot= ?show=
                 self._send(self._home_page(snap))
         except Exception as exc:      # never let the page kill the process
             self._send(f"<pre>dashboard error: {html.escape(str(exc))}</pre>",

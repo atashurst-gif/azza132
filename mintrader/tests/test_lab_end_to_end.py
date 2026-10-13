@@ -20,6 +20,10 @@ from mintel.lab import ON_THE_BENCH, PRACTICE, LabPaths
 from mintel.lab import nightly as NL
 from mintel.lab.ledger import LabLedger
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 UTC = dt.timezone.utc
 NAMES = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCHF", "USDCAD", "NZDUSD", "XAUUSD", "GER40"]
 
@@ -122,7 +126,7 @@ def test_simbroker_to_fetch_to_the_night_to_the_board_to_the_page(tmp_path):
     assert (paths.run_dir("2026-10-12") / "report.md").read_text().count("TEST DATA") >= 2
 
     # the page: "/", "/lab" and the idea's own page, all saying TEST DATA, none showing money
-    home, board, one = pages(d, "/", "/lab", f"/lab?id={idea}")
+    home, board, one = pages(d, "/advanced", "/lab", f"/lab?id={idea}")
     rows = lab_rows(home)
     assert idea in rows and "TEST DATA - not a result" in rows[idea] and "£" not in rows[idea]
     assert "TEST DATA - not a result" in board and "£" not in board

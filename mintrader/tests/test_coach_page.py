@@ -29,6 +29,10 @@ from mintel.ops.standing import period_view
 from tests.test_page_figures import a_day, deal, serve, t
 from tests.test_simple_dashboard import account_section, text_of
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "coach_status_example.json"
 UTC = dt.timezone.utc
 FRI = t(2026, 10, 16, 9, 15)                       # Fri 16 Oct, 10:15 UK: the 5th trading day since 12 Oct
@@ -315,7 +319,7 @@ class TestOnThePage:
         d = day(tmp_path)
         st = made_up_status(written_utc=FRI.isoformat())
         put_coach(d.data, st)
-        home, page = pages(d, FRI, "/", "/coach")
+        home, page = pages(d, FRI, "/advanced", "/coach")
         assert home.index('s-acct">') < home.index('<section class="card" id="bots">') < home.index(
             '<a class="card coach-card" href="/coach" id="coach">')
         card = home.split('<a class="card coach-card" href="/coach" id="coach">')[1].split("</a>")[0]
@@ -341,9 +345,9 @@ class TestOnThePage:
 
     def test_the_account_is_the_same_with_and_without_the_coach(self, tmp_path):
         d = day(tmp_path)
-        (without,) = pages(d, FRI, "/")
+        (without,) = pages(d, FRI, "/advanced")
         put_coach(d.data, made_up_status(written_utc=FRI.isoformat()))
-        (with_,) = pages(d, FRI, "/")
+        (with_,) = pages(d, FRI, "/advanced")
         assert account_section(without) == account_section(with_)
         strip = re.compile(r'<a class="card coach-card" href="/coach" id="coach">.*?</a>'
                            r'|<span class="stamp">[^<]*</span>', re.S)        # the refresh's own clock aside
@@ -358,7 +362,7 @@ class TestOnThePage:
         st["plan"]["items"][0]["words"] = BAD
         st["suggestions"] = [BAD]
         put_coach(d.data, st)
-        home, page = pages(d, FRI, "/", "/coach")
+        home, page = pages(d, FRI, "/advanced", "/coach")
         for p in (home, page):
             assert "<script>alert" not in p
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page               # its words: on /coach, escaped

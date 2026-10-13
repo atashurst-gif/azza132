@@ -27,6 +27,10 @@ from mintel.ops import watchdog as wd
 from mintel.ops.dashboard import (DashboardState, render_ian_page, render_rider_page, render_status,
                                   start_dashboard)
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 ROOT = Path(__file__).resolve().parents[1]
 MAC = ROOT / "deploy" / "mac"
 WIN = ROOT / "deploy"
@@ -305,7 +309,7 @@ class TestTheServer:
         try:
             port = httpd.server_address[1]
             get = lambda path: urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=10).read().decode()  # noqa: E731
-            rider, ian, main = get("/rider"), get("/ian"), get("/")
+            rider, ian, main = get("/rider"), get("/ian"), get("/advanced")
             assert "RAPID MOMENTUM RIDER" in rider and "GBPJPY" in rider
             assert "FINANCIAL IAN" in ian and "NOT CONFIGURED" in ian
             assert '<a href="/rider">Rapid Momentum Rider</a>' in get("/results")      # the old page's own links

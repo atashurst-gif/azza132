@@ -39,6 +39,10 @@ from mintel.ops.standing import account_standing, open_rows, period_view, practi
 from tests.test_page_figures import DEALS, NOW, TNB, Broker, deal, open_now, serve, t, write_records
 from tests.test_simple_dashboard import research_file, row_figs, row_of, row_trades, row_word, text_of
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 UTC = dt.timezone.utc
 LIVE_SINCE = t(2026, 10, 9, 7, 30)                   # MADE-UP: 08:30 UK on Friday 9 Oct
 # MADE-UP Trend & Breakout deals on 9 Oct, each position: (ticket, symbol, entry time, entry, exit time, exit)
@@ -185,7 +189,7 @@ class TestFormula1sLiveCountIsMetaTradersAlone:
 class TestTrendAndBreakoutsRow:
     def test_its_row_leads_with_real_money_and_labels_the_practice(self, tmp_path):
         d = a_formula1_day(tmp_path)
-        today, total, own = _pages(d, "/", "/?period=total", "/?bot=market_intelligence")
+        today, total, own = _pages(d, "/advanced", "/?period=total", "/?bot=market_intelligence")
         row = row_of(today, "Trend &amp; Breakout")
         assert '<span class="bt-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
         assert "PRACTICE" not in row and ">PAPER<" not in row
@@ -244,7 +248,7 @@ class TestTrendAndBreakoutsRow:
 
     def test_without_live_markets_it_is_the_paper_row_it_always_was(self, tmp_path):
         d = a_formula1_day(tmp_path, live_groups=None)
-        (page,) = _pages(d, "/")
+        (page,) = _pages(d, "/advanced")
         row = row_of(page, "Trend &amp; Breakout")
         assert '<span class="bt-st practice" title="Practice (PAPER) - not real money">PRACTICE</span>' in row
         assert 'title="Overall (practice)"' in row
@@ -272,7 +276,7 @@ class TestTheRiderSwitchedOff:
     def test_its_row_says_switched_off_and_binned_and_its_money_still_counts(self, tmp_path):
         d = a_formula1_day(tmp_path, rider="OFF")
         research_file(d.data, "momentum_rider")                          # MADE-UP research: no edge
-        today, total, own, coach = _pages(d, "/", "/?period=total", "/?bot=momentum_rider", "/coach")
+        today, total, own, coach = _pages(d, "/advanced", "/?period=total", "/?bot=momentum_rider", "/coach")
         row = row_of(today, "Rapid Momentum Rider")
         assert '<span class="bt-st off" title="Switched off - it places no trades">OFF</span>' in row
         assert row_word(row)[:2] == ("Off", "grey")
@@ -292,7 +296,7 @@ class TestTheRiderSwitchedOff:
 
     def test_never_a_waiting_that_reads_as_if_it_will_trade_again(self, tmp_path):
         d = a_formula1_day(tmp_path, rider="OFF")                        # no research on this computer
-        (home, page) = _pages(d, "/", "/?bot=momentum_rider")
+        (home, page) = _pages(d, "/advanced", "/?bot=momentum_rider")
         row = unescape(row_of(home, "Rapid Momentum Rider"))
         assert "Switched off: it places no trades, so there is nothing new to judge." in row_word(row_of(
             home, "Rapid Momentum Rider"))[2]                            # its headline, on its one word
@@ -359,7 +363,7 @@ class TestWhatToDoNeverCountsWhatItCannotCount:
         d = a_formula1_day(tmp_path)
         httpd, get = serve(d, standing={}, deals=[])
         try:
-            home, page = get("/"), get("/?bot=market_intelligence")
+            home, page = get("/advanced"), get("/?bot=market_intelligence")
         finally:
             httpd.shutdown()
         row = unescape(row_of(home, "Trend &amp; Breakout"))
@@ -443,7 +447,7 @@ class TestTheVerdictSaysWhatItCovers:
 
     def test_the_headline_and_the_action_say_as_a_whole(self, tmp_path):
         d = a_formula1_day(tmp_path)
-        (home, page) = _pages(d, "/", "/?bot=market_intelligence")
+        (home, page) = _pages(d, "/advanced", "/?bot=market_intelligence")
         word, _dot, why = row_word(row_of(home, "Trend &amp; Breakout"))
         assert why.startswith("As a whole (practice and real together; Formula 1 is judged on its own below):")
         verdict = text_of(page).split("Verdict:")[1].split("What happened")[0]
@@ -484,7 +488,7 @@ class TestTheRowStaysPartLiveIfItsVerdictFails:
             return real(bid, *a, **k)
         monkeypatch.setattr(V, "bot_verdict", boom)
         d = a_formula1_day(tmp_path)
-        home, own = _pages(d, "/", "/?bot=market_intelligence")
+        home, own = _pages(d, "/advanced", "/?bot=market_intelligence")
         row = row_of(home, "Trend &amp; Breakout")
         assert '<span class="bt-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row
         assert "Overall (practice)" not in row and "from its LIVE days" not in row

@@ -41,6 +41,10 @@ from tests.test_formula1_page import a_formula1_day
 from tests.test_page_figures import NOW, a_day, serve
 from tests.test_simple_dashboard import account_section, made_up, research_file, row_figs, row_of, text_of
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "lab_summary_example.json"
 UTC = dt.timezone.utc
 A, B, C3, D, E, F, G, H, I = ("lab-be77cce177", "lab-969dcd199b", "lab-3e8ec84fce", "lab-205ef7c5fc",
@@ -254,7 +258,7 @@ class TestTheMainPage:
         its reason in the star's title; what changed since yesterday moved to /coach."""
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
-        page, coach = pages(d, "/", "/coach")
+        page, coach = pages(d, "/advanced", "/coach")
         rows = lab_rows(page)
         starred = [cid for cid, row in rows.items() if 'class="bt-star"' in row]
         assert sorted(starred) == sorted([A, E])
@@ -278,7 +282,7 @@ class TestTheMainPage:
 
     def test_no_standouts_and_nothing_moved_say_so(self, tmp_path):
         d = a_day(tmp_path)
-        page, coach = pages(d, "/", "/coach")                        # no lab, and no bot with ten trades
+        page, coach = pages(d, "/advanced", "/coach")                        # no lab, and no bot with ten trades
         assert 'class="bt-star"' not in page
         assert '<p class="s-none">Nothing moved.</p>' in changed(coach)
 
@@ -304,7 +308,7 @@ class TestTheMainPage:
         d = a_formula1_day(tmp_path, rider="OFF")
         research_file(d.data, "momentum_rider")                      # MADE-UP research: no edge
         put_lab(d.data, made_up_summary())
-        (page,) = pages(d, "/")
+        (page,) = pages(d, "/advanced")
         for label in BOT_LABELS:
             assert page.count(f'<span class="bt-name">{label}</span>') == 1, label
         bot = lambda b: f"/?period=today&bot={b}"                     # noqa: E731
@@ -341,7 +345,7 @@ class TestTheMainPage:
         row on /lab (and its page /lab?id=...)."""
         d = a_formula1_day(tmp_path)
         put_lab(d.data, made_up_summary())
-        home, board = pages(d, "/", "/lab")
+        home, board = pages(d, "/advanced", "/lab")
         rows = re.findall(r'<a class="bt(?: prac)?" href="([^"]*)"', home)
         assert len(rows) == 6 + 8                                    # the six bots, and 8 ideas (I: binned 20 days ago)
         detail = pages(d, *[unescape(h) for h in rows])
@@ -434,7 +438,7 @@ class TestTheMainPage:
     def test_a_candidate_with_no_record_shows_no_figure_and_practice_is_grey(self, tmp_path):
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
-        home, total, board = pages(d, "/", "/?period=total", "/lab")
+        home, total, board = pages(d, "/advanced", "/?period=total", "/lab")
         g = lab_rows(home)[G]
         assert "£" not in g and set(line_cells(g).values()) == {"-"}
         assert all(state == NOT_YET for k, state in pills(lab_rows(board)[G]) if k != "Fresh prices")
@@ -453,7 +457,7 @@ class TestTheMainPage:
         a["figures"].update(today_gbp=5.5, today_trades=2)
         d = a_day(tmp_path)
         put_lab(d.data, sm)
-        today, week, month = pages(d, "/", "/?period=week", "/?period=month")
+        today, week, month = pages(d, "/advanced", "/?period=week", "/?period=month")
         assert line_cells(lab_rows(today)[A]) == {"Today (practice)": "+£5.50", "Overall (practice)": "+£64.10",
                                                   "Trades today (practice)": "2"}
         assert line_cells(lab_rows(week)[A])["This week (practice)"] == "+£41.70"
@@ -463,7 +467,7 @@ class TestTheMainPage:
     def test_a_bench_candidate_never_shows_computer_test_money_on_the_main_page(self, tmp_path):
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
-        home, board = pages(d, "/", "/lab")
+        home, board = pages(d, "/advanced", "/lab")
         f = lab_rows(home)[F]
         assert "£" not in f and "computer test" not in f and line_status(f) == "TESTING"
         assert line_word(f) == "Waiting"
@@ -482,9 +486,9 @@ class TestTheMainPage:
 
     def test_the_account_and_the_bots_figures_are_the_same_with_and_without_the_lab(self, tmp_path):
         d = a_day(tmp_path)
-        before = pages(d, "/", "/?period=week", "/?period=total")
+        before = pages(d, "/advanced", "/?period=week", "/?period=total")
         put_lab(d.data, made_up_summary())
-        after = pages(d, "/", "/?period=week", "/?period=total")
+        after = pages(d, "/advanced", "/?period=week", "/?period=total")
         for b, a in zip(before, after):
             assert account_section(b) == account_section(a)
             for label in BOT_LABELS:
@@ -507,7 +511,7 @@ class TestTheMainPage:
         def lab_files():
             return {p: p.stat().st_mtime_ns for p in [*lab.rglob("*"), *d.data.glob("lab*")]}
         files = lab_files()
-        got = pages(d, "/", "/lab", f"/lab?id={A}", "/lab?id=nope")
+        got = pages(d, "/advanced", "/lab", f"/lab?id={A}", "/lab?id=nope")
         assert all("dashboard error" not in p for p in got)
         assert lab_files() == files                                  # nothing of the lab's written, nothing new
         assert "sqlite3" not in Path(S.__file__).read_text()
@@ -518,7 +522,7 @@ class TestEmptyAndTestData:
     def test_a_made_up_summary_shows_test_data_and_no_money(self, tmp_path):
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary(test_data=True))
-        home, board, one, coach = pages(d, "/", "/lab", f"/lab?id={A}", "/coach")
+        home, board, one, coach = pages(d, "/advanced", "/lab", f"/lab?id={A}", "/coach")
         rows = lab_rows(home)
         assert len(rows) == 8
         for cid, row in rows.items():
@@ -540,7 +544,7 @@ class TestEmptyAndTestData:
 
     def test_no_lab_folder_says_it_has_not_run_and_nothing_else_changes(self, tmp_path):
         d = a_day(tmp_path)
-        home, board, one = pages(d, "/", "/lab", f"/lab?id={A}")
+        home, board, one = pages(d, "/advanced", "/lab", f"/lab?id={A}")
         # before its first night: how many ideas wait (its registered grid, never a guess) and when it first tests
         from mintel.lab.families import all_families
         n = sum(f.GRID_SIZE for f in all_families())
@@ -552,7 +556,7 @@ class TestEmptyAndTestData:
     def test_a_broken_summary_is_said_never_guessed(self, tmp_path):
         d = a_day(tmp_path)
         put_lab(d.data, raw="{not json")
-        home, board = pages(d, "/", "/lab")
+        home, board = pages(d, "/advanced", "/lab")
         line = re.search(r'<div class="lab-one">(The lab&#x27;s summary could not be read \(.*?\)\.)</div>', home)
         # in plain words, never a raw Python error
         assert line and "JSONDecodeError" not in line.group(1)
@@ -572,7 +576,7 @@ class TestEmptyAndTestData:
         sm = made_up_summary()
         sm["store"]["complete_days"] = 31
         put_lab(d.data, sm)
-        (home,) = pages(d, "/")
+        (home,) = pages(d, "/advanced")
         assert lab_line(home) == "Collecting prices: 31 of 40 days"
         assert '<div class="prog"><span style="width:78%"></span></div>' in home
         assert not lab_rows(home)
@@ -581,7 +585,7 @@ class TestEmptyAndTestData:
     def test_the_lab_line_and_a_missed_night(self, tmp_path):
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
-        home, board = pages(d, "/", "/lab")
+        home, board = pages(d, "/advanced", "/lab")
         assert lab_line(home) == "632 Tested 14 Passed 5 Practising 1 Ready 623 Binned"     # its funnel's numbers
         # the whole funnel, the bench and what was binned lately are on /lab
         assert S.funnel_line(made_up_summary(), NOW) == (
@@ -597,7 +601,7 @@ class TestEmptyAndTestData:
         sm = made_up_summary()
         sm["nightly"]["date"], sm["nightly"]["started"] = "2026-10-06", "2026-10-06T22:10:00+00:00"
         put_lab(d.data, sm)
-        home, board = pages(d, "/", "/lab")
+        home, board = pages(d, "/advanced", "/lab")
         assert lab_line(home).endswith(" Last night's run missed")
         assert "<b>Last night's run: missed.</b>" in board
 
@@ -675,7 +679,7 @@ class TestTheLabPages:
             assert REFRESH_JS in p and "location.reload()" in p        # reloads this very address, ?id= and all
             assert 'http-equiv="refresh" content="10;' not in p
         assert "<b>&#10003; Luck check: Passed</b>" in page
-        assert '<a href="/lab"><svg' in pages(d, "/")[0]              # the sidebar's link
+        assert '<a href="/lab"><svg' in pages(d, "/advanced")[0]              # the sidebar's link
 
     def test_the_sidebar_keeps_its_links_on_every_page(self, tmp_path):
         """12 Oct: the footer's links became the hub-like sidebar, the same on every page; the Rider's and Ian's
@@ -683,8 +687,8 @@ class TestTheLabPages:
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
         home, board, one, coach, details, rider, ian, rider_page = pages(
-            d, "/", "/lab", f"/lab?id={A}", "/coach", "/details", "/?bot=momentum_rider", "/?bot=financial_ian", "/rider")
-        for page, on in ((home, "/"), (board, "/lab"), (one, "/lab"), (coach, "/coach"), (details, "/details")):
+            d, "/advanced", "/lab", f"/lab?id={A}", "/coach", "/details", "/?bot=momentum_rider", "/?bot=financial_ian", "/rider")
+        for page, on in ((home, "/advanced"), (board, "/lab"), (one, "/lab"), (coach, "/coach"), (details, "/details")):
             nav = page.split('<nav class="nav">')[1].split("</nav>")[0]
             for link in ('href="/"', 'href="/?show=live"', 'href="/?show=practice"', 'href="/lab"', 'href="/coach"',
                          'href="/details"', 'href="/health"'):
@@ -725,7 +729,7 @@ class TestEscapingAndPhones:
         put_lab(d.data, sm, status={"updated_utc": NOW.isoformat(), "mode": "PAPER", "roster": [], "last_error": BAD,
                                     "open_positions": [{"candidate_id": A, "symbol": BAD, "side": BAD,
                                                         "opened_utc": BAD}]})
-        got = pages(d, "/", "/lab", f"/lab?id={A}", "/lab?id=" + BAD.replace("<", "%3C").replace(">", "%3E"))
+        got = pages(d, "/advanced", "/lab", f"/lab?id={A}", "/lab?id=" + BAD.replace("<", "%3C").replace(">", "%3E"))
         for p in got:
             assert "<script>alert" not in p and "<img src=x" not in p and 'onclick="' not in p
         home, board, one, _bad = got
@@ -736,7 +740,7 @@ class TestEscapingAndPhones:
     def test_phone_width_works(self, tmp_path):
         d = a_day(tmp_path)
         put_lab(d.data, made_up_summary())
-        (home,) = pages(d, "/")
+        (home,) = pages(d, "/advanced")
         assert '<meta name="viewport" content="width=device-width,initial-scale=1">' in home
         assert ".s-checks{display:flex;flex-wrap:wrap;gap:6px;grid-column:1/-1;font-size:12.5px}" in HOME_CSS
         assert (".s-ck.ok{color:var(--good)}.s-ck.no{color:var(--bad)}.s-ck.run{color:var(--info)}"

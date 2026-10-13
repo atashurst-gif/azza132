@@ -46,6 +46,10 @@ from tests.test_lineup import F1_CALLS, F1_STEP, FORMULA1, _bash_env, _calls, _f
 from tests.test_tnb_paper_wiring import act, entry, move, paper_on, setup, trader_on
 from tests.conftest import MID_LONDON
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 10, 10, 9, 0, tzinfo=UTC)
 TNB = 990_311
@@ -840,7 +844,7 @@ class TestThePageSaysWhichApproachesAreReal:
         raw = json.loads((d.data / "config.json").read_text())
         raw["tnb"]["live_tactics"] = [MC]
         (d.data / "config.json").write_text(json.dumps(raw))
-        (page,) = _pages(d, "/")
+        (page,) = _pages(d, "/advanced")
         row = row_of(page, "Trend &amp; Breakout")
         assert ('<span class="bt-st live" title="LIVE: minor pairs (Formula 1, momentum continuation only) - rest '
                 'PAPER">LIVE</span>') in row
@@ -1151,7 +1155,7 @@ class TestFormula1sLinesNameTheTradesThatAreReal:
         from tests.test_formula1_page import _pages
         from tests.test_simple_dashboard import row_of
         d = _f1_day_with(tmp_path, tactics=[MC])
-        home, detail = _pages(d, "/", "/?bot=market_intelligence")
+        home, detail = _pages(d, "/advanced", "/?bot=market_intelligence")
         row = row_of(home, "Trend &amp; Breakout")
         rec = detail.split("<h2>Recommendation</h2>")[1].split("</p>")[0]          # what to do: on its own page
         assert "Formula 1 - its momentum continuation trades on minor pairs - is LIVE: judge it after 20" in rec
@@ -1164,7 +1168,7 @@ class TestFormula1sLinesNameTheTradesThatAreReal:
         from tests.test_formula1_page import _pages
         from tests.test_simple_dashboard import row_of
         d = _f1_day_with(tmp_path)
-        home, detail = _pages(d, "/", "/?bot=market_intelligence")
+        home, detail = _pages(d, "/advanced", "/?bot=market_intelligence")
         assert "Formula 1 - its minor-pair trades - is LIVE: judge it after 20" in detail.split(
             "<h2>Recommendation</h2>")[1].split("</p>")[0]
         assert '<span class="bt-st live" title="LIVE: minor pairs (Formula 1) - rest PAPER">LIVE</span>' in row_of(

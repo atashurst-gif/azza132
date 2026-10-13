@@ -26,6 +26,10 @@ from mintel.ops.dashboard import (REFRESH_JS, DashboardState, render_bot_detail,
 from mintel.ops.standing import PERIOD_BUTTONS, period_view, practice_figures, uk_midnight
 from tests.test_page_figures import (LATER, MADE, NOW, NOW_TAG, TODAY, YESTERDAY, a_day, quiet_day, serve, t)
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 UTC = dt.timezone.utc
 PERIODS = [k for k, _ in PERIOD_BUTTONS] + ["custom"]
 CUSTOM = {"custom": ("2026-10-08", "2026-10-08")}
@@ -325,7 +329,7 @@ class TestPracticeIsLabelled:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            today, yesterday = get("/"), get("/?period=yesterday")
+            today, yesterday = get("/advanced"), get("/?period=yesterday")
             band_page, crowd_page, tnb_page = (unescape(get("/?bot=band_breaker")),
                                                unescape(get("/?bot=crowd_fader&period=yesterday")),
                                                unescape(get("/?bot=market_intelligence")))
@@ -355,7 +359,7 @@ class TestRealAndPracticeAreNamedApart:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            home, page = get("/"), text_of(get("/?bot=momentum_rider&period=total"))
+            home, page = get("/advanced"), text_of(get("/?bot=momentum_rider&period=total"))
         finally:
             httpd.shutdown()
         row = row_of(home, "Rapid Momentum Rider")
@@ -686,7 +690,7 @@ class TestThePlan:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            page, home = get("/coach"), get("/")
+            page, home = get("/coach"), get("/advanced")
         finally:
             httpd.shutdown()
         assert "<h2>The plan</h2>" not in home and "The focus now" not in home
@@ -720,7 +724,7 @@ class TestThePlan:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            home, page = get("/"), get("/coach")
+            home, page = get("/advanced"), get("/coach")
         finally:
             httpd.shutdown()
         plan, _ = V.load_plan()
@@ -745,7 +749,7 @@ class TestThePlan:
         research_file(d.data, "financial_ian", code="NO EDGE", trades=40)   # MADE-UP research: no edge
         httpd, get = serve(d)
         try:
-            page, ian, home = get("/coach"), get("/?bot=financial_ian"), get("/")
+            page, ian, home = get("/coach"), get("/?bot=financial_ian"), get("/advanced")
         finally:
             httpd.shutdown()
         flag = "The plan says keep testing Financial Ian, but its record now says NO EDGE."
@@ -807,7 +811,7 @@ class TestOneBotInDetail:
         research_file(d.data, "momentum_rider")                          # MADE-UP research: no edge
         httpd, get = serve(d)
         try:
-            page, home = get("/?bot=momentum_rider"), get("/")
+            page, home = get("/?bot=momentum_rider"), get("/advanced")
         finally:
             httpd.shutdown()
         txt = text_of(page)
@@ -842,7 +846,7 @@ class TestOneBotInDetail:
         research_file(d.data, "momentum_rider")                          # MADE-UP research: no edge
         httpd, get = serve(d)
         try:
-            page = get("/")
+            page = get("/advanced")
             tot = period_view(d.sd, d.deals, "total", now=NOW)
             sel = period_view(d.sd, d.deals, "today", now=NOW)
             vs = V.all_verdicts(d.sd, sel, tot, str(d.data), NOW, V.load_plan()[0], deals=d.deals)
@@ -873,7 +877,7 @@ class TestOneBotInDetail:
         httpd, get = serve(d, thinking=[{"rank": 1, "symbol": "US500", "direction": "LONG", "score": 71.0,
                                          "tier": "NORMAL", "tactic": "MOMENTUM_CONTINUATION", "regime": "TREND"}])
         try:
-            page = get("/")
+            page = get("/advanced")
         finally:
             httpd.shutdown()
         for absent in (NOW_TAG, 'class="quiet"', "What the bot is looking at", 'class="tile"', "<table",
@@ -883,14 +887,18 @@ class TestOneBotInDetail:
         assert "--bg:#eef4f3" in page and "--surface:#ffffff" in page and "--side:#0b3b38" in page  # teal, told apart from the AI hub (13 Oct)
         # the hub's sidebar: grouped links, each with its small line icon
         nav = page.split('<nav class="nav">')[1].split("</nav>")[0]
+        # 13 Oct (the TRADING SQUAD redesign): the navigation is Squad, Demo, Factory, then ADVANCED - every page the
+        # sidebar had before is still there and working; the old Home is "Overview" at /advanced
         assert [unescape(x) for x in re.findall(r'<div class="nav-label">([^<]*)</div>', nav)] == [
-            "Overview", "Bots", "Behind the scenes"]
+            "Squad", "Advanced"]
         assert [unescape(x) for x in re.findall(r'</svg>([^<]*)</a>', nav)] == [
-            "Home", "Real money", "Practice", "The lab", "The coach", "Technical detail", "Health"]
-        for link in ('href="/" class="on"', 'href="/?show=live"', 'href="/?show=practice"', 'href="/lab"',
-                     'href="/coach"', 'href="/details"', 'href="/health"'):
+            "Squad", "Demo", "Factory", "Overview", "Real money", "Practice", "The lab", "The coach",
+            "Technical detail", "Health"]
+        for link in ('href="/"', 'href="/demo"', 'href="/factory"', 'href="/advanced" class="on"',
+                     'href="/?show=live"', 'href="/?show=practice"', 'href="/lab"', 'href="/coach"', 'href="/details"',
+                     'href="/health"'):
             assert link in nav, link
-        assert '<a class="brand" href="/"><i>Trading</i> bots</a><small>Demo account</small>' in page
+        assert '<a class="brand" href="/"><i>Trading</i> squad</a><small>Advanced</small>' in page
         # 12 Oct: short - no paragraphs per bot, no checks, no standouts card, no plan, no "what changed"
         for absent in ("What to do", 'class="s-checks"', "Today's standouts", "<h2>The plan</h2>", "What changed",
                        'class="s-hl"', "s-scout", "The coach's call", 'class="s-extra"', '<span class="s-ck'):
@@ -900,7 +908,7 @@ class TestOneBotInDetail:
         d = quiet_day(tmp_path)
         httpd, get = serve(d, LATER)
         try:
-            home, rider, band, details = get("/"), get("/?bot=momentum_rider"), get("/?bot=band_breaker"), get("/details")
+            home, rider, band, details = get("/advanced"), get("/?bot=momentum_rider"), get("/?bot=band_breaker"), get("/details")
         finally:
             httpd.shutdown()
         assert '<div class="quiet">' not in home and '<div class="quiet">' not in band
@@ -938,7 +946,7 @@ class TestItAlwaysRenders:
             for period in ("today", "yesterday", "total", "custom&from=2026-10-08&to=2026-10-09"):
                 page = get(f"/?period={period}")
                 assert "dashboard error" not in page and '<title>Trading bots</title>' in page, period
-                assert '<h1>Home</h1>' in page, period
+                assert '<h1>Overview</h1>' in page, period             # 13 Oct: the old Home is ADVANCED > Overview
                 for bot in self.BOTS:
                     page = get(f"/?bot={bot}&period={period}")
                     assert "dashboard error" not in page and "<script>alert" not in page, (bot, period)
@@ -984,7 +992,7 @@ class TestEverythingIsEscaped:
         research_file(d.data, "financial_ian", code="NO EDGE", trades=40)   # flags the keep item, with its "<b>"
         httpd, get = serve(d)
         try:
-            pages = [get("/coach"), get("/?bot=financial_ian"), get("/?bot=momentum_rider"), get("/")]
+            pages = [get("/coach"), get("/?bot=financial_ian"), get("/?bot=momentum_rider"), get("/advanced")]
         finally:
             httpd.shutdown()
         for page in pages:
@@ -1017,8 +1025,9 @@ class TestTheRefreshKeepsTheChoice:
         assert 'class="s-p on" href="/?period=yesterday&bot=crowd_fader"' in crowd   # buttons keep the bot
         assert 'href="/?period=today&bot=crowd_fader"' in crowd
         assert '<input type="hidden" name="bot" value="crowd_fader">' in crowd
-        assert '<a class="back" href="/?period=yesterday">&larr; All bots</a>' in crowd
-        assert '<a class="back" href="/?period=custom&from=2026-10-08&to=2026-10-08">&larr; All bots</a>' in custom
+        # 13 Oct: "All bots" (the old Home) is at /advanced now, the period kept
+        assert '<a class="back" href="/advanced?period=yesterday">&larr; All bots</a>' in crowd
+        assert '<a class="back" href="/advanced?period=custom&from=2026-10-08&to=2026-10-08">&larr; All bots</a>' in custom
         assert 'name="from" value="2026-10-08"' in custom and 'name="to" value="2026-10-08"' in custom
         assert '<button type="submit" class=on>Custom</button>' in custom
         assert '<a href="/details?period=week"><svg' in week                       # the sidebar keeps the period
@@ -1034,7 +1043,7 @@ class TestRealMoneyAndPracticePages:
         d = a_day(tmp_path)
         httpd, get = serve(d)
         try:
-            home, live, practice, live_week = get("/"), get("/?show=live"), get("/?show=practice"), get(
+            home, live, practice, live_week = get("/advanced"), get("/?show=live"), get("/?show=practice"), get(
                 "/?show=live&period=week")
         finally:
             httpd.shutdown()

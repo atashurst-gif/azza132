@@ -41,6 +41,10 @@ from tests.test_formula1_switches import account, daily
 from tests.test_integration_rider_ian import MAC, WIN, _home
 from tests.test_lineup import F1_CALLS, F1_STEP, FORMULA1, LINE_UP, _bash_env, _calls, _fake_python_home
 
+# 13 Oct (the TRADING SQUAD redesign): "/" is the new squad page (mintel/ops/squad.py). The old Home these tests
+# pin - the account cards, the bot tiles, the lab and coach lines - is kept, unchanged, at /advanced (ADVANCED >
+# Overview); "/?period=", "/?bot=" and "/?show=" still open the old pages. So "/" below reads "/advanced".
+
 UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 10, 10, 9, 0, tzinfo=UTC)
 MC = "MOMENTUM_CONTINUATION"
@@ -782,7 +786,7 @@ class TestThePageAgreesWithThePlan:
         from tests.test_formula1_page import _pages, _plan_box
         from tests.test_simple_dashboard import row_of
         d = _four_choices_day(tmp_path)
-        home, detail, coach = _pages(d, "/", "/?bot=market_intelligence", "/coach")
+        home, detail, coach = _pages(d, "/advanced", "/?bot=market_intelligence", "/coach")
         box = _plan_box(coach)                                                       # the plan: on /coach
         assert ("In force now (config.json): only its momentum continuation trades on minor pairs use real money "
                 "(tnb.live_tactics); the top-opportunity size is OFF, so every trade risks the normal amount, never "
