@@ -808,11 +808,12 @@ def bots_json(cfg: Config, p: dict, now: Optional[dt.datetime] = None, max_bytes
 # practice process's status (data/lab-status.json), copied key by key - never a whole
 # file - through _scrub, for the nightly review. Practice only: no money is in it.
 LAB_SUMMARY_KEYS = ("schema", "written_utc", "synthetic", "test_data_note", "mode", "paused", "store",
-                    "funnel", "trials", "families", "candidates", "changes_24h", "binned_recent", "nightly")
+                    "funnel", "trials", "families", "candidates", "changes_24h", "binned_recent", "nightly",
+                    "refresh")
 LAB_CANDIDATE_KEYS = ("id", "name", "family", "stage", "stage_since", "chip", "headline", "what_to_do",
                       "ready", "checks", "figures", "tests", "practice", "words", "story", "synthetic")
 LAB_STATUS_KEYS = ("updated_utc", "mode", "roster", "open_positions", "last_bar_utc", "feed_ok",
-                   "feed_age_s", "last_error", "resting", "synthetic")
+                   "feed_age_s", "last_error", "resting", "synthetic", "practising", "practise_all", "markets")
 
 
 def _lab_trim_steps():
@@ -824,6 +825,14 @@ def _lab_trim_steps():
         for c in rep.get("summary", {}).get("candidates") or []:
             c.pop("words", None)
             c.pop("story", None)
+
+    def status_beyond_12(rep):
+        # 13 Oct: every idea practises, so the status can list hundreds busy today and hundreds open
+        st = rep.get("status", {})
+        for k in ("roster", "open_positions"):
+            if isinstance(st.get(k), list) and len(st[k]) > 12:
+                st[f"{k}_left_out"] = len(st[k]) - 12
+                st[k] = st[k][:12]
 
     def beyond_12(rep):
         summ = rep.get("summary", {})
@@ -838,7 +847,7 @@ def _lab_trim_steps():
         rep.get("summary", {}).pop("families", None)
         rep.get("summary", {}).pop("changes_24h", None)
 
-    return [binned, words_story, beyond_12, lean]
+    return [binned, words_story, status_beyond_12, beyond_12, lean]
 
 
 def lab_json(cfg: Config, max_bytes: int = LAB_MAX_BYTES) -> Optional[str]:

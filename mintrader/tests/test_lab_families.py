@@ -909,3 +909,16 @@ def test_old_cache_files_can_be_pruned(tmp_path, monkeypatch):
     assert (cdir / "2026-06.atr.bin").exists()
     monkeypatch.setattr(F, "CODE_STAMP", "other-code")                              # written by older code
     assert F.prune_cache(store) > 0 and F.cache_bytes(store.paths) == 0
+
+
+def test_every_idea_has_its_own_short_readable_name():
+    """13 Oct: every idea is a row of the breakdown, so its one-line name (family, markets, key settings, exit,
+    news rule - from its own fields) must tell it from every other."""
+    from mintel.lab.candidate import registered, short_name_of
+    cands = registered(news_awake=True)
+    names = [short_name_of(c) for c in cands]
+    assert len(set(names)) == len(cands) == 664 and max(len(n) for n in names) <= 90
+    from mintel.lab.families import get
+    rb = next(c for c in get("RANGE_BREAK").grid() if c.p("lookback_min") == 60 and c.session == "LONDON"
+              and c.markets == "FX_MAJOR" and c.exit == "t2" and c.news == "IGNORE")
+    assert short_name_of(rb) == "Breakout · majors · 60 min, London · 2:1"

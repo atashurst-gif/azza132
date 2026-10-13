@@ -387,7 +387,10 @@ def test_bench_promotions_fill_free_places_at_most_two_a_family(led):
     _bench(led, [(c, 0.9 - 0.01 * k, 0.01) for k, c in enumerate(ors)] +
            [(c, 0.5 - 0.01 * k, 0.01) for k, c in enumerate(ctl)])
     uni = synth.universe(24)
-    out = ST.grade_practice(led, uni, LabSettings(), now=NOW)
+    # 13 Oct: practise_all (the default) gives every benched idea a place; the old six places and
+    # two a family hold only with it off, which is what this test pins
+    old = LabSettings(practise_all=False)
+    out = ST.grade_practice(led, uni, old, now=NOW)
     assert out["promoted"] == [ors[0].id, ors[1].id, ctl[0].id, ctl[1].id]   # two of each family, in order
     places = ST.roster(led)
     assert [p["slot"] for p in places] == [1, 2, 3, 4]
@@ -397,8 +400,22 @@ def test_bench_promotions_fill_free_places_at_most_two_a_family(led):
     assert looks == {1: "2026-10-26", 2: "2026-11-09"}             # the 10th and 20th UK trading days
     assert led.candidate(ors[0].id)["stage"] == PRACTICE
     # idempotent: the same night again gives no place twice
-    again = ST.grade_practice(led, uni, LabSettings(), now=NOW)
+    again = ST.grade_practice(led, uni, old, now=NOW)
     assert again["promoted"] == [] and len(ST.roster(led)) == 4
+
+
+def test_with_practise_all_every_benched_idea_gets_its_place_and_look_days(led):
+    ors = grid_of("PREV_DAY_LEVELS", markets="FX_MAJOR")[:5]
+    ctl = grid_of("CONTROL_TIME_OF_DAY", markets="FX_MINOR")[:3]
+    _bench(led, [(c, 0.9 - 0.01 * k, 0.01) for k, c in enumerate(ors)] +
+           [(c, 0.5 - 0.01 * k, 0.01) for k, c in enumerate(ctl)])
+    settings = LabSettings.from_dict({"practice_slots": 2})          # the slot count no longer limits it
+    assert settings.practise_all is True
+    out = ST.grade_practice(led, synth.universe(24), settings, now=NOW)
+    assert sorted(out["promoted"]) == sorted(c.id for c in ors + ctl)  # no six places, no two a family
+    assert [p["slot"] for p in ST.roster(led)] == list(range(1, 9))
+    assert all(led.candidate(c.id)["stage"] == PRACTICE for c in ors + ctl)
+    assert ST.grade_practice(led, synth.universe(24), settings, now=NOW)["promoted"] == []   # idempotent
 
 
 def test_sixty_days_on_the_bench_without_a_place_bins_it(led):
@@ -531,15 +548,20 @@ def test_judging_day_is_the_last_finished_uk_trading_day():
     assert ST.practice_start("2026-10-16T22:10:00+00:00") == "2026-10-19"                # Friday night: Monday
 
 
-def test_practice_symbols_keep_the_roster_within_twelve_markets():
+def test_practice_symbols_keep_the_roster_within_the_cap():
     uni = synth.universe(24)
+    # 13 Oct: the roster's market cap is now every market the lab stores (24), no longer 12 - each
+    # idea is simulated on its own. The cap itself still works, shown here at the old 12.
+    assert ST.MAX_PRACTICE_SYMBOLS == 24
     taken = set([e.name for e in uni if e.kind == "FX_MINOR"][:8])
-    got = ST.practice_symbols(uni, "FX_MAJOR", taken)
+    assert len(ST.practice_symbols(uni, "FX_MAJOR", taken)) == 7      # every major: room for all of them
+    got = ST.practice_symbols(uni, "FX_MAJOR", taken, cap=12)
     assert len(got) == 4 and len(taken | set(got)) == 12            # room for 4 of the 7 majors
     full = set([e.name for e in uni if e.kind == "FX_MINOR"][:12])
-    assert ST.practice_symbols(uni, "FX_MAJOR", full) == []           # no room: it waits on the bench
+    assert ST.practice_symbols(uni, "FX_MAJOR", full, cap=12) == []   # no room: it waits on the bench
     assert ST.practice_symbols(uni, "GOLD", set()) == ["XAUUSD"]
-    assert ST.practice_symbols(uni, "INDEX", {f"S{k}" for k in range(12)}) == []
+    assert ST.practice_symbols(uni, "INDEX", {f"S{k}" for k in range(12)}, cap=12) == []
+    assert ST.practice_symbols(uni, "INDEX", {f"S{k}" for k in range(24)}) == []
 
 
 def test_stats_for_a_practice_stint_count_quiet_days_as_zero(led):

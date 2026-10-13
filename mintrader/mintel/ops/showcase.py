@@ -998,11 +998,14 @@ def practice_now_line(lab: dict, now: dt.datetime) -> str:
     if str(st.get("mode") or "").upper() == "OFF":
         return "The lab is paused: its mode is OFF (data/lab.json)."
     roster = [r for r in st.get("roster") or () if isinstance(r, dict)]
+    # 13 Oct: with every idea practising the status lists only those busy today; "practising" is how many in all
+    n = st.get("practising")
+    n = int(n) if isinstance(n, (int, float)) and not isinstance(n, bool) else len(roster)
     age = None
     t = _when(st.get("updated_utc"))
     if t is not None:
         age = max(0, int((to_utc(now) - t).total_seconds()))
-    out = f"Practice right now: {_plural(len(roster), 'idea')} on live prices, no money"
+    out = f"Practice right now: {_plural(n, 'idea')} on live prices, no money"
     if st.get("feed_ok") is False:
         out += "; its prices are NOT coming in"
     elif st.get("feed_ok"):

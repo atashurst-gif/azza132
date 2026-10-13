@@ -13,6 +13,7 @@ class VwapFade(FamilyBase):
     features = ("vwap", "atr")
     sensitive = ("sigma", "stop_atr")
     GRID_SIZE = 108
+    TUNABLE = {"sigma": (1.0, 5.0), "stop_atr": (0.25, 4.0)}
     AXES = {"sigma": [2.0, 2.5, 3.0], "session": ["ASIA", "LONDON", "US_CASH"],
             "stop_atr": [1.0, 1.5], "exit": ["vwap"],
             "markets": ["FX_MAJOR", "INDEX", "GOLD"], "news": ["IGNORE", "AVOID_15M"]}
@@ -39,6 +40,10 @@ class VwapFade(FamilyBase):
             elif dev <= -thr and pdev > -thr:
                 out.append(Signal(i, 1, stop, "stretched below the average"))
         return out
+
+    def key_words(self, c):
+        short = {"ASIA": "Asia", "LONDON": "London", "US_CASH": "US"}[c.session]
+        return f"{short} {c.p('sigma'):g}x, stop {c.p('stop_atr'):g}"
 
     def subject(self, c):
         short = {"ASIA": "Asia", "LONDON": "London", "US_CASH": "US"}[c.session]

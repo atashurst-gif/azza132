@@ -11,6 +11,7 @@ class SqueezeRelease(FamilyBase):
     features = ("bb", "hl", "atr")
     sensitive = ("width_pct", "buffer_atr")
     GRID_SIZE = 36
+    TUNABLE = {"width_pct": (2, 60), "buffer_atr": (0.0, 1.0)}
     news_axis = False
     AXES = {"width_pct": [10, 20], "buffer_atr": [0.0, 0.25], "exit": ["t2", "tr2", "time4h"],
             "markets": ["FX_MAJOR", "FX_MINOR", "INDEX"], "news": ["IGNORE"]}
@@ -42,6 +43,9 @@ class SqueezeRelease(FamilyBase):
     def buffer_words(c, sign="plus"):
         k = c.p("buffer_atr")
         return f" ({sign} {swings(k)} of 15-minute movement)" if k else ""
+
+    def key_words(self, c):
+        return f"quietest {c.p('width_pct')}%, buffer {c.p('buffer_atr'):g}"
 
     def subject(self, c):
         buf = f"buffer {swings(c.p('buffer_atr'))}" if c.p("buffer_atr") else "no buffer"

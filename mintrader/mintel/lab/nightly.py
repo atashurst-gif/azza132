@@ -65,8 +65,9 @@ from .ledger import LabLedger
 from .status import pid_alive
 from .store import BarStore, ensure_universe, load_universe
 
-STEPS = ("universe", "fetch", "cut", "features", "practice", "generate", "past", "fresh", "board",
+STEPS = ("universe", "fetch", "cut", "features", "practice", "generate", "past", "fresh", "refresh", "board",
          "upload")
+REFRESH_WEEKDAY = 5                   # Saturday's night: the week has closed and Friday's weekly pick is made
 MIN_FREE_BYTES = 1024 ** 3            # 1 GB
 LOCK_STALE_S = 12 * 3600              # a lock older than this is a dead night's, unless its pid
                                       # is still a mintel.lab.nightly process
@@ -476,6 +477,16 @@ class Night:
         return (f"judged up to {out['judge_day']}: {len(out['looks'])} look(s), {len(out['ready'])} ready, "
                 f"{len(out['binned'])} binned, {len(out['bench_binned'])} off the bench, "
                 f"{len(out['promoted'])} promoted")
+
+    def step_refresh(self) -> str:
+        """Saturday: the weekly refresh of the practice pool (``refresh.py``)."""
+        if dt.date.fromisoformat(self.night).weekday() != REFRESH_WEEKDAY:
+            return "skipped: the pool is refreshed on Saturday nights"
+        from .refresh import refresh_pool
+        rep = refresh_pool(self.ledger, self.paths, self.settings, night=self.night, now=self.now_fn(),
+                           news_awake=bool(self.cut.news_awake) if self.cut else False, log=self.log)
+        return (f"{len(rep['retired'])} retired, {len(rep['variants'])} variants, {len(rep['new'])} new; "
+                f"pool {rep['pool']} of {rep['target']}")
 
     def _covered_past_days(self) -> int:
         if self.calendar is None or self.cut is None:

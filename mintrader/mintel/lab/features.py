@@ -768,7 +768,16 @@ class LiveSeries(SymbolSeries):
     """A growing series for the practice process: bars are pushed one at a time,
     the engines run, and the families see ordinary arrays (``f(name)``,
     ``dayviews()``, ``tf()``) exactly as in a test. Prime it with recent stored
-    bars (a few days) before the first live bar."""
+    bars (a few days) before the first live bar.
+
+    Everything the ideas read is worked out ONCE per market per bar, here, and
+    shared by every idea that watches the market (13 Oct: every idea practises,
+    about 630 of them on up to 24 markets): the feature engines run on ``push``;
+    the higher-timeframe bars (``tf``) and the effective spreads
+    (``spread_arrays``) are kept and grown by one bar, never rebuilt from the
+    whole series as the batch class does (each would be tens of thousands of
+    steps a market a minute). ``pushes`` counts the bars pushed (the tests check
+    it is one a market a bar, however many ideas there are)."""
 
     def __init__(self, entry, sets: Sequence[str] = SETS, news: Optional[NewsInputs] = None,
                  hours: Optional[list] = None):
@@ -777,6 +786,9 @@ class LiveSeries(SymbolSeries):
         self.hours = hours or [0] * 24
         self.source = "bridge"
         self.stream = Streaming(sets, news)
+        self._tfs: dict = {}                      # minutes -> (TfBars, its TfBuilder), grown per push
+        self._spread = None                       # (eff, assumed), grown per push once asked for
+        self.pushes = 0
         for st in sets:
             for name, tc in OUTPUTS[st]:
                 self._feat[name] = array(tc)
@@ -787,7 +799,47 @@ class LiveSeries(SymbolSeries):
         vals = self.stream.push(t, o, h, l, c, s, v)
         for name, x in vals.items():
             self._feat[name].append(x)
+        i = self.n - 1
+        for tb, b in self._tfs.values():          # the same builder the batch tf() runs, one bar on
+            for bar in b.push(t, o, h, l, c):
+                tb.add(bar, i)
+        if self._spread is not None:
+            eff, assumed = self._spread
+            med = self.hours[(t // 60) % 24]
+            s = self.s[i]                          # as stored, exactly what the batch reads
+            if s <= 0:
+                dflt = self._dflt_spread()
+                eff.append(dflt if dflt > med else med)
+                assumed.append(1)
+            else:
+                eff.append(s if s > med else med)
+                assumed.append(0)
+        self.pushes += 1
         self._memo.clear()
+
+    def _dflt_spread(self) -> float:
+        got = self.__dict__.get("_dflt")
+        if got is None:
+            from .sim import default_spread_points
+            got = self._dflt = default_spread_points(self.symbol, self.kind)
+        return got
+
+    def tf(self, minutes: int):
+        got = self._tfs.get(minutes)
+        if got is None:                            # first asked: built over what is held, then grown
+            from .store import TfBars
+            tb, b = TfBars(), TfBuilder(minutes)
+            t, o, h, l, c = self.t, self.o, self.h, self.l, self.c
+            for i in range(self.n):
+                for bar in b.push(t[i], o[i], h[i], l[i], c[i]):
+                    tb.add(bar, i)
+            got = self._tfs[minutes] = (tb, b)
+        return got[0]
+
+    def spread_arrays(self):
+        if self._spread is None:
+            self._spread = super().spread_arrays()
+        return self._spread
 
     def prime(self, cols) -> None:
         for i in range(len(cols.t)):

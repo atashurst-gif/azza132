@@ -33,6 +33,10 @@ class RangeBreak(FamilyBase):
                 out.append(Signal(i, -1, None, "new low"))
         return out
 
+    def key_words(self, c):
+        from ..candidate import SESSION_SHORT
+        return f"{c.p('lookback_min')} min, {SESSION_SHORT[c.session]}"
+
     def subject(self, c):
         return f"{c.p('lookback_min')}-minute breakout in the {SESSION_NAMES[c.session]} session"
 

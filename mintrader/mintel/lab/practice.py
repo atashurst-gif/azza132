@@ -1,4 +1,4 @@
-"""Practice: the roster's ideas on live prices, with no money.
+"""Practice: every idea on live prices, with no money.
 
     python -m mintel.lab.practice --config data/config.json
 
@@ -7,20 +7,34 @@ Started and kept alive by the watchdog while ``data/lab.json`` does not say OFF
 CANNOT place an order; its trades are rows in ``data/lab/lab.sqlite`` marked
 PRACTICE and nowhere else.
 
+Who practises: with ``practise_all`` on in ``data/lab.json`` (the default since
+13 Oct) EVERY idea in the ledger, whatever its stage - binned ones included -
+each on every market of its kind that the lab stores (at most 24). The past and
+fresh tests still run each night and are shown, but no longer decide who
+practises; the stage history is left exactly as the rule wrote it. With it off,
+only the nightly's roster (PRACTICE and READY FOR LIVE) practises, as before.
+Aaron, 13 Oct: "I just want all in practice unless any earn the right [to real
+money]" - the weekly pick (``mintel/ops/weekly.py``) is what judges that.
+
 Every minute, three seconds past it:
 
-* for each market on the roster (at most 12) the last three one-minute bars are
-  read (a missed stretch is read back), and each finished bar goes through the
-  same feature code the past tests use (``features.LiveSeries``);
+* for each market any idea watches the last three one-minute bars are read (a
+  missed stretch is read back), and each finished bar goes through the same
+  feature code the past tests use (``features.LiveSeries``) ONCE, shared by
+  every idea on that market;
 * every open practice position is moved through each finished bar by the
   simulator's own ``step`` (the stop first, then the target, the trail, the time
   and the 21:55 UK flat); a feed silent for more than 5 minutes with a position
   open closes it at the first bar back (FEED_GAP);
-* each idea's family looks at the newest finished bar; a signal is filled on ONE
-  ``ticks`` call for all the markets that want one, at the real ask (buys) or bid
-  (sells) plus slippage, under the same caps as the past test (one position per
-  market, three open per idea, a five-bar pause after an exit, six entries per
-  market per UK day) and the lab's own: at most 12 open across the lab.
+* each idea's family looks at the newest finished bar. Ideas that differ only in
+  their exit, markets or news rule see the very same signals, so a family's
+  ``signals`` runs once per (settings, session) a market a bar and the answer is
+  shared; a signal is filled on ONE ``ticks`` call for all the markets that want
+  one, at the real ask (buys) or bid (sells) plus slippage, under the same caps
+  as the past test, per idea (one position per market, three open per idea, a
+  five-bar pause after an exit, six entries per market per UK day). Each idea is
+  simulated on its own, so there is no cap across the lab: the old 6 slots, 12
+  markets and 12 open across the lab only made sense for a handful of ideas.
 
 Nothing on a UK Saturday or Sunday. A restart resumes: open positions come back
 from ``practice_open`` (and the small ``practice_state.json`` beside it), and the
@@ -47,8 +61,8 @@ from typing import Callable, Optional, Sequence
 from ..broker.base import TF
 from ..clock import TZ_LONDON
 from . import (COOLDOWN_BARS, FEED_GAP_MINUTES, MAX_ENTRIES_PER_DAY, MAX_OPEN_PER_CANDIDATE,
-               NEWS_AVOID_MINUTES, PRACTICE, READY_FOR_LIVE, SLIP_MIN_POINTS, SLIP_SPREAD_SHARE, UTC,
-               LabPaths, LabSettings, atomic_write_json, day_min, epoch_min, iso_utc, minute_to_dt,
+               NEWS_AVOID_MINUTES, PRACTICE, READY_FOR_LIVE, SLIP_MIN_POINTS, SLIP_SPREAD_SHARE, UNIVERSE_CAP,
+               UTC, LabPaths, LabSettings, atomic_write_json, day_min, epoch_min, iso_utc, minute_to_dt,
                utc_stamp)
 from . import features as FEAT
 from . import sim
@@ -61,8 +75,7 @@ from .status import STATUS_EVERY_S, pid_alive, write_status
 from .store import BarStore, bar_row, flat_min, load_universe
 
 TICKET_BASE = 970_000_001
-MAX_OPEN_LAB = 12
-MAX_SYMBOLS = 12
+MAX_SYMBOLS = UNIVERSE_CAP                    # every market the lab stores (24), no fewer
 PRIME_BARS = max(FEAT.TAIL_BARS.values())     # enough warm-up for the slowest feature (EMA200 on H1)
 READ_BACK_MAX = 3000                          # bars read back after a gap (one page)
 RESET_AT = 2 * PRIME_BARS                     # a series this long is rebuilt at the UK day's turn
@@ -104,6 +117,31 @@ class Slot:
     stage: str
     next_ok: dict = field(default_factory=dict)       # symbol -> first minute a signal may fire
     entries: dict = field(default_factory=dict)       # "symbol|uk day" -> entries so far
+    wants_news: bool = False                          # its family is handed the news minutes
+    sig_key: tuple = ()                               # ideas with the same key see the same signals
+
+
+def wants_news(cand, fam) -> bool:
+    """True when a family's ``signals`` is handed the minutes-to-news array:
+    an idea that avoids the news, or a news family (as the past test does)."""
+    return cand.news == "AVOID_15M" or "NEWS" in fam.code
+
+
+def signal_key(cand, fam) -> tuple:
+    """What a family's signals depend on: its code, the idea's own settings, its
+    session and - for a family that reads it (``reads_news``) - whether it is
+    handed the news. NOT the exit, the markets or the news rule's skip (those act
+    after the signal, per idea): a family reads only its own settings and the
+    session from ``p``, and only a news family reads the news array (a test reads
+    every family's source to keep it so). Ideas with equal keys share one
+    signals call, so 630 ideas are about 70 calls a market a bar, not 630."""
+    return (fam.code, tuple(cand.params), cand.session,
+            wants_news(cand, fam) if getattr(fam, "reads_news", True) else None)
+
+
+def kind_symbols(universe: dict, kind: str) -> list:
+    """Every stored market of a kind, in the universe's order (at most 24)."""
+    return [name for name, e in universe.items() if e.kind == kind][:MAX_SYMBOLS]
 
 
 class Practice:
@@ -128,7 +166,10 @@ class Practice:
         self.insts: dict = {}
         self.series: dict = {}
         self.slots: dict = {}
+        self.by_symbol: dict = {}                     # symbol -> [the slots that watch it]
         self.open: dict = {}                          # (cid, symbol) -> Open
+        self._dirty: set = set()                      # open positions whose stop or peak moved this minute
+        self.signal_calls = 0                         # family.signals calls (shared across ideas)
         self.done_t: dict = {}                        # symbol -> last bar walked through
         self.last_bar: dict = {}                      # symbol -> newest finished bar seen (minute)
         self.roster_key = None
@@ -158,48 +199,70 @@ class Practice:
         return self.paths.root / "practice_state.json"
 
     # ------------------------------------------------------------- roster --
-    def load_roster(self) -> bool:
-        """Read the roster the nightly wrote. True when it changed."""
+    def _roster_rows(self) -> list:
+        """The ideas that practise, each with the markets it watches.
+
+        ``practise_all`` (the default): every idea in the ledger, binned ones
+        included - its stage is read, never changed - on every stored market of
+        its kind; except those the weekly refresh RETIRED (``refresh.py``). Otherwise the nightly's roster at PRACTICE or READY FOR LIVE,
+        within ``practice_slots``, on the markets the nightly gave it."""
+        if self.settings.practise_all:
+            rows = [dict(r) for r in self.ledger.query(           # the nightly's roster first, in its order
+                "SELECT c.id AS id, c.name AS name, c.stage AS stage, c.def_json AS def_json FROM candidates c"
+                " LEFT JOIN roster r ON r.candidate_id=c.id WHERE c.retired_utc IS NULL"     # retired: off the pool
+                " ORDER BY r.slot IS NULL, r.slot, c.id")]
+            for r in rows:
+                r["symbols"] = None                    # its kind's markets, once the definition is read
+            return rows
         rows = [dict(r) for r in self.ledger.query(
             "SELECT r.*, c.name AS name, c.stage AS stage, c.def_json AS def_json, c.id AS id"
             " FROM roster r JOIN candidates c ON c.id=r.candidate_id ORDER BY r.slot")]
         rows = [r for r in rows if r["stage"] in (PRACTICE, READY_FOR_LIVE)]
         rows = rows[:max(0, int(self.settings.practice_slots))]
-        key = tuple((r["id"], r["symbols_json"], r["stage"]) for r in rows)
+        for r in rows:
+            try:
+                got = json.loads(r["symbols_json"] or "[]")
+            except ValueError:
+                got = []
+            r["symbols"] = [s for s in got if s in self.universe] if isinstance(got, list) else []
+        return rows
+
+    def load_roster(self) -> bool:
+        """Read who practises. True when it changed (an idea came, went or moved stage)."""
+        rows = self._roster_rows()
+        key = (bool(self.settings.practise_all),
+               tuple((r["id"], r["stage"], tuple(r["symbols"] or ())) for r in rows))
         if key == self.roster_key:
             return False
         self.roster_key = key
-        slots, seen = {}, set()
+        slots = {}
         for r in rows:
             try:
                 c = cand_of(r)
                 fam = family_of(c)
-                syms = [s for s in json.loads(r["symbols_json"] or "[]") if s in self.universe]
             except Exception as exc:
                 self.log(f"{r['id']} cannot practise: {exc}")
                 continue
-            keep = []
-            for s in syms:
-                if s in seen or len(seen) < MAX_SYMBOLS:
-                    seen.add(s)
-                    keep.append(s)
+            syms = r["symbols"] if r["symbols"] is not None else kind_symbols(self.universe, c.markets)
             old = self.slots.get(r["id"])
-            slot = Slot(r["id"], r["name"], c, fam, sim.family_params(c), keep, r["stage"])
+            slot = Slot(r["id"], r["name"], c, fam, sim.family_params(c), list(syms), r["stage"],
+                        wants_news=wants_news(c, fam), sig_key=signal_key(c, fam))
             if old is not None:
                 slot.next_ok, slot.entries = old.next_ok, old.entries
             slots[r["id"]] = slot
         self.slots = slots
+        self.by_symbol = {}
+        for slot in slots.values():
+            for sym in slot.symbols:
+                self.by_symbol.setdefault(sym, []).append(slot)
         for key2 in [k for k in self.open if k[0] not in self.slots]:
             self.log(f"{key2[0]} left the roster with a position open on {key2[1]}: it closes at the next bar")
-        self.log(f"roster: {len(self.slots)} idea(s) on {len(self.symbols())} market(s)")
+        self.log(f"roster: {len(self.slots)} idea(s) on {len(self.symbols())} market(s)"
+                 + (" (every idea practises)" if self.settings.practise_all else ""))
         return True
 
     def symbols(self) -> list:
-        out = []
-        for s in self.slots.values():
-            for sym in s.symbols:
-                if sym not in out:
-                    out.append(sym)
+        out = list(self.by_symbol)
         for (_cid, sym) in self.open:
             if sym not in out and sym in self.universe:
                 out.append(sym)
@@ -331,7 +394,9 @@ class Practice:
         atomic_write_json(self._state_path(), {
             "written_utc": utc_stamp(self.now_fn()), "positions": positions,
             "done_t": self.done_t,
-            "slots": {cid: {"next_ok": s.next_ok, "entries": s.entries} for cid, s in self.slots.items()}})
+            # only the ideas with something to remember (most of ~630 have nothing on a quiet day)
+            "slots": {cid: {"next_ok": s.next_ok, "entries": s.entries} for cid, s in self.slots.items()
+                      if s.next_ok or s.entries}})
 
     # -------------------------------------------------------------- records --
     def _ticket(self) -> int:
@@ -379,21 +444,40 @@ class Practice:
              iso_utc(p.t_open)))
 
     def _update_open(self, o: Open) -> None:
-        p, pt = o.pos, self.inst(o.symbol).point
-        nd = self.inst(o.symbol).digits + 3
-        self.ledger.execute("UPDATE practice_open SET stop=?, peak=? WHERE candidate_id=? AND symbol=?",
-                            (round(p.stop * pt, nd), round(p.peak * pt, nd), o.cid, o.symbol))
+        """Noted, and written with the minute's others in ONE transaction (``_flush_open``):
+        with hundreds of ideas open, a commit per position per bar was most of the minute."""
+        self._dirty.add((o.cid, o.symbol))
+
+    def _flush_open(self) -> None:
+        rows = []
+        for key in self._dirty:
+            o = self.open.get(key)
+            if o is None:                            # closed since: its row is already gone
+                continue
+            p, pt = o.pos, self.inst(o.symbol).point
+            nd = self.inst(o.symbol).digits + 3
+            rows.append((round(p.stop * pt, nd), round(p.peak * pt, nd), o.cid, o.symbol))
+        self._dirty.clear()
+        if rows:
+            with self.ledger._tx():
+                self.ledger.conn.executemany(
+                    "UPDATE practice_open SET stop=?, peak=? WHERE candidate_id=? AND symbol=?", rows)
 
     def roll_day(self, day: str) -> None:
-        """A new UK day: a zero row for each practising idea (a weekday only)."""
+        """A new UK day: a zero row for each practising idea (a weekday only), in one
+        transaction; each idea's entry counts of earlier days are let go."""
         if day == self.day:
             return
         self.day = day
+        for slot in self.slots.values():
+            slot.entries = {k: v for k, v in slot.entries.items() if k.endswith("|" + day)}
         if dt.date.fromisoformat(day).weekday() >= 5:
             return
-        for cid in self.slots:
-            self.ledger.execute("INSERT OR IGNORE INTO practice_days(candidate_id, day, net_gbp, trades)"
-                                " VALUES (?,?,0,0)", (cid, day))
+        if self.slots:
+            with self.ledger._tx():
+                self.ledger.conn.executemany(
+                    "INSERT OR IGNORE INTO practice_days(candidate_id, day, net_gbp, trades) VALUES (?,?,0,0)",
+                    [(cid, day) for cid in self.slots])
         for sym, ser in list(self.series.items()):
             if ser.n > RESET_AT:
                 del self.series[sym]                  # rebuilt (shorter) at the next minute
@@ -427,6 +511,7 @@ class Practice:
         except Exception as exc:                       # the feed went away: say so, try again next minute
             self.feed_ok, self.last_error = False, f"{type(exc).__name__}: {exc}"
             self.log(f"feed: {self.last_error}")
+        self._flush_open()
         self.save_state()
         return done
 
@@ -451,6 +536,8 @@ class Practice:
 
     def _walk(self, sym: str, r: tuple) -> None:
         t, o, h, l, c, s, _v = r
+        if not self.open:
+            return
         for key in [k for k in self.open if k[1] == sym]:
             op = self.open[key]
             if t <= op.last_t:
@@ -473,42 +560,56 @@ class Practice:
                 self._update_open(op)
 
     def _signals(self, sym: str, now_min: int) -> list:
-        """The roster's signals on this market's newest finished bar."""
+        """Every idea's signals on this market's newest finished bar. The bar's
+        features, day views and session spans are worked out once; a family's
+        ``signals`` runs once for each ``signal_key`` and session span, and
+        every idea with that key gets the answer (they would all compute the
+        very same list)."""
+        slots = self.by_symbol.get(sym)
         ser = self.series[sym]
-        if not ser.n:
+        if not slots or not ser.n:
             return []
         i = ser.n - 1
         t_i = ser.t[i]
         if t_i != now_min - 1:                         # not the bar that has just finished: too late to act
             return []
-        out = []
-        dvs = None
-        for slot in self.slots.values():
-            if sym not in slot.symbols:
-                continue
-            if dvs is None:
-                dvs = ser.dayviews()
-            dv = dvs[-1] if dvs else None
-            if dv is None or not (dv.i0 <= i < dv.i1):
-                continue
-            if dt.date.fromisoformat(dv.uk).weekday() >= 5:
-                continue
+        dvs = ser.dayviews()
+        dv = dvs[-1] if dvs else None
+        if dv is None or not (dv.i0 <= i < dv.i1):
+            return []
+        if dt.date.fromisoformat(dv.uk).weekday() >= 5:
+            return []
+        out: list = []
+        spans: dict = {}
+        shared: dict = {}
+        news_known = None
+        for slot in slots:
             c = slot.cand
-            if c.news == "AVOID_15M" and not self._news_known(dv.uk):
-                self.skip("news_unknown_day")
-                continue
-            lo, hi = dv.span(c.session)
+            if c.news == "AVOID_15M":
+                if news_known is None:
+                    news_known = self._news_known(dv.uk)
+                if not news_known:
+                    self.skip("news_unknown_day")
+                    continue
+            span = spans.get(c.session)
+            if span is None:
+                span = spans[c.session] = dv.span(c.session)
+            lo, hi = span
             if hi - lo < 2 or not (lo <= i < hi):
                 continue
-            news = ser.f("news_min") if (c.news == "AVOID_15M" or "NEWS" in slot.family.code) else None
-            try:
-                sigs = slot.family.signals(dv, slot.params, (lo, hi), news)
-            except Exception as exc:
-                self.log(f"{slot.cid} {sym}: the family's signals failed: {exc}")
-                continue
+            key = (slot.sig_key, lo, hi)
+            sigs = shared.get(key)
+            if sigs is None:
+                news = ser.f("news_min") if slot.wants_news else None
+                self.signal_calls += 1
+                try:
+                    sigs = [sg for sg in slot.family.signals(dv, slot.params, (lo, hi), news) if sg.i == i]
+                except Exception as exc:
+                    self.log(f"{slot.cid} {sym}: the family's signals failed: {exc}")
+                    sigs = []
+                shared[key] = sigs
             for sg in sigs:
-                if sg.i == i:
-                    out.append((slot, sym, i, sg, dv))
+                out.append((slot, sym, i, sg, dv))
         return out
 
     def _news_known(self, day: str) -> bool:
@@ -523,7 +624,11 @@ class Practice:
 
     def _enter(self, wants: list, now_min: int) -> int:
         """Fill the signals on ONE ticks call: the real ask for a buy, the bid for a
-        sell, plus slippage; the same caps as the past test, and the lab's own."""
+        sell, plus slippage; the same caps as the past test, per idea (each idea is
+        simulated on its own: there is no cap across the lab)."""
+        per_idea: dict = {}
+        for (cid, _sym) in self.open:
+            per_idea[cid] = per_idea.get(cid, 0) + 1
         ok_wants = []
         for slot, sym, i, sg, dv in wants:
             ser = self.series[sym]
@@ -533,11 +638,8 @@ class Practice:
             if ser.t[i] < slot.next_ok.get(sym, 0):
                 self.skip("busy_or_cooldown")
                 continue
-            if sum(1 for k in self.open if k[0] == slot.cid) >= MAX_OPEN_PER_CANDIDATE:
+            if per_idea.get(slot.cid, 0) >= MAX_OPEN_PER_CANDIDATE:
                 self.skip("max_open")
-                continue
-            if len(self.open) >= MAX_OPEN_LAB:
-                self.skip("lab_max_open")
                 continue
             dkey = f"{sym}|{dv.uk}"
             if slot.entries.get(dkey, 0) >= MAX_ENTRIES_PER_DAY:
@@ -557,8 +659,8 @@ class Practice:
         ticks = self.feed.ticks(sorted({w[1] for w in ok_wants})) or {}
         n = 0
         for slot, sym, i, sg, dv in ok_wants:
-            if len(self.open) >= MAX_OPEN_LAB:
-                self.skip("lab_max_open")
+            if per_idea.get(slot.cid, 0) >= MAX_OPEN_PER_CANDIDATE:      # filled earlier in this same minute
+                self.skip("max_open")
                 continue
             tk = ticks.get(sym)
             if tk is None or not tk.bid or not tk.ask:
@@ -588,6 +690,7 @@ class Practice:
                      json.dumps({"bid": tk.bid, "ask": tk.ask, "time": tk.time.isoformat() if tk.time else ""}),
                      now_min - 1)
             self.open[(slot.cid, sym)] = o
+            per_idea[slot.cid] = per_idea.get(slot.cid, 0) + 1
             dkey = f"{sym}|{dv.uk}"
             slot.entries[dkey] = slot.entries.get(dkey, 0) + 1
             self._record_open(o)
@@ -600,14 +703,21 @@ class Practice:
     def status(self, now: Optional[dt.datetime] = None) -> dict:
         now = now or self.now_fn()
         today = now.astimezone(TZ_LONDON).date().isoformat()
+        days = {r["candidate_id"]: r for r in self.ledger.query(
+            "SELECT candidate_id, net_gbp, trades FROM practice_days WHERE day=?", (today,))}
+        n_open: dict = {}
+        for (cid, _sym) in self.open:
+            n_open[cid] = n_open.get(cid, 0) + 1
         roster = []
         for slot in self.slots.values():
-            row = self.ledger.one("SELECT net_gbp, trades FROM practice_days WHERE candidate_id=? AND day=?",
-                                  (slot.cid, today))
+            row = days.get(slot.cid)
+            trades = int(row["trades"]) if row else 0
+            if self.settings.practise_all and not trades and not n_open.get(slot.cid):
+                continue                               # ~630 ideas: only the ones busy today are listed
             roster.append({"id": slot.cid, "name": slot.name, "stage": slot.stage, "symbols": slot.symbols,
-                           "open": sum(1 for k in self.open if k[0] == slot.cid),
-                           "today_trades": int(row["trades"]) if row else 0,
+                           "open": n_open.get(slot.cid, 0), "today_trades": trades,
                            "today_gbp": float(row["net_gbp"]) if row else 0.0})
+        roster.sort(key=lambda x: (-x["today_gbp"], x["id"]))
         opened = []
         for (cid, sym), o in self.open.items():
             p, pt = o.pos, self.inst(sym).point
@@ -619,7 +729,9 @@ class Practice:
         newest = max(self.last_bar.values()) if self.last_bar else None
         age = None if newest is None else round((now - minute_to_dt(newest + 1)).total_seconds(), 1)
         weekend = now.astimezone(TZ_LONDON).weekday() >= 5
-        return {"mode": self.settings.mode, "practice": True, "roster": roster, "open_positions": opened,
+        return {"mode": self.settings.mode, "practice": True, "roster": roster, "practising": len(self.slots),
+                "practise_all": bool(self.settings.practise_all),
+                "markets": len(self.by_symbol), "open_positions": opened,
                 "last_bar_utc": {s: iso_utc(t) for s, t in sorted(self.last_bar.items())},
                 "feed_ok": self.feed_ok, "feed_age_s": age, "last_error": self.last_error,
                 "resting": "the weekend: nothing practises on a Saturday or Sunday" if weekend else "",

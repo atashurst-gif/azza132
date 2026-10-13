@@ -60,6 +60,10 @@ PROVEN = "PROVEN"
 BINNED = "BINNED"
 STAGES = (IDEA, PAST_TEST, FRESH_TEST, ON_THE_BENCH, PRACTICE, READY_FOR_LIVE,
           LIVE_TRIAL, PROVEN, BINNED)
+# Not a stage: the weekly refresh's mark on an idea it took off the practice pool (a clear loser on its
+# own practice record). Kept beside the stage (candidates.retired_utc / retired_reason), so the stage
+# history the rule wrote is never rewritten.
+RETIRED = "RETIRED"
 
 # ------------------------------------------------------------------ checks ---
 # Five checks on every row, bots included, in this order and wording.
@@ -131,6 +135,9 @@ PBO_MAX = 0.35
 PBO_MIN_MEMBERS, PBO_MIN_TRADES = 8, 20
 PRACTICE_KILL_R = 15.0              # practice drawdown (in R) that bins a candidate
 LIVE_TRIAL_TRADES = 20
+# the most ladder places a hand-edited practice_slots can ask for (it was 50 while practice was a
+# handful of slots; every idea is now simulated on its own, so the setting is no longer the limit)
+PRACTICE_SLOTS_MAX = 1000
 
 
 
@@ -281,7 +288,13 @@ class LabSettings:
     default. A mode of LIVE is read as PAPER: the lab has no live path."""
     mode: str = "PAPER"                       # PAPER | OFF
     risk_gbp: float = RISK_GBP
-    practice_slots: int = 6
+    practice_slots: int = 6                   # the ladder's places while practise_all is off
+    # Aaron, 13 Oct: "I just want all in practice unless any earn the right". On (the default):
+    # EVERY idea in the ledger practises on live prices, binned ones included, each with its own
+    # positions; the past and fresh tests still run and are shown, but no longer decide who
+    # practises. Only the weekly pick's own proof bar (mintel/ops/weekly.py) moves anything on.
+    practise_all: bool = True
+    pool_target: int = 640                    # the weekly refresh keeps the practising pool near this size
     fresh_cap_per_stretch: int = FRESH_LOOKS_PER_STRETCH
     fresh_per_night: int = FRESH_PER_NIGHT
     history_days: int = HISTORY_DAYS
@@ -321,6 +334,12 @@ class LabSettings:
             assert 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59
         except Exception:
             dl = d.deadline_local
+        pa = raw.get("practise_all", d.practise_all)
+        if isinstance(pa, str):
+            pa = {"true": True, "on": True, "yes": True, "1": True,
+                  "false": False, "off": False, "no": False, "0": False}.get(pa.strip().lower(), d.practise_all)
+        elif not isinstance(pa, (bool, int)):
+            pa = d.practise_all
         syms = raw.get("symbols")
         if isinstance(syms, (list, tuple)) and syms:
             syms = tuple(str(s) for s in syms)
@@ -330,7 +349,9 @@ class LabSettings:
         # arithmetic (500 looks at 0.005 each is about 2.5 lucky passes a stretch), so the
         # setting can lower the cap but never raise it: anything above 30 reads as 30.
         return cls(mode=mode, risk_gbp=num("risk_gbp", float, d.risk_gbp, 0.5, 1000.0),
-                   practice_slots=num("practice_slots", int, d.practice_slots, 0, 50),
+                   practice_slots=num("practice_slots", int, d.practice_slots, 0, PRACTICE_SLOTS_MAX),
+                   practise_all=bool(pa),
+                   pool_target=num("pool_target", int, d.pool_target, 10, 5000),
                    fresh_cap_per_stretch=num("fresh_cap_per_stretch", int,
                                              d.fresh_cap_per_stretch, 0, FRESH_LOOKS_PER_STRETCH),
                    fresh_per_night=num("fresh_per_night", int, d.fresh_per_night, 0, 100),

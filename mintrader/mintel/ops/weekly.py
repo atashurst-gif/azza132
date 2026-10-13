@@ -17,10 +17,15 @@ THE CANDIDATES - everything that is practising:
 * Trend & Breakout's parts: each approach (tactic) x kind of market (FX_MINOR,
   INDEX, GOLD ...), its paper record (data/tnb_paper.sqlite, the money) joined
   by ticket to its journal (data/journal.sqlite, the approach);
-* the lab's ideas at READY FOR LIVE (data/lab/lab.sqlite, read-only). The lab
-  has no live order path yet: when one of its ideas is the best, it is
-  recorded as "picked, needs a live path (being built)" and the best candidate
-  that has a live path is the one promoted.
+* EVERY lab idea, whatever its stage (data/lab/lab.sqlite, read-only), each one
+  its own test on its own PRACTICE trades. Since 13 Oct every idea practises on
+  live prices (``practise_all`` in data/lab.json); the lab's own past and fresh
+  tests are shown on its page but no longer decide who is in the pool - the
+  proof bar below is what stops luck. Aaron, 13 Oct: "I just want all in
+  practice unless any earn the right, then a breakdown of everything (profit)
+  and winners at the top". The lab has no live order path yet: when one of its
+  ideas is the best, it is recorded as "picked, needs a live path (being
+  built)" and the best candidate that has a live path is the one promoted.
 
 THE PROOF BAR ("begin proving"), on practice trades of the last LOOKBACK_DAYS
 (28) days only, each after its own costs (and, for a candidate taken back to
@@ -45,9 +50,14 @@ THE CADENCE (UK time, Europe/London, BST and GMT alike):
   data/weekly/plan-<Friday>.json and data/weekly/latest.json - the ranking,
   the pick, the reasons and the release time. A watchdog that was down then
   catches up until the release.
-* 06:30 on the next UK trading day (normally Monday): the pick is released -
-  switched LIVE through ``modes.set_modes`` and the bot that runs it
-  restarted. At most ONE new promotion in an ISO week.
+* 06:30 on the next UK trading day (normally Monday): the picks are released -
+  switched LIVE through ``modes.set_modes``, one after another, and the bots
+  that run them restarted. At most ``weekly_max_promotions`` (default 3, set in
+  data/weekly.json) new promotions in an ISO week. Aaron, 13 Oct: "each week, X
+  amount of winners go live the following week". Two Trend & Breakout parts
+  picked in one week are checked against the live kinds x approaches as they
+  will be after ALL of that week's picks, so together they can never widen
+  into an unproven combination.
 * ``veto`` (Aaron) cancels the week's pick; a pick already live is taken back.
 * data/HALT: nothing is applied while it exists (a pick waits, and lapses at
   the next Friday's pick).
@@ -101,11 +111,15 @@ RESAMPLES = 2000
 JUDGE_AFTER = 20                # live trades before a promotion is judged
 EARLY_EXIT_RISKS = 10.0         # a live loss of this many times its risk a trade: back to PAPER
 TOO_EARLY_TRADES = 10           # Home: fewer trades than this is TOO EARLY
+HOME_TOP, HOME_BOTTOM = 10, 3   # Home lists the best ten and the worst three; the Practice page lists them all
 PICK_WEEKDAY, PICK_AT = 4, (22, 30)     # Friday 22:30 UK
 RELEASE_AT = (6, 30)                    # 06:30 UK on the next UK trading day
 CHECK_SECONDS = 300.0           # how often the watchdog looks
 FALLBACK_RISK_GBP = 10.0        # risk a trade when no record says (coach.BOT_FALLBACK_RISK_GBP)
 SCHEMA = 1
+MAX_PROMOTIONS = 3              # new promotions in an ISO week, unless data/weekly.json says otherwise
+MAX_PROMOTIONS_CAP = 10         # the most a hand-edited data/weekly.json can ask for
+SETTINGS = "weekly.json"        # data/weekly.json: {"weekly_max_promotions": 3}
 
 DIR = "weekly"
 STATE, LATEST, HISTORY = "state.json", "latest.json", "history.jsonl"
@@ -201,6 +215,29 @@ def _write_atomic(path: Path, obj) -> None:
     os.replace(tmp, path)
 
 
+def max_promotions(data_dir) -> int:
+    """How many new promotions an ISO week may have: data/weekly.json's
+    ``weekly_max_promotions`` (0 to MAX_PROMOTIONS_CAP), else MAX_PROMOTIONS.
+    A bad value reads as the default, never as more."""
+    raw = _read(Path(data_dir) / SETTINGS) if data_dir else None
+    try:
+        n = int(raw["weekly_max_promotions"]) if isinstance(raw, dict) else MAX_PROMOTIONS
+    except (KeyError, TypeError, ValueError):
+        return MAX_PROMOTIONS
+    return n if 0 <= n <= MAX_PROMOTIONS_CAP else MAX_PROMOTIONS
+
+
+def plan_picks(plan: Optional[dict]) -> list[dict]:
+    """A plan's picks as [{"pick", "extras"}], best first (a plan written before
+    there could be several holds its one ``pick`` and ``extras``)."""
+    if not isinstance(plan, dict):
+        return []
+    got = plan.get("picks")
+    if isinstance(got, list):
+        return [x for x in got if isinstance(x, dict) and isinstance(x.get("pick"), dict)]
+    return [{"pick": plan["pick"], "extras": list(plan.get("extras") or ())}] if plan.get("pick") else []
+
+
 def plan_path(data_dir, friday: dt.date) -> Path:
     return wdir(data_dir) / f"plan-{friday.isoformat()}.json"
 
@@ -273,6 +310,18 @@ def last_demoted(hist: Sequence[dict]) -> dict:
 
 def promotions_in_week(hist: Sequence[dict], week: str) -> list[dict]:
     return [e for e in hist if e.get("event") == "promote" and e.get("week") == week]
+
+
+def picks_in_week(hist: Sequence[dict], week: str, other_than: str = "") -> int:
+    """The week's promotions that were picks (a part that only rode along with a
+    pick is not one), leaving out those of the plan ``other_than`` (a Friday)."""
+    n = 0
+    for e in promotions_in_week(hist, week):
+        if other_than and e.get("plan") == other_than:
+            continue
+        if e.get("pick", not str(e.get("why") or "").startswith("proved itself too")):
+            n += 1
+    return n
 
 
 def halted(data_dir) -> bool:
@@ -382,7 +431,7 @@ def bootstrap(nets: Sequence[float], ident: str, resamples: int = RESAMPLES) -> 
         means = sorted(sum(nets[rnd(n)] for _ in range(n)) / n for _ in range(resamples))
         p = sum(1 for m in means if m <= 0) / resamples
         lcb = means[min(resamples - 1, int(LCB_QUANTILE * (resamples - 1)))]
-    if len(_BOOT_CACHE) > 512:
+    if len(_BOOT_CACHE) > 4096:                          # ~640 tests in the pool: room for them all
         _BOOT_CACHE.clear()
     _BOOT_CACHE[key] = (round(p, 4), round(lcb, 4))
     return _BOOT_CACHE[key]
@@ -467,23 +516,30 @@ def tnb_part_trades(data_dir, start: dt.datetime, end: dt.datetime, record=None)
     return out
 
 
-def lab_ready_trades(data_dir, start: dt.datetime, end: dt.datetime, stages=None) -> list[tuple[dict, list]]:
-    """[(the idea's row, its practice trades)] for every lab idea at READY FOR
-    LIVE (or ``stages``), read-only; nothing for a made-up (synthetic) lab."""
-    from ..lab import READY_FOR_LIVE
+def lab_trades(data_dir, start: dt.datetime, end: dt.datetime, stages=None) -> list[tuple[dict, list]]:
+    """[(the idea's row, its practice trades)] for EVERY lab idea (or only those
+    at ``stages``), read-only, each row with ``short``: its one-line name built
+    from its own definition (``candidate.short_name_of``). Nothing for a made-up
+    (synthetic) lab. The trades are the PRACTICE rows the practice process
+    wrote; an idea with none in the window comes with an empty list."""
     data = Path(data_dir)
     summ = _read(data / "lab" / "summary.json")
     if isinstance(summ, dict) and summ.get("synthetic"):
         return []
     db = data / "lab" / "lab.sqlite"
-    stages = tuple(stages or (READY_FOR_LIVE,))
-    q = ",".join("?" for _ in stages)
-    ideas = _rows(db, f"SELECT id, name, family, stage FROM candidates WHERE stage IN ({q})", stages)
+    if stages:
+        stages = tuple(stages)
+        q = ",".join("?" for _ in stages)
+        ideas = _rows(db, f"SELECT * FROM candidates WHERE stage IN ({q})", stages)
+    else:
+        ideas = _rows(db, "SELECT * FROM candidates")
+    ideas = [i for i in ideas if not i.get("retired_utc")]     # the weekly refresh took it off the pool
     if not ideas:
         return []
     from ..coach.records import _is_test_row
     rows = _rows(db, "SELECT * FROM practice_trades WHERE closed_utc IS NOT NULL AND closed_utc >= ? AND "
-                     "closed_utc < ?", (to_utc(start).isoformat(), to_utc(end).isoformat()))
+                     "closed_utc < ? AND (mode IS NULL OR mode='PRACTICE')",
+                 (to_utc(start).isoformat(), to_utc(end).isoformat()))
     by: dict = {}
     for r in rows:
         t = _when(r.get("closed_utc"))
@@ -494,7 +550,24 @@ def lab_ready_trades(data_dir, start: dt.datetime, end: dt.datetime, stages=None
             {"closed": t, "net": round(float(r["net_gbp"]), 2), "costs": None if c is None else abs(float(c)),
              "symbol": str(r.get("symbol") or ""), "ticket": int(r.get("ticket") or 0), "kind": "practice",
              "risk": r.get("risk_gbp")})
+    for i in ideas:
+        i["short"] = lab_short_name(i)
     return [(i, by.get(str(i["id"]), [])) for i in ideas]
+
+
+lab_ready_trades = lab_trades                 # the name it had while only READY FOR LIVE ideas were read
+
+
+def lab_short_name(row: dict) -> str:
+    """'Breakout · majors · 60 min, London · 2:1': family, markets, key settings,
+    exit, from the idea's own stored definition; its long name, else its id, when
+    the definition cannot be read."""
+    try:
+        from ..lab.candidate import short_name_of
+        from ..lab.stages import cand_of
+        return short_name_of(cand_of(row))
+    except Exception:
+        return str(row.get("name") or row.get("id") or "lab idea")
 
 
 def _kind_words(kind: str) -> str:
@@ -508,10 +581,12 @@ def part_words(tactic: str, kind: str) -> str:
 
 
 def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[dict]] = None,
-               lab_stages: Optional[Sequence[str]] = None) -> list[dict]:
+               lab_stages: Optional[Sequence[str]] = None, keep_empty: bool = False) -> list[dict]:
     """Every practising candidate, judged on its window, ranked: qualifying
-    ones first by score, then the rest by practice GBP after costs. The lab's
-    ideas at READY FOR LIVE (``lab_stages``: Home's pool adds PRACTICE)."""
+    ones first by score, then the rest by practice GBP after costs. Every lab
+    idea is its own candidate (``lab_stages`` narrows them to some stages).
+    ``keep_empty``: a test with no trade in the window is kept too (Home counts
+    those as waiting for a trade); the pick never needs them."""
     from ..engine.tactics import APPROACH_NAMES
     from .modes import LIVE_KINDS
     now = to_utc(now)
@@ -522,8 +597,8 @@ def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[
     out: list[dict] = []
 
     def add(cid, kind, label, part_text, trades, live_path, **extra):
-        if not trades:
-            return
+        if not trades and (not keep_empty or (kind == "bot" and extra.get("mode") != "PAPER")):
+            return                                        # a bot not on PAPER is not waiting to practise
         j = judge(trades, cid, now)
         out.append(dict({"id": cid, "kind": kind, "label": label, "part": part_text, "live_path": live_path,
                          "live": is_live(cid, raw, modes), "risk_gbp": _median_risk(t.get("risk") for t in trades)},
@@ -553,9 +628,9 @@ def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[
     except Exception as exc:
         log.warning("weekly: Trend & Breakout's parts: %s", exc)
     try:
-        for idea, trades in lab_ready_trades(data_dir, oldest, end, lab_stages):
-            add(f"lab:{idea['id']}", "lab", LAB_LABEL, str(idea.get("name") or idea["id"]), trades, False,
-                stage=str(idea.get("stage") or ""))
+        for idea, trades in lab_trades(data_dir, oldest, end, lab_stages):
+            add(f"lab:{idea['id']}", "lab", LAB_LABEL, str(idea.get("short") or idea.get("name") or idea["id"]),
+                trades, False, stage=str(idea.get("stage") or ""), full=str(idea.get("name") or ""))
     except Exception as exc:
         log.warning("weekly: the lab: %s", exc)
     return rank(out)
@@ -613,24 +688,35 @@ def tnb_remove(tactic: str, kind: str, groups: frozenset, tactics: frozenset, ke
 
 # ------------------------------------------------------------- the plan --
 def make_plan(data_dir, config_path, now: dt.datetime, friday: Optional[dt.date] = None,
-              ranking: Optional[list] = None) -> dict:
-    """This Friday's pick: the ranking, the best candidate with a live path
-    (and the best overall, when that is a lab idea), the reasons, the release
-    time. Never applies anything."""
+              ranking: Optional[list] = None, limit: Optional[int] = None) -> dict:
+    """This Friday's picks: the ranking, the best ``limit`` candidates with a
+    live path (``max_promotions``; the best overall too, when that is a lab
+    idea), the reasons, the release time. Never applies anything.
+
+    Each Trend & Breakout part is checked against the live kinds x approaches
+    AS THEY WILL BE after the picks before it this week: a part that would
+    then make an unproven part live is skipped, and a part another pick
+    already makes live rides with that pick instead of taking a place."""
     now = to_utc(now)
     friday = friday or last_pick_friday(now)
+    limit = max_promotions(data_dir) if limit is None else int(limit)
     ranking = ranking if ranking is not None else candidates(data_dir, config_path, now)
     raw = read_config(config_path) if config_path else {}
     proven = {c["id"] for c in ranking if c.get("passes")}
     reasons: list[str] = []
-    pick, lab_pick, extras = None, None, []
+    picks: list[dict] = []
+    lab_pick = None
+    _mode, groups, tactics = tnb_live_now(raw)
+    riding: set = set()                                    # parts this week's picks make live with them
     for c in ranking:
+        if len(picks) >= limit:
+            break
         if not c.get("passes"):
             continue
         if c.get("live"):
             continue                                       # already on real money
         if c["kind"] == "lab":
-            if lab_pick is None and pick is None:
+            if lab_pick is None and not picks:
                 lab_pick = c
                 reasons.append(f"{c['label']} - {c['part']}: the best, {NEEDS_LIVE_PATH}")
             continue
@@ -642,32 +728,45 @@ def make_plan(data_dir, config_path, now: dt.datetime, friday: Optional[dt.date]
             reasons.append(f"{c['label']}{' ' + c['part'] if c['part'] else ''}: {who} is "
                            f"{c.get('mode') or 'in no known mode'}, not on PAPER - skipped")
             continue
+        extras: list = []
         if c["kind"] == "tnb":
-            _mode, groups, tactics = tnb_live_now(raw)
+            if c["id"] in riding:
+                reasons.append(f"{c['label']} {c['part']}: goes live with another of this week's picks")
+                continue
             add = tnb_add(c["tactic"], c["group"], groups, tactics, proven)
             if not add["ok"]:
                 reasons.append(f"{c['label']} {c['part']}: {add['why']}")
                 continue
             extras = add["extras"]
-        pick = c
-        reasons.append(f"{c['label']}{' ' + c['part'] if c['part'] else ''}: the best with a live path "
-                       f"(about £{c['score']:.2f} a week, cautiously)")
-        break
-    if pick is None and not reasons:
+            groups = frozenset(add["groups"])              # the cross product after this pick ...
+            tactics = frozenset(add["tactics"]) if add["tactics"] is not None else tactics
+            riding.update(extras)                          # ... is what the next part is checked against
+        picks.append({"pick": c, "extras": extras})
+        reasons.append(f"{c['label']}{' ' + c['part'] if c['part'] else ''}: "
+                       + ("the best with a live path" if len(picks) == 1 else f"pick {len(picks)} of up to {limit}")
+                       + f" (about £{c['score']:.2f} a week, cautiously)")
+    if not picks and not reasons:
         reasons.append(NOTHING_PROVED)
     rel = release_utc(friday)
+    first = picks[0] if picks else None
     return {"schema": SCHEMA, "friday": friday.isoformat(), "made_utc": _iso(now), "release_utc": _iso(rel),
             "expires_utc": _iso(uk_at(friday + dt.timedelta(days=7), PICK_AT)), "week": iso_week(rel),
-            "status": PLANNED if pick else NONE, "pick": _brief(pick) if pick else None,
-            "extras": extras, "lab_pick": _brief(lab_pick) if lab_pick else None,
+            "status": PLANNED if picks else NONE, "limit": limit,
+            "pick": _brief(first["pick"]) if first else None, "extras": first["extras"] if first else [],
+            "picks": [{"pick": _brief(x["pick"]), "extras": x["extras"]} for x in picks],
+            "lab_pick": _brief(lab_pick) if lab_pick else None,
             "reasons": reasons, "ranking": [_brief(c) for c in ranking[:30]],
+            # every bot and Trend & Breakout part, whatever its rank: the lab's Saturday refresh lists the losing
+            # ones for the nightly review (it reads this file; the lab never imports this module)
+            "bots": [_brief(c) for c in ranking if c.get("kind") in ("bot", "tnb")],
             "rule": RULE_TEXT}
 
 
 RULE_TEXT = (f"Practice trades of the last {LOOKBACK_DAYS} days, after costs: proven by the bots' rule (30+ trades "
              f"over 5+ UK days, positive, £1.20+ won for every £1 lost, more up days than down) and at most a "
              f"{round(LUCK_MAX * 100)}% chance its true average is not positive ({RESAMPLES:,} resamples). Ranked "
-             f"by a cautious average a trade times trades a week. One promotion a week, released 06:30 UK on the "
+             f"by a cautious average a trade times trades a week. Up to {MAX_PROMOTIONS} promotions a week "
+             f"(data/weekly.json), released 06:30 UK on the "
              f"next trading day; after {JUDGE_AFTER} live trades net <= 0 goes back to practice, and a live loss "
              f"of {EARLY_EXIT_RISKS:g} x its risk a trade at any point does too.")
 
@@ -979,9 +1078,9 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
             plan = make_plan(data, config_path, now, friday)
             _write_atomic(ppath, plan)
             _write_atomic(wdir(data) / LATEST, plan)
-            p = plan.get("pick")
+            names = [f"{x['pick']['label']} {x['pick'].get('part') or ''}".strip() for x in plan_picks(plan)]
             actions.append(f"weekly: the pick for {friday.isoformat()} is "
-                           + (f"{p['label']} {p.get('part') or ''}".strip() if p else "nothing (nothing proved itself)"))
+                           + (", ".join(names) if names else "nothing (nothing proved itself)"))
         except Exception as exc:
             log.exception("weekly pick")
             actions.append(f"weekly: the pick could not be made ({exc}); trying again at the next check")
@@ -1060,15 +1159,26 @@ def _finish_promotion(data: Path, state: dict, items: list[dict], now: dt.dateti
         it.pop("restart_added", None)
         _append_history(data, _event("promote", it, now, "this week's pick" if it is pick else
                                      f"proved itself too, and goes live with {pick['label']} {pick.get('part')}",
-                                     plan=it.get("plan")))
+                                     plan=it.get("plan"), pick=it is pick))
     _save_state(data, state)
     if pick.get("plan"):
-        pp = plan_path(data, dt.date.fromisoformat(pick["plan"]))
-        p = _read(pp)
-        if isinstance(p, dict) and p.get("status") == PLANNED:
-            p["status"], p["applied_utc"] = APPLIED, _iso(now)
-            p.pop("last_error", None)
-            _save_plan(data, pp, p)
+        _applied_when_done(data, state, pick["plan"], now)
+
+
+def _applied_when_done(data: Path, state: dict, friday: str, now: dt.datetime) -> None:
+    """A plan is APPLIED once every pick it releases (``releasing``, else all of
+    them) is on real money and recorded; until then it stays PLANNED, so a pick
+    that failed is tried again at the next check."""
+    pp = plan_path(data, dt.date.fromisoformat(friday))
+    p = _read(pp)
+    if not isinstance(p, dict) or p.get("status") != PLANNED:
+        return
+    want = p.get("releasing") or [x["pick"]["id"] for x in plan_picks(p)]
+    done = {it["id"] for it in state["promoted"] if it.get("plan") == friday and not it.get("promoting")}
+    if all(i in done for i in want):
+        p["status"], p["applied_utc"] = APPLIED, _iso(now)
+        p.pop("last_error", None)
+        _save_plan(data, pp, p)
 
 
 def _settle_promoting(data: Path, config_path, state: dict, now: dt.datetime, actions: list) -> None:
@@ -1097,20 +1207,54 @@ def _settle_promoting(data: Path, config_path, state: dict, now: dt.datetime, ac
 
 def _release(data: Path, config_path, plan: dict, ppath: Path, state: dict, hist: list, now: dt.datetime,
              set_modes: SetModes) -> list[str]:
-    pick = plan["pick"]
+    """Release this week's picks, best first, each on its own (its intent saved,
+    the switch, the read back, the record): a pick that fails leaves the others
+    alone and is tried again at the next check. At most ``max_promotions`` in
+    the ISO week, counting other plans' picks already made in it."""
+    entries = plan_picks(plan)
+    if not entries:
+        return []
     week = iso_week(now)
-    if promotions_in_week(hist, week):
+    limit = max_promotions(data)
+    room = limit - picks_in_week(hist, week, other_than=plan["friday"])
+    if room <= 0:
         plan["status"] = SKIPPED
-        plan["skipped_why"] = f"a promotion was already made in {week} (one a week)"
+        plan["skipped_why"] = (f"{limit} promotion{'' if limit == 1 else 's'} already made in {week} "
+                               f"(at most {limit} a week)")
         _save_plan(data, ppath, plan)
-        return [f"weekly: {pick['label']} not released - {plan['skipped_why']}"]
-    proven = {pick["id"]} | set(plan.get("extras") or ())
+        return [f"weekly: {entries[0]['pick']['label']} not released - {plan['skipped_why']}"]
+    entries = entries[:room]
+    want = [x["pick"]["id"] for x in entries]
+    if plan.get("releasing") != want:
+        plan["releasing"] = want
+        _save_plan(data, ppath, plan)
+    # every pick of the week and every part riding with one is proven: the cross product was checked
+    # against all of them together when the plan was made
+    proven = set(want) | {e for x in entries for e in x.get("extras") or ()}
+    out: list[str] = []
+    for x in entries:
+        out += _release_one(data, config_path, plan, ppath, state, x["pick"], proven, now, set_modes)
+    _applied_when_done(data, state, plan["friday"], now)
+    return out
+
+
+def _release_one(data: Path, config_path, plan: dict, ppath: Path, state: dict, pick: dict, proven: set,
+                 now: dt.datetime, set_modes: SetModes) -> list[str]:
+    week = iso_week(now)
 
     def failed(exc) -> list[str]:
         plan["last_error"] = str(exc)
         _save_plan(data, ppath, plan)
         log.warning("weekly release: %s", exc)
         return [f"weekly: {pick['label']} could not be switched LIVE ({exc}); nothing was changed, trying again"]
+    if any(p["id"] == pick["id"] for p in state["promoted"]):
+        return []                                          # already on real money (this plan, or before)
+    # released once by this plan is released for good: a pick taken back (judged, its early exit, vetoed
+    # or switched back by hand) is never switched LIVE again while the week's other picks are retried
+    # (review, 13 Oct: lose, demote, re-promote every five minutes). The history is read afresh.
+    if any(e.get("event") == "promote" and e.get("id") == pick["id"] and e.get("plan") == plan["friday"]
+           for e in history(data)):
+        return []
     try:
         raw, modes = strict_view(config_path)
         ch = promote_change(pick, raw, modes, proven)
@@ -1271,27 +1415,33 @@ def home_board(data_dir, config_path=None, now: Optional[dt.datetime] = None, de
       its short name, real GBP today and since it went live (MetaTrader's
       closed positions, ``deals``), open now (``open_live``, the broker's
       floating figures), "N of 20" live trades and a chip;
-    * ``counts``: tests running, making money, losing, too early, ready for
-      real money (passes the bar);
-    * ``top``: the three best tests by practice GBP after costs over the last
-      LOOKBACK_DAYS days - the bots, Trend & Breakout's parts and the lab's
-      ideas ranked together;
+    * ``counts``: tests running, making money, losing, too early (1 to 9
+      trades), waiting for their first trade, ready for real money (passes the
+      bar);
+    * ``all``: every test with a trade in the last LOOKBACK_DAYS days, best
+      practice GBP after costs first - the bots, Trend & Breakout's parts and
+      EVERY lab idea ranked together (13 Oct: about 640 of them);
+    * ``top`` and ``bottom``: Home's share of it, the best HOME_TOP and the
+      worst HOME_BOTTOM (all of them when there are no more than that);
+    * ``waiting``: the tests with no trade yet in the window (not listed on
+      Home: counted, and one folded line on the Practice page);
     * ``pick``: this week's pick.
 
-    The pool (``candidates``, with the lab's PRACTICE ideas too) is worked out
-    at most once every ``cache_seconds``; the real money is worked out on every
-    call, from the page's own refresh. Never raises."""
+    The pool (``candidates``, every lab idea included) is worked out at most
+    once every ``cache_seconds``; the real money is worked out on every call,
+    from the page's own refresh. Never raises."""
     now = to_utc(now or utcnow())
-    out = {"live": [], "counts": {"running": 0, "making": 0, "losing": 0, "early": 0, "ready": 0}, "top": [],
-           "all": [], "total": {"net": 0.0, "trades": 0, "win_rate": None}, "pick": pick_tile(None, now)}
+    out = {"live": [], "counts": {"running": 0, "making": 0, "losing": 0, "early": 0, "waiting": 0, "ready": 0},
+           "top": [], "bottom": [], "all": [], "waiting": [], "tests": 0,
+           "total": {"net": 0.0, "trades": 0, "win_rate": None}, "pick": pick_tile(None, now)}
     if not data_dir:
         return out
     config_path = config_path or Path(data_dir) / "config.json"
     try:
         pool = _pool(data_dir, config_path, now, cache_seconds)
         out["counts"] = pool_counts(pool)
-        ranked = [_small(c) for c in sorted(pool, key=lambda c: -float(c["stats"]["net"]))]
-        out["all"], out["top"], out["total"] = ranked, ranked[:3], pool_total(pool)
+        out.update(breakdown(pool))
+        out["total"] = pool_total(pool)
     except Exception as exc:
         log.warning("home board: %s", exc)
     try:
@@ -1303,13 +1453,28 @@ def home_board(data_dir, config_path=None, now: Optional[dt.datetime] = None, de
     return out
 
 
+def breakdown(pool: Sequence[dict]) -> dict:
+    """The pool as rows, winners at the top: ``all`` (every test with a trade,
+    best practice GBP after costs first, the id breaking ties), Home's ``top``
+    and ``bottom`` (no row twice: with HOME_TOP + HOME_BOTTOM or fewer, all of
+    them are the top and the bottom is empty), ``waiting`` (no trade yet, by
+    name) and ``tests`` (how many in all)."""
+    rows = [_small(c) for c in pool]
+    traded = sorted((x for x in rows if x["trades"]), key=lambda x: (-float(x["net"] or 0.0), x["id"]))
+    waiting = sorted((x for x in rows if not x["trades"]), key=lambda x: (x["name"], x["id"]))
+    if len(traded) <= HOME_TOP + HOME_BOTTOM:
+        top, bottom = traded, []
+    else:
+        top, bottom = traded[:HOME_TOP], traded[-HOME_BOTTOM:]
+    return {"all": traded, "top": top, "bottom": bottom, "waiting": waiting, "tests": len(rows)}
+
+
 def _pool(data_dir, config_path, now: dt.datetime, cache_seconds: float) -> list[dict]:
-    from ..lab import PRACTICE, READY_FOR_LIVE
     key = str(data_dir)
     hit = _BOARD_CACHE.get(key)
     if hit and 0 <= (now - hit[0]).total_seconds() < cache_seconds:
         return hit[1]
-    pool = candidates(data_dir, config_path, now, lab_stages=(PRACTICE, READY_FOR_LIVE))
+    pool = candidates(data_dir, config_path, now, keep_empty=True)       # every lab idea, a trade or not
     if len(_BOARD_CACHE) > 16:
         _BOARD_CACHE.clear()
     _BOARD_CACHE[key] = (now, pool)
@@ -1326,9 +1491,12 @@ def chip_of(trades: int, net: Optional[float]) -> str:
 
 
 def pool_counts(pool: Sequence[dict]) -> dict:
+    """running: every test; making / losing by the money; early: 1 to 9 trades;
+    waiting: no trade yet in the window; ready: passes the bar."""
     chips = [chip_of(int(c["stats"]["trades"]), c["stats"]["net"]) for c in pool]
+    n = [int(c["stats"]["trades"] or 0) for c in pool]
     return {"running": len(pool), "making": chips.count(MAKING), "losing": chips.count(LOSING),
-            "early": sum(1 for c in pool if int(c["stats"]["trades"]) < TOO_EARLY_TRADES),
+            "early": sum(1 for k in n if 0 < k < TOO_EARLY_TRADES), "waiting": sum(1 for k in n if not k),
             "ready": sum(1 for c in pool if c.get("passes"))}
 
 
@@ -1353,10 +1521,20 @@ def short_name(c: dict) -> str:
 
 
 def _small(c: dict) -> dict:
+    """One row of the breakdown: light on purpose (~640 of them). ``kind`` and
+    ``ref`` say where its own detail page is (a bot's verdicts id, Trend &
+    Breakout's, or the lab idea's id)."""
     s = c["stats"]
+    kind = str(c.get("kind") or "")
+    if kind == "bot":
+        ref = BOTS.get(str(c.get("bot") or ""), ("",))[0]
+    elif kind == "tnb":
+        ref = "market_intelligence"               # Trend & Breakout's own page (verdicts.TNB)
+    else:
+        ref = str(c["id"])[4:] if str(c["id"]).startswith("lab:") else str(c["id"])
     return {"id": c["id"], "name": short_name(c), "net": s["net"], "trades": s["trades"], "win_rate": s["win_rate"],
             "chip": chip_of(int(s["trades"]), s["net"]), "ready": bool(c.get("passes")), "live": bool(c.get("live")),
-            "early": int(s["trades"] or 0) < TOO_EARLY_TRADES}
+            "early": int(s["trades"] or 0) < TOO_EARLY_TRADES, "kind": kind, "ref": ref}
 
 
 def _int(v) -> int:
@@ -1412,14 +1590,15 @@ def pick_tile(latest: Optional[dict], now: dt.datetime) -> dict:
     when_next = f"next pick {uk(nxt).strftime('%a')} {uk(nxt).day} {uk(nxt).strftime('%b %H:%M')}"
     if latest and latest.get("pick") and latest.get("status") in (PLANNED, APPLIED):
         p = latest["pick"]
+        names = [short_name(x["pick"]) for x in plan_picks(latest)] or [short_name(p)]
         rel = _when(latest.get("release_utc"))
         if latest["status"] == APPLIED:
             when = "LIVE since " + uk(_when(latest.get("applied_utc")) or now).strftime("%a %d %b")
         else:
             when = ("waiting: HALT" if latest.get("waiting") == "HALT" else
                     "LIVE from " + (uk(rel).strftime("%a %d %b %H:%M") if rel else "Monday"))
-        return {"name": short_name(p), "when": when, "none": False}
-    return {"name": NOTHING_PROVED, "when": when_next, "none": True}
+        return {"name": short_name(p), "names": names, "when": when, "none": False}
+    return {"name": NOTHING_PROVED, "names": [NOTHING_PROVED], "when": when_next, "none": True}
 
 
 def weekly_report(data_dir) -> Optional[dict]:
@@ -1430,7 +1609,7 @@ def weekly_report(data_dir) -> Optional[dict]:
         return None
     latest = _read(d / LATEST)
     state = load_state(data_dir)
-    keep = ("friday", "made_utc", "release_utc", "status", "pick", "lab_pick", "reasons", "week", "waiting",
+    keep = ("friday", "made_utc", "release_utc", "status", "pick", "picks", "lab_pick", "reasons", "week", "waiting",
             "skipped_why", "last_error")
     rep = {"note": "the weekly pick: practice candidates ranked, one to real money a week"}
     if isinstance(latest, dict):

@@ -43,6 +43,11 @@ class PrevDayLevels(FamilyBase):
                     out.append(Signal(e, 1, None, "rejected at yesterday's low"))
         return out
 
+    def key_words(self, c):
+        from ..candidate import SESSION_SHORT
+        return (f"{'break' if c.p('mode') == 'BREAK' else 'fade'} "
+                f"{'M5' if c.p('confirm') == 'M5_CLOSE' else 'M15'}, {SESSION_SHORT[c.session]}")
+
     def subject(self, c):
         m = "Break of" if c.p("mode") == "BREAK" else "Rejection at"
         tf = "5-minute" if c.p("confirm") == "M5_CLOSE" else "15-minute"

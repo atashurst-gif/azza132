@@ -17,7 +17,9 @@ class NewsMove(FamilyBase):
     features = ("atr",)
     sensitive = ("delay_min",)
     dormant = True
+    reads_news = True
     GRID_SIZE = 32
+    TUNABLE = {"delay_min": (2, 30)}
     news_axis = False
     AXES = {"direction": ["WITH", "AGAINST"], "delay_min": [5, 15], "stop": ["ATR", "SPIKE"],
             "exit": ["t15w", "tr1"], "markets": ["FX_MAJOR", "FX_MINOR"], "news": ["IGNORE"]}
@@ -56,6 +58,10 @@ class NewsMove(FamilyBase):
                     continue
             out.append(Signal(i, side, int(stop) if stop else None, "the first move after the news"))
         return out
+
+    def key_words(self, c):
+        return (f"{c.p('direction').lower()} after {c.p('delay_min')} min, "
+                f"{'spike' if c.p('stop') == 'SPIKE' else 'swing'} stop")
 
     def subject(self, c):
         d = "with" if c.p("direction") == "WITH" else "against"

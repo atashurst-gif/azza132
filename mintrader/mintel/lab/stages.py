@@ -18,7 +18,10 @@ anything to do with real money or sizes is Aaron's and is never decided here.
                              later stretch, then binned for good)
     BENCH -> PRACTICE        a place is free (6), at most 2 of one family, in the
                              order of the PAST test's deflated Sharpe: a fresh
-                             result is NEVER a ranking input
+                             result is NEVER a ranking input. With practise_all
+                             on (data/lab.json, the default since 13 Oct) every
+                             idea already practises, so every benched idea gets
+                             its place (and its look days) that night
     BENCH -> BINNED          60 days without a place
     PRACTICE -> READY        look 1 (the 10th UK trading day of practice, if it
                              has 30 trades; else the first day it has, up to day
@@ -44,7 +47,7 @@ from ..clock import TZ_LONDON
 from . import (BINNED, CHECK_LABELS, COST_STRESS_PASS, COST_STRESS_SHOWN, FRESH_LOOKS_PER_STRETCH,
                FRESH_MIN_TRADES, FRESH_TEST, FRESH_TOO_FEW, HOLD_BACK_REASONS, IDEA, KIND_PAST,
                ON_THE_BENCH, PAST_TEST, PBO_MAX, PRACTICE, PRACTICE_KILL_R, PRACTICE_MIN_TRADES,
-               READY_FOR_LIVE, RISK_GBP, STRETCH_GAP_RETEST, UTC, Candidate, add_days,
+               READY_FOR_LIVE, RISK_GBP, STRETCH_GAP_RETEST, UNIVERSE_CAP, UTC, Candidate, add_days,
                clamp_fresh_cap, is_weekday)
 from . import sim, stats
 from .candidate import family_of, name_of, registered, waiting_for_calendar
@@ -54,8 +57,10 @@ from .ledger import FreshRefused
 from .store import fresh_once
 
 PRACTISING = (PRACTICE, READY_FOR_LIVE)     # the stages that hold a practice place
-MAX_PRACTICE_SYMBOLS = 12                   # distinct markets across the whole practice roster
-MAX_PER_FAMILY = 2                          # practising at once from one family
+# distinct markets across the whole practice roster: every market the lab stores (it was 12
+# while practice was six slots; each idea is simulated on its own, so the cap is the universe)
+MAX_PRACTICE_SYMBOLS = UNIVERSE_CAP
+MAX_PER_FAMILY = 2                          # practising at once from one family (practise_all off)
 BENCH_MAX_DAYS = 60                         # on the bench this long without a place: binned
 LOOK1_DAY, LOOK2_DAY = 10, 20               # UK trading days of practice
 CRASHES_BEFORE_BIN = 2                      # a past test that crashes this often in a stretch
@@ -805,9 +810,13 @@ def grade_practice(ledger, universe: Sequence, settings, *, now: dt.datetime,
             why = f"{BENCH_MAX_DAYS} days on the bench without a practice place"
             ledger.move(row["id"], BINNED, why, bin_reason=why[0].upper() + why[1:], now=now)
             out["bench_binned"].append(row["id"])
-    # promotions into free places
+    # promotions into free places. With practise_all every idea practises anyway, so a place is
+    # only its look days: every benched idea gets one, with no family limit (a limit would leave
+    # an idea that is practising binned for "60 days without a place")
+    every = bool(getattr(settings, "practise_all", False))
     places = roster(ledger)
-    slots = max(0, int(settings.practice_slots))
+    slots = (len(places) + len(ledger.candidates(stage=ON_THE_BENCH))) if every else max(
+        0, int(settings.practice_slots))
     used_slots = {p["slot"] for p in places}
     taken_syms = {s for p in places for s in _symbols_json(p)}
     fam_count: dict = {}
@@ -819,7 +828,7 @@ def grade_practice(ledger, universe: Sequence, settings, *, now: dt.datetime,
         if len(places) >= slots:
             break
         crow = ledger.candidate(cid)
-        if fam_count.get(crow["family"], 0) >= MAX_PER_FAMILY:
+        if not every and fam_count.get(crow["family"], 0) >= MAX_PER_FAMILY:
             continue
         c = cand_of(crow)
         syms = practice_symbols(universe, c.markets, taken_syms)

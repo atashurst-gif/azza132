@@ -52,7 +52,8 @@ def past_done(led, c, passed=1, stretch=STRETCH, trades=80, net=120.0, gate=True
 # ----------------------------------------------------------------- the DDL ---
 SPEC_COLUMNS = {
     "candidates": "id family version def_json name stage stage_since_utc created_utc parent_id "
-                  "retest_due bin_stage bin_reason binned_utc rank_score",
+                  "retest_due bin_stage bin_reason binned_utc rank_score "
+                  "retired_utc retired_reason",      # 13 Oct, the weekly pool refresh: ledger.CANDIDATE_EXTRA_COLUMNS
     "tests": "id candidate_id kind stretch_id cut_day status started_utc finished_utc seconds window_from "
              "window_to days trades net_gbp cost_gbp pf win_rate up_days down_days best_day_gbp p folds_up "
              "folds_worst plateau cost15_net cost20_net dsr max_dd_r passed reasons_json skipped_json "

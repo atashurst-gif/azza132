@@ -11,6 +11,7 @@ class TrendPullback(FamilyBase):
     features = ("ema", "atr")
     sensitive = ("touch_atr",)
     GRID_SIZE = 48
+    TUNABLE = {"touch_atr": (0.05, 2.0)}
     news_axis = False
     AXES = {"tf": ["M15", "H1"], "emas": ["20/50", "50/200"], "touch_atr": [0.25, 0.5],
             "exit": ["t2", "tr2"], "markets": ["FX_MAJOR", "FX_MINOR", "INDEX"], "news": ["IGNORE"]}
@@ -43,6 +44,9 @@ class TrendPullback(FamilyBase):
         return out
 
     BARS = {"M15": "15-minute", "H1": "1-hour"}
+
+    def key_words(self, c):
+        return f"{c.p('tf')} {c.p('emas')}, touch {c.p('touch_atr'):g}"
 
     def subject(self, c):
         fast, slow = c.p("emas").split("/")

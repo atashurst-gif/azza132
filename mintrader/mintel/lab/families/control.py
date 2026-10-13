@@ -34,6 +34,9 @@ class ControlTimeOfDay(FamilyBase):
             return []
         return [Signal(i, 1 if p["side"] == "BUY" else -1, None, "the clock")]
 
+    def key_words(self, c):
+        return f"{c.p('side').lower()} {c.p('hour_uk'):02d}:00"
+
     def subject(self, c):
         return f"Clock trade: {c.p('side').lower()} at {c.p('hour_uk'):02d}:00 UK"
 

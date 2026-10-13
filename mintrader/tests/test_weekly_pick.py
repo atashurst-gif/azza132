@@ -220,13 +220,27 @@ def planned(tmp_path, **modes):
 
 
 class TestWeekRules:
-    def test_one_promotion_a_week(self, tmp_path):
+    def test_at_most_x_promotions_a_week(self, tmp_path):
+        # 13 Oct (intended change): "each week, X amount of winners go live" - one a week became at most
+        # weekly_max_promotions (3 unless data/weekly.json says otherwise); three made already: none more
+        data, cfg = planned(tmp_path)
+        (data / "weekly" / "history.jsonl").write_text("".join(json.dumps(
+            {"ts_utc": "2026-10-19T05:00:00+00:00", "event": "promote", "id": f"bot:{b}", "week": "2026-W43"}) + "\n"
+            for b in ("crowd", "ian", "bandbreaker")))
+        acts = W.tick(data, cfg, REL_19)
+        assert "at most 3 a week" in acts[0] and config(cfg)["runner"]["mode"] == "PAPER"
+        assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.SKIPPED
+
+    def test_one_made_already_leaves_room_for_more(self, tmp_path):
         data, cfg = planned(tmp_path)
         (data / "weekly" / "history.jsonl").write_text(json.dumps(
             {"ts_utc": "2026-10-19T05:00:00+00:00", "event": "promote", "id": "bot:crowd", "week": "2026-W43"}) + "\n")
-        acts = W.tick(data, cfg, REL_19)
-        assert "one a week" in acts[0] and config(cfg)["runner"]["mode"] == "PAPER"
-        assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.SKIPPED
+        W.tick(data, cfg, REL_19)
+        assert config(cfg)["runner"]["mode"] == "LIVE"
+        (data / "weekly.json").write_text(json.dumps({"weekly_max_promotions": 1}))
+        assert W.max_promotions(data) == 1
+        (data / "weekly.json").write_text(json.dumps({"weekly_max_promotions": 99}))
+        assert W.max_promotions(data) == W.MAX_PROMOTIONS                     # never more than the cap allows
 
     def test_veto_before_the_release(self, tmp_path):
         data, cfg = planned(tmp_path)
@@ -279,10 +293,16 @@ class TestLiveEdges:
         assert plan["pick"]["id"] == "bot:runner"
         assert any(W.NEEDS_LIVE_PATH in r for r in plan["reasons"])
 
-    def test_a_lab_idea_still_practising_is_never_a_candidate(self, tmp_path):
+    def test_a_lab_idea_still_practising_is_a_candidate_on_its_own_record(self, tmp_path):
+        # 13 Oct (intended change): every lab idea practises and is its own test in the ranking, whatever its stage
+        # ("I just want all in practice unless any earn the right"); it used to need READY FOR LIVE. The proof bar
+        # on its own practice trades is what stops luck now, and a lab idea is still never promoted (no live path).
         data, cfg = a_folder(tmp_path)
         lab_db(data, "lab-00000000aa", good_days(), stage="PRACTICE")
-        assert W.candidates(data, cfg, T0 + dt.timedelta(days=11)) == []
+        got = W.candidates(data, cfg, T0 + dt.timedelta(days=11))
+        assert [c["id"] for c in got] == ["lab:lab-00000000aa"] and got[0]["kind"] == "lab" and got[0]["passes"]
+        plan = W.make_plan(data, cfg, T0 + dt.timedelta(days=11), ranking=got)
+        assert plan["pick"] is None and plan["lab_pick"]["id"] == "lab:lab-00000000aa"
 
     def test_adding_a_part_to_an_empty_live_set(self):
         add = W.tnb_add(TP, "INDEX", frozenset(), frozenset(), set())
@@ -503,9 +523,14 @@ class TestHome:
         lab_db(data, "lab-00000000ab", [[5.0, -1.0]] * 6, stage="PRACTICE", name="Gold breakout")
         board = W.home_board(data, cfg, T0 + dt.timedelta(days=11), cache_seconds=0)
         # making money and losing go by the money alone (13 Oct): the 2-trade crowd test is up, so it counts,
-        # marked early beside its name
-        assert board["counts"] == {"running": 4, "making": 3, "losing": 1, "early": 1, "ready": 1}
-        assert [x["name"] for x in board["top"]] == ["Momentum Runner", "Gold breakout", "Crowd Fader"]
+        # marked early beside its name. Financial Ian is on PAPER with no trade: since every lab idea practises
+        # (13 Oct) a test with no trade yet is counted as waiting for one, and not listed
+        assert board["counts"] == {"running": 5, "making": 3, "losing": 1, "early": 1, "waiting": 1, "ready": 1}
+        assert [x["name"] for x in board["waiting"]] == ["Financial Ian"] and board["tests"] == 5
+        # 13 Oct (intended change): Home lists the best ten and the worst three, not the best three; with only four
+        # tests they are all the top, and the bottom is empty (no row twice)
+        assert [x["name"] for x in board["top"]] == ["Momentum Runner", "Gold breakout", "Crowd Fader", "Band Breaker"]
+        assert board["bottom"] == []
         assert [x["name"] for x in board["all"]] == ["Momentum Runner", "Gold breakout", "Crowd Fader",
                                                      "Band Breaker"]                  # every test, best first
         tot = board["total"]
@@ -513,7 +538,8 @@ class TestHome:
         assert tot["trades"] == sum(x["trades"] for x in board["all"])
         page = render_weekly_home(board)
         t = text(page)
-        assert "4 tests running" in t and "1 ready for real money" in t and "+£140.00 40 trades · 75% won" in t
+        assert "5 tests running" in t and "1 ready for real money" in t and "+£140.00 40 trades · 75% won" in t
+        assert "1 waiting for a trade" in t and "See all 5 tests" in t and 'href="/?show=practice"' in page
         assert page.count('<div class="wk-row" data-test=') == 4 and "All tests together" in t
         assert "Crowd Fader early" in t and "Band Breaker" in t and "LOSING" in t
 
@@ -838,3 +864,231 @@ def test_the_cli_ranks_and_vetoes(tmp_path, capsys):
     assert "Pick of 2026-10-16: Momentum Runner [planned]" in capsys.readouterr().out
     assert W.main(["--config", str(cfg), "veto"]) == 0
     assert "Cancelled" in capsys.readouterr().out
+
+
+# ============================== I. every lab idea in the pool; the breakdown, winners at the top (13 Oct) --
+# Aaron, 13 Oct: "I just want all in practice unless any earn the right, then a breakdown of everything (profit) and
+# winners at the top".
+def a_real_idea(data: Path, k: int, nets_by_day: list[list[float]], stage: str = "BINNED"):
+    """A real registered lab idea (its stored definition), with made-up practice trades."""
+    from mintel.lab.candidate import registered
+    from mintel.lab.ledger import LabLedger
+    c = registered()[k]
+    led = LabLedger(data / "lab" / "lab.sqlite")
+    led.register(c, f"long name {k}")
+    led.execute("UPDATE candidates SET stage=? WHERE id=?", (stage, c.id))
+    n = 0
+    for d, nets in enumerate(nets_by_day):
+        for i, net in enumerate(nets):
+            n += 1
+            t = T0 + dt.timedelta(days=d, minutes=15 * i)
+            led.execute("INSERT INTO practice_trades(ticket, candidate_id, symbol, side, closed_utc, net_gbp, "
+                        "commission_gbp, risk_gbp, fill_source) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (970_000_000 + 1000 * k + n, c.id, "EURUSD", 1, t.isoformat(), net, 0.4, 13.0, "tick"))
+    led.close()
+    return c
+
+
+def fake_pool(n_traded: int, n_waiting: int) -> list[dict]:
+    """A made-up pool in candidates' shape: test k made k - 7 pounds over k + 1 trades; then the waiting ones."""
+    out = []
+    for k in range(n_traded):
+        out.append({"id": f"lab:lab-{k:010d}", "kind": "lab", "part": f"idea {k:02d}", "passes": False,
+                    "stats": {"trades": k + 1, "net": float(k - 7), "win_rate": 50.0, "wins": 0}})
+    for k in range(n_waiting):
+        out.append({"id": f"lab:lab-w{k:09d}", "kind": "lab", "part": f"quiet {k}", "passes": False,
+                    "stats": {"trades": 0, "net": 0.0, "win_rate": None, "wins": 0}})
+    return out
+
+
+class TestEveryIdea:
+    def test_the_pool_reads_every_lab_ideas_practice_trades_binned_ones_included(self, tmp_path):
+        from mintel.lab.candidate import short_name_of
+        data, cfg = a_folder(tmp_path)
+        binned = a_real_idea(data, 3, good_days(), stage="BINNED")
+        tested = a_real_idea(data, 40, [[2.0, -1.0]] * 3, stage="PAST TEST")
+        quiet = a_real_idea(data, 77, [], stage="IDEA")
+        now = T0 + dt.timedelta(days=11)
+        got = {c["id"]: c for c in W.candidates(data, cfg, now)}
+        assert {f"lab:{binned.id}", f"lab:{tested.id}"} <= set(got) and f"lab:{quiet.id}" not in got
+        one = got[f"lab:{binned.id}"]
+        assert one["part"] == short_name_of(binned) and one["full"] == "long name 3" and one["stage"] == "BINNED"
+        assert one["passes"]                                       # its own practice record is what is judged
+        # Home's pool keeps the idea with no trade yet: counted as waiting, never listed
+        board = W.home_board(data, cfg, now, cache_seconds=0)
+        lab_waiting = [x["id"] for x in board["waiting"] if x["kind"] == "lab"]
+        assert lab_waiting == [f"lab:{quiet.id}"]                       # (the bots on PAPER with none wait too)
+        assert f"lab:{quiet.id}" not in {x["id"] for x in board["all"]}
+        assert board["counts"]["waiting"] == len(board["waiting"]) and board["tests"] == 3 + len(W.BOTS)
+        assert {x["name"] for x in board["all"]} == {short_name_of(binned), short_name_of(tested)}
+
+    def test_home_shows_the_top_ten_the_bottom_three_and_a_link_to_all(self):
+        from mintel.ops.dashboard import render_weekly_home
+        pool = fake_pool(20, 600)
+        board = dict(W.breakdown(pool), counts=W.pool_counts(pool), total=W.pool_total(pool))
+        assert [x["name"] for x in board["top"]] == [f"idea {k:02d}" for k in range(19, 9, -1)]
+        assert [x["name"] for x in board["bottom"]] == ["idea 02", "idea 01", "idea 00"]
+        page = render_weekly_home(board)
+        t = text(page)
+        assert page.count('<div class="wk-row" data-test=') == 13
+        assert t.index("idea 10") < t.index("the three at the bottom") < t.index("idea 02")
+        assert "See all 620 tests" in t and 'href="/?show=practice"' in page
+        assert "600 waiting for a trade" in t and "620 tests running" in t
+        assert "quiet" not in t and "idea 09" not in t                # no zero-trade test, nothing in the middle
+        assert "<table" not in page
+
+    def test_the_practice_page_lists_every_test_sorted_with_the_waiting_ones_folded(self):
+        from mintel.ops.dashboard import render_practice_breakdown
+        pool = fake_pool(20, 5)
+        board = dict(W.breakdown(pool), counts=W.pool_counts(pool), total=W.pool_total(pool))
+        page = render_practice_breakdown(board)
+        t = text(page)
+        import re
+        names = re.findall(r'<div class="wk-name"><a href="[^"]*">([^<]*)</a>', page)
+        assert names == [f"idea {k:02d}" for k in range(19, -1, -1)]          # every one, winners at the top
+        assert page.count('<div class="wk-row" data-test=') == 20 and "<table" not in page
+        assert t.index("All tests together") < t.index("idea 19")
+        assert "+£" in t and "MAKING MONEY" in t and "LOSING" in t and " early" in t
+        # the five with no trade: one folded line at the bottom
+        assert page.count("<details") == 1 and "5 tests waiting for their first trade" in t
+        assert page.index('class="wk-wait"') > page.index("idea 00")
+        assert 'href="/lab?id=lab-0000000019"' in page                     # its own page, one tap away
+
+    def test_the_practice_page_on_the_dashboard(self, tmp_path):
+        from mintel.ops.dashboard import render_home
+        data, cfg = a_folder(tmp_path)
+        own_db(data, "runner.sqlite", good_days())
+        a_real_idea(data, 3, [[5.0, -1.0]] * 6, stage="BINNED")
+        a_real_idea(data, 9, [], stage="IDEA")
+        page = render_home({"standing": {}}, {"data_dir": str(data), "now": T0 + dt.timedelta(days=11)}, {}, None,
+                           "none", show="practice")
+        t = text(page)
+        assert 'id="breakdown"' in page and "All tests together" in t
+        from mintel.lab.candidate import registered, short_name_of
+        idea = short_name_of(registered()[3])
+        assert t.index("All tests together") < t.index("Momentum Runner +£140.00") < t.index(idea + " +£24.00") < t.index(
+            "4 tests waiting for their first trade")                      # winners at the top, waiting folded last
+        assert "waiting for their first trade" in t and "Each test's own page" in t
+        assert 'href="/?bot=momentum_runner"' in page                      # the bot's own page, one tap away
+
+
+
+# ======================================== J. X winners a week (13 Oct: "X amount of winners go live") --
+class TestXAWeek:
+    def test_the_best_three_with_a_live_path_go_live_together(self, tmp_path):
+        data, cfg = a_folder(tmp_path)
+        start = T0 + dt.timedelta(days=1)
+        own_db(data, "runner.sqlite", good_days(per_day=6), start=start)            # best
+        own_db(data, "bandbreaker.sqlite", good_days(per_day=5), start=start)
+        own_db(data, "crowd.sqlite", good_days(per_day=4), start=start)
+        lab_db(data, "lab-0123456789", good_days(per_day=8))                        # no live path: never a place
+        W.tick(data, cfg, PICK_16 + dt.timedelta(minutes=5))
+        plan = json.loads((data / "weekly" / "latest.json").read_text())
+        assert [x["pick"]["id"] for x in plan["picks"]] == ["bot:runner", "bot:bandbreaker", "bot:crowd"]
+        assert plan["pick"]["id"] == "bot:runner" and plan["limit"] == 3
+        board = W.home_board(data, cfg, REL_19 - dt.timedelta(hours=1), cache_seconds=0)
+        assert board["pick"]["names"] == ["Momentum Runner", "Band Breaker", "Crowd Fader"]
+        from mintel.ops.dashboard import render_weekly_home
+        assert "Momentum Runner<br>Band Breaker<br>Crowd Fader" in render_weekly_home(board)
+        W.tick(data, cfg, REL_19)
+        raw = config(cfg)
+        assert (raw["runner"]["mode"], raw["bandbreaker"]["mode"], raw["crowd"]["mode"]) == ("LIVE",) * 3
+        ev = W.history(data)
+        assert [e["id"] for e in ev if e["event"] == "promote"] == ["bot:runner", "bot:bandbreaker", "bot:crowd"]
+        assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.APPLIED
+        assert W.picks_in_week(ev, "2026-W43") == 3
+        # each is judged on its own: the veto takes the whole week's picks back
+        W.veto(data)
+        W.tick(data, cfg, REL_19 + dt.timedelta(minutes=10))
+        raw = config(cfg)
+        assert (raw["runner"]["mode"], raw["bandbreaker"]["mode"], raw["crowd"]["mode"]) == ("PAPER",) * 3
+
+    def test_a_setting_of_two_releases_two(self, tmp_path):
+        data, cfg = a_folder(tmp_path)
+        (data / "weekly.json").write_text(json.dumps({"weekly_max_promotions": 2}))
+        start = T0 + dt.timedelta(days=1)
+        for name, n in (("runner.sqlite", 6), ("bandbreaker.sqlite", 5), ("crowd.sqlite", 4)):
+            own_db(data, name, good_days(per_day=n), start=start)
+        W.tick(data, cfg, PICK_16 + dt.timedelta(minutes=5))
+        W.tick(data, cfg, REL_19)
+        raw = config(cfg)
+        assert (raw["runner"]["mode"], raw["bandbreaker"]["mode"], raw["crowd"]["mode"]) == ("LIVE", "LIVE", "PAPER")
+
+    def test_a_failed_pick_leaves_the_others_and_is_tried_again(self, tmp_path):
+        data, cfg = a_folder(tmp_path)
+        start = T0 + dt.timedelta(days=1)
+        own_db(data, "runner.sqlite", good_days(per_day=6), start=start)
+        own_db(data, "bandbreaker.sqlite", good_days(per_day=5), start=start)
+        W.tick(data, cfg, PICK_16 + dt.timedelta(minutes=5))
+        real = W._set_modes
+        calls = []
+
+        def flaky(config_path, changes, **kw):
+            calls.append(changes)
+            if "bandbreaker" in changes and len(calls) < 3:
+                raise OSError("disk full (made up)")
+            return real(config_path, changes, **kw)
+        W.tick(data, cfg, REL_19, set_modes=flaky)
+        raw = config(cfg)
+        assert (raw["runner"]["mode"], raw["bandbreaker"]["mode"]) == ("LIVE", "PAPER")
+        assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.PLANNED
+        W.tick(data, cfg, REL_19 + dt.timedelta(minutes=5), set_modes=flaky)
+        assert config(cfg)["bandbreaker"]["mode"] == "LIVE"
+        assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.APPLIED
+        assert [e["id"] for e in W.history(data) if e["event"] == "promote"] == ["bot:runner", "bot:bandbreaker"]
+
+    def test_a_pick_taken_back_is_never_released_again_while_another_is_retried(self, tmp_path):
+        # review, 13 Oct: the plan stays PLANNED while one pick keeps failing; a pick already released by it
+        # and then taken back (here by hand) must not be switched LIVE again at the next check
+        data, cfg = a_folder(tmp_path)
+        start = T0 + dt.timedelta(days=1)
+        own_db(data, "runner.sqlite", good_days(per_day=6), start=start)
+        own_db(data, "bandbreaker.sqlite", good_days(per_day=5), start=start)
+        W.tick(data, cfg, PICK_16 + dt.timedelta(minutes=5))
+        real = W._set_modes
+
+        def never_bandbreaker(config_path, changes, **kw):
+            if "bandbreaker" in changes and changes["bandbreaker"] == "LIVE":
+                raise OSError("disk full (made up)")
+            return real(config_path, changes, **kw)
+        W.tick(data, cfg, REL_19, set_modes=never_bandbreaker)
+        assert config(cfg)["runner"]["mode"] == "LIVE"
+        real(cfg, {"runner": "PAPER"})                                       # taken back by hand
+        for k in range(1, 4):
+            W.tick(data, cfg, REL_19 + dt.timedelta(minutes=5 * k), set_modes=never_bandbreaker)
+            assert config(cfg)["runner"]["mode"] == "PAPER", k
+        assert [e["id"] for e in W.history(data) if e["event"] == "promote"] == ["bot:runner"]
+
+    def test_two_parts_in_one_week_never_widen_into_an_unproven_combination(self, tmp_path, monkeypatch):
+        data, cfg = a_folder(tmp_path)
+        raw = config(cfg)
+        raw["tnb"].update(live_groups=["FX_MINOR"], live_tactics=[MC], live_since_utc="2026-10-09T18:45:00+00:00")
+        cfg.write_text(json.dumps(raw))
+        # each is fine alone against today's minor pairs x momentum continuation: momentum continuation on indices
+        # adds a kind, trend pullback on minor pairs adds an approach. Together the cross product would also hold
+        # trend pullback on indices, which has not proved itself: the second is skipped
+        parts = {(MC, "INDEX"): trades_of(good_days(per_day=6)), (TP, "FX_MINOR"): trades_of(good_days(per_day=5))}
+        monkeypatch.setattr(W, "tnb_part_trades", lambda *a, **k: {k2: [dict(t, risk=13.0) for t in v]
+                                                                 for k2, v in parts.items()})
+        now = T0 + dt.timedelta(days=11)
+        today = (frozenset({"FX_MINOR"}), frozenset({MC}))
+        proven = {f"tnb:{MC}:INDEX", f"tnb:{TP}:FX_MINOR"}
+        assert W.tnb_add(MC, "INDEX", *today, proven)["ok"] and W.tnb_add(TP, "FX_MINOR", *today, proven)["ok"]
+        plan = W.make_plan(data, cfg, now, FRI_16)
+        assert [x["pick"]["id"] for x in plan["picks"]] == [f"tnb:{MC}:INDEX"]
+        assert any(r.startswith("Trend & Breakout trend pullback, minor pairs") and "has not proved itself" in r
+                   for r in plan["reasons"]), plan["reasons"]
+        # once trend pullback on indices has proved itself too, both go: it rides along with the second pick
+        parts[(TP, "INDEX")] = trades_of(good_days(per_day=4))
+        plan = W.make_plan(data, cfg, now, FRI_16)
+        assert [x["pick"]["id"] for x in plan["picks"]] == [f"tnb:{MC}:INDEX", f"tnb:{TP}:FX_MINOR"]
+        assert plan["picks"][1]["extras"] == [f"tnb:{TP}:INDEX"]
+        assert any("goes live with another of this week's picks" in r for r in plan["reasons"])
+        # released together, the config ends exactly at the checked cross product
+        W._write_atomic(W.plan_path(data, FRI_16), plan)
+        state = W.load_state(data)
+        W._release(data, cfg, plan, W.plan_path(data, FRI_16), state, [], REL_19, W._set_modes)
+        t = config(cfg)["tnb"]
+        assert sorted(t["live_groups"]) == ["FX_MINOR", "INDEX"] and sorted(t["live_tactics"]) == sorted([MC, TP])
+        assert {p["id"] for p in W.load_state(data)["promoted"]} == {f"tnb:{MC}:INDEX", f"tnb:{TP}:FX_MINOR",
+                                                                     f"tnb:{TP}:INDEX"}

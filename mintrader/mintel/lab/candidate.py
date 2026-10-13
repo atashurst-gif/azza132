@@ -24,12 +24,19 @@ from . import NEWS_AVOID_MINUTES, RISK_GBP, Candidate, Result, Signal, Trade, ca
 
 __all__ = ["Candidate", "Signal", "Trade", "Result", "candidate_id", "Family", "FamilyBase",
            "registered", "registered_ids", "news_ready", "waiting_for_calendar", "family_of", "name_of", "words_of", "siblings",
-           "MARKET_NAMES", "EXIT_SHORT", "EXIT_LONG", "SWING_NOTE", "swings"]
+           "short_name_of", "MARKET_NAMES", "MARKET_SHORT", "SESSION_SHORT", "EXIT_SHORT", "EXIT_TAG", "EXIT_LONG",
+           "SWING_NOTE", "swings"]
 
 MARKET_NAMES = {"FX_MAJOR": "the major pairs", "FX_MINOR": "the minor pairs",
                 "INDEX": "the stock indices", "GOLD": "gold"}
 SESSION_NAMES = {"LONDON": "London", "NEWYORK": "New York", "US_CASH": "the US stock market",
                  "ASIA": "Asia", "BOTH": "London and New York", "ALL": "all day"}
+# the few words a one-line row has room for (the breakdown of every test, 13 Oct)
+MARKET_SHORT = {"FX_MAJOR": "majors", "FX_MINOR": "minors", "INDEX": "indices", "GOLD": "gold"}
+SESSION_SHORT = {"LONDON": "London", "NEWYORK": "New York", "US_CASH": "US", "ASIA": "Asia",
+                 "BOTH": "London+NY", "ALL": "all day"}
+EXIT_TAG = {"t1": "1:1", "t2": "2:1", "t15w": "1.5:1 wide", "tr1": "trail 1", "tr2": "trail 2R",
+            "time4h": "4h", "time1h": "1h", "vwap": "to average"}
 EXIT_SHORT = {"t1": "aims for 1x its risk", "t2": "aims for 2x its risk",
               "t15w": "wider stop, aims for 1.5x its risk", "tr1": "trails 1 swing behind",
               "tr2": "trails 2x its risk behind", "time4h": "out after 4 hours",
@@ -89,6 +96,8 @@ class FamilyBase:
     AXES: dict = {}
     GRID_SIZE = 0
     news_axis = True
+    reads_news = False              # its signals use the minutes-to-news array (only the news family's do)
+    TUNABLE: dict = {}              # setting -> (lowest, highest): may take any value between (the refresh's tweaks)
     DEFAULTS = {"session": "ALL", "news": "IGNORE"}
 
     # ---- the grid
@@ -141,6 +150,20 @@ class FamilyBase:
 
     def name(self, c: Candidate) -> str:
         return f"{self.subject(c)} on {self.market_word(c)}{self.news_name(c)}; {EXIT_SHORT[c.exit]}"
+
+    def key_words(self, c: Candidate) -> str:
+        """The idea's own settings in a few words ('60 min, London'); a family
+        whose settings need it says them its own way."""
+        return self.subject(c)
+
+    def short_name(self, c: Candidate) -> str:
+        """One readable line for a row of the breakdown, built from the idea's
+        own fields: family, markets, key settings, exit and the news rule -
+        'Breakout · majors · 60 min, London · 2:1'. Every registered idea has
+        its own (a test pins it), so ~630 rows never read the same."""
+        news = " · avoids news" if c.news == "AVOID_15M" else ""
+        return (f"{self.label} · {MARKET_SHORT.get(c.markets, c.markets)} · {self.key_words(c)} · "
+                f"{EXIT_TAG.get(c.exit, c.exit)}{news}")
 
     def rule_words(self, c: Candidate) -> list:                       # pragma: no cover
         raise NotImplementedError
@@ -208,6 +231,10 @@ def family_of(c: Candidate):
 
 def name_of(c: Candidate) -> str:
     return family_of(c).name(c)
+
+
+def short_name_of(c: Candidate) -> str:
+    return family_of(c).short_name(c)
 
 
 def words_of(c: Candidate) -> list:

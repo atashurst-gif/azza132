@@ -566,7 +566,13 @@ def build_summary(ledger, paths: LabPaths, *, settings, universe: Sequence, stor
             "store": store_block, "funnel": _funnel(ledger, waiting=waiting), "trials": trials,
             "families": _families(ledger, cut), "candidates": listed,
             "changes_24h": _changes(ledger, now), "binned_recent": _binned_recent(ledger, now),
-            "nightly": nightly}
+            "nightly": nightly, "refresh": _refresh_block(paths)}
+
+
+def _refresh_block(paths: LabPaths) -> Optional[dict]:
+    """The latest weekly refresh of the practice pool (data/lab/refresh.json), short."""
+    from .refresh import _read, summary_block
+    return summary_block(_read(paths.root / "refresh.json"))
 
 
 def write_summary(paths: LabPaths, summary: dict) -> None:
@@ -744,11 +750,12 @@ def write_board(paths: LabPaths, ledger, *, night: str, settings, universe: Sequ
 
 
 def upload_files(paths: LabPaths, night: str) -> dict:
-    """The three files the nightly publishes, as {repository path: text}."""
+    """The files the nightly publishes, as {repository path: text}: the summary, the report, the
+    tests, and on a Saturday the pool's refresh (refresh.md)."""
     run_dir = paths.run_dir(night)
     out = {}
     for repo_name, local in (("summary.json", paths.summary), ("report.md", run_dir / "report.md"),
-                             ("tests.csv", run_dir / "tests.csv")):
+                             ("tests.csv", run_dir / "tests.csv"), ("refresh.md", run_dir / "refresh.md")):
         try:
             out[f"reports/lab/{night}/{repo_name}"] = Path(local).read_text(encoding="utf-8")
         except OSError:

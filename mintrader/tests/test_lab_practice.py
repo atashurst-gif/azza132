@@ -357,3 +357,154 @@ def test_every_family_signals_on_the_newest_bar_of_a_live_day(code):
             assert i in got, (code, cand.id, i)
             checked += 1
     assert checked > 0
+
+
+# ------------------------------------------------- every idea practises (13 Oct) ---
+# Aaron, 13 Oct: "I just want all in practice unless any earn the right [to real money]". With practise_all on
+# (data/lab.json, the default) every idea in the ledger practises, binned ones included, each on its own.
+def _register(led, cands, stage):
+    for c in cands:
+        led.register(c, FAM.get(c.family).name(c))
+        led.execute("UPDATE candidates SET stage=? WHERE id=?", (stage, c.id))
+
+
+def test_practise_all_puts_binned_and_untested_ideas_on_the_roster_and_they_trade(tmp_path):
+    paths, led, clock, bridge, eng, cands = build(tmp_path)
+    ctl = family("CONTROL_TIME_OF_DAY")
+    binned = next(c for c in ctl.grid() if c.markets == "FX_MAJOR" and c.p("hour_uk") == 10
+                  and c.p("side") == "SELL" and c.exit == "time1h")
+    idea = next(c for c in ctl.grid() if c.markets == "FX_MAJOR" and c.p("hour_uk") == 10
+                and c.p("side") == "BUY" and c.exit == "time4h")
+    _register(led, [binned], "BINNED")
+    _register(led, [idea], "IDEA")
+    events = led.one("SELECT COUNT(*) FROM events")[0]
+    assert LabSettings().practise_all is True
+    eng.load_roster()
+    assert set(eng.slots) == {c.id for c in cands} | {binned.id, idea.id}
+    assert eng.slots[binned.id].symbols == list(SYMS)            # every stored market of its kind
+    assert list(eng.slots)[:2] == [c.id for c in cands]           # the nightly's roster first, in its order
+    run_minutes(eng, clock, at(8, 55), at(10, 30))
+    got = {r["candidate_id"] for r in trades_of(led)}
+    assert binned.id in got and idea.id in got                    # practised on live prices, no money
+    # the stage history is the rule's and is left alone: no row moved, no event written
+    assert led.candidate(binned.id)["stage"] == "BINNED" and led.candidate(idea.id)["stage"] == "IDEA"
+    assert led.one("SELECT COUNT(*) FROM events")[0] == events
+    st = eng.status(at(10, 30))
+    assert st["practising"] == 4 and st["practise_all"] is True
+    assert set(bridge.calls) <= ALLOWED                           # still prices only
+
+
+def test_with_practise_all_off_only_the_nightlys_roster_practises(tmp_path):
+    paths, led, clock, bridge, eng, cands = build(tmp_path)
+    ctl = family("CONTROL_TIME_OF_DAY")
+    other = next(c for c in ctl.grid() if c.markets == "FX_MAJOR" and c.p("hour_uk") == 15)
+    _register(led, [other], "BINNED")
+    eng.settings = LabSettings.from_dict({"practise_all": False})
+    assert LabSettings.from_dict({"practise_all": "off"}).practise_all is False
+    eng.load_roster()
+    assert set(eng.slots) == {c.id for c in cands}
+
+
+def _many(tmp_path):
+    """The made-up lab with many ideas on its two majors: every major-pair clock trade, breakout and
+    back-to-the-average idea (88), stage BINNED for all but the roster's two."""
+    paths, led, clock, bridge, eng, cands = build(tmp_path)
+    more = [c for code in ("CONTROL_TIME_OF_DAY", "RANGE_BREAK", "VWAP_FADE")
+            for c in FAM.get(code).grid() if c.markets == "FX_MAJOR" and c.id not in {x.id for x in cands}]
+    _register(led, more, "BINNED")
+    return paths, led, clock, bridge, eng, cands + more
+
+
+def test_features_are_worked_out_once_per_market_per_bar_and_signals_are_shared(tmp_path, monkeypatch):
+    from mintel.lab import features as F
+    from mintel.lab.store import SymbolSeries
+    paths, led, clock, bridge, eng, cands = _many(tmp_path)
+    assert len(cands) > 80
+    pushed: dict = {}
+    real_push = F.Streaming.push
+
+    def counting(self, t, *a):
+        pushed[(id(self), t)] = pushed.get((id(self), t), 0) + 1
+        return real_push(self, t, *a)
+
+    monkeypatch.setattr(F.Streaming, "push", counting)
+    run_minutes(eng, clock, at(7, 0), at(7, 1))                    # primed
+    before = {s: ser.pushes for s, ser in eng.series.items()}
+    pushed.clear()
+    calls0 = eng.signal_calls
+    run_minutes(eng, clock, at(7, 2), at(16, 0))
+    minutes = 16 * 60 - (7 * 60 + 2) + 1
+    # each market's features: one push of each bar, however many ideas watch it
+    assert {s: ser.pushes - before[s] for s, ser in eng.series.items()} == {s: minutes for s in SYMS}
+    assert set(pushed.values()) == {1} and len(pushed) == minutes * len(SYMS)
+    # a family's signals run once per (settings, session) a market a bar, never once per idea
+    groups = {sl.sig_key for sl in eng.slots.values()}
+    assert len(groups) < len(eng.slots) / 2
+    assert eng.signal_calls - calls0 <= len(groups) * len(SYMS) * minutes
+    # the grown higher-timeframe bars and spreads are exactly what the batch code builds from scratch
+    for ser in eng.series.values():
+        for m in (5, 15, 60):
+            a, b = ser.tf(m), SymbolSeries.tf(ser, m)
+            assert (list(a.t), list(a.c), list(a.end_i)) == (list(b.t), list(b.c), list(b.end_i))
+        eff, assumed = ser.spread_arrays()
+        ser._memo.clear()
+        eff2, assumed2 = SymbolSeries.spread_arrays(ser)
+        assert list(eff) == list(eff2) and bytes(assumed) == bytes(assumed2)
+
+
+def test_sharing_the_signals_changes_no_trade(tmp_path):
+    """The same day with every idea computing its own signals gives the very same trades."""
+    whole = []
+    for k, share in enumerate((True, False)):
+        paths, led, clock, bridge, eng, cands = _many(tmp_path / str(k))
+        eng.load_roster()
+        if not share:
+            for sl in eng.slots.values():
+                sl.sig_key = (sl.cid,)
+        run_minutes(eng, clock, at(7, 0), at(16, 30), every_status=600)
+        whole.append([(r["candidate_id"], r["symbol"], r["opened_utc"], r["closed_utc"], round(r["net_gbp"], 6))
+                      for r in trades_of(led)])
+        led.close()
+    assert whole[0] == whole[1] and len(whole[0]) > 20
+
+
+def test_the_per_idea_caps_hold_and_there_is_no_cap_across_the_lab(tmp_path):
+    paths, led, clock, bridge, eng, cands = _many(tmp_path)
+    most = 0
+    t = at(7, 0)
+    while t <= at(16, 30):
+        clock.t = t
+        eng.minute(t)
+        per: dict = {}
+        for (cid, sym) in eng.open:
+            per[cid] = per.get(cid, 0) + 1
+        assert max(per.values(), default=0) <= 3                    # three open per idea
+        most = max(most, len(eng.open))
+        t += dt.timedelta(minutes=1)
+    assert most > 12                                                # the old 12 across the lab is gone
+    rows = trades_of(led)
+    by: dict = {}
+    for r in rows:
+        by.setdefault((r["candidate_id"], r["symbol"]), []).append(r)
+    for key, rs in by.items():
+        rs.sort(key=lambda r: r["opened_utc"])
+        assert len(rs) <= 6                                          # six entries a market a UK day
+        for a, b in zip(rs, rs[1:]):
+            gap = (dt.datetime.fromisoformat(b["opened_utc"]) - dt.datetime.fromisoformat(a["closed_utc"]))
+            assert gap >= dt.timedelta(minutes=5), key              # one at a time, then the five-bar pause
+
+
+@pytest.mark.parametrize("code", list(FAM.FAMILIES))
+def test_a_familys_signals_read_only_its_own_settings_and_the_session(code):
+    """Practice shares one signals call among ideas that differ only in their exit, markets or news rule
+    (``practice.signal_key``). That is exact only while no family's ``signals`` reads those from ``p``, and only
+    a family marked ``reads_news`` reads the news array: this reads each family's source to keep it so."""
+    import inspect
+    import re
+    fam = FAM.get(code)
+    src = inspect.getsource(type(fam).signals)
+    body = src.split("\n", 1)[1]                                      # below the def line
+    assert not re.search(r"""p\[\s*["'](exit|markets|news)["']\s*\]""", body), code
+    assert not re.search(r"""p\.get\(""", body), code
+    if not fam.reads_news:
+        assert not re.search(r"\bnews\b", body), code

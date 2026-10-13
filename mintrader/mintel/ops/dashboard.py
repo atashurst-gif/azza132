@@ -2053,7 +2053,7 @@ letter-spacing:.02em}
 .bt-none{color:var(--text-3);font-size:13.5px;margin:0}
 /* Home's headline numbers (13 Oct): on real money, testing, this week's pick */
 .wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
-.wk-grid.counts{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:12px}
+.wk-grid.counts{grid-template-columns:repeat(6,minmax(0,1fr));margin-bottom:12px}
 .wk-t{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);
 border-radius:12px;padding:12px 14px;min-width:0}
 .wk-t.prac{background:var(--surface-2)}
@@ -2078,6 +2078,12 @@ padding:9px 8px;border-top:1px solid var(--line)}
 .wk-total{border-color:var(--accent)}
 .wk-h:first-child{margin-top:0}
 details.wk-all>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text-3);margin:4px 0 12px}
+.wk-gap{font-size:11px;font-weight:600;color:var(--text-3);text-align:center;padding:6px 0;border-top:1px solid var(--line)}
+.wk-more{display:inline-block;margin-top:10px;font-size:13px;font-weight:650;color:var(--accent);text-decoration:none}
+.wk-name a{color:inherit;text-decoration:none}.wk-name a:hover{text-decoration:underline}
+details.wk-wait{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+details.wk-wait>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text-3)}
+details.wk-wait .wk-f{margin-top:6px;overflow-wrap:anywhere}
 /* the lab and the coach, small */
 .mini-title{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:650;
 margin-bottom:10px}
@@ -2979,20 +2985,76 @@ def _wk_chip(word: str) -> str:
     return f'<span class="wk-c {WK_CHIPS.get(word, "")}">{html.escape(word)}</span>'
 
 
+def _wk_href(x: dict) -> str:
+    """A row's own detail page: a bot's (or Trend & Breakout's) /?bot=..., a lab idea's /lab?id=...; '' when unknown."""
+    kind, ref = str(x.get("kind") or ""), str(x.get("ref") or "")
+    if kind in ("bot", "tnb") and ref in BOT_IDS:
+        return html.escape(f"/?bot={ref}")
+    if kind == "lab" and ref:
+        return _lab_href(ref)
+    return ""
+
+
+def _wk_row(x: dict, cur: str, link: bool = False) -> str:
+    """One test, one light row (the .wk-row grid, never a table): its name ("early" under 10 trades), £ after costs
+    over 28 days, trades and win %, and one chip - READY, MAKING MONEY, LOSING or TOO EARLY. ``link``: the name opens
+    its own page."""
+    from . import weekly as W
+    e = html.escape
+    n = int(x.get("trades") or 0)
+    name = e(str(x.get("name") or ""))
+    href = _wk_href(x) if link else ""
+    if href:
+        name = f'<a href="{href}">{name}</a>'
+    chip = _wk_chip("READY") if x.get("ready") else _wk_chip(str(x.get("chip") or W.TOO_EARLY))
+    return (f'<div class="wk-row" data-test="{e(str(x.get("id")))}"><div class="wk-name">{name}'
+            f'{" <span class=wk-early>early</span>" if x.get("early") else ""}</div>'
+            f'<div class="wk-money">{_gbp_html(x.get("net"), cur)}</div>'
+            f'<div class="wk-f">{n} trade{"" if n == 1 else "s"} · {_pct(x.get("win_rate"))} won</div>'
+            f'<div class="wk-chip">{chip}</div></div>')
+
+
+def _wk_counts(b: dict, cur: str) -> str:
+    """The pool's total and counts: every test together, then how many run, make money, lose, wait for a trade and are
+    ready for real money."""
+    e = html.escape
+    c = b.get("counts") or {}
+    total = b.get("total") or {}
+    return (f'<div class="wk-t prac wk-total" data-count="total"><div class="wk-n">All tests together</div>'
+            f'<div class="wk-v">{_gbp_html(total.get("net") or 0.0, cur) if total.get("trades") else "-"}</div>'
+            f'<div class="wk-f">{int(total.get("trades") or 0)} trades · {_pct(total.get("win_rate"))} won</div></div>'
+            + "".join(f'<div class="wk-t prac" data-count="{k}"><div class="wk-v">{int(c.get(k) or 0)}</div>'
+                      f'<div class="wk-n">{e(w)}</div></div>'
+                      for k, w in (("running", "tests running"), ("making", "making money"), ("losing", "losing"),
+                                   ("waiting", "waiting for a trade"), ("ready", "ready for real money"))))
+
+
+def _wk_tests(b: dict) -> int:
+    """How many tests in all (those waiting for a trade included)."""
+    got = b.get("tests")
+    if got is None:
+        got = len(b.get("all") or b.get("top") or []) + len(b.get("waiting") or [])
+    return int(got or 0)
+
+
 def render_weekly_home(board: Optional[dict], cur: str = "GBP") -> str:
     """Home's headline numbers (Aaron, 13 Oct: "headline numbers on home ... not
     a load of writing"; "they just become part of all of the other tests"):
     every test as ONE pool. On real money: a tile per test the weekly pick
     put there - real £ today, since it went live, open now, N of 20 live
-    trades (MetaTrader's figures). Testing: how many tests run, make money,
-    lose, are too early, are ready for real money; the three best by practice
-    £ after costs over 28 days. This week's pick. Numbers first, almost no
+    trades (MetaTrader's figures). Testing: every test together, how many run,
+    make money, lose, wait for their first trade, are ready for real money;
+    then, with ~640 tests (every lab idea practises since 13 Oct), only the ten
+    best and the three worst by practice £ after costs over 28 days, and "See all
+    N tests" for the full breakdown (the Practice page). A test with no trade
+    yet is counted, not listed. This week's pick. Numbers first, almost no
     words; renders with no weekly data at all."""
     from . import weekly as W
     e = html.escape
     b = board or {}
     live = b.get("live") or []
     pick = b.get("pick") or W.pick_tile(None, utcnow())
+    names = [str(n) for n in (pick.get("names") or [pick.get("name") or ""])]    # every pick, one a line
     if live:
         tiles = "".join(
             f'<div class="wk-t" data-test="{e(str(x.get("id")))}"><div class="wk-n">{e(str(x.get("name") or ""))}</div>'
@@ -3004,32 +3066,53 @@ def render_weekly_home(board: Optional[dict], cur: str = "GBP") -> str:
     else:
         tiles = (f'<div class="wk-t prac" data-test="none"><div class="wk-v" style="font-size:17px;white-space:normal">Nothing on real '
                  f'money &mdash; all testing</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
-    c = b.get("counts") or {}
-    total = b.get("total") or {}
-    rows = b.get("all") if b.get("all") is not None else (b.get("top") or [])
-    summary = (f'<div class="wk-t prac wk-total" data-count="total"><div class="wk-n">All tests together</div>'
-               f'<div class="wk-v">{_gbp_html(total.get("net") or 0.0, cur) if total.get("trades") else "-"}</div>'
-               f'<div class="wk-f">{int(total.get("trades") or 0)} trades · {_pct(total.get("win_rate"))} won</div></div>'
-               + "".join(f'<div class="wk-t prac" data-count="{k}"><div class="wk-v">{int(c.get(k) or 0)}</div>'
-                         f'<div class="wk-n">{e(w)}</div></div>'
-                         for k, w in (("running", "tests running"), ("making", "making money"), ("losing", "losing"),
-                                      ("ready", "ready for real money"))))
-    lines = "".join(
-        f'<div class="wk-row" data-test="{e(str(x.get("id")))}"><div class="wk-name">{e(str(x.get("name") or ""))}'
-        f'{" <span class=wk-early>early</span>" if x.get("early") else ""}</div>'
-        f'<div class="wk-money">{_gbp_html(x.get("net"), cur)}</div>'
-        f'<div class="wk-f">{int(x.get("trades") or 0)} trade{"" if int(x.get("trades") or 0) == 1 else "s"} · '
-        f'{_pct(x.get("win_rate"))} won</div>'
-        f'<div class="wk-chip">{_wk_chip("READY") if x.get("ready") else _wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div></div>'
-        for x in rows)
+    if b.get("top") is not None and (b.get("top") or b.get("bottom")):
+        top, bottom = list(b.get("top") or []), list(b.get("bottom") or [])
+    else:                                                     # an older board: its full list, cut the same way
+        rows = [x for x in (b.get("all") or []) if int(x.get("trades") or 0)]
+        cut = W.HOME_TOP + W.HOME_BOTTOM
+        top, bottom = (rows, []) if len(rows) <= cut else (rows[:W.HOME_TOP], rows[-W.HOME_BOTTOM:])
+    lines = "".join(_wk_row(x, cur) for x in top)
+    if bottom:
+        lines += '<div class="wk-gap">&middot;&middot;&middot; the three at the bottom</div>' + "".join(
+            _wk_row(x, cur) for x in bottom)
     table = (f'<div class="wk-list">{lines}</div>' if lines
              else '<div class="wk-f">No practice trades in the last 28 days yet.</div>')
+    n = _wk_tests(b)
+    more = f'<a class="wk-more" href="/?show=practice">See all {n} tests &rarr;</a>' if n else ""
     pick_html = (f'<div class="wk-t{" prac" if pick.get("none") else ""}" data-test="pick">'
-                 f'<div class="wk-n">This week\'s pick</div><div class="wk-v" style="font-size:17px;white-space:normal">'
-                 f'{e(str(pick.get("name") or ""))}</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
+                 f'<div class="wk-n">This week\'s pick{"s" if len(names) > 1 else ""}</div>'
+                 f'<div class="wk-v" style="font-size:17px;white-space:normal">{"<br>".join(e(n) for n in names)}</div>'
+                 f'<div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
     return (f'<section class="card" id="weekly"><div class="wk-h">On real money</div><div class="wk-grid">{tiles}'
             f'{pick_html}</div><div class="wk-h">Testing &middot; last 28 days, practice money</div>'
-            f'<div class="wk-grid counts">{summary}</div>{table}</section>')
+            f'<div class="wk-grid counts">{_wk_counts(b, cur)}</div>{table}{more}</section>')
+
+
+def render_practice_breakdown(board: Optional[dict], cur: str = "GBP") -> str:
+    """The Practice page's breakdown (Aaron, 13 Oct: "a breakdown of everything
+    (profit) and winners at the top"): every test together at the top, then
+    every test with a trade, one light row each, best practice £ after costs
+    over 28 days first - each name opens its own page - and the tests with no
+    trade yet as ONE folded line at the bottom. No table: the .wk-row grid
+    reads on a phone."""
+    from . import weekly as W
+    e = html.escape
+    b = board or {}
+    rows = [x for x in (b.get("all") or []) if int(x.get("trades") or 0)]
+    waiting = list(b.get("waiting") or [])
+    lines = "".join(_wk_row(x, cur, link=True) for x in rows)
+    table = (f'<div class="wk-list">{lines}</div>' if lines
+             else '<div class="wk-f">No practice trades in the last 28 days yet.</div>')
+    wait = ""
+    if waiting:
+        k = len(waiting)
+        names = " · ".join(e(str(x.get("name") or "")) for x in waiting)
+        wait = (f'<details class="wk-wait" data-count="waiting"><summary>{k} test{"" if k == 1 else "s"} waiting for '
+                f'their first trade</summary><div class="wk-f">{names}</div></details>')
+    return (f'<section class="card" id="breakdown"><div class="wk-h">Every test &middot; last {W.LOOKBACK_DAYS} days, '
+            f'practice money after costs, winners at the top</div>'
+            f'<div class="wk-grid counts">{_wk_counts(b, cur)}</div>{table}{wait}</section>')
 
 
 def _weekly_board(snap: dict, top: dict, data_dir: str, now: dt.datetime, deals) -> Optional[dict]:
@@ -3080,7 +3163,14 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
     entries, stars = _tiles_of(snap, top, verdicts, plan, deals, lab, view, now, data_dir)
     title = SHOWS.get(show, "Home")
     body = _home_problem(snap) + render_home_periods(view, "all", show)
-    if show:
+    if show == "practice":
+        # 13 Oct: the full breakdown first, every test winners at the top; each one's own page stays one tap away,
+        # by its name in the breakdown or its tile folded underneath
+        board = _weekly_board(snap, top, data_dir, now, deals)
+        body += (render_practice_breakdown(board, cur)
+                 + '<details class="wk-all"><summary>Each test\'s own page</summary>'
+                 + _leaderboard_html(_shown(entries, show), stars, view, cur, title) + '</details>')
+    elif show:
         body += _leaderboard_html(_shown(entries, show), stars, view, cur, title)
     else:
         coach = _coach_card(coach_page.one_line(data_dir, now))

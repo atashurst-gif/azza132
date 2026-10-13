@@ -8,6 +8,28 @@ feed answers seven read-only questions and nothing else, and its practice trades
 in `data/lab/lab.sqlite` marked PRACTICE. Anything to do with real money or sizes is
 Aaron's call; the lab's last word is READY FOR LIVE.
 
+Since 13 Oct (Aaron: "I just want all in practice unless any earn the right") EVERY idea
+practises, binned ones included: `"practise_all": true` in `data/lab.json` (the default; set
+it to `false` for the old roster of six). Each idea is simulated on its own on every stored
+market of its kind (up to 24), with its own caps (one position a market, three open, a
+five-bar pause, six entries a market a UK day) and no cap across the lab. The nightly past
+and fresh tests still run and are shown; they no longer decide who practises. What goes to
+real money is the weekly pick's call (`mintel/ops/weekly.py`), on each idea's own practice
+record. Features are worked out once a market a bar and shared; measured on made-up prices,
+632 ideas x 24 markets cost about 0.1 s a minute (0.3 s at worst) after a start-up of about
+13 s.
+
+Every Saturday night the nightly's `refresh` step (or `python -m mintel.lab refresh`) refreshes
+the pool (`mintel/lab/refresh.py`): an idea with 20+ practice trades in 28 days, net <= 0 and
+a profit factor under 0.9 is RETIRED (kept in the ledger, off practice); the ten best by
+practice £ get up to three neighbours each (one tunable setting a step away, children of
+their parent, judged only on their own trades); grid ideas still waiting - a new family file
+dropped into `mintel/lab/families/` is found by itself - fill the pool back to `pool_target`
+(640). The bots and Trend & Breakout's parts are never retired: the losing ones are listed
+for a look. The report is `reports/lab/<night>/refresh.md` and summary.json's `refresh`.
+The weekly pick then sends up to `weekly_max_promotions` (3, `data/weekly.json`) proven
+winners to real money each week.
+
 The design is `docs/lab/lab-spec.md`. This page is the operator's view.
 
 ## What runs, and when

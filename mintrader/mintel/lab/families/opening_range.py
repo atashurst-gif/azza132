@@ -19,6 +19,7 @@ class OpeningRange(FamilyBase):
     features = ("sess", "atr")
     sensitive = ("range_min",)
     GRID_SIZE = 144
+    TUNABLE = {"buffer_atr": (0.0, 1.0)}
     AXES = {"session": ["LONDON", "NEWYORK"], "range_min": [15, 30], "buffer_atr": [0.1],
             "stop": ["RANGE", "ATR"], "exit": ["t1", "t2", "tr1"],
             "markets": ["FX_MAJOR", "FX_MINOR", "INDEX"], "news": ["IGNORE", "AVOID_15M"]}
@@ -45,6 +46,11 @@ class OpeningRange(FamilyBase):
                     return [Signal(i, -1, ceil(top[i] - cl) if far_side else None, "broke the low")]
             i += 1
         return []
+
+    def key_words(self, c):
+        from ..candidate import SESSION_SHORT
+        return (f"{SESSION_SHORT[c.session]} {c.p('range_min')} min, "
+                f"{'range' if c.p('stop') == 'RANGE' else 'swing'} stop")
 
     def subject(self, c):
         stop = "stop at the far side" if c.p("stop") == "RANGE" else "stop 1 swing"

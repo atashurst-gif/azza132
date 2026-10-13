@@ -18,6 +18,7 @@ class MomentumContinuation(FamilyBase):
     features = ("atr",)
     sensitive = ("impulse_atr",)
     GRID_SIZE = 108
+    TUNABLE = {"impulse_atr": (0.5, 6.0)}
     AXES = {"impulse_atr": [1.5, 2.0, 2.5], "pullback": ["NONE", "HALF"], "session": ["BOTH"],
             "exit": ["t15w", "tr1", "tr2"], "markets": ["FX_MINOR", "FX_MAJOR", "INDEX"],
             "news": ["IGNORE", "AVOID_15M"]}
@@ -77,6 +78,9 @@ class MomentumContinuation(FamilyBase):
                 out.append(Signal(fired, 1 if up else -1, None, "broke the push's extreme"))
                 k = bisect.bisect_right(tb.end_i, fired, k + 1, b)
         return out
+
+    def key_words(self, c):
+        return f"{c.p('impulse_atr'):g} swings, {'pullback' if c.p('pullback') == 'HALF' else 'first break'}"
 
     def subject(self, c):
         pb = "after a shallow pullback" if c.p("pullback") == "HALF" else "on the first break"

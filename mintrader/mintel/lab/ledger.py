@@ -106,6 +106,11 @@ CREATE TABLE IF NOT EXISTS runs(
 #   gated          1 once the family-end gate (plateau, family PBO) has been applied to a
 #                  PAST row by ``regrade_past``; the fresh door will not open before that
 TEST_EXTRA_COLUMNS = (("assumed_share", "REAL"), ("gated", "INT DEFAULT 0"))
+# Columns added to ``candidates`` (13 Oct, the weekly refresh of the practice pool):
+#   retired_utc, retired_reason  when and why the refresh took the idea off the practice roster
+#                                (RETIRED: a clear loser on its own practice record). Its stage, its
+#                                tests and its trades are left exactly as they were; nothing is deleted
+CANDIDATE_EXTRA_COLUMNS = (("retired_utc", "TEXT"), ("retired_reason", "TEXT"))
 
 _SEALED_COLUMNS = ("id", "candidate_id", "kind", "stretch_id", "cut_day", "status", "started_utc",
                    "finished_utc", "seconds", "window_from", "window_to", "days", "trades",
@@ -197,6 +202,10 @@ class LabLedger:
         for name, decl in TEST_EXTRA_COLUMNS:
             if name not in have:
                 self.conn.execute(f"ALTER TABLE tests ADD COLUMN {name} {decl}")
+        have = {r[1] for r in self.conn.execute("PRAGMA table_info(candidates)").fetchall()}
+        for name, decl in CANDIDATE_EXTRA_COLUMNS:
+            if name not in have:
+                self.conn.execute(f"ALTER TABLE candidates ADD COLUMN {name} {decl}")
 
     def close(self) -> None:
         with self._lock:
@@ -319,6 +328,22 @@ class LabLedger:
             self.conn.execute(
                 "INSERT INTO events(ts_utc, candidate_id, kind, from_stage, to_stage, why, by)"
                 " VALUES (?,?,?,?,?,?,?)", (stamp, cid, "stage", frm, to_stage, why, by))
+
+    def retire(self, cid: str, why: str, *, by: str = "rule", now: Optional[dt.datetime] = None) -> bool:
+        """Take an idea off the practice pool (RETIRED), with the reason and an
+        events row, together. Its stage and every row it has are kept. False
+        when it is unknown or already retired."""
+        from . import RETIRED
+        stamp = _now(now)
+        with self._tx():
+            row = self.conn.execute("SELECT stage, retired_utc FROM candidates WHERE id=?", (cid,)).fetchone()
+            if row is None or row[1]:
+                return False
+            self.conn.execute("UPDATE candidates SET retired_utc=?, retired_reason=? WHERE id=?", (stamp, why, cid))
+            self.conn.execute(
+                "INSERT INTO events(ts_utc, candidate_id, kind, from_stage, to_stage, why, by)"
+                " VALUES (?,?,?,?,?,?,?)", (stamp, cid, "retired", row[0], RETIRED, why, by))
+        return True
 
     def set_rank(self, cid: str, score: Optional[float]) -> None:
         self.execute("UPDATE candidates SET rank_score=? WHERE id=?", (score, cid))

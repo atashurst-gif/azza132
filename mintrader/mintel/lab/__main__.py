@@ -6,6 +6,7 @@
     python -m mintel.lab mode     off|paper|show --config data/config.json
     python -m mintel.lab reopen   <id> --reason "..." --config data/config.json
     python -m mintel.lab due      --config data/config.json      (exit 0 when tonight's run is owed)
+    python -m mintel.lab refresh  --config data/config.json [--force]   (the weekly pool refresh, by hand)
 
 ``mode`` is the only writer of ``data/lab.json`` (atomically); the bots' own
 modes command is not involved. There is no live mode: the lab has no live
@@ -115,6 +116,27 @@ def cmd_due(args) -> int:
     return 0 if owed else 1
 
 
+def cmd_refresh(args) -> int:
+    """The weekly refresh of the practice pool by hand (the nightly runs it on Saturdays)."""
+    cfg = _cfg(args.config)
+    paths = LabPaths(cfg.ops.data_dir, cfg.ops.log_dir)
+    from .cut import load_cut
+    from .ledger import LabLedger
+    from .refresh import refresh_pool
+    from .stages import night_of
+    now = dt.datetime.now(UTC)
+    led = LabLedger(paths.sqlite, paths.trials)
+    try:
+        cut = load_cut(paths)
+        rep = refresh_pool(led, paths, LabSettings.load(paths.data_dir), night=night_of(now), now=now,
+                           news_awake=bool(cut.news_awake) if cut else False, force=args.force, log=print)
+    finally:
+        led.close()
+    print(f"{len(rep['retired'])} retired, {len(rep['variants'])} variants, {len(rep['new'])} new; "
+          f"pool {rep['pool']} of {rep['target']} (data/lab/runs/{rep['night']}/refresh.md)")
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "nightly":
@@ -143,6 +165,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p = sub.add_parser("due", help="exit 0 when tonight's run has not finished and none is running")
     p.add_argument("--config", default="data/config.json")
     p.set_defaults(fn=cmd_due)
+    p = sub.add_parser("refresh", help="the weekly refresh of the practice pool (the nightly runs it on Saturdays)")
+    p.add_argument("--config", default="data/config.json")
+    p.add_argument("--force", action="store_true", help="run it again although it ran tonight")
+    p.set_defaults(fn=cmd_refresh)
     args = ap.parse_args(argv)
     return args.fn(args)
 
