@@ -1,10 +1,23 @@
 {
- "ts_utc": "2026-10-13T06:29:00+00:00",
+ "ts_utc": "2026-10-13T06:39:09+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
- "trader_up": false,
- "trader_reason": "trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running",
+ "trader_up": true,
+ "trader_reason": "",
  "account": {
-  "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
+  "currency": "GBP",
+  "start": "2026-10-05T11:30:42+00:00",
+  "open": 0,
+  "equity": 1840.54,
+  "balance": 1840.54,
+  "made": -159.46,
+  "error": "",
+  "source": "broker",
+  "day_start": "2026-10-12T23:00:00+00:00",
+  "today": -12.43,
+  "today_trades": 2,
+  "today_commission": 0.0,
+  "day_basis": "UK",
+  "about": "the page's standing block (MetaTrader's deal history): real money, every bot"
  },
  "bots": [
   {
@@ -12,7 +25,7 @@
    "label": "Trend & Breakout",
    "mode_set": "PAPER",
    "mode": "PAPER",
-   "running": false,
+   "running": true,
    "mode_detail": "PAPER",
    "live_groups": [],
    "live_since_utc": "",
@@ -21,10 +34,107 @@
     "count": 0,
     "source": "the paper record (tnb_paper.sqlite), read-only: simulated orders, not money"
    },
-   "health": "the trader's page did not answer: trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running",
+   "health": "RUNNING: running with 1 warning(s)",
+   "build": "d457249522",
+   "last_scan": "06:39:02 UTC",
+   "last_trade": "JP225 2026-10-13T00:21",
+   "not_trading_because": [],
+   "positions_on_page": [],
+   "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus any real position left from LIVE; the real ones are also under open_on_account",
+   "thinking": [
+    {
+     "rank": 1,
+     "symbol": "US30",
+     "direction": "LONG",
+     "score": 62.69,
+     "tier": "NORMAL",
+     "tactic": "BREAKOUT_RETEST",
+     "regime": "UNCLEAR / NORMAL VOL",
+     "reason": "US30: UNCLEAR / NORMAL VOL market. Best idea is buy using breakout retest. Execution supports it (85/100; spread 120.0 pips (1.0x normal)). Multi Tf supports it (82/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; range structure on M5). Regime supports it (56/100; UNCLEAR / NORMAL VOL). Room to the first obstacle is 1230 pips, giving about 1.2 to 1 after 150.0 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 1.18 after costs.",
+     "blockers": [
+      "NORMAL setup - only STRONG or better is traded",
+      "reward:risk only 1.18 after costs"
+     ],
+     "reward_risk": 1.179
+    },
+    {
+     "rank": 2,
+     "symbol": "EURCHF",
+     "direction": "LONG",
+     "score": 53.75,
+     "tier": "NO_TRADE",
+     "tactic": "MOMENTUM_CONTINUATION",
+     "regime": "HIGH_VOL / HIGH VOL",
+     "reason": "EURCHF: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 0.6 pips). Volatility supports it (78/100; volatility at the 96th percentile). Structure supports it (76/100; range structure on M5). Regime supports it (72/100; HIGH_VOL / HIGH VOL). Room to the first obstacle is 999 pips, giving about 1.6 to 1 after 0.9 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 54); reward:risk only 1.55 after costs; costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "momentum continuation needs a score of 70+ (this is 54)",
+      "reward:risk only 1.55 after costs",
+      "costs would be 50% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 1.553
+    },
+    {
+     "rank": 3,
+     "symbol": "XBRUSD",
+     "direction": "SHORT",
+     "score": 39.41,
+     "tier": "NO_TRADE",
+     "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+     "regime": "RANGE / NORMAL VOL",
+     "reason": "XBRUSD: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Execution supports it (85/100; spread 10.0 pips (1.0x normal), commission 79.3 pips). Regime supports it (85/100; RANGE / NORMAL VOL). Structure supports it (80/100; range structure on M5). Momentum argues against it (32/100; efficiency 0.16, ADX 13). Room to the first obstacle is 73 pips, giving about -0.1 to 1 after 91.8 pips of cost. Blocked because: reward:risk only -0.14 after costs; costs would be 30% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only -0.14 after costs",
+      "costs would be 30% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": -0.139
+    },
+    {
+     "rank": 4,
+     "symbol": "BRENT_Z6",
+     "direction": "SHORT",
+     "score": 39.14,
+     "tier": "NO_TRADE",
+     "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+     "regime": "RANGE / NORMAL VOL",
+     "reason": "BRENT_Z6: RANGE / NORMAL VOL market. Best idea is sell using liquidity sweep reversal. Execution supports it (85/100; spread 2.0 pips (1.0x normal), commission 7.9 pips). Regime supports it (85/100; RANGE / NORMAL VOL). Structure supports it (80/100; range structure on M5). Momentum argues against it (33/100; efficiency 0.17, ADX 13). Room to the first obstacle is 7 pips, giving about -0.2 to 1 after 10.4 pips of cost. Blocked because: reward:risk only -0.18 after costs; costs would be 34% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only -0.18 after costs",
+      "costs would be 34% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": -0.185
+    },
+    {
+     "rank": 5,
+     "symbol": "GBPAUD",
+     "direction": "LONG",
+     "score": 33.8,
+     "tier": "NO_TRADE",
+     "tactic": "VWAP_REVERSION",
+     "regime": "RANGE / NORMAL VOL",
+     "reason": "GBPAUD: RANGE / NORMAL VOL market. Best idea is buy using vwap reversion. Execution supports it (100/100; spread 0.1 pips (0.3x normal), commission 1.0 pips). Regime supports it (85/100; RANGE / NORMAL VOL). Momentum argues against it (17/100; efficiency 0.02, ADX 7). Multi Tf supports it (79/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 0.8 to 1 after 1.2 pips of cost. Blocked because: reward:risk only 0.75 after costs; costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only 0.75 after costs",
+      "costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 0.75
+    }
+   ],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990311,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-12T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": -25.5,
+    "trades": 3,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "momentum_rider",
@@ -33,7 +143,7 @@
    "mode": "PAPER",
    "status_file": "rider-status.json",
    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
-   "report_age_seconds": 227875.8,
+   "report_age_seconds": 228484.8,
    "running": false,
    "health": "RAPID MOMENTUM RIDER - OFF (rider.json says OFF, so it is not started)",
    "entries_allowed": false,
@@ -582,8 +692,16 @@
     "15:10:46 could not read the calendar: BrokerError: this MetaTrader5 build has no calendar API; use the stored historical calendar"
    ],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990811,
+    "mode": "OFF",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-12T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "open_on_account": []
   },
   {
    "id": "momentum_runner",
@@ -591,18 +709,31 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-13T06:28:58.436759+00:00",
-   "report_age_seconds": 1.6,
+   "updated_utc": "2026-10-13T06:39:08.119914+00:00",
+   "report_age_seconds": 0.9,
    "running": true,
-   "health": "WATCHING, PAPER, last report 2 s ago",
+   "health": "WATCHING, PAPER, last report 1 s ago",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
    "refused_today": 0,
    "skipped_today": 0,
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990511,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-12T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": 0,
+    "trades": 0,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "band_breaker",
@@ -610,15 +741,28 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-13T06:28:58.436759+00:00",
-   "report_age_seconds": 1.6,
+   "updated_utc": "2026-10-13T06:39:08.119914+00:00",
+   "report_age_seconds": 0.9,
    "running": true,
-   "health": "OUTSIDE SESSION, PAPER, last report 2 s ago",
+   "health": "OUTSIDE SESSION, PAPER, last report 1 s ago",
    "status": "OUTSIDE SESSION",
    "open_trades": [],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990611,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-12T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": 0,
+    "trades": 0,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "crowd_fader",
@@ -626,15 +770,28 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-13T06:28:58.436759+00:00",
-   "report_age_seconds": 1.6,
+   "updated_utc": "2026-10-13T06:39:08.119914+00:00",
+   "report_age_seconds": 0.9,
    "running": true,
-   "health": "OUTSIDE HOURS (managing only), PAPER, last report 2 s ago",
+   "health": "OUTSIDE HOURS (managing only), PAPER, last report 1 s ago",
    "status": "OUTSIDE HOURS (managing only)",
    "open_trades": [],
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": 0,
+    "trades": 0,
+    "magic": 990711,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-12T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": -9.99,
+    "trades": 1,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   },
   {
    "id": "financial_ian",
@@ -642,20 +799,20 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-13T06:28:59.954299+00:00",
-   "report_age_seconds": 0.0,
+   "updated_utc": "2026-10-13T06:39:08.772128+00:00",
+   "report_age_seconds": 0.2,
    "running": true,
-   "health": "FINANCIAL IAN - HEALTHY, PAPER, feed LIVE, MetaTrader not connected",
+   "health": "FINANCIAL IAN - HEALTHY, PAPER, feed LIVE",
    "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
    "feed": {
     "state": "LIVE",
-    "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 20 USDT steps, ETHUSDT in 1 USDT steps",
+    "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 10 USDT steps, ETHUSDT in 0.5 USDT steps",
     "vendor": "binance",
     "synthetic": false,
-    "events": 2470123
+    "events": 65259
    },
    "data_label": "LIVE",
-   "metatrader_connected": false,
+   "metatrader_connected": true,
    "open_trades": [],
    "own_record_today": {
     "trades": 9,
@@ -675,8 +832,21 @@
     "data_source": "LIVE FEED"
    },
    "today": {
-    "unavailable": "the trader's page did not answer, so the account's figures are not known (trader alive (heartbeat 2s ago) but its page is not answering; watchdog alive; watchdog last said: 2026-10-13T06:26:38.863884+00:00 coach: started (pid 97418), next retry no sooner than 20s; bridge not answering; MetaTrader terminal running)"
-   }
+    "result": -12.43,
+    "trades": 2,
+    "magic": 990911,
+    "mode": "PAPER",
+    "open": 0.0,
+    "open_trades": 0,
+    "from_utc": "2026-10-12T23:00:00+00:00",
+    "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
+   },
+   "practice_today": {
+    "result": -14.95,
+    "trades": 9,
+    "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
+   },
+   "open_on_account": []
   }
  ]
 }
