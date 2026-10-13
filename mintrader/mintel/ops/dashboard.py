@@ -1941,14 +1941,14 @@ This page refreshes itself every 10 seconds.</p>
 # evidence, above its existing detail. Every money figure is the same one the full page shows (standing.period_view
 # for real money, standing.practice_figures for practice); "/details" is the full page, unchanged.
 HOME_CSS = """
-:root{--bg:#f4f6fa;--surface:#ffffff;--surface-2:#f7f8fc;--line:#e3e7ef;--text:#16213e;--text-2:#45506b;
---text-3:#7b869e;--navy:#1c2f5e;--accent:#f0368a;--accent-soft:#fdeaf3;--good:#0e9f6e;--good-soft:#e2f6ee;
+:root{--bg:#eef4f3;--surface:#ffffff;--surface-2:#f4f8f7;--line:#dbe6e4;--text:#12302d;--text-2:#3f5a56;
+--text-3:#73908b;--navy:#0b5a52;--accent:#14b8a6;--accent-soft:#dff5f2;--good:#0e9f6e;--good-soft:#e2f6ee;
 --bad:#d92d20;--bad-soft:#fdeceb;--warn:#b7791f;--warn-soft:#fdf3dc;--info:#2f6fed;--info-soft:#e8f0fe;
---prac:#9aa3b8;--shadow:0 1px 2px rgba(22,33,62,.05)}
+--prac:#9aa3b8;--shadow:0 1px 2px rgba(18,48,45,.06);--side:#0b3b38;--side-text:#cfe7e3;--side-dim:#7fb3ab}
 :root[data-theme="dark"]{--bg:#0f1524;--surface:#171f33;--surface-2:#1d2740;--line:#2a3552;--text:#e8ecf5;
---text-2:#b4bdd2;--text-3:#8490ab;--navy:#9db4ee;--accent:#ff5fa5;--accent-soft:#3a1c2d;--good:#34d399;
+--text-2:#b4bdd2;--text-3:#8490ab;--navy:#5eead4;--accent:#2dd4bf;--accent-soft:#103a36;--good:#34d399;
 --good-soft:#123328;--bad:#f87171;--bad-soft:#3b1a1a;--warn:#fbbf24;--warn-soft:#3a2d10;--info:#7aa2ff;
---info-soft:#1a2748;--prac:#6b7590;--shadow:none}
+--info-soft:#1a2748;--prac:#6b7590;--shadow:none;--side:#082624;--side-text:#cfe7e3;--side-dim:#6fa39b}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;overflow-x:hidden;max-width:100%;-webkit-text-size-adjust:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
@@ -1957,26 +1957,27 @@ a{color:var(--info);text-decoration:none}
 h1,h2,h3{font-weight:650;letter-spacing:-.01em;margin:0}
 /* the shell: a sidebar like the AI hub's */
 .app{display:flex;min-height:100vh}
-.side{width:216px;flex:none;background:var(--surface);border-right:1px solid var(--line);display:flex;
+.side{width:216px;flex:none;background:var(--side);border-right:1px solid var(--side);display:flex;
 flex-direction:column;position:sticky;top:0;height:100vh}
 .side-top{padding:20px 18px 14px}
-.brand{font-size:20px;font-weight:700;color:var(--navy);letter-spacing:-.01em;white-space:nowrap}
+.brand{font-size:20px;font-weight:700;color:#fff;letter-spacing:-.01em;white-space:nowrap}
 .brand i{color:var(--accent);font-style:normal}
-.side-top small{display:block;color:var(--text-3);font-size:12px;margin-top:2px}
+.side-top small{display:block;color:var(--side-dim);font-size:12px;margin-top:2px}
 .side nav{padding:6px 10px;display:flex;flex-direction:column;gap:2px;flex:1;overflow:auto;font-size:14px}
-.nav-label{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);
+.nav-label{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--side-dim);
 padding:14px 10px 6px}
 .side nav a{display:flex;align-items:center;gap:10px;margin:0;border-radius:9px;padding:9px 10px;
-color:var(--text-2);font-weight:550;white-space:nowrap}
-.side nav a:hover{background:var(--surface-2);text-decoration:none}
-.side nav a.on{background:var(--navy);color:#fff}
-:root[data-theme="dark"] .side nav a.on{background:var(--surface-2);color:var(--text)}
+color:var(--side-text);font-weight:550;white-space:nowrap}
+.side nav a:hover{background:rgba(255,255,255,.08);text-decoration:none}
+.side nav a.on{background:var(--accent);color:#062420}
+:root[data-theme="dark"] .side nav a.on{background:var(--accent);color:#062420}
 .side nav svg{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;
 stroke-linejoin:round}
-.side-foot{padding:14px 18px;border-top:1px solid var(--line);font-size:12px;color:var(--text-3);display:flex;
+.side-foot{padding:14px 18px;border-top:1px solid rgba(255,255,255,.1);font-size:12px;color:var(--side-dim);display:flex;
 align-items:center;justify-content:space-between;gap:8px}
 .linkbtn{background:none;border:0;color:var(--text-3);cursor:pointer;font:inherit;font-size:12.5px;padding:0}
 .linkbtn:hover{color:var(--text);text-decoration:underline}
+.side .linkbtn{color:var(--side-dim)}.side .linkbtn:hover{color:#fff}
 .main{flex:1;min-width:0;overflow-x:hidden}
 .topbar{display:flex;align-items:center;gap:12px;padding:18px 28px 0;flex-wrap:wrap}
 .topbar h1{font-size:22px;flex:1;min-width:0}
@@ -2991,7 +2992,7 @@ def render_weekly_home(board: Optional[dict], cur: str = "GBP") -> str:
             f'<div data-k="live trades">{int(x.get("trades") or 0)} of {int(x.get("of") or W.JUDGE_AFTER)}</div>'
             f'</div>{_wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div>' for x in live)
     else:
-        tiles = (f'<div class="wk-t prac" data-test="none"><div class="wk-v" style="font-size:17px">Nothing on real '
+        tiles = (f'<div class="wk-t prac" data-test="none"><div class="wk-v" style="font-size:17px;white-space:normal">Nothing on real '
                  f'money &mdash; all testing</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
     c = b.get("counts") or {}
     counts = "".join(f'<div class="wk-t prac" data-count="{k}"><div class="wk-v">{int(c.get(k) or 0)}</div>'
@@ -3005,7 +3006,7 @@ def render_weekly_home(board: Optional[dict], cur: str = "GBP") -> str:
         f'{_wk_chip("READY") if x.get("ready") else _wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div>'
         for x in b.get("top") or [])
     pick_html = (f'<div class="wk-t{" prac" if pick.get("none") else ""}" data-test="pick">'
-                 f'<div class="wk-n">This week\'s pick</div><div class="wk-v" style="font-size:17px">'
+                 f'<div class="wk-n">This week\'s pick</div><div class="wk-v" style="font-size:17px;white-space:normal">'
                  f'{e(str(pick.get("name") or ""))}</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
     return (f'<section class="card" id="weekly"><div class="wk-h">On real money</div><div class="wk-grid">{tiles}'
             f'</div><div class="wk-h">Testing</div><div class="wk-grid counts">{counts}</div>'

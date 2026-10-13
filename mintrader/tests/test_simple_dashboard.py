@@ -880,7 +880,7 @@ class TestOneBotInDetail:
                        'id="more"', "BOT: RUNNING", '<div class="hc'):
             assert absent not in page, absent
         assert '<meta name="viewport" content="width=device-width,initial-scale=1">' in page
-        assert "--bg:#f4f6fa" in page and "--surface:#ffffff" in page      # the AI hub's light grey and white cards
+        assert "--bg:#eef4f3" in page and "--surface:#ffffff" in page and "--side:#0b3b38" in page  # teal, told apart from the AI hub (13 Oct)
         # the hub's sidebar: grouped links, each with its small line icon
         nav = page.split('<nav class="nav">')[1].split("</nav>")[0]
         assert [unescape(x) for x in re.findall(r'<div class="nav-label">([^<]*)</div>', nav)] == [

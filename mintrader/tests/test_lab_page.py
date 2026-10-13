@@ -753,7 +753,7 @@ class TestEscapingAndPhones:
             assert cls + "{" in HOME_CSS or cls + " " in HOME_CSS, cls
         for absent in ("<table", 'class="tile"', 'id="more"', '<div class="hc', 'class="quiet"', "BOT: RUNNING"):
             assert absent not in home, absent
-        assert "--bg:#f4f6fa" in home                                # the hub's light grey page
+        assert "--bg:#eef4f3" in home and "--side:#0b3b38" in home   # its own teal look (13 Oct), not the AI hub's
 
     def test_render_functions_never_fail_without_a_data_folder(self):
         page = render_home({"standing": {}}, None, {}, None, "none")
