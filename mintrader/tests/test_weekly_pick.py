@@ -502,10 +502,20 @@ class TestHome:
         own_db(data, "crowd.sqlite", [[2.0, 1.0]] * 2)                         # too early
         lab_db(data, "lab-00000000ab", [[5.0, -1.0]] * 6, stage="PRACTICE", name="Gold breakout")
         board = W.home_board(data, cfg, T0 + dt.timedelta(days=11), cache_seconds=0)
-        assert board["counts"] == {"running": 4, "making": 2, "losing": 1, "early": 1, "ready": 1}
+        # making money and losing go by the money alone (13 Oct): the 2-trade crowd test is up, so it counts,
+        # marked early beside its name
+        assert board["counts"] == {"running": 4, "making": 3, "losing": 1, "early": 1, "ready": 1}
         assert [x["name"] for x in board["top"]] == ["Momentum Runner", "Gold breakout", "Crowd Fader"]
-        t = text(render_weekly_home(board))
+        assert [x["name"] for x in board["all"]] == ["Momentum Runner", "Gold breakout", "Crowd Fader",
+                                                     "Band Breaker"]                  # every test, best first
+        tot = board["total"]
+        assert tot["net"] == round(sum(x["net"] for x in board["all"]), 2)
+        assert tot["trades"] == sum(x["trades"] for x in board["all"])
+        page = render_weekly_home(board)
+        t = text(page)
         assert "4 tests running" in t and "1 ready for real money" in t and "+£140.00 40 trades · 75% won" in t
+        assert page.count('<div class="wk-row" data-test=') == 4 and "All tests together" in t
+        assert "Crowd Fader early" in t and "Band Breaker" in t and "LOSING" in t
 
     def test_on_real_money_tile(self, tmp_path):
         from mintel.ops.dashboard import render_weekly_home

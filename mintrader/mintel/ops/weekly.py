@@ -1283,14 +1283,15 @@ def home_board(data_dir, config_path=None, now: Optional[dt.datetime] = None, de
     call, from the page's own refresh. Never raises."""
     now = to_utc(now or utcnow())
     out = {"live": [], "counts": {"running": 0, "making": 0, "losing": 0, "early": 0, "ready": 0}, "top": [],
-           "pick": pick_tile(None, now)}
+           "all": [], "total": {"net": 0.0, "trades": 0, "win_rate": None}, "pick": pick_tile(None, now)}
     if not data_dir:
         return out
     config_path = config_path or Path(data_dir) / "config.json"
     try:
         pool = _pool(data_dir, config_path, now, cache_seconds)
         out["counts"] = pool_counts(pool)
-        out["top"] = [_small(c) for c in sorted(pool, key=lambda c: -float(c["stats"]["net"]))[:3]]
+        ranked = [_small(c) for c in sorted(pool, key=lambda c: -float(c["stats"]["net"]))]
+        out["all"], out["top"], out["total"] = ranked, ranked[:3], pool_total(pool)
     except Exception as exc:
         log.warning("home board: %s", exc)
     try:
@@ -1316,7 +1317,10 @@ def _pool(data_dir, config_path, now: dt.datetime, cache_seconds: float) -> list
 
 
 def chip_of(trades: int, net: Optional[float]) -> str:
-    if trades < TOO_EARLY_TRADES or net is None:
+    """By the money alone (Aaron, 13 Oct: "0 making money" next to +£29 made no
+    sense): MAKING MONEY above zero, LOSING below, TOO EARLY with no trade or
+    exactly level. How few trades there are is said beside it (``early``)."""
+    if not trades or net is None:
         return TOO_EARLY
     return MAKING if net > 0 else LOSING if net < 0 else TOO_EARLY
 
@@ -1324,7 +1328,18 @@ def chip_of(trades: int, net: Optional[float]) -> str:
 def pool_counts(pool: Sequence[dict]) -> dict:
     chips = [chip_of(int(c["stats"]["trades"]), c["stats"]["net"]) for c in pool]
     return {"running": len(pool), "making": chips.count(MAKING), "losing": chips.count(LOSING),
-            "early": chips.count(TOO_EARLY), "ready": sum(1 for c in pool if c.get("passes"))}
+            "early": sum(1 for c in pool if int(c["stats"]["trades"]) < TOO_EARLY_TRADES),
+            "ready": sum(1 for c in pool if c.get("passes"))}
+
+
+def pool_total(pool: Sequence[dict]) -> dict:
+    """Every test together: practice £ after costs, trades and wins over the window."""
+    net = sum(float(c["stats"]["net"] or 0.0) for c in pool)
+    trades = sum(int(c["stats"]["trades"] or 0) for c in pool)
+    wins = sum(int(c["stats"]["wins"]) if c["stats"].get("wins") is not None
+               else int(round(float(c["stats"].get("win_rate") or 0.0) * int(c["stats"]["trades"] or 0) / 100.0))
+               for c in pool)
+    return {"net": round(net, 2), "trades": trades, "win_rate": (100.0 * wins / trades) if trades else None}
 
 
 def short_name(c: dict) -> str:
@@ -1340,7 +1355,8 @@ def short_name(c: dict) -> str:
 def _small(c: dict) -> dict:
     s = c["stats"]
     return {"id": c["id"], "name": short_name(c), "net": s["net"], "trades": s["trades"], "win_rate": s["win_rate"],
-            "chip": chip_of(int(s["trades"]), s["net"]), "ready": bool(c.get("passes")), "live": bool(c.get("live"))}
+            "chip": chip_of(int(s["trades"]), s["net"]), "ready": bool(c.get("passes")), "live": bool(c.get("live")),
+            "early": int(s["trades"] or 0) < TOO_EARLY_TRADES}
 
 
 def _int(v) -> int:

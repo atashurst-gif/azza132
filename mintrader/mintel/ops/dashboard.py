@@ -2068,6 +2068,14 @@ background:var(--surface-2);color:var(--text-3);white-space:nowrap}
 .wk-c.making{background:var(--good);color:#fff}.wk-c.losing{background:var(--bad);color:#fff}
 .wk-c.ready{background:var(--navy);color:#fff}
 .wk-h{font-size:13px;font-weight:650;color:var(--text-2);margin:14px 0 8px}
+.wk-row{display:grid;grid-template-columns:minmax(0,1fr) 110px 150px 130px;gap:10px;align-items:center;
+padding:9px 8px;border-top:1px solid var(--line)}
+.wk-row:first-child{border-top:0}
+.wk-name{font-weight:600;color:var(--text);min-width:0;overflow-wrap:anywhere}
+.wk-money{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.wk-chip{text-align:right;white-space:nowrap}.wk-chip .wk-c{align-self:auto}
+.wk-early{font-size:10.5px;font-weight:600;color:var(--text-3);border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-left:4px}
+.wk-total{border-color:var(--accent)}
 .wk-h:first-child{margin-top:0}
 details.wk-all>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text-3);margin:4px 0 12px}
 /* the lab and the coach, small */
@@ -2192,6 +2200,8 @@ border-right:0;border-bottom:1px solid var(--line);min-width:0}
 .kpis>.card{padding:14px}
 .bt-grid{grid-template-columns:minmax(0,1fr);gap:8px}
 .wk-grid.counts{grid-template-columns:repeat(3,minmax(0,1fr))}.wk-v{font-size:22px}
+.wk-row{grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;padding:8px 4px}
+.wk-row .wk-f{font-size:11px}.wk-money{font-size:15px}
 #bots{padding:14px 12px}
 .bt{padding:11px 12px;gap:7px}
 .s-bot{grid-template-columns:1fr}
@@ -2995,22 +3005,31 @@ def render_weekly_home(board: Optional[dict], cur: str = "GBP") -> str:
         tiles = (f'<div class="wk-t prac" data-test="none"><div class="wk-v" style="font-size:17px;white-space:normal">Nothing on real '
                  f'money &mdash; all testing</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
     c = b.get("counts") or {}
-    counts = "".join(f'<div class="wk-t prac" data-count="{k}"><div class="wk-v">{int(c.get(k) or 0)}</div>'
-                     f'<div class="wk-n">{e(w)}</div></div>'
-                     for k, w in (("running", "tests running"), ("making", "making money"), ("losing", "losing"),
-                                  ("early", "too early"), ("ready", "ready for real money")))
-    top = "".join(
-        f'<div class="wk-t prac" data-test="{e(str(x.get("id")))}"><div class="wk-n">{e(str(x.get("name") or ""))}</div>'
-        f'<div class="wk-v">{_gbp_html(x.get("net"), cur)}</div>'
-        f'<div class="wk-f">{int(x.get("trades") or 0)} trades · {_pct(x.get("win_rate"))} won</div>'
-        f'{_wk_chip("READY") if x.get("ready") else _wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div>'
-        for x in b.get("top") or [])
+    total = b.get("total") or {}
+    rows = b.get("all") if b.get("all") is not None else (b.get("top") or [])
+    summary = (f'<div class="wk-t prac wk-total" data-count="total"><div class="wk-n">All tests together</div>'
+               f'<div class="wk-v">{_gbp_html(total.get("net") or 0.0, cur) if total.get("trades") else "-"}</div>'
+               f'<div class="wk-f">{int(total.get("trades") or 0)} trades · {_pct(total.get("win_rate"))} won</div></div>'
+               + "".join(f'<div class="wk-t prac" data-count="{k}"><div class="wk-v">{int(c.get(k) or 0)}</div>'
+                         f'<div class="wk-n">{e(w)}</div></div>'
+                         for k, w in (("running", "tests running"), ("making", "making money"), ("losing", "losing"),
+                                      ("ready", "ready for real money"))))
+    lines = "".join(
+        f'<div class="wk-row" data-test="{e(str(x.get("id")))}"><div class="wk-name">{e(str(x.get("name") or ""))}'
+        f'{" <span class=wk-early>early</span>" if x.get("early") else ""}</div>'
+        f'<div class="wk-money">{_gbp_html(x.get("net"), cur)}</div>'
+        f'<div class="wk-f">{int(x.get("trades") or 0)} trade{"" if int(x.get("trades") or 0) == 1 else "s"} · '
+        f'{_pct(x.get("win_rate"))} won</div>'
+        f'<div class="wk-chip">{_wk_chip("READY") if x.get("ready") else _wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div></div>'
+        for x in rows)
+    table = (f'<div class="wk-list">{lines}</div>' if lines
+             else '<div class="wk-f">No practice trades in the last 28 days yet.</div>')
     pick_html = (f'<div class="wk-t{" prac" if pick.get("none") else ""}" data-test="pick">'
                  f'<div class="wk-n">This week\'s pick</div><div class="wk-v" style="font-size:17px;white-space:normal">'
                  f'{e(str(pick.get("name") or ""))}</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
     return (f'<section class="card" id="weekly"><div class="wk-h">On real money</div><div class="wk-grid">{tiles}'
-            f'</div><div class="wk-h">Testing</div><div class="wk-grid counts">{counts}</div>'
-            f'<div class="wk-grid">{top}{pick_html}</div></section>')
+            f'{pick_html}</div><div class="wk-h">Testing &middot; last 28 days, practice money</div>'
+            f'<div class="wk-grid counts">{summary}</div>{table}</section>')
 
 
 def _weekly_board(snap: dict, top: dict, data_dir: str, now: dt.datetime, deals) -> Optional[dict]:
