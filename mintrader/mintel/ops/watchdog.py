@@ -11,7 +11,10 @@ What it does, every ``watchdog_interval_seconds``:
 1. Reads every component heartbeat and the trader's PID file.
 2. Confirms the MT5 terminal process is running (Windows).
 3. Restarts whatever has died, with exponential backoff and an hourly cap.
-4. Writes its own heartbeat, so the dashboard can show the watchdog is alive
+4. Every five minutes, the weekly pick (``mintel.ops.weekly.tick``):
+   Friday's pick, Monday's release, the live judgement, and a restart of
+   the bot whose mode it changed.
+5. Writes its own heartbeat, so the dashboard can show the watchdog is alive
    and the trader can report if the watchdog itself has stopped.
 
 Run it with::
@@ -475,6 +478,12 @@ class Watchdog:
         self.bridge_status_fn: Optional[Callable[[], Optional[dict]]] = None
         self.mt5_unreachable_seconds: float = 600.0
         self._mt5_unreachable_since: Optional[dt.datetime] = None
+        # The weekly pick (13 Oct, mintel/ops/weekly.py): config.json's path
+        # when the watchdog looks after it (set by ``build_default``; None
+        # leaves it alone), looked at every ``weekly_seconds``.
+        self.weekly_config: Optional[str] = None
+        self.weekly_seconds: float = 300.0
+        self._weekly_last: Optional[dt.datetime] = None
 
     # ---------------------------------------------------------------- checks --
     def check_once(self) -> list[str]:
@@ -525,6 +534,7 @@ class Watchdog:
             actions.append(msg)
 
         actions.extend(self._check_mt5(now))
+        actions.extend(self._check_weekly(now))
 
         self.own_heartbeat.beat({"managed": len(self.processes),
                                  "actions": len(actions)})
@@ -624,6 +634,37 @@ class Watchdog:
                     except Exception:
                         pass
         return actions
+
+    def _check_weekly(self, now: dt.datetime) -> list[str]:
+        """The weekly pick, every ``weekly_seconds`` (``weekly.tick``): Friday's
+        pick when due, Monday's release, the live judgement; a bot whose mode
+        changed is restarted here, the way a hung one is. Never raises: a
+        failure is one line in the log and nothing is half applied."""
+        if not self.weekly_config:
+            return []
+        if self._weekly_last is not None and 0 <= (now - self._weekly_last).total_seconds() < self.weekly_seconds:
+            return []
+        self._weekly_last = now
+        try:
+            from . import weekly
+            cfg_path = self.weekly_config
+            return weekly.tick(self.cfg.ops.data_dir, cfg_path, now,
+                               positions_fn=lambda: weekly.fetch_live_positions(cfg_path),
+                               restart=lambda name: self.restart_named(name, now))
+        except Exception as exc:
+            log.exception("weekly pick: %s", exc)
+            return [f"weekly: the check failed ({exc}); nothing was changed"]
+
+    def restart_named(self, name: str, now: dt.datetime) -> tuple[bool, str]:
+        """Stop and start one managed process so it reads its new mode (the
+        trader reads config.json at its start, Financial Ian ian.json). A
+        process this watchdog does not run, or one switched OFF, needs
+        nothing: it reads its mode when it next starts."""
+        mp = next((p for p in self.processes if p.name == name), None)
+        if mp is None or not mp.is_enabled():
+            return True, f"{name}: not running under this watchdog; it reads its mode at its next start"
+        mp.stop()
+        return mp.start(now, self.env)
 
     def _log_actions(self, actions: Sequence[str]) -> None:
         for a in actions:
@@ -876,6 +917,7 @@ def build_default(cfg: Config, config_path: str = "", *, python: str = "",
 
     wd = Watchdog(cfg, processes, mt5_command=mt5_cmd)
     wd.env = wine_env(cfg) if cfg.broker_mode == "bridge" else None
+    wd.weekly_config = config_path                 # 13 Oct: the weekly pick, applied here (mintel/ops/weekly.py)
     if cfg.broker_mode == "bridge":
         wd.bridge_status_fn = lambda: bridge_status(
             cfg.bridge_host, cfg.bridge_port, cfg.bridge_token_file)

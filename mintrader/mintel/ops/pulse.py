@@ -44,6 +44,11 @@ and publishes the latest state to the reports branch:
                                 coach_progress (real money since 12 Oct),
                                 whitelisted, scrubbed, under 20 KB; only
                                 once the coach is switched on
+    reports/live/weekly.json    the weekly pick (``weekly_json``): the latest
+                                plan (ranking, pick, reasons, release), what
+                                it has on real money now and its last
+                                promotions and demotions, scrubbed, under
+                                20 KB; only once the weekly pick has run
 
 The nightly report copies the day's pulse lines into
 ``reports/<date>/uptime.log`` and sums the gaps, so an outage is a number
@@ -71,6 +76,8 @@ LAB_PATH = "reports/live/lab.json"
 LAB_MAX_BYTES = 20_000
 COACH_PATH = "reports/live/coach.json"
 COACH_MAX_BYTES = 20_000
+WEEKLY_PATH = "reports/live/weekly.json"
+WEEKLY_MAX_BYTES = 20_000
 
 
 # --------------------------------------------------------------- observe --
@@ -398,7 +405,8 @@ def _gap(outage: list[str], open_ended: bool = False) -> tuple[str, str, int, st
 
 
 def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
-                lab: Optional[str] = None, coach: Optional[str] = None) -> dict[str, str]:
+                lab: Optional[str] = None, coach: Optional[str] = None,
+                weekly: Optional[str] = None) -> dict[str, str]:
     """The files the pulse publishes; ``bots`` (bots_json's text) adds
     reports/live/bots.json, ``lab`` (lab_json's text) reports/live/lab.json,
     ``coach`` (coach_json's text) reports/live/coach.json."""
@@ -415,6 +423,8 @@ def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
         files[LAB_PATH] = lab
     if coach is not None:
         files[COACH_PATH] = coach
+    if weekly is not None:
+        files[WEEKLY_PATH] = weekly
     return files
 
 
@@ -970,6 +980,33 @@ def coach_night_files(cfg: Config) -> tuple[str, dict[str, str]]:
     return "", {}
 
 
+# ------------------------------------------------------------- the weekly pick --
+def weekly_json(cfg: Config, max_bytes: int = WEEKLY_MAX_BYTES) -> Optional[str]:
+    """reports/live/weekly.json: ``weekly.weekly_report`` (data/weekly/), scrubbed, under ``max_bytes``
+    (the ranking, then the history, trimmed first). None before the weekly pick has ever run. Never raises."""
+    try:
+        from .weekly import weekly_report
+        rep = weekly_report(cfg.ops.data_dir)
+        if rep is None:
+            return None
+        rep = _scrub(rep)
+        text = json.dumps(rep, indent=1, default=str) + "\n"
+        for key in ("ranking", "history"):
+            if len(text.encode("utf-8")) <= max_bytes:
+                break
+            if key == "ranking" and isinstance(rep.get("plan"), dict):
+                rep["plan"]["ranking"] = (rep["plan"].get("ranking") or [])[:3]
+            else:
+                rep[key] = (rep.get(key) or [])[-5:]
+            rep["trimmed"] = "some details were left out to keep this file under its size cap"
+            text = json.dumps(rep, indent=1, default=str) + "\n"
+        if len(text.encode("utf-8")) > max_bytes:
+            text = json.dumps({"unavailable": "the weekly pick's report was too big to publish"}) + "\n"
+        return text
+    except Exception as exc:
+        return json.dumps({"unavailable": f"the weekly pick's report could not be built: {exc}"}) + "\n"
+
+
 # ------------------------------------------------------------------ main --
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="record whether the bot is up, and publish it")
@@ -991,7 +1028,8 @@ def main(argv=None) -> int:
     bots = bots_json(cfg, p)                       # never raises: a broken bot is an entry saying so
     lab = lab_json(cfg)                            # never raises; None when the lab has never run
     coach = coach_json(cfg, p)                     # never raises; None when the coach is not switched on
-    files = pulse_files(p, uptime_lines(cfg), bots, lab, coach)
+    weekly = weekly_json(cfg)                      # never raises; None before the weekly pick has run
+    files = pulse_files(p, uptime_lines(cfg), bots, lab, coach, weekly)
     try:
         # the same upload as the nightly report: a clash with another writer is retried with a fresh read
         n = upload(files, cfg.report_repo, cfg.report_branch, token, day="live")

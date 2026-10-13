@@ -2050,6 +2050,25 @@ letter-spacing:.02em}
 .bt-v{font-size:13px;font-weight:650;display:flex;align-items:center;color:var(--text-3);margin-top:auto}
 .bt-v.green{color:var(--good)}.bt-v.red{color:var(--bad)}.bt-v.amber{color:var(--warn)}.bt-v.blue{color:var(--info)}
 .bt-none{color:var(--text-3);font-size:13.5px;margin:0}
+/* Home's headline numbers (13 Oct): on real money, testing, this week's pick */
+.wk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.wk-grid.counts{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:12px}
+.wk-t{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);
+border-radius:12px;padding:12px 14px;min-width:0}
+.wk-t.prac{background:var(--surface-2)}
+.wk-n{font-size:12px;font-weight:600;color:var(--text-3);overflow-wrap:anywhere}
+.wk-v{font-size:26px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wk-nums{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.wk-nums div{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.wk-nums div::before{content:attr(data-k);display:block;font-size:10.5px;font-weight:600;color:var(--text-3)}
+.wk-f{font-size:12px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.wk-c{align-self:flex-start;font-size:10.5px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
+background:var(--surface-2);color:var(--text-3);white-space:nowrap}
+.wk-c.making{background:var(--good);color:#fff}.wk-c.losing{background:var(--bad);color:#fff}
+.wk-c.ready{background:var(--navy);color:#fff}
+.wk-h{font-size:13px;font-weight:650;color:var(--text-2);margin:14px 0 8px}
+.wk-h:first-child{margin-top:0}
+details.wk-all>summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text-3);margin:4px 0 12px}
 /* the lab and the coach, small */
 .mini-title{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:650;
 margin-bottom:10px}
@@ -2171,6 +2190,7 @@ border-right:0;border-bottom:1px solid var(--line);min-width:0}
 .kpis,.kpis.three{gap:10px}
 .kpis>.card{padding:14px}
 .bt-grid{grid-template-columns:minmax(0,1fr);gap:8px}
+.wk-grid.counts{grid-template-columns:repeat(3,minmax(0,1fr))}.wk-v{font-size:22px}
 #bots{padding:14px 12px}
 .bt{padding:11px 12px;gap:7px}
 .s-bot{grid-template-columns:1fr}
@@ -2937,6 +2957,73 @@ def _tiles_of(snap: dict, top: dict, verdicts: dict, plan: Optional[dict], deals
     return entries, stars
 
 
+WK_CHIPS = {"MAKING MONEY": "making", "LOSING": "losing", "TOO EARLY": "", "READY": "ready"}
+
+
+def _pct(v) -> str:
+    return "-" if v is None else f"{float(v):.0f}%"
+
+
+def _wk_chip(word: str) -> str:
+    return f'<span class="wk-c {WK_CHIPS.get(word, "")}">{html.escape(word)}</span>'
+
+
+def render_weekly_home(board: Optional[dict], cur: str = "GBP") -> str:
+    """Home's headline numbers (Aaron, 13 Oct: "headline numbers on home ... not
+    a load of writing"; "they just become part of all of the other tests"):
+    every test as ONE pool. On real money: a tile per test the weekly pick
+    put there - real £ today, since it went live, open now, N of 20 live
+    trades (MetaTrader's figures). Testing: how many tests run, make money,
+    lose, are too early, are ready for real money; the three best by practice
+    £ after costs over 28 days. This week's pick. Numbers first, almost no
+    words; renders with no weekly data at all."""
+    from . import weekly as W
+    e = html.escape
+    b = board or {}
+    live = b.get("live") or []
+    pick = b.get("pick") or W.pick_tile(None, utcnow())
+    if live:
+        tiles = "".join(
+            f'<div class="wk-t" data-test="{e(str(x.get("id")))}"><div class="wk-n">{e(str(x.get("name") or ""))}</div>'
+            f'<div class="wk-nums"><div data-k="today">{_gbp_html(x.get("today"), cur)}</div>'
+            f'<div data-k="since live">{_gbp_html(x.get("since"), cur)}</div>'
+            f'<div data-k="open now">{_gbp_html(x.get("open") or 0.0, cur)}</div>'
+            f'<div data-k="live trades">{int(x.get("trades") or 0)} of {int(x.get("of") or W.JUDGE_AFTER)}</div>'
+            f'</div>{_wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div>' for x in live)
+    else:
+        tiles = (f'<div class="wk-t prac" data-test="none"><div class="wk-v" style="font-size:17px">Nothing on real '
+                 f'money &mdash; all testing</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
+    c = b.get("counts") or {}
+    counts = "".join(f'<div class="wk-t prac" data-count="{k}"><div class="wk-v">{int(c.get(k) or 0)}</div>'
+                     f'<div class="wk-n">{e(w)}</div></div>'
+                     for k, w in (("running", "tests running"), ("making", "making money"), ("losing", "losing"),
+                                  ("early", "too early"), ("ready", "ready for real money")))
+    top = "".join(
+        f'<div class="wk-t prac" data-test="{e(str(x.get("id")))}"><div class="wk-n">{e(str(x.get("name") or ""))}</div>'
+        f'<div class="wk-v">{_gbp_html(x.get("net"), cur)}</div>'
+        f'<div class="wk-f">{int(x.get("trades") or 0)} trades · {_pct(x.get("win_rate"))} won</div>'
+        f'{_wk_chip("READY") if x.get("ready") else _wk_chip(str(x.get("chip") or W.TOO_EARLY))}</div>'
+        for x in b.get("top") or [])
+    pick_html = (f'<div class="wk-t{" prac" if pick.get("none") else ""}" data-test="pick">'
+                 f'<div class="wk-n">This week\'s pick</div><div class="wk-v" style="font-size:17px">'
+                 f'{e(str(pick.get("name") or ""))}</div><div class="wk-f">{e(str(pick.get("when") or ""))}</div></div>')
+    return (f'<section class="card" id="weekly"><div class="wk-h">On real money</div><div class="wk-grid">{tiles}'
+            f'</div><div class="wk-h">Testing</div><div class="wk-grid counts">{counts}</div>'
+            f'<div class="wk-grid">{top}{pick_html}</div></section>')
+
+
+def _weekly_board(snap: dict, top: dict, data_dir: str, now: dt.datetime, deals) -> Optional[dict]:
+    """``weekly.home_board`` from the page's own refresh; None (rendered as empty) when it fails."""
+    try:
+        from . import weekly as W
+        sd = snap.get("standing") or {}
+        return W.home_board(data_dir, now=now, deals=deals if sd.get("start") else None,
+                            open_tickets=sd.get("open_tickets"), open_live=snap.get("open_live") or [])
+    except Exception as exc:                                 # never a reason to fail the page
+        log.warning("weekly board: %s", exc)
+        return None
+
+
 def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[dict] = None,
                 plan_error: str = "", deals=None, lab: Optional[dict] = None, show: str = "") -> str:
     """The main page, in the AI hub's layout (Aaron, 12 Oct: "Put the layout
@@ -2954,7 +3041,12 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
     shown as money here; a made-up lab summary shows TEST DATA. ``deals``:
     the account's deal rows (Formula 1's trades for its checks); ``lab``:
     ``showcase.load_lab`` (read from the data folder when not given).
-    Renders whatever is missing as missing; everything is escaped."""
+    Renders whatever is missing as missing; everything is escaped.
+
+    13 Oct (Aaron: "they just become part of all of the other tests"): under
+    the account, the weekly pick's numbers as one pool (``render_weekly_home``:
+    on real money, testing, this week's pick); the tiles bot by bot are
+    folded under "Every test, one by one", one tap away."""
     from . import showcase as S
     top = top or {}
     show = show if show in SHOWS else ""
@@ -2972,7 +3064,11 @@ def render_home(snap: dict, top: Optional[dict], verdicts: dict, plan: Optional[
         body += _leaderboard_html(_shown(entries, show), stars, view, cur, title)
     else:
         coach = _coach_card(coach_page.one_line(data_dir, now))
-        body += (_home_account(snap, top, cur) + _leaderboard_html(entries, stars, view, cur)
+        # 13 Oct: the pool's numbers first; the bot-by-bot tiles folded away, one tap from Home
+        board = _weekly_board(snap, top, data_dir, now, deals)
+        body += (_home_account(snap, top, cur) + render_weekly_home(board, cur)
+                 + '<details class="wk-all"><summary>Every test, one by one</summary>'
+                 + _leaderboard_html(entries, stars, view, cur) + '</details>'
                  + f'<div class="g2">{_lab_card(lab, now)}{coach}</div>')
     return _home_page("Trading bots" if not show else title, body, active=show or "home", q=_period_q(view),
                       stamp=_stamp(snap.get("updated")), heading=title)
@@ -4182,6 +4278,14 @@ class _Handler(BaseHTTPRequestHandler):
                     "entries_allowed", False) else 503
                 self._send(json.dumps(snap, indent=2, default=str),
                            "application/json", code)
+            elif self.path.startswith("/weekly-live"):
+                # 13 Oct: MetaTrader's closed positions of the bots' magics, for the weekly pick's live judgement
+                with self.state.lock:
+                    sd, deals = dict(self.state.standing or {}), list(self.state.deals or ())
+                from .weekly import live_positions_json
+                body = (live_positions_json(deals, sd.get("open_tickets")) if sd.get("start") and sd.get("made")
+                        is not None else {"ok": False, "why": "MetaTrader's records have not been read yet"})
+                self._send(json.dumps(body, default=str), "application/json")
             elif self.path.startswith("/api"):
                 snap["coach_progress"] = self._coach_progress(snap)
                 self._send(json.dumps(snap, indent=2, default=str),
