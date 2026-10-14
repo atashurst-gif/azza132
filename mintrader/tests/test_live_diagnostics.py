@@ -732,7 +732,8 @@ class TestBotsJson:
         rep = json.loads(gh.files["reports/live/bots.json"])
         assert _bot(rep, "momentum_rider")["why_no_trade"]["scans"] == 120
         assert waits == [0.5, 1.0]                                  # two clashes, retried with a fresh read
-        assert "published 4 files" in capsys.readouterr().out
+        assert "published 5 files" in capsys.readouterr().out          # 14 Oct: reports/live/readiness.json too
+        assert "reports/live/readiness.json" in gh.files
         assert "ghp_" not in gh.files["reports/live/bots.json"]
 
     def test_a_file_that_still_fails_is_named_and_the_rest_go_up(self, workdir, monkeypatch, capsys):
@@ -747,7 +748,7 @@ class TestBotsJson:
             files, repo, branch, token, opener=gh, day=day, sleep=lambda s: None))
         assert pl.main(["--config", str(workdir / "config.json")]) == 1
         out = capsys.readouterr().out
-        assert "published 3 of 4 files" in out and "reports/live/bots.json" in out and "after 5 tries" in out
+        assert "published 4 of 5 files" in out and "reports/live/bots.json" in out and "after 5 tries" in out
         assert "reports/live/pulse.json" in gh.files and "reports/live/uptime.log" in gh.files
         assert gh.files["reports/live/bots.json"].startswith("written by someone else")   # never ours
 

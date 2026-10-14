@@ -5,6 +5,9 @@
     "/bot?id=..."  one test in plain words, with VIEW ADVANCED DETAILS behind a click
     "/demo"        the first team on its own
     "/factory"     the strategy factory on its own
+    14 Oct: "/leagues", "/road", the front page's league lines and ROAD TO PROFIT / LIVE READINESS cards and a
+    bot page's CAREER are drawn by mintel/ops/squad_pages.py in this same style (the figures: leagues.py,
+    roadmap.py, readiness.py, sizing.py)
 
 The spec is docs/MASTER_MISSION.md, "The dashboard". This module is the
 PRESENTATION ONLY. It never writes a file, never changes a mode, never touches
@@ -476,9 +479,11 @@ def _lab_tests(data: Path, start: dt.datetime, end: dt.datetime) -> tuple[list[d
         t = _when(r.get("closed_utc"))
         if t is None or _is_test_row(r) or r.get("net_gbp") is None:
             continue
+        c = r.get("commission_gbp")
         by.setdefault(str(r.get("candidate_id")), []).append(
             {"closed": t, "opened": _when(r.get("opened_utc")), "net": round(float(r["net_gbp"]), 2),
-             "symbol": str(r.get("symbol") or "")})
+             "symbol": str(r.get("symbol") or ""), "risk": r.get("risk_gbp"), "volume": r.get("volume"),
+             "costs": None if c is None else abs(float(c)), "ticket": int(r.get("ticket") or 0)})
     out = []
     for i in ideas:
         fam, markets, session, exit_, params = str(i.get("family") or ""), "", "", "", {}
@@ -500,8 +505,15 @@ def _bot_tests(data: Path, start: dt.datetime, end: dt.datetime) -> list[dict]:
     out = []
     for name, (vid, label, _magic, _p) in W.BOTS.items():
         try:
-            trades = [{"closed": to_utc(t["closed"]), "net": float(t["net"]), "symbol": str(t.get("symbol") or "")}
+            trades = [{"closed": to_utc(t["closed"]), "net": float(t["net"]), "symbol": str(t.get("symbol") or ""),
+                       "ticket": int(t.get("ticket") or 0), "costs": t.get("costs")}
                       for t in W.bot_trades(data, name, start, end)]
+            if trades:                               # its risk a trade, from its own record (as the weekly pick)
+                risks = {int(r.get("ticket") or 0): r.get("risk_money") for r in W._rows(
+                    data / W.OWN_DB[name], "SELECT ticket, risk_money FROM trades WHERE closed_utc >= ?",
+                    (to_utc(start).isoformat(),))}
+                for t in trades:
+                    t["risk"] = risks.get(t["ticket"])
         except Exception as exc:                      # one broken record never stops the rest
             log.warning("squad: %s: %s", name, exc)
             trades = []
@@ -524,7 +536,8 @@ def _tnb_tests(data: Path, start: dt.datetime, end: dt.datetime) -> list[dict]:
                     "desc": f"Trend & Breakout · {APPROACH_SHORT.get(tactic, tactic.lower().replace('_', ' '))} · "
                             f"{W._kind_words(kind)}",
                     "trades": [{"closed": to_utc(t["closed"]), "net": float(t["net"]),
-                                "symbol": str(t.get("symbol") or "")} for t in trades]})
+                                "symbol": str(t.get("symbol") or ""), "risk": t.get("risk"),
+                                "ticket": int(t.get("ticket") or 0), "costs": t.get("costs")} for t in trades]})
     return out
 
 
@@ -1173,6 +1186,112 @@ gap:0 10px;padding:12px 14px;align-items:start}
 @media (min-width:721px){.tm-stats{display:contents}}
 """
 
+LEAGUE_CSS = """
+/* 14 Oct: the league lines, the two small cards, the leagues, the road and a career */
+.lgs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:-14px 0 28px}
+.sq-duo.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.lgs a,.lgs div.lgl{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;background:var(--surface);
+border:1px solid var(--line);border-radius:14px;padding:10px 14px;min-width:0;box-shadow:var(--shadow);
+transition:border-color .18s}
+.lgs a:hover{border-color:var(--accent)}
+.lgs .lk{font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--text-3)}
+.lgs .lv{font-weight:800;font-variant-numeric:tabular-nums;font-size:15px}
+.lgs .ln{font-size:12px;color:var(--text-3)}
+.lgs .demo{background:var(--team);border-color:var(--team-line);color:var(--team-text)}
+.lgs .demo .lk,.lgs .demo .ln{color:var(--team-dim)}.lgs .demo .pos{color:#5fe3a8}.lgs .demo .neg{color:#ff8a8a}
+.lgs .real .lv{color:var(--text-3);font-weight:700;font-size:13.5px}
+.mini p{margin:0 0 6px;color:var(--text-2);font-size:13.5px}.mini p:last-of-type{margin-bottom:0}
+.mini .big{font-size:17px;font-weight:750;color:var(--text);letter-spacing:-.01em}
+.stage{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.08em;padding:4px 9px;border-radius:999px;
+background:var(--muted-soft);color:var(--text-2);margin-bottom:8px}
+.stage.approaching{background:var(--accent-soft);color:var(--accent)}
+.stage.prep,.stage.qualified{background:var(--gold-soft);color:var(--gold)}
+.stars{color:var(--gold);letter-spacing:.06em;font-size:13px;white-space:nowrap}
+.lq-head,.lq-row{display:grid;grid-template-columns:44px minmax(0,1fr) 110px 64px 74px 74px 76px;gap:0 12px;
+align-items:center;padding:0 18px}
+.lq-head{font-size:11px;font-weight:800;letter-spacing:.1em;color:var(--text-3);padding-top:12px;padding-bottom:10px;
+border-bottom:1px solid var(--line);background:var(--surface-2)}
+.lq-row{min-height:58px;border-bottom:1px solid var(--line);transition:background .18s}
+.lq-row:last-child{border-bottom:0}.lq-row:hover{background:var(--surface-2)}
+.lq-head .r,.lq-row .r{text-align:right}
+.lq-row b.p{font-size:17px;font-weight:850;font-variant-numeric:tabular-nums}
+.lq-c{font-size:13.5px;font-weight:650;color:var(--text-2);text-align:right;font-variant-numeric:tabular-nums;
+white-space:nowrap}.lq-c small{display:none}
+.team .lq-row,.team .lq-head{border-color:var(--team-line);background:transparent}
+.team .lq-head{color:var(--team-dim)}.team .lq-c{color:var(--team-text)}.team .lq-row:hover{background:rgba(255,255,255,.04)}
+.realbox{border:1px dashed var(--line-2);border-radius:var(--radius);padding:22px;text-align:center;color:var(--text-3);
+background:var(--surface)}
+.realbox b{display:block;color:var(--text);font-size:17px;margin-bottom:4px}
+.cards2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.ms-row{display:grid;grid-template-columns:120px minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start;padding:16px 18px;
+border-bottom:1px solid var(--line)}
+.ms-row:last-child{border-bottom:0}
+.ms-row h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}
+.ms-row .chip{margin-top:6px}
+.ms-row p{margin:0 0 6px;font-size:13.5px;color:var(--text-2)}
+.ms-row .lab{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--text-3);display:block;margin-bottom:4px}
+.cards3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+padding:18px 20px;min-width:0}
+.box h3{margin:0 0 8px;font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--accent)}
+.box p{margin:0 0 8px;color:var(--text-2);font-size:13.5px}.box p:last-child{margin-bottom:0}
+.box.demo{background:var(--team);border-color:var(--team-line);color:var(--team-text)}
+.box.demo h3{color:var(--gold-2)}.box.demo p{color:var(--team-text)}.box.demo .sq-f{color:var(--team-dim)}
+.box.demo .pos{color:#5fe3a8}.box.demo .neg{color:#ff8a8a}
+.box.muted{background:var(--surface-2);box-shadow:none}
+.trio{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0}
+.trio div{background:var(--surface-2);border-radius:12px;padding:8px 10px;min-width:0}
+.box.demo .trio div{background:rgba(255,255,255,.05)}
+.trio b{display:block;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.trio>div>span{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--text-3)}
+.box.demo .trio>div>span{color:var(--team-dim)}
+.ul{margin:6px 0 0;padding-left:18px;color:var(--text-2);font-size:13.5px}.ul li{margin:3px 0}
+.box.demo .ul{color:var(--team-text)}
+.ms{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.ms h2{margin:0;font-size:22px;font-weight:850;letter-spacing:-.02em}
+.chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.08em;padding:4px 9px;border-radius:999px}
+.chip.yes{background:var(--good-soft);color:var(--good)}.chip.no{background:var(--muted-soft);color:var(--text-2)}
+.tbl{width:100%;overflow-x:auto}
+.grid-t{display:grid;gap:0;min-width:0;font-size:13px}
+.grid-t>div{padding:9px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;min-width:0;
+overflow-wrap:anywhere}
+.grid-t>div.h{font-size:10.5px;font-weight:800;letter-spacing:.08em;color:var(--text-3);background:var(--surface-2)}
+.grid-t>div.r{text-align:right}
+.rm{border:1px solid var(--gold);border-radius:var(--radius);padding:18px 20px;background:var(--surface);
+box-shadow:var(--shadow);min-width:0}
+.rm h3{margin:0 0 4px;font-size:18px;font-weight:850;letter-spacing:-.01em}
+.rm .v{font-size:12.5px;color:var(--text-3);margin-bottom:10px}
+.rm-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.rm-acts details{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);min-width:0;max-width:100%}
+.rm-acts summary{cursor:pointer;list-style:none;padding:9px 14px;font-size:12px;font-weight:800;letter-spacing:.08em}
+.rm-acts summary::-webkit-details-marker{display:none}
+.rm-acts details.ok summary{color:var(--good)}.rm-acts details.no summary{color:var(--bad)}
+.rm-acts code{display:block;padding:0 14px 12px;font-size:11.5px;color:var(--text-2);overflow-wrap:anywhere;
+white-space:pre-wrap}
+.tl{list-style:none;margin:0;padding:0}
+.tl li{position:relative;padding:0 0 12px 18px;font-size:13.5px;color:var(--text-2)}
+.tl li::before{content:"";position:absolute;left:3px;top:7px;width:7px;height:7px;border-radius:50%;
+background:var(--accent)}
+.tl li.promote::before{background:var(--gold-2)}.tl li.demote::before{background:var(--bad)}
+.tl li b{color:var(--text);font-weight:750}.tl li span{display:block;font-size:12px;color:var(--text-3)}
+@media (max-width:980px){.lq-head,.lq-row{grid-template-columns:36px minmax(0,1fr) 96px 52px 64px 64px 70px;
+gap:0 8px;padding:0 14px}.cards3{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:720px){
+.lgs{grid-template-columns:minmax(0,1fr);gap:8px;margin:-6px 0 22px}
+.sq-duo.two{grid-template-columns:minmax(0,1fr)}
+.lq-head{display:none}
+.lq-row{grid-template-columns:30px minmax(0,1fr) auto;gap:2px 10px;padding:12px 14px;align-items:start}
+.lq-row .lq-c{grid-column:2/-1;text-align:left;display:inline;font-size:12.5px}
+.lq-row .lq-c small{display:inline;color:var(--text-3)}
+.lq-row .lq-stats{grid-column:2/-1;display:flex;gap:4px 12px;flex-wrap:wrap}
+.cards2,.trio{grid-template-columns:minmax(0,1fr)}
+.ms-row{grid-template-columns:minmax(0,1fr);gap:8px}
+.trio{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (min-width:721px){.lq-stats{display:contents}}
+"""
+SQUAD_CSS += LEAGUE_CSS
+
 SQUAD_THEME_JS = """<script>
 (function(){var t=null;try{t=localStorage.getItem('mintel-theme')}catch(e){}
 if(t!=='dark'&&t!=='light'){try{t=window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}
@@ -1217,7 +1336,8 @@ moments();setInterval(swap,10000);
 })();
 </script>"""
 
-NAV = (("squad", "Squad", "/"), ("demo", "Demo", "/demo"), ("factory", "Factory", "/factory"))
+NAV = (("squad", "Squad", "/"), ("leagues", "Leagues", "/leagues"), ("road", "Road to Profit", "/road"),
+       ("demo", "Demo", "/demo"), ("factory", "Factory", "/factory"))
 ADVANCED_HREF = "/advanced"
 
 
@@ -1446,8 +1566,11 @@ def _hero(title_html: str, b: dict, base: str = "/") -> str:
 def render_squad(b: dict, health: tuple[str, str] = ("ok", "running"), show_all: bool = False) -> str:
     """"/": TRADING SQUAD and the timeline, the headline cards, the PAPER LEAGUE, the DEMO SQUAD (only when it
     exists), LATEST ACTION and STRATEGY FACTORY. Nothing else."""
-    body = (_hero("TRADING <span>SQUAD</span>", b) + render_cards(b) + render_league(b, show_all)
-            + render_team(b) + f'<section class="sq-duo">{render_latest(b)}{render_factory_card(b)}</section>')
+    from . import squad_pages as P                  # 14 Oct: the three leagues' lines, ROAD TO PROFIT, LIVE READINESS
+    x = b.get("x")
+    body = (_hero("TRADING <span>SQUAD</span>", b) + render_cards(b) + P.league_lines(b) + render_league(b, show_all)
+            + render_team(b) + f'<section class="sq-duo">{render_latest(b)}{render_factory_card(b)}</section>'
+            + f'<section class="sq-duo two">{P.road_card(x)}{P.readiness_card(x)}</section>')
     return shell("Trading Squad", body, "squad", health, _stamp(b["now"]))
 
 
@@ -1494,8 +1617,18 @@ def render_bot_page(b: dict, test_id: str, health: tuple[str, str] = ("ok", "run
             f'<div class="bp-card rise d3" data-section="made"><h2>WHAT IT HAS MADE</h2><div class="bp-made">{paper}'
             f'{demo}</div></div>'
             f'<div class="bp-card rise d4" data-section="why"><h2>{_e(v["why_title"])}</h2>{why}</div></section>'
+            + _career_html(b) +
             f'<p><a class="bp-btn" href="{_e(v["href"])}" data-advanced>VIEW ADVANCED DETAILS →</a></p>')
     return shell(f"{t['nick']} · Trading Squad", body, "squad", health, _stamp(b["now"]))
+
+
+def _career_html(b: dict) -> str:
+    """14 Oct: the CAREER across the leagues (squad_pages.render_career), when the page has worked it out."""
+    c = (b.get("x") or {}).get("career")
+    if not c:
+        return ""
+    from . import squad_pages as P
+    return P.render_career(c)
 
 
 def render_demo_page(b: dict, health: tuple[str, str] = ("ok", "running")) -> str:

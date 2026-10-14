@@ -1,89 +1,100 @@
-"""The weekly pick: everything practises, and the best proven one goes to real money each week.
+"""The squad's pick: everything practises, and the best proven tests go to the DEMO account.
 
-    python -m mintel.ops.weekly --config data/config.json            # what is picked, what is live
-    python -m mintel.ops.weekly --config data/config.json rank       # this week's ranking, worked out now
-    python -m mintel.ops.weekly --config data/config.json veto       # cancel this week's pick
+    python -m mintel.ops.weekly --config data/config.json            # what is picked, what is on the demo
+    python -m mintel.ops.weekly --config data/config.json rank       # the ranking, worked out now
+    python -m mintel.ops.weekly --config data/config.json veto       # cancel the latest pick
+
+(The module keeps its old name, "weekly", so every file and page that reads it
+still does; since 14 Oct the pick is made every UK trading day.)
 
 Aaron, 13 Oct 2026: "put everything out of live and into the lab, once they
 begin proving move the best each week into real money and live". Every bot
-went to PAPER that day (deploy/mac/mintel_mac.sh
-``apply_all_practice_2026_10_13``); this is the only way back to real money
-(on IC Markets' DEMO account, the "real money" of this codebase).
+went to PAPER that day (deploy/mac/mintel_mac.sh ``apply_all_practice_2026_10_13``).
+Aaron, 14 Oct 2026 (this version; it SUPERSEDES the 13 Oct weekly cadence, the
+30-trade bar and the 20-trade demotion, which are kept in the requirements
+ledger marked SUPERSEDED): "promising evidence, potentially after 10-15 trades,
+depending on strategy type and trading sessions"; "don't demand full real-money
+qualification standards before demo"; "avoid treating short winning streaks as
+proof"; lab ideas really trade on the demo; 8-12 strategies on it; sizes
+compared by tier. The method in plain words: docs/ops/promotion.md.
 
-THE CANDIDATES - everything that is practising:
+DEMO here means real orders on IC Markets' DEMO account (the "LIVE" of this
+codebase); PAPER means practice on live prices. They are never mixed.
+
+THE CANDIDATES - everything that is practising, one pool:
 
 * the Momentum Runner, Band Breaker, Crowd Fader and Financial Ian, each from
   its own PAPER record (``verdicts.practice_trades``);
-* Trend & Breakout's parts: each approach (tactic) x kind of market (FX_MINOR,
-  INDEX, GOLD ...), its paper record (data/tnb_paper.sqlite, the money) joined
-  by ticket to its journal (data/journal.sqlite, the approach);
-* EVERY lab idea, whatever its stage (data/lab/lab.sqlite, read-only), each one
-  its own test on its own PRACTICE trades. Since 13 Oct every idea practises on
-  live prices (``practise_all`` in data/lab.json); the lab's own past and fresh
-  tests are shown on its page but no longer decide who is in the pool - the
-  proof bar below is what stops luck. Aaron, 13 Oct: "I just want all in
-  practice unless any earn the right, then a breakdown of everything (profit)
-  and winners at the top". The lab has no live order path yet: when one of its
-  ideas is the best, it is recorded as "picked, needs a live path (being
-  built)" and the best candidate that has a live path is the one promoted.
+* Trend & Breakout's parts: each approach x kind of market, its paper record
+  joined by ticket to its journal;
+* EVERY lab idea (data/lab/lab.sqlite, read-only) on its own PRACTICE trades.
+  Since 14 Oct a lab idea HAS a demo path: it is promoted by writing
+  data/labdemo/roster.json, which the lab-demo engine inside the trader re-reads
+  (``mintel/labdemo``; no restart). The control family (CONTROL_TIME_OF_DAY, the
+  clock trades) is never promoted: it is the luck benchmark.
 
-THE PROOF BAR ("begin proving"), on practice trades of the last LOOKBACK_DAYS
-(28) days only, each after its own costs (and, for a candidate taken back to
-PAPER before, only those since it was taken back):
+THE EARLY-PROMOTION BAR, on practice trades of the last LOOKBACK_DAYS (28) days
+after all costs (for a test taken back to PAPER before, only those since):
 
-1. ``verdicts.decide`` says PROVEN: at least 30 trades over at least 5 UK
-   days, positive after costs, a profit factor of at least 1.2 and more up
-   days than down;
-2. the luck check: 2,000 bootstrap resamples of its per-trade nets (a fixed
-   seed from its id, ``lab.stats.seed_of``); the share of resampled averages
-   at or below zero - the chance its true average is not positive - must be
-   at most LUCK_MAX (10%).
+1. enough forward paper trades for how often it trades: 15 for a frequent test
+   (3+ a UK trading day), 12 for a medium one, 10 for a slow one (under 1 a
+   day); in every case spread over at least 3 UK days;
+2. positive after all costs, a profit factor of at least 1.3, and still
+   positive without its single best trade (a short winning streak is not proof);
+3. selection-bias protection: its average R a trade (net / the money it risked)
+   is shrunk toward the pool's average by empirical Bayes (``shrink``), so a
+   few lucky trades in a pool of ~640 count for little; the shrunk figure must
+   be above zero AND beat the best control idea's shrunk figure by
+   CONTROL_MARGIN_R (0.05 R): a test that does no better than a clock trade is
+   indistinguishable from luck;
+4. its past and fresh lab tests are a WEIGHT on its rank, never a gate: strongly
+   negative ones halve it, mildly negative ones take 15% off.
 
-THE RANKING: score = LCB x trades a week, where LCB is the 10th percentile of
-those resampled averages (a cautious average GBP a trade after costs) and
-trades a week = trades x 7 / the days since its first trade in the window (at
-least 7). Roughly the GBP a week it should make, cautiously estimated.
+THE RANKING: shrunk R a trade x trades a week x that weight - the R a week it
+should make, cautiously. The pick fills the demo's free places (``demo_target``
+in data/weekly.json, default 10, at most 12; Aaron: 8-12) best first, with at
+most DIVERSITY_MAX (2) on the demo per market and direction, preferring a
+spread across markets and sessions (each one already there in the same market
+or session lowers a test's place in the queue, never its figures).
 
 THE CADENCE (UK time, Europe/London, BST and GMT alike):
 
-* Friday at or after 22:30: the pick is worked out and written to
-  data/weekly/plan-<Friday>.json and data/weekly/latest.json - the ranking,
-  the pick, the reasons and the release time. A watchdog that was down then
-  catches up until the release.
-* 06:30 on the next UK trading day (normally Monday): the picks are released -
-  switched LIVE through ``modes.set_modes``, one after another, and the bots
-  that run them restarted. At most ``weekly_max_promotions`` (default 3, set in
-  data/weekly.json) new promotions in an ISO week. Aaron, 13 Oct: "each week, X
-  amount of winners go live the following week". Two Trend & Breakout parts
-  picked in one week are checked against the live kinds x approaches as they
-  will be after ALL of that week's picks, so together they can never widen
-  into an unproven combination.
-* ``veto`` (Aaron) cancels the week's pick; a pick already live is taken back.
-* data/HALT: nothing is applied while it exists (a pick waits, and lapses at
-  the next Friday's pick).
+* every UK trading day at or after 22:30: the pick is worked out and written to
+  data/weekly/plan-<day>.json and data/weekly/latest.json (the ranking, the
+  picks, the reasons, the release time). A watchdog that was down catches up
+  until the release;
+* 06:30 on the next UK trading day: released - a bot or a Trend & Breakout
+  part switched LIVE through ``modes.set_modes`` (its process restarted), a lab
+  idea added to the lab-demo roster with its own magic number and its demo risk
+  tier (0.5%, 1%, 2% of equity a trade, in turn: ``roster.next_tier``). A demoted
+  test's place is filled from the qualifiers at the next release;
+* ``veto`` (Aaron) cancels the latest pick; a pick already on the demo is taken
+  back. data/HALT: nothing is applied while it exists (a pick waits, and lapses
+  at the next pick). A pick taken back is never re-released by the same plan.
 
-THE LIVE JUDGEMENT, on MetaTrader's own figures after commission (the
-trader's page, ``/weekly-live``: positions by magic number; a Trend & Breakout
-part by its approach, from the journal, and its kind of market):
+THE DEMO JUDGEMENT, on the broker's own figures after costs (MetaTrader's
+closed positions by magic number; a lab idea's from data/labdemo/labdemo.sqlite,
+booked from the broker's closed deals):
 
-* after JUDGE_AFTER (20) live trades: net <= 0 -> back to PAPER; else it stays;
-* at any point, a live loss of EARLY_EXIT_RISKS (10) x its risk a trade ->
-  back to PAPER at the next check.
+* after JUDGE_AFTER (20) demo trades: back to PAPER when the bootstrap upper
+  bound (90th percentile) of its mean net a trade is below zero; kept (recorded
+  once) when the lower bound (10th percentile) is above zero;
+* after JUDGE_NET_AFTER (40) demo trades: back to PAPER when net <= 0;
+* at any point: back to PAPER at a demo loss of EARLY_EXIT_RISKS (15) x its risk
+  a trade, or a drawdown from its best of DD_GUARD_RISKS (20) x its risk a trade.
 
-A demotion only removes risk, so it is applied at the next check, never
-waiting for Monday. When the page cannot be read, the bots' own records are
-read instead - only ever to take something back, never to keep it.
+A demotion only removes risk, so it is applied at the next check (never under
+HALT). When the page cannot be read, the bots' own records are read instead -
+only ever to take something back, never to keep it.
 
-Every promotion and demotion is one line of data/weekly/history.jsonl.
-Everything here is idempotent: the change is recorded only after
-``set_modes`` has written it, and a change already in config.json (a
-restart between the two) is recorded without writing it again; a failure
-leaves every file as it was and is logged. Nothing here doubles after a
-loss or adds exposure because of one; every trade keeps its own broker stop
-(the bots' own code, untouched). config.json is read with ``json`` alone;
-the secrets file is never opened here (``set_modes`` checks a bot's magic
-number on its way to LIVE through ``Config.load``, as the modes tool always
-has).
+Every promotion, keep and demotion is one line of data/weekly/history.jsonl,
+with its reason. Everything here is idempotent: before any switch its intent is
+saved in state.json, the switch is read back, and a failure puts every file back
+as it was; a change already made (a crash in between) is recorded, not made
+again. A state.json, config.json or roster that cannot be read stops the pass.
+Nothing here doubles after a loss or adds exposure because of one; every trade
+keeps its own broker stop. config.json is read with ``json`` alone; the secrets
+file is never opened here.
 """
 from __future__ import annotations
 
@@ -105,21 +116,46 @@ log = logging.getLogger("mintel.weekly")
 
 # ------------------------------------------------------------ the rule --
 LOOKBACK_DAYS = 28              # only practice trades this recent count
-LUCK_MAX = 0.10                 # the chance its true average is <= 0 must be at most this
+LUCK_MAX = 0.10                 # 13 Oct's luck line: still worked out and shown, no longer a gate (14 Oct)
 LCB_QUANTILE = 0.10             # the cautious average a trade: this quantile of the resampled averages
+UCB_QUANTILE = 0.90             # the hopeful one: the demo judgement demotes when even this is below zero
 RESAMPLES = 2000
-JUDGE_AFTER = 20                # live trades before a promotion is judged
-EARLY_EXIT_RISKS = 10.0         # a live loss of this many times its risk a trade: back to PAPER
+# 14 Oct, the early-promotion bar (supersedes 13 Oct's 30 trades over 5 days, PF 1.2, more up days, luck)
+MIN_DAYS = 3                    # UK days the trades are spread over, whatever the frequency
+NEED_FREQUENT, NEED_MEDIUM, NEED_SLOW = 15, 12, 10   # forward paper trades needed, by frequency
+FREQUENT_PER_DAY, SLOW_PER_DAY = 3.0, 1.0            # trades a UK trading day: frequent at or over, slow under
+MIN_PF = 1.3
+CONTROL_MARGIN_R = 0.05         # beat the best control idea's shrunk R a trade by at least this
+CONTROL_MIN_TRADES = 10         # a control idea counts in the benchmark once it has this many trades
+POOL_MIN_TRADES = 5             # a test counts in the shrinkage pool once it has this many trades
+POOL_MIN_SIZE = 5               # with fewer tests in the pool, a fixed prior is used
+TAU2_DEFAULT = 0.04             # the fixed prior's spread of true R a trade (0.2 R), around 0
+TAU2_FLOOR = 0.0025             # the pool's spread is never taken as less than 0.05 R
+VAR_FLOOR_R2 = 0.25             # a test's own R spread is never taken as less than 0.5 R (few trades)
+WEIGHT_STRONG_NEG, WEIGHT_MILD_NEG = 0.5, 0.85      # past / fresh lab tests: a weight on the rank, not a gate
+DIVERSITY_MAX = 2               # on the demo at once, per market and direction
+SPREAD_MARKET, SPREAD_SESSION = 0.85, 0.90           # the queue's preference for a new market / session
+DEMO_TARGET, DEMO_TARGET_MAX = 10, 12                # on the demo at once (data/weekly.json demo_target)
+# 14 Oct, the demo judgement (supersedes 13 Oct's "after 20 demo trades net <= 0" and 10 x risk)
+JUDGE_AFTER = 20                # demo trades before the evidence test (bootstrap bounds)
+JUDGE_NET_AFTER = 40            # demo trades after which net <= 0 is enough
+EARLY_EXIT_RISKS = 15.0         # a demo loss of this many times its risk a trade: back to PAPER
+DD_GUARD_RISKS = 20.0           # a drawdown from its best of this many risks: back to PAPER
 TOO_EARLY_TRADES = 10           # Home: fewer trades than this is TOO EARLY
 HOME_TOP, HOME_BOTTOM = 10, 3   # Home lists the best ten and the worst three; the Practice page lists them all
-PICK_WEEKDAY, PICK_AT = 4, (22, 30)     # Friday 22:30 UK
-RELEASE_AT = (6, 30)                    # 06:30 UK on the next UK trading day
+PICK_AT = (22, 30)              # every UK trading day, 22:30 UK (14 Oct; Fridays only before)
+PICK_WEEKDAY = 4                # 13 Oct's Friday: kept for older readers, no longer the cadence
+RELEASE_AT = (6, 30)            # 06:30 UK on the next UK trading day
 CHECK_SECONDS = 300.0           # how often the watchdog looks
 FALLBACK_RISK_GBP = 10.0        # risk a trade when no record says (coach.BOT_FALLBACK_RISK_GBP)
 SCHEMA = 1
-MAX_PROMOTIONS = 3              # new promotions in an ISO week, unless data/weekly.json says otherwise
-MAX_PROMOTIONS_CAP = 10         # the most a hand-edited data/weekly.json can ask for
-SETTINGS = "weekly.json"        # data/weekly.json: {"weekly_max_promotions": 3}
+MAX_PROMOTIONS = 3              # 13 Oct's weekly_max_promotions (SUPERSEDED 14 Oct by demo_target; still read)
+MAX_PROMOTIONS_CAP = 10
+SETTINGS = "weekly.json"        # data/weekly.json: {"demo_target": 10, "demo_risk_cap_pct": 10}
+LABDEMO = "labdemo"             # the key the lab-demo roster rides under in the modes dict
+CONTROL_FAMILY = "CONTROL_TIME_OF_DAY"
+# a bot's market for the diversity cap (each trades its own; the Runner and Band Breaker both indices)
+BOT_MARKET = {"runner": "INDEX", "bandbreaker": "INDEX", "crowd": "CROWD", "ian": "IAN"}
 
 DIR = "weekly"
 STATE, LATEST, HISTORY = "state.json", "latest.json", "history.jsonl"
@@ -160,22 +196,36 @@ def next_trading_day(d: dt.date) -> dt.date:
     return d
 
 
-def last_pick_friday(now: dt.datetime) -> dt.date:
-    """The latest Friday whose pick time (22:30 UK) is at or before ``now``."""
+def is_trading_day(d: dt.date) -> bool:
+    return d.weekday() < 5
+
+
+def last_pick_day(now: dt.datetime) -> dt.date:
+    """The latest UK trading day whose pick time (22:30 UK) is at or before ``now``
+    (14 Oct: every trading day; it was Fridays only)."""
     d = uk(now).date()
-    d -= dt.timedelta(days=(d.weekday() - PICK_WEEKDAY) % 7)
-    if uk_at(d, PICK_AT) > to_utc(now):
-        d -= dt.timedelta(days=7)
+    if not is_trading_day(d) or uk_at(d, PICK_AT) > to_utc(now):
+        d -= dt.timedelta(days=1)
+        while not is_trading_day(d):
+            d -= dt.timedelta(days=1)
     return d
 
 
+last_pick_friday = last_pick_day             # the name it had while the pick was weekly (older callers)
+
+
 def next_pick_utc(now: dt.datetime) -> dt.datetime:
-    return uk_at(last_pick_friday(now) + dt.timedelta(days=7), PICK_AT)
+    return uk_at(next_trading_day(last_pick_day(now)), PICK_AT)
 
 
-def release_utc(friday: dt.date) -> dt.datetime:
-    """06:30 UK on the next UK trading day after the Friday (normally Monday)."""
-    return uk_at(next_trading_day(friday), RELEASE_AT)
+def release_utc(day: dt.date) -> dt.datetime:
+    """06:30 UK on the next UK trading day after the pick's day (Friday's: Monday)."""
+    return uk_at(next_trading_day(day), RELEASE_AT)
+
+
+def expires_utc(day: dt.date) -> dt.datetime:
+    """A plan never released (HALT) lapses at the next pick."""
+    return uk_at(next_trading_day(day), PICK_AT)
 
 
 def iso_week(t: dt.datetime) -> str:
@@ -216,15 +266,27 @@ def _write_atomic(path: Path, obj) -> None:
 
 
 def max_promotions(data_dir) -> int:
-    """How many new promotions an ISO week may have: data/weekly.json's
-    ``weekly_max_promotions`` (0 to MAX_PROMOTIONS_CAP), else MAX_PROMOTIONS.
-    A bad value reads as the default, never as more."""
+    """13 Oct's ``weekly_max_promotions`` (0 to MAX_PROMOTIONS_CAP), else MAX_PROMOTIONS.
+    SUPERSEDED on 14 Oct by ``demo_target`` (the pick fills the demo's free places
+    every trading day); kept so an older data/weekly.json still reads."""
     raw = _read(Path(data_dir) / SETTINGS) if data_dir else None
     try:
         n = int(raw["weekly_max_promotions"]) if isinstance(raw, dict) else MAX_PROMOTIONS
     except (KeyError, TypeError, ValueError):
         return MAX_PROMOTIONS
     return n if 0 <= n <= MAX_PROMOTIONS_CAP else MAX_PROMOTIONS
+
+
+def demo_target(data_dir) -> int:
+    """How many tests may be on the demo at once: data/weekly.json's ``demo_target``
+    (0 to DEMO_TARGET_MAX; Aaron, 14 Oct: 8 to 12), else DEMO_TARGET (10). A bad
+    value reads as the default, never as more."""
+    raw = _read(Path(data_dir) / SETTINGS) if data_dir else None
+    try:
+        n = int(raw["demo_target"]) if isinstance(raw, dict) and "demo_target" in raw else DEMO_TARGET
+    except (TypeError, ValueError):
+        return DEMO_TARGET
+    return n if 0 <= n <= DEMO_TARGET_MAX else DEMO_TARGET
 
 
 def plan_picks(plan: Optional[dict]) -> list[dict]:
@@ -300,10 +362,12 @@ def _append_history(data_dir, event: dict) -> None:
 
 
 def last_demoted(hist: Sequence[dict]) -> dict:
-    """{candidate id: when it was last taken back to PAPER}."""
+    """{candidate id: when it was last taken back to PAPER, or last vetoed before it went live}: its evidence
+    window starts again there (review, 14 Oct: a veto restarts it as a demotion does, so the next day's pick
+    never takes the same test again on the same record)."""
     out: dict = {}
     for e in hist:
-        if e.get("event") == "demote" and _when(e.get("ts_utc")):
+        if e.get("event") in ("demote", "veto") and _when(e.get("ts_utc")):
             out[str(e.get("id"))] = _when(e["ts_utc"])
     return out
 
@@ -363,7 +427,9 @@ def strict_view(config_path) -> tuple[dict, dict]:
     way, but a broken ian.json makes only Ian's mode UNREADABLE (``unknown``):
     it blocks Ian's own decisions, never another's. rider.json is not the
     weekly pick's (the Rapid Momentum Rider is not a candidate) and is never
-    a reason to stop."""
+    a reason to stop. The lab-demo roster (data/labdemo/roster.json) rides in
+    the modes under LABDEMO, the ids of the lab ideas on the demo; a broken one
+    makes only the lab ideas' modes UNREADABLE."""
     from .modes import FILES, _data_dir, _read_json, read_modes
     cfg = Path(config_path)
     raw = read_config_strict(cfg)
@@ -372,25 +438,42 @@ def strict_view(config_path) -> tuple[dict, dict]:
         _read_json(_data_dir(raw, cfg) / FILES["ian"])   # raises on a broken file (missing is PAPER)
     except ValueError:
         modes["ian"] = UNREADABLE
+    modes[LABDEMO] = lab_roster_ids(_data_dir(raw, cfg), strict=True)
+    modes["__data__"] = str(_data_dir(raw, cfg))
     return raw, modes
+
+
+def lab_roster_ids(data_dir, strict: bool = False):
+    """The lab ideas on the demo (frozenset of candidate ids), or UNREADABLE when
+    ``strict`` and the roster (or its magic numbers) cannot be read."""
+    from ..labdemo import roster as LR
+    try:
+        LR.read_magics(data_dir, strict=strict)
+        return frozenset(LR.read_roster(data_dir, strict=strict))
+    except LR.RosterUnreadable:
+        return UNREADABLE
 
 
 def unknown(cid_or_item, modes: dict) -> bool:
     """Is this candidate's mode not known (its own file broken)? Then nothing is decided for it."""
     cid = cid_or_item.get("id", "") if isinstance(cid_or_item, dict) else str(cid_or_item)
+    if cid.startswith("lab:"):
+        return modes.get(LABDEMO) == UNREADABLE
     return cid.startswith("bot:") and str(modes.get(cid[4:]) or "") == UNREADABLE
 
 
 def bot_modes(config_path) -> dict:
     try:
-        from .modes import read_modes
-        return read_modes(config_path)
+        from .modes import _data_dir, read_modes
+        out = read_modes(config_path)
+        out[LABDEMO] = lab_roster_ids(_data_dir(read_config(config_path), Path(config_path)))
+        return out
     except Exception:
         return {}
 
 
 def is_live(cid: str, raw: dict, modes: dict) -> bool:
-    """Is this candidate on real money in config.json (or its own file) now?"""
+    """Is this candidate on the demo in config.json (or its own file, or the lab-demo roster) now?"""
     kind, rest = cid.split(":", 1) if ":" in cid else (cid, "")
     if kind == "bot":
         return str(modes.get(rest) or "").upper() == "LIVE"
@@ -398,11 +481,55 @@ def is_live(cid: str, raw: dict, modes: dict) -> bool:
         tactic, group = rest.split(":", 1)
         mode, groups, tactics = tnb_live_now(raw)
         return mode == "LIVE" or (group in groups and tactic in tactics)
-    return False                                          # the lab has no live path
+    if kind == "lab":
+        ids = modes.get(LABDEMO)
+        return isinstance(ids, frozenset) and rest in ids
+    return False
 
 
 # ------------------------------------------------------------- luck --
 _BOOT_CACHE: dict = {}
+
+
+def _means(nets: Sequence[float], ident: str, resamples: int = RESAMPLES) -> list:
+    """``resamples`` resampled averages of the per-trade nets, sorted, the seed fixed by the id."""
+    from ..lab.stats import seed_of
+    n = len(nets)
+    seed = seed_of(ident)
+    try:
+        import numpy as np
+        arr = np.asarray(nets, dtype=float)
+        rng = np.random.default_rng(seed)
+        return sorted(arr[rng.integers(0, n, size=(resamples, n))].mean(axis=1).tolist())
+    except ImportError:                                  # the same test, slower
+        rnd = random.Random(seed).randrange
+        return sorted(sum(nets[rnd(n)] for _ in range(n)) / n for _ in range(resamples))
+
+
+def _quantile(sorted_vals: list, q: float) -> float:
+    try:
+        import numpy as np
+        return float(np.quantile(np.asarray(sorted_vals), q))
+    except ImportError:
+        return sorted_vals[min(len(sorted_vals) - 1, int(q * (len(sorted_vals) - 1)))]
+
+
+def bootstrap_all(nets: Sequence[float], ident: str, resamples: int = RESAMPLES) -> tuple:
+    """(chance the true average is <= 0, the LCB_QUANTILE average, the UCB_QUANTILE
+    average). Fewer than two trades: (1.0, None, None). Remembered."""
+    nets = [float(x) for x in nets]
+    if len(nets) < 2:
+        return 1.0, None, None
+    key = (ident, tuple(nets), resamples)
+    if key in _BOOT_CACHE:
+        return _BOOT_CACHE[key]
+    means = _means(nets, ident, resamples)
+    p = sum(1 for m in means if m <= 0) / len(means)
+    out = (round(p, 4), round(_quantile(means, LCB_QUANTILE), 4), round(_quantile(means, UCB_QUANTILE), 4))
+    if len(_BOOT_CACHE) > 4096:                          # ~640 tests in the pool: room for them all
+        _BOOT_CACHE.clear()
+    _BOOT_CACHE[key] = out
+    return out
 
 
 def bootstrap(nets: Sequence[float], ident: str, resamples: int = RESAMPLES) -> tuple[float, Optional[float]]:
@@ -410,56 +537,185 @@ def bootstrap(nets: Sequence[float], ident: str, resamples: int = RESAMPLES) -> 
     trade) from ``resamples`` resamples of the per-trade nets, with the seed
     fixed by the id: the share of resampled averages at or below zero, and
     their LCB_QUANTILE. Fewer than two trades: (1.0, None). Remembered."""
-    nets = [float(x) for x in nets]
-    n = len(nets)
-    if n < 2:
-        return 1.0, None
-    key = (ident, tuple(nets), resamples)
-    if key in _BOOT_CACHE:
-        return _BOOT_CACHE[key]
-    from ..lab.stats import seed_of
-    seed = seed_of(ident)
+    p, lcb, _ucb = bootstrap_all(nets, ident, resamples)
+    return p, lcb
+
+
+# ----------------------------------------------------- the early bar (14 Oct) --
+def r_of(t: dict) -> float:
+    """A trade's R: its net after costs / the money it risked (FALLBACK_RISK_GBP when no record says)."""
     try:
-        import numpy as np
-        arr = np.asarray(nets, dtype=float)
-        rng = np.random.default_rng(seed)
-        means = arr[rng.integers(0, n, size=(resamples, n))].mean(axis=1)
-        p = float((means <= 0).mean())
-        lcb = float(np.quantile(means, LCB_QUANTILE))
-    except ImportError:                                  # the same test, slower
-        rnd = random.Random(seed).randrange
-        means = sorted(sum(nets[rnd(n)] for _ in range(n)) / n for _ in range(resamples))
-        p = sum(1 for m in means if m <= 0) / resamples
-        lcb = means[min(resamples - 1, int(LCB_QUANTILE * (resamples - 1)))]
-    if len(_BOOT_CACHE) > 4096:                          # ~640 tests in the pool: room for them all
-        _BOOT_CACHE.clear()
-    _BOOT_CACHE[key] = (round(p, 4), round(lcb, 4))
-    return _BOOT_CACHE[key]
+        risk = float(t.get("risk") or 0.0)
+    except (TypeError, ValueError):
+        risk = 0.0
+    if not (math.isfinite(risk) and risk > 0):
+        risk = FALLBACK_RISK_GBP
+    return float(t["net"]) / risk
 
 
-def judge(trades: Sequence[dict], ident: str, now: dt.datetime) -> dict:
-    """The proof bar and the score of one candidate's trades (already the window's):
-    {stats, verdict, luck, lcb, per_week, score, passes, why}."""
+def trading_days_between(a: dt.date, b: dt.date) -> int:
+    """UK trading days from ``a`` to ``b``, both counted (at least 1)."""
+    if b < a:
+        return 1
+    n = sum(1 for k in range((b - a).days + 1) if is_trading_day(a + dt.timedelta(days=k)))
+    return max(1, n)
+
+
+def needed_trades(per_day: float) -> int:
+    """Forward paper trades needed for the early bar, by how often the test trades."""
+    if per_day >= FREQUENT_PER_DAY:
+        return NEED_FREQUENT
+    if per_day >= SLOW_PER_DAY:
+        return NEED_MEDIUM
+    return NEED_SLOW
+
+
+def frequency_words(per_day: float) -> str:
+    return "frequent" if per_day >= FREQUENT_PER_DAY else "medium" if per_day >= SLOW_PER_DAY else "slow"
+
+
+def shrink(mean: float, se2: float, prior: tuple) -> float:
+    """Empirical-Bayes shrinkage of a test's mean R a trade toward the pool's:
+    B = se2 / (se2 + tau2); shrunk = B x pool mean + (1 - B) x its own mean. A test
+    with few or noisy trades is pulled most of the way to the pool's average."""
+    mu0, tau2 = prior
+    b = se2 / (se2 + tau2) if (se2 + tau2) > 0 else 1.0
+    return b * mu0 + (1.0 - b) * mean
+
+
+def pool_prior(cands: Sequence[dict]) -> tuple:
+    """(pool mean R a trade, spread of the true means tau2) by the method of
+    moments over the tests with at least POOL_MIN_TRADES trades: tau2 = the variance
+    of their means less their average sampling variance (never under TAU2_FLOOR).
+    With fewer than POOL_MIN_SIZE such tests: the fixed prior (0, TAU2_DEFAULT)."""
+    pts = [(c["mean_r"], c["se2_r"]) for c in cands
+           if c.get("mean_r") is not None and int(c["stats"]["trades"] or 0) >= POOL_MIN_TRADES]
+    if len(pts) < POOL_MIN_SIZE:
+        return 0.0, TAU2_DEFAULT
+    ms = [m for m, _ in pts]
+    mu0 = sum(ms) / len(ms)
+    var = sum((m - mu0) ** 2 for m in ms) / (len(ms) - 1)
+    tau2 = max(TAU2_FLOOR, var - sum(v for _, v in pts) / len(pts))
+    return round(mu0, 6), round(tau2, 6)
+
+
+def control_bar(cands: Sequence[dict]) -> Optional[float]:
+    """The luck benchmark: the best shrunk R a trade among the control ideas with at
+    least CONTROL_MIN_TRADES trades (None when none has that many yet)."""
+    vals = [c["shrunk_r"] for c in cands if c.get("control") and c.get("shrunk_r") is not None
+            and int(c["stats"]["trades"] or 0) >= CONTROL_MIN_TRADES]
+    return round(max(vals), 4) if vals else None
+
+
+def _raw(trades: Sequence[dict], ident: str, now: dt.datetime) -> dict:
+    """Everything about one test's trades that does not depend on the pool."""
     from . import verdicts as V
     s = V.stats(trades)
-    code, _why = V.decide(s)
-    p, lcb = bootstrap([t["net"] for t in sorted(trades, key=lambda t: t["closed"])], ident)
-    first = min((to_utc(t["closed"]) for t in trades), default=None)
+    trades = sorted(trades, key=lambda t: to_utc(t["closed"]))
+    nets = [float(t["net"]) for t in trades]
+    p, lcb, _ucb = bootstrap_all(nets, ident)
+    first = to_utc(trades[0]["closed"]) if trades else None
     span = max(7.0, (to_utc(now) - first).total_seconds() / 86400.0) if first else 7.0
     per_week = round(s["trades"] * 7.0 / span, 2)
-    passes = code == V.PROVEN and p <= LUCK_MAX
+    tdays = trading_days_between(uk(first).date(), uk(now).date()) if first else 1
+    per_day = round(len(trades) / tdays, 2) if trades else 0.0
+    rs = [r_of(t) for t in trades]
+    n = len(rs)
+    mean_r = sum(rs) / n if n else None
+    var_r = (sum((x - mean_r) ** 2 for x in rs) / (n - 1)) if n >= 2 else VAR_FLOOR_R2
+    se2 = max(var_r, VAR_FLOOR_R2) / n if n else None
+    days = len({uk(to_utc(t["closed"])).date() for t in trades})
+    best = max(nets) if nets else 0.0
+    wins = sum(x for x in nets if x > 0)
+    losses = -sum(x for x in nets if x < 0)
+    pf = (wins / losses) if losses > 0 else (math.inf if wins > 0 else 0.0)
+    return {"stats": s, "verdict": V.decide(s)[0], "luck": p, "lcb": lcb, "per_week": per_week, "per_day": per_day,
+            "need": needed_trades(per_day), "days_traded": days, "pf": pf,
+            "net_less_best": round(sum(nets) - best, 2) if nets else 0.0,
+            "mean_r": None if mean_r is None else round(mean_r, 4), "se2_r": None if se2 is None else round(se2, 6)}
+
+
+def _finish(c: dict, prior: tuple, bar: Optional[float], weight: float = 1.0, control: bool = False) -> dict:
+    """The early bar and the score, once the pool is known. Updates and returns ``c``."""
+    s = c["stats"]
+    n = int(s["trades"] or 0)
+    shrunk = None if c.get("mean_r") is None else round(shrink(c["mean_r"], c["se2_r"], prior), 4)
     why = []
-    if code != V.PROVEN:
-        missing = V._missing_for_proven(s)
-        if s["net"] <= 0 and s["trades"]:
-            missing.append("to be positive after costs")
-        why.append("not proven yet: needs " + V._join(missing) if missing else "not proven yet")
-    if p > LUCK_MAX:
-        why.append(f"could be luck ({round(p * 100)}% chance its true average is not positive; at most "
-                   f"{round(LUCK_MAX * 100)}% allowed)")
-    return {"stats": s, "verdict": code, "luck": p, "lcb": lcb, "per_week": per_week,
-            "score": round(lcb * per_week, 2) if lcb is not None else None, "passes": passes,
-            "why": "passes the bar" if passes else "; ".join(why)}
+    if n < c["need"]:
+        why.append(f"needs {c['need'] - n} more trade{'' if c['need'] - n == 1 else 's'} "
+                   f"({c['need']} for a {frequency_words(c['per_day'])} test)")
+    if c["days_traded"] < MIN_DAYS:
+        k = MIN_DAYS - c["days_traded"]
+        why.append(f"needs {k} more UK day{'' if k == 1 else 's'} of trades")
+    if n and s["net"] <= 0:
+        why.append("not positive after costs")
+    elif n and c["pf"] < MIN_PF:
+        why.append(f"profit factor {c['pf']:.2f}, under {MIN_PF}")
+    if n and s["net"] > 0 and c["net_less_best"] <= 0:
+        why.append("its profit hangs on one trade")
+    if shrunk is not None and n and shrunk <= 0:
+        why.append(f"shrunk toward the pool it is {shrunk:+.2f} R a trade")
+    if shrunk is not None and bar is not None and shrunk < bar + CONTROL_MARGIN_R:
+        why.append(f"does not clearly beat the best clock trade ({shrunk:+.2f} R vs {bar:+.2f} R)")
+    if control:
+        why.append("a control (the luck benchmark) is never promoted")
+    passes = n > 0 and not why
+    score = None if shrunk is None else round(shrunk * c["per_week"] * weight, 3)
+    c.update(shrunk_r=shrunk, control_bar=bar, weight=weight, control=control, score=score, passes=passes,
+             prior=list(prior),
+             why=(f"passes the bar: {n} trades over {c['days_traded']} UK days, profit factor "
+                  f"{min(c['pf'], 99.0):.2f}, shrunk {shrunk:+.2f} R a trade"
+                  + (f" (the best clock trade {bar:+.2f} R)" if bar is not None else "")) if passes
+             else "; ".join(why) or "no trades yet")
+    return c
+
+
+def judge(trades: Sequence[dict], ident: str, now: dt.datetime, prior: Optional[tuple] = None,
+          bar: Optional[float] = None, weight: float = 1.0, control: bool = False) -> dict:
+    """The early bar and the score of one candidate's trades (already the window's):
+    {stats, verdict (13 Oct's words, shown), luck, lcb, per_week, per_day, need, mean_r,
+    shrunk_r, control_bar, weight, score, passes, why}. On its own (no pool) it is
+    shrunk toward the fixed prior and has no control benchmark; ``candidates`` judges
+    the whole pool together (``score_pool``)."""
+    return _finish(_raw(trades, ident, now), prior or (0.0, TAU2_DEFAULT), bar, weight, control)
+
+
+def score_pool(cands: list[dict]) -> list[dict]:
+    """The pool's prior and the control benchmark, then every test's bar and score."""
+    prior = pool_prior(cands)
+    for c in cands:                                       # the controls first, against the pool
+        if c.get("control"):
+            _finish(c, prior, None, c.get("weight", 1.0), True)
+    bar = control_bar(cands)
+    for c in cands:
+        _finish(c, prior, bar, c.get("weight", 1.0), bool(c.get("control")))
+    return cands
+
+
+def lab_weight(tests: Sequence[dict]) -> tuple[float, str]:
+    """The past and fresh lab tests as a weight on the rank (never a gate): each one
+    strongly negative (20+ trades, losing, profit factor under 0.8) halves it, each
+    mildly negative (losing) takes 15% off. Only the latest of each kind counts."""
+    w, words = 1.0, []
+    latest: dict = {}
+    for t in tests:
+        k = str(t.get("kind") or "")
+        if k in ("past", "fresh") and (k not in latest or str(t.get("finished_utc") or "") >=
+                                       str(latest[k].get("finished_utc") or "")):
+            latest[k] = t
+    for k, t in sorted(latest.items()):
+        try:
+            net, n = float(t.get("net_gbp")), int(t.get("trades") or 0)
+        except (TypeError, ValueError):
+            continue
+        pf = t.get("pf")
+        if net < 0 and n >= 20 and pf is not None and float(pf) < 0.8:
+            w *= WEIGHT_STRONG_NEG
+            words.append(f"its {k} test was strongly negative")
+        elif net < 0:
+            w *= WEIGHT_MILD_NEG
+            words.append(f"its {k} test lost")
+    return round(w, 4), "; ".join(words)
 
 
 # ------------------------------------------------------- the candidates --
@@ -580,13 +836,38 @@ def part_words(tactic: str, kind: str) -> str:
     return f"{tactic.lower().replace('_', ' ')}, {_kind_words(kind)}"
 
 
+def lab_direction(row: dict) -> str:
+    """LONG or SHORT for an idea that trades one side only (its ``side`` setting), else BOTH."""
+    try:
+        from ..lab.stages import cand_of
+        side = str(cand_of(row).p("side") or "").upper()
+    except Exception:
+        return "BOTH"
+    return {"BUY": "LONG", "SELL": "SHORT", "LONG": "LONG", "SHORT": "SHORT"}.get(side, "BOTH")
+
+
+def lab_tests(data_dir) -> dict:
+    """{idea id: [its past and fresh test rows]} (read-only), for the rank's weight."""
+    out: dict = {}
+    for r in _rows(Path(data_dir) / "lab" / "lab.sqlite",
+                   "SELECT candidate_id, kind, trades, net_gbp, pf, finished_utc FROM tests WHERE status='done'"):
+        out.setdefault(str(r.get("candidate_id")), []).append(r)
+    return out
+
+
+def div_key(c: dict) -> str:
+    """The diversity cap's key: its market and direction ("FX_MAJOR/BOTH")."""
+    return f"{c.get('market') or '?'}/{c.get('direction') or 'BOTH'}"
+
+
 def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[dict]] = None,
                lab_stages: Optional[Sequence[str]] = None, keep_empty: bool = False) -> list[dict]:
     """Every practising candidate, judged on its window, ranked: qualifying
     ones first by score, then the rest by practice GBP after costs. Every lab
     idea is its own candidate (``lab_stages`` narrows them to some stages).
     ``keep_empty``: a test with no trade in the window is kept too (Home counts
-    those as waiting for a trade); the pick never needs them."""
+    those as waiting for a trade); the pick never needs them. The whole pool is
+    judged together (``score_pool``: the shrinkage prior and the control benchmark)."""
     from ..engine.tactics import APPROACH_NAMES
     from .modes import LIVE_KINDS
     now = to_utc(now)
@@ -599,10 +880,12 @@ def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[
     def add(cid, kind, label, part_text, trades, live_path, **extra):
         if not trades and (not keep_empty or (kind == "bot" and extra.get("mode") != "PAPER")):
             return                                        # a bot not on PAPER is not waiting to practise
-        j = judge(trades, cid, now)
-        out.append(dict({"id": cid, "kind": kind, "label": label, "part": part_text, "live_path": live_path,
-                         "live": is_live(cid, raw, modes), "risk_gbp": _median_risk(t.get("risk") for t in trades)},
-                        **j, **extra))
+        j = _raw(trades, cid, now)
+        c = dict({"id": cid, "kind": kind, "label": label, "part": part_text, "live_path": live_path,
+                  "live": is_live(cid, raw, modes), "risk_gbp": _median_risk(t.get("risk") for t in trades)},
+                 **j, **extra)
+        c["div"] = div_key(c)
+        out.append(c)
 
     oldest = window_start(now)
     for name, (_vid, label, magic, process) in BOTS.items():
@@ -614,7 +897,8 @@ def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[
                 (oldest.isoformat(),))}
             trades = [dict(t, risk=risks.get(int(t["ticket"]))) for t in trades]
             add(cid, "bot", label, "", trades, True, bot=name, magic=magic, process=process,
-                mode=str(modes.get(name) or "").upper())
+                mode=str(modes.get(name) or "").upper(), market=BOT_MARKET.get(name, name.upper()),
+                session="ALL", direction="BOTH")
         except Exception as exc:                          # one broken record never stops the rest
             log.warning("weekly: %s: %s", name, exc)
     try:
@@ -624,16 +908,36 @@ def candidates(data_dir, config_path, now: dt.datetime, hist: Optional[Sequence[
             trades = [t for t in trades if d is None or to_utc(t["closed"]) >= to_utc(d)]
             path = tactic in APPROACH_NAMES and kind in LIVE_KINDS
             add(cid, "tnb", TNB_LABEL, part_words(tactic, kind), trades, path, tactic=tactic, group=kind,
-                magic=TNB_MAGIC, process="trader", mode=tnb_live_now(raw)[0])
+                magic=TNB_MAGIC, process="trader", mode=tnb_live_now(raw)[0], market=kind, session="ALL",
+                direction="BOTH")
     except Exception as exc:
         log.warning("weekly: Trend & Breakout's parts: %s", exc)
     try:
+        tests = lab_tests(data_dir)
         for idea, trades in lab_trades(data_dir, oldest, end, lab_stages):
-            add(f"lab:{idea['id']}", "lab", LAB_LABEL, str(idea.get("short") or idea.get("name") or idea["id"]),
-                trades, False, stage=str(idea.get("stage") or ""), full=str(idea.get("name") or ""))
+            cid = f"lab:{idea['id']}"
+            d = dem.get(cid)                              # 14 Oct: after a demotion only newer practice counts
+            trades = [t for t in trades if d is None or to_utc(t["closed"]) >= to_utc(d)]
+            family = str(idea.get("family") or "")
+            w, wwhy = lab_weight(tests.get(str(idea["id"]), ()))
+            market, session = lab_market_session(idea)
+            add(cid, "lab", LAB_LABEL, str(idea.get("short") or idea.get("name") or idea["id"]),
+                trades, family != CONTROL_FAMILY, stage=str(idea.get("stage") or ""), full=str(idea.get("name") or ""),
+                version=int(idea.get("version") or 1), family=family, market=market, session=session,
+                direction=lab_direction(idea), weight=w, weight_why=wwhy, control=family == CONTROL_FAMILY,
+                process=None)
     except Exception as exc:
         log.warning("weekly: the lab: %s", exc)
-    return rank(out)
+    return rank(score_pool(out))
+
+
+def lab_market_session(row: dict) -> tuple[str, str]:
+    try:
+        from ..lab.stages import cand_of
+        c = cand_of(row)
+        return c.markets, c.session
+    except Exception:
+        return "?", "?"
 
 
 def rank(cands: list[dict]) -> list[dict]:
@@ -687,55 +991,107 @@ def tnb_remove(tactic: str, kind: str, groups: frozenset, tactics: frozenset, ke
 
 
 # ------------------------------------------------------------- the plan --
+def roots(promoted: Sequence[dict]) -> list[dict]:
+    """The promotions that hold a place on the demo (a part that only rode along with a pick holds none)."""
+    return [p for p in promoted if not p.get("rides_with")]
+
+
+def slot(p: dict) -> dict:
+    """Where a test sits for the diversity cap and the spread: {div, market, session}. A Trend & Breakout part
+    whose record does not say (one that rode along with a pick, known by its id alone) sits in its own kind of
+    market, both directions, every session, as its candidate does."""
+    cid = str(p.get("id") or "")
+    if cid.startswith("tnb:") and cid.count(":") == 2 and not (p.get("div") and p.get("market")):
+        g = cid.split(":")[2]
+        return {"div": f"{g}/BOTH", "market": g, "session": "ALL"}
+    return {"div": p.get("div") or div_key(p), "market": p.get("market"), "session": p.get("session")}
+
+
 def make_plan(data_dir, config_path, now: dt.datetime, friday: Optional[dt.date] = None,
               ranking: Optional[list] = None, limit: Optional[int] = None) -> dict:
-    """This Friday's picks: the ranking, the best ``limit`` candidates with a
-    live path (``max_promotions``; the best overall too, when that is a lab
-    idea), the reasons, the release time. Never applies anything.
+    """The day's picks (``friday``: the pick's UK trading day; the name is the one it
+    had while the pick was weekly): the ranking, the best qualifiers for the demo's
+    free places (``demo_target`` less the tests already on it, unless ``limit``
+    says), the reasons, the release time. Never applies anything.
 
-    Each Trend & Breakout part is checked against the live kinds x approaches
-    AS THEY WILL BE after the picks before it this week: a part that would
-    then make an unproven part live is skipped, and a part another pick
-    already makes live rides with that pick instead of taking a place."""
+    The queue: every qualifier not already on the demo, best score first, each
+    one's place lowered (never its figures) by SPREAD_MARKET for every test already
+    on the demo or picked in its market and SPREAD_SESSION in its session; at most
+    DIVERSITY_MAX on the demo per market and direction (every part riding with a
+    pick counted there too, though it holds no place). Each Trend & Breakout part
+    is checked against the live kinds x approaches AS THEY WILL BE after the picks
+    before it: a part that would then make an unproven part live is skipped, and a
+    part another pick already makes live rides with that pick instead."""
     now = to_utc(now)
-    friday = friday or last_pick_friday(now)
-    limit = max_promotions(data_dir) if limit is None else int(limit)
+    friday = friday or last_pick_day(now)
+    try:
+        promoted = load_state(data_dir)["promoted"] if data_dir else []
+    except Exception:
+        promoted = []
+    target = demo_target(data_dir)
+    room = max(0, target - len(roots(promoted)))
+    limit = room if limit is None else int(limit)
     ranking = ranking if ranking is not None else candidates(data_dir, config_path, now)
     raw = read_config(config_path) if config_path else {}
     proven = {c["id"] for c in ranking if c.get("passes")}
     reasons: list[str] = []
     picks: list[dict] = []
-    lab_pick = None
     _mode, groups, tactics = tnb_live_now(raw)
-    riding: set = set()                                    # parts this week's picks make live with them
+    riding: set = set()                                    # parts the picks make live with them
+    on_demo = {p["id"] for p in promoted}
+    # every test on the demo counts toward the diversity cap and the spread, a part that rode along with a pick
+    # too (review, 14 Oct: it trades there like any other; it only holds no place of the demo_target)
+    held = [slot(p) for p in promoted]
+    queue = []
     for c in ranking:
-        if len(picks) >= limit:
-            break
-        if not c.get("passes"):
-            continue
-        if c.get("live"):
-            continue                                       # already on real money
-        if c["kind"] == "lab":
-            if lab_pick is None and not picks:
-                lab_pick = c
-                reasons.append(f"{c['label']} - {c['part']}: the best, {NEEDS_LIVE_PATH}")
-            continue
+        if not c.get("passes") or c.get("live") or c["id"] in on_demo:
+            continue                                       # not qualified, or already on the demo
         if not c.get("live_path"):
-            reasons.append(f"{c['label']} {c['part']}: no live path for this kind of market - skipped")
+            reasons.append(f"{c['label']} {c['part']}: no demo path for this kind of market - skipped")
             continue
-        if c.get("mode") != "PAPER":
+        if c["kind"] in ("bot", "tnb") and c.get("mode") != "PAPER":
             who = TNB_LABEL if c["kind"] == "tnb" else c["label"]
             reasons.append(f"{c['label']}{' ' + c['part'] if c['part'] else ''}: {who} is "
                            f"{c.get('mode') or 'in no known mode'}, not on PAPER - skipped")
             continue
+        queue.append(c)
+    if limit <= 0 and queue:
+        reasons.append(f"the demo squad is full ({len(roots(promoted))} of {target}): "
+                       f"{len(queue)} qualifier{'' if len(queue) == 1 else 's'} wait for a place")
+
+    def taken_now() -> list[dict]:
+        """The demo as it will be after today's picks so far: each pick and every part riding with it."""
+        return held + [slot(y) for x in picks for y in [x["pick"]] + [{"id": e} for e in x["extras"]]]
+
+    def place(c) -> float:
+        taken = taken_now()
+        k = sum(1 for x in taken if x.get("market") == c.get("market"))
+        j = sum(1 for x in taken if x.get("session") == c.get("session") and c.get("session") not in (None, "ALL"))
+        return float(c.get("score") or 0.0) * (SPREAD_MARKET ** k) * (SPREAD_SESSION ** j)
+
+    while queue and len(picks) < limit:
+        queue.sort(key=lambda c: (-place(c), c["id"]))
+        c = queue.pop(0)
+        if c["kind"] == "tnb" and c["id"] in riding:      # already counted, with the pick it rides with
+            reasons.append(f"{c['label']} {c['part']}: goes live with another of today's picks")
+            continue
+        taken = taken_now()
+        same = sum(1 for x in taken if x["div"] == c["div"])
+        if same >= DIVERSITY_MAX:
+            reasons.append(f"{c['label']} {c['part']}: {DIVERSITY_MAX} already on the demo in {c['div']} - waits")
+            continue
         extras: list = []
         if c["kind"] == "tnb":
-            if c["id"] in riding:
-                reasons.append(f"{c['label']} {c['part']}: goes live with another of this week's picks")
-                continue
             add = tnb_add(c["tactic"], c["group"], groups, tactics, proven)
             if not add["ok"]:
                 reasons.append(f"{c['label']} {c['part']}: {add['why']}")
+                continue
+            # the parts it makes live go on the demo with it: the cap holds for them too (review, 14 Oct)
+            new = [c["div"]] + [slot({"id": e})["div"] for e in add["extras"]]
+            over = sorted(k for k in set(new) if sum(1 for x in taken if x["div"] == k) + new.count(k) > DIVERSITY_MAX)
+            if over:
+                reasons.append(f"{c['label']} {c['part']}: with the parts it would make live too, more than "
+                               f"{DIVERSITY_MAX} would be on the demo in {', '.join(over)} - waits")
                 continue
             extras = add["extras"]
             groups = frozenset(add["groups"])              # the cross product after this pick ...
@@ -743,18 +1099,19 @@ def make_plan(data_dir, config_path, now: dt.datetime, friday: Optional[dt.date]
             riding.update(extras)                          # ... is what the next part is checked against
         picks.append({"pick": c, "extras": extras})
         reasons.append(f"{c['label']}{' ' + c['part'] if c['part'] else ''}: "
-                       + ("the best with a live path" if len(picks) == 1 else f"pick {len(picks)} of up to {limit}")
-                       + f" (about £{c['score']:.2f} a week, cautiously)")
+                       + f"pick {len(picks)} of {limit} free place{'' if limit == 1 else 's'}"
+                       + f" (about {c['score']:+.2f} R a week, cautiously; {c['why']})")
     if not picks and not reasons:
         reasons.append(NOTHING_PROVED)
     rel = release_utc(friday)
     first = picks[0] if picks else None
-    return {"schema": SCHEMA, "friday": friday.isoformat(), "made_utc": _iso(now), "release_utc": _iso(rel),
-            "expires_utc": _iso(uk_at(friday + dt.timedelta(days=7), PICK_AT)), "week": iso_week(rel),
-            "status": PLANNED if picks else NONE, "limit": limit,
+    lab_first = next((x for x in picks if x["pick"]["kind"] == "lab"), None)
+    return {"schema": SCHEMA, "friday": friday.isoformat(), "day": friday.isoformat(), "made_utc": _iso(now),
+            "release_utc": _iso(rel), "expires_utc": _iso(expires_utc(friday)), "week": iso_week(rel),
+            "status": PLANNED if picks else NONE, "limit": limit, "demo_target": target,
             "pick": _brief(first["pick"]) if first else None, "extras": first["extras"] if first else [],
             "picks": [{"pick": _brief(x["pick"]), "extras": x["extras"]} for x in picks],
-            "lab_pick": _brief(lab_pick) if lab_pick else None,
+            "lab_pick": _brief(lab_first["pick"]) if lab_first else None,
             "reasons": reasons, "ranking": [_brief(c) for c in ranking[:30]],
             # every bot and Trend & Breakout part, whatever its rank: the lab's Saturday refresh lists the losing
             # ones for the nightly review (it reads this file; the lab never imports this module)
@@ -762,19 +1119,24 @@ def make_plan(data_dir, config_path, now: dt.datetime, friday: Optional[dt.date]
             "rule": RULE_TEXT}
 
 
-RULE_TEXT = (f"Practice trades of the last {LOOKBACK_DAYS} days, after costs: proven by the bots' rule (30+ trades "
-             f"over 5+ UK days, positive, £1.20+ won for every £1 lost, more up days than down) and at most a "
-             f"{round(LUCK_MAX * 100)}% chance its true average is not positive ({RESAMPLES:,} resamples). Ranked "
-             f"by a cautious average a trade times trades a week. Up to {MAX_PROMOTIONS} promotions a week "
-             f"(data/weekly.json), released 06:30 UK on the "
-             f"next trading day; after {JUDGE_AFTER} live trades net <= 0 goes back to practice, and a live loss "
-             f"of {EARLY_EXIT_RISKS:g} x its risk a trade at any point does too.")
+RULE_TEXT = (f"Practice trades of the last {LOOKBACK_DAYS} days, after all costs: at least {NEED_FREQUENT} trades "
+             f"for a frequent test (3+ a day), {NEED_MEDIUM} for a medium one, {NEED_SLOW} for a slow one (under 1 a "
+             f"day), over {MIN_DAYS}+ UK days; positive, a profit factor of {MIN_PF}+, still positive without its best "
+             f"trade; its R a trade shrunk toward the pool's (empirical Bayes) above zero and at least "
+             f"{CONTROL_MARGIN_R} R better than the best clock trade (the luck benchmark). Ranked by shrunk R a trade x "
+             f"trades a week (its past and fresh lab tests a weight). Picked every UK trading day at 22:30, released "
+             f"06:30 UK the next trading day into the demo's free places (demo_target, default {DEMO_TARGET}), at most "
+             f"{DIVERSITY_MAX} per market and direction. On the demo: after {JUDGE_AFTER} trades back to practice when "
+             f"even the hopeful bootstrap bound of its average is below zero; after {JUDGE_NET_AFTER} when net <= 0; at "
+             f"any point at a loss of {EARLY_EXIT_RISKS:g} x its risk a trade or a drawdown of {DD_GUARD_RISKS:g} x.")
 
 
 def _brief(c: dict) -> dict:
     s = c.get("stats") or {}
     keep = ("id", "kind", "label", "part", "live", "live_path", "mode", "verdict", "luck", "lcb", "per_week", "score",
-            "passes", "why", "risk_gbp", "bot", "magic", "process", "tactic", "group")
+            "passes", "why", "risk_gbp", "bot", "magic", "process", "tactic", "group", "version", "family", "market",
+            "session", "direction", "div", "per_day", "need", "mean_r", "shrunk_r", "control_bar", "weight",
+            "control", "stage")
     out = {k: c[k] for k in keep if k in c}
     out.update({"trades": s.get("trades"), "net": s.get("net"), "win_rate": s.get("win_rate"),
                 "profit_factor": s.get("profit_factor"), "days": s.get("days")})
@@ -815,6 +1177,8 @@ def live_trades(item: dict, positions: Optional[list], data_dir) -> tuple[list[d
     ``positions`` from the page (MetaTrader); None reads the bots' own records."""
     from ..coach.records import kind_of
     from ..engine.tactics import approach_of
+    if item.get("kind") == "lab":                          # 14 Oct: its own record of the broker's deals
+        return lab_live_trades(item, data_dir)
     since = _when(item.get("since_utc"))
     if since is None:
         return [], ""
@@ -861,18 +1225,68 @@ def live_trades(item: dict, positions: Optional[list], data_dir) -> tuple[list[d
     return [t for t in out if t["closed"] is not None], "its own record (MetaTrader's page did not answer)"
 
 
-def live_verdict(trades: Sequence[dict], risk_gbp: float) -> tuple[str, str]:
-    """("demote" | "keep" | "wait", why) from a promotion's live trades."""
+def lab_live_trades(item: dict, data_dir) -> tuple[list[dict], str]:
+    """A lab idea's demo trades since its promotion, from data/labdemo/labdemo.sqlite: the
+    lab-demo engine books every one from the broker's own closed-deal record."""
+    from ..labdemo.record import read_trades
+    since = _when(item.get("since_utc"))
+    if since is None:
+        return [], ""
+    rows = read_trades(data_dir, str(item["id"])[4:], to_utc(since).isoformat())
+    if rows is None:
+        return [], "the lab-demo record could not be read"
+    out = []
+    for r in rows:
+        if item.get("version") is not None and int(r.get("version") or 1) != int(item.get("version") or 1):
+            continue
+        closed = _when(r.get("closed_utc"))
+        if closed is None:
+            continue
+        out.append({"closed": closed, "net": round(float(r.get("net_gbp") or 0.0), 2),
+                    "costs": None, "symbol": str(r.get("symbol") or ""),                 # inside the net
+                    "ticket": int(r.get("ticket") or 0), "kind": "real", "risk": r.get("risk_gbp"),
+                    "r": r.get("r"), "equiv_1500": r.get("equiv_1500_gbp")})
+    return out, "MetaTrader (the lab-demo record of the broker's deals)"
+
+
+def live_verdict(trades: Sequence[dict], risk_gbp: float, ident: str = "") -> tuple[str, str]:
+    """("demote" | "keep" | "wait", why) from a promotion's demo trades (14 Oct):
+
+    * at any point: a demo loss of EARLY_EXIT_RISKS x its risk a trade, or a drawdown
+      from its best of DD_GUARD_RISKS x, takes it back;
+    * after JUDGE_AFTER trades: back when the bootstrap UCB_QUANTILE bound of its mean
+      net a trade is below zero; kept when the LCB_QUANTILE bound is above zero;
+    * after JUDGE_NET_AFTER trades: back when net <= 0.
+    """
+    trades = sorted(trades, key=lambda t: to_utc(t["closed"]))
     n = len(trades)
-    net = round(sum(float(t["net"]) for t in trades), 2)
-    limit = round(EARLY_EXIT_RISKS * max(float(risk_gbp or FALLBACK_RISK_GBP), 0.01), 2)
+    nets = [float(t["net"]) for t in trades]
+    net = round(sum(nets), 2)
+    risk = max(float(risk_gbp or FALLBACK_RISK_GBP), 0.01)
+    limit = round(EARLY_EXIT_RISKS * risk, 2)
     if net <= -limit:
-        return "demote", f"its live loss reached £{-net:.2f}, {EARLY_EXIT_RISKS:g} x its £{risk_gbp:.2f} risk a trade"
+        return "demote", (f"its demo loss reached £{-net:.2f}, {EARLY_EXIT_RISKS:g} x its £{risk:.2f} risk a trade "
+                          f"(the early exit)")
+    peak, run, dd = 0.0, 0.0, 0.0
+    for x in nets:
+        run += x
+        peak = max(peak, run)
+        dd = max(dd, peak - run)
+    if dd >= DD_GUARD_RISKS * risk:
+        return "demote", (f"a drawdown of £{dd:.2f} from its best, {DD_GUARD_RISKS:g} x its £{risk:.2f} risk a trade "
+                          f"(the drawdown guard)")
     if n >= JUDGE_AFTER:
-        if net <= 0:
-            return "demote", f"{n} live trades made £{net:.2f} after costs"
-        return "keep", f"{n} live trades made £{net:+.2f} after costs: it stays"
-    return "wait", f"{n} of {JUDGE_AFTER} live trades, £{net:+.2f} so far"
+        _p, lo, hi = bootstrap_all(nets, ident or "demo")
+        if hi is not None and hi < 0:
+            return "demote", (f"{n} demo trades made £{net:+.2f} after costs; even the hopeful bound of its average, "
+                              f"£{hi:+.2f} a trade, is below zero")
+        if n >= JUDGE_NET_AFTER and net <= 0:
+            return "demote", f"{n} demo trades made £{net:.2f} after costs (not in profit after {JUDGE_NET_AFTER})"
+        if lo is not None and lo > 0:
+            return "keep", (f"{n} demo trades made £{net:+.2f} after costs; even the cautious bound of its average, "
+                            f"£{lo:+.2f} a trade, is above zero: it stays")
+        return "wait", f"{n} demo trades, £{net:+.2f} so far: the evidence is not clear yet, it keeps going"
+    return "wait", f"{n} of {JUDGE_AFTER} demo trades, £{net:+.2f} so far"
 
 
 # --------------------------------------------------------- applying --
@@ -911,6 +1325,8 @@ def promote_change(item: dict, raw: dict, modes: dict, proven: set) -> dict:
         return {"already": False, "changes": {}, "extras": add["extras"],
                 "kw": {"tnb_live_groups": sorted(add["groups"]),
                        "tnb_live_tactics": sorted(add["tactics"]) if add["tactics"] is not None else None}}
+    if item.get("kind") == "lab":
+        return lab_promote_change(item, modes, modes.get("__data__") or "")
     raise ValueError(NEEDS_LIVE_PATH)
 
 
@@ -919,6 +1335,8 @@ def demote_change(item: dict, raw: dict, modes: dict, keep: set) -> dict:
     {already (nothing of ours to take back), changes, kw, lost}."""
     if unknown(item, modes):
         raise ValueError(f"{item['label']}'s own file could not be read: its mode is not known")
+    if item.get("kind") == "lab":
+        return lab_demote_change(item, modes)
     if item.get("kind") == "bot":
         if not is_live(item["id"], raw, modes):
             return {"already": True, "changes": {}, "kw": {}, "lost": []}
@@ -932,6 +1350,51 @@ def demote_change(item: dict, raw: dict, modes: dict, keep: set) -> dict:
                    "tnb_live_tactics": sorted(rm["tactics"]) if rm["tactics"] is not None and rm["groups"] else None}}
 
 
+def lab_promote_change(item: dict, modes: dict, data_dir) -> dict:
+    """What putting a lab idea on the demo writes, worked out without writing: its
+    roster entry (version, its magic number - the one it already has, else the next
+    free one in the reserved range - its risk tier, since, plan)."""
+    from ..labdemo import roster as LR
+    ids = modes.get(LABDEMO)
+    if ids == UNREADABLE:
+        raise ValueError("the lab-demo roster could not be read: nothing is decided on a guess")
+    lab_id = str(item["id"])[4:]
+    if isinstance(ids, frozenset) and lab_id in ids:
+        return {"already": True, "changes": {}, "kw": {}, "extras": []}
+    if item.get("control") or item.get("family") == CONTROL_FAMILY:
+        raise ValueError("a control idea (the luck benchmark) is never promoted")
+    tier = float(item.get("tier_pct") or 0.0)
+    if tier not in LR.TIERS:
+        raise ValueError(f"no demo risk tier ({tier}) for {lab_id}")
+    version = int(item.get("version") or 1)
+    magic, magics = LR.magic_for(LR.read_magics(data_dir, strict=True), lab_id, version)
+    entry = {"version": version, "magic": magic, "tier_pct": tier, "since_utc": item.get("since_utc"),
+             "plan": item.get("plan")}
+    return {"already": False, "changes": {}, "kw": {}, "extras": [], "magic": magic,
+            "lab": {"add": {lab_id: entry}, "magics": magics}}
+
+
+def lab_demote_change(item: dict, modes: dict) -> dict:
+    ids = modes.get(LABDEMO)
+    if ids == UNREADABLE:
+        raise ValueError("the lab-demo roster could not be read: nothing is decided on a guess")
+    lab_id = str(item["id"])[4:]
+    if not (isinstance(ids, frozenset) and lab_id in ids):
+        return {"already": True, "changes": {}, "kw": {}, "lost": []}
+    return {"already": False, "changes": {}, "kw": {}, "lost": [], "lab": {"remove": lab_id}}
+
+
+def _write_lab(data_dir, lab: dict, now: dt.datetime) -> None:
+    """The roster written whole (magics.json first): one idea added or taken out."""
+    from ..labdemo import roster as LR
+    ideas = LR.read_roster(data_dir, strict=True)
+    for k, v in (lab.get("add") or {}).items():
+        ideas[k] = v
+    if lab.get("remove"):
+        ideas.pop(lab["remove"], None)
+    LR.write_roster(data_dir, ideas, lab.get("magics"), now)
+
+
 def apply_change(config_path, change: dict, now: dt.datetime, set_modes: SetModes = _set_modes,
                  must_live: Sequence[str] = (), must_not_live: Sequence[str] = ()) -> None:
     """``set_modes`` with the change, then config.json (and ian.json) read
@@ -943,10 +1406,18 @@ def apply_change(config_path, change: dict, now: dt.datetime, set_modes: SetMode
     only a later successful read decides what happened."""
     from .modes import _data_dir
     cfg = Path(config_path)
-    files = [cfg, _data_dir(read_config_strict(cfg), cfg) / "ian.json"]
+    data = _data_dir(read_config_strict(cfg), cfg)
+    if change.get("lab"):                                  # a lab idea: the lab-demo roster, nothing else
+        from ..labdemo import roster as LR
+        files = [LR.magics_path(data), LR.roster_path(data)]
+    else:
+        files = [cfg, data / "ian.json"]
     before = {p: (p.read_bytes() if p.exists() else None) for p in files}
     try:
-        set_modes(config_path, change["changes"], now=now, **change["kw"])
+        if change.get("lab"):
+            _write_lab(data, change["lab"], now)
+        else:
+            set_modes(config_path, change["changes"], now=now, **change["kw"])
         raw, modes = strict_view(config_path)
         wrong = ([i for i in must_live if unknown(i, modes) or not is_live(i, raw, modes)]
                  + [i for i in must_not_live if unknown(i, modes) or is_live(i, raw, modes)])
@@ -1037,9 +1508,11 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
          positions_fn: Optional[Callable[[], Optional[list]]] = None,
          restart: Optional[Callable[[str], tuple]] = None,
          set_modes: SetModes = _set_modes) -> list[str]:
-    """One check (the watchdog's, every CHECK_SECONDS): make Friday's pick when
-    due, release it at its time, judge what is live, take back what failed,
-    then restart the bots whose mode changed. Returns what it did, in words.
+    """One check (the watchdog's, every CHECK_SECONDS): make the day's pick when
+    due (every UK trading day at 22:30), release it at its time (06:30 UK the next
+    trading day), judge what is on the demo, take back what failed, then restart
+    the bots whose mode changed (a lab idea needs no restart: the engine re-reads
+    its roster). Returns what it did, in words.
 
     Each step is idempotent. Before any mode is written its intent is saved
     in state.json (the item marked ``promoting`` or ``demoting``, its restart
@@ -1060,7 +1533,7 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
     halt = halted(data)
     _settle_promoting(data, config_path, state, now, actions)
 
-    # 0. last week's pick, never released (HALT all week): it lapses at this week's pick
+    # 0. an earlier pick, never released (HALT): it lapses at the next pick
     friday = last_pick_friday(now)
     old = _read(wdir(data) / LATEST)
     if isinstance(old, dict) and old.get("status") == PLANNED and old.get("friday") != friday.isoformat() \
@@ -1070,7 +1543,7 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
         _write_atomic(wdir(data) / LATEST, old)
         actions.append(f"weekly: the pick of {old['friday']} was never released and has lapsed")
 
-    # 1. Friday's pick (catching up until its release)
+    # 1. the day's pick (catching up until its release)
     ppath = plan_path(data, friday)
     plan = _read(ppath)
     if not isinstance(plan, dict) and now < release_utc(friday):
@@ -1079,7 +1552,7 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
             _write_atomic(ppath, plan)
             _write_atomic(wdir(data) / LATEST, plan)
             names = [f"{x['pick']['label']} {x['pick'].get('part') or ''}".strip() for x in plan_picks(plan)]
-            actions.append(f"weekly: the pick for {friday.isoformat()} is "
+            actions.append(f"weekly: the pick of {friday.isoformat()} is "
                            + (", ".join(names) if names else "nothing (nothing proved itself)"))
         except Exception as exc:
             log.exception("weekly pick")
@@ -1087,7 +1560,7 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
             plan = None
 
     # 2. the vetoes: this week's plan, and every live promotion by the plan it came from
-    actions += _vetoes(data, state, plan, ppath)
+    actions += _vetoes(data, state, plan, ppath, now)
     if isinstance(plan, dict):
         status = plan.get("status")
         if status == PLANNED and now >= _when(plan["expires_utc"]):
@@ -1114,15 +1587,20 @@ def tick(data_dir, config_path, now: Optional[dt.datetime] = None, *,
     return actions
 
 
-def _vetoes(data: Path, state: dict, plan: Optional[dict], ppath: Path) -> list[str]:
+def _vetoes(data: Path, state: dict, plan: Optional[dict], ppath: Path,
+            now: Optional[dt.datetime] = None) -> list[str]:
     """Aaron's veto (a VETO-<Friday> file): this week's pick not yet released
     is cancelled; any live promotion whose own plan was vetoed - the pick and
-    every part that went live with it - is marked to go back to PAPER."""
+    every part that went live with it - is marked to go back to PAPER. A
+    vetoed pick that never went live gets a 'veto' line in the history, which
+    restarts its evidence window (``last_demoted``)."""
+    now = to_utc(now or utcnow())
     out = []
     if isinstance(plan, dict) and plan.get("status") in (PLANNED, APPLIED) \
             and veto_path(data, dt.date.fromisoformat(plan["friday"])).exists():
         plan["status"] = VETOED
         _save_plan(data, ppath, plan)
+        _record_veto(data, state, plan, now)
         out.append("weekly: this week's pick was vetoed")
     marked = False
     for it in state["promoted"]:
@@ -1137,10 +1615,30 @@ def _vetoes(data: Path, state: dict, plan: Optional[dict], ppath: Path) -> list[
             if isinstance(p, dict) and p.get("status") == APPLIED:
                 p["status"] = VETOED
                 _save_plan(data, plan_path(data, dt.date.fromisoformat(it["plan"])), p)
+                _record_veto(data, state, p, now)
     if marked:
         _save_state(data, state)
         out.append("weekly: a vetoed pick goes back to PAPER")
     return out
+
+
+def _record_veto(data: Path, state: dict, plan: dict, now: dt.datetime) -> None:
+    """Once, as a plan becomes VETOED: a 'veto' line for each of its picks, and each part that would have ridden
+    with one, that is not on the demo now (one on the demo is taken back, and its 'demote' line does the same).
+    Review, 14 Oct: with the pick made every day a veto recorded nowhere lasted only until the next day's pick,
+    which took the same test again on the same evidence."""
+    on_demo = {str(p.get("id")) for p in state["promoted"]}
+    by_id = {c.get("id"): c for c in plan.get("ranking") or () if isinstance(c, dict)}
+    seen: set = set()
+    for x in plan_picks(plan):
+        for item in [x["pick"]] + [by_id.get(e) or {"id": e} for e in x.get("extras") or ()]:
+            cid = str(item.get("id") or "")
+            if not cid or cid in on_demo or cid in seen:
+                continue
+            seen.add(cid)
+            if not item.get("label") and cid.startswith("tnb:") and cid.count(":") == 2:
+                item = dict(item, label=TNB_LABEL, part=part_words(*cid.split(":")[1:]))
+            _append_history(data, _event("veto", item, now, "Aaron vetoed this pick", plan=plan.get("friday")))
 
 
 def _save_plan(data: Path, ppath: Path, plan: dict) -> None:
@@ -1157,9 +1655,11 @@ def _finish_promotion(data: Path, state: dict, items: list[dict], now: dt.dateti
     for it in items:
         it.pop("promoting", None)
         it.pop("restart_added", None)
-        _append_history(data, _event("promote", it, now, "this week's pick" if it is pick else
-                                     f"proved itself too, and goes live with {pick['label']} {pick.get('part')}",
-                                     plan=it.get("plan"), pick=it is pick))
+        why = (f"the pick of {it.get('plan')}: {it.get('why') or 'passes the bar'}" if it is pick else
+               f"proved itself too, and goes live with {pick['label']} {pick.get('part')}")
+        _append_history(data, _event("promote", it, now, why, plan=it.get("plan"), pick=it is pick,
+                                     tier_pct=it.get("tier_pct"), magic=it.get("magic") if it.get("kind") == "lab"
+                                     else None, version=it.get("version")))
     _save_state(data, state)
     if pick.get("plan"):
         _applied_when_done(data, state, pick["plan"], now)
@@ -1214,13 +1714,14 @@ def _release(data: Path, config_path, plan: dict, ppath: Path, state: dict, hist
     entries = plan_picks(plan)
     if not entries:
         return []
-    week = iso_week(now)
-    limit = max_promotions(data)
-    room = limit - picks_in_week(hist, week, other_than=plan["friday"])
+    target = demo_target(data)
+    # 14 Oct: the demo's free places (demo_target less the tests on it now), counting this plan's own picks
+    # already released as places of their own (they are among ``entries``)
+    others = [p for p in roots(state["promoted"]) if p.get("plan") != plan["friday"]]
+    room = target - len(others)
     if room <= 0:
         plan["status"] = SKIPPED
-        plan["skipped_why"] = (f"{limit} promotion{'' if limit == 1 else 's'} already made in {week} "
-                               f"(at most {limit} a week)")
+        plan["skipped_why"] = f"the demo squad is full ({len(others)} of {target} places)"
         _save_plan(data, ppath, plan)
         return [f"weekly: {entries[0]['pick']['label']} not released - {plan['skipped_why']}"]
     entries = entries[:room]
@@ -1233,13 +1734,13 @@ def _release(data: Path, config_path, plan: dict, ppath: Path, state: dict, hist
     proven = set(want) | {e for x in entries for e in x.get("extras") or ()}
     out: list[str] = []
     for x in entries:
-        out += _release_one(data, config_path, plan, ppath, state, x["pick"], proven, now, set_modes)
+        out += _release_one(data, config_path, plan, ppath, state, x["pick"], proven, now, set_modes, hist)
     _applied_when_done(data, state, plan["friday"], now)
     return out
 
 
 def _release_one(data: Path, config_path, plan: dict, ppath: Path, state: dict, pick: dict, proven: set,
-                 now: dt.datetime, set_modes: SetModes) -> list[str]:
+                 now: dt.datetime, set_modes: SetModes, hist: Optional[list] = None) -> list[str]:
     week = iso_week(now)
 
     def failed(exc) -> list[str]:
@@ -1255,12 +1756,20 @@ def _release_one(data: Path, config_path, plan: dict, ppath: Path, state: dict, 
     if any(e.get("event") == "promote" and e.get("id") == pick["id"] and e.get("plan") == plan["friday"]
            for e in history(data)):
         return []
+    if pick.get("kind") == "lab":
+        # its demo risk tier, the next in turn across the lab's promotions (0.5%, 1%, 2%, ...): kept with the
+        # promotion, in the roster and in its history line, so the tiers can be compared
+        from ..labdemo.roster import next_tier
+        n_lab = sum(1 for e in history(data) if e.get("event") == "promote" and str(e.get("id", "")).startswith("lab:"))
+        pick = dict(pick, tier_pct=next_tier(n_lab), since_utc=_iso(now), plan=plan["friday"])
     try:
         raw, modes = strict_view(config_path)
         ch = promote_change(pick, raw, modes, proven)
     except Exception as exc:
         return failed(exc)
     items = [dict(pick, live=True, since_utc=_iso(now), week=week, plan=plan["friday"])]
+    if ch.get("magic"):
+        items[0]["magic"] = ch["magic"]
     by_id = {c["id"]: c for c in plan.get("ranking") or ()}
     for x in ch["extras"]:
         c = by_id.get(x)
@@ -1276,7 +1785,7 @@ def _release_one(data: Path, config_path, plan: dict, ppath: Path, state: dict, 
     for it in items:
         it["promoting"] = True
     state["promoted"] += items
-    if not ch["already"]:
+    if not ch["already"] and pick.get("kind") != "lab":        # a lab idea: the engine re-reads its roster
         items[0]["restart_added"] = _queue_restart(state, pick.get("process"))
     _save_state(data, state)                              # the intent first ...
     if not ch["already"]:
@@ -1290,7 +1799,9 @@ def _release_one(data: Path, config_path, plan: dict, ppath: Path, state: dict, 
                 pass
             return failed(exc)
     _finish_promotion(data, state, items, now)            # ... then the record
-    return [f"weekly: {pick['label']} {pick.get('part') or ''} switched LIVE (this week's pick)".replace("  ", " ")]
+    tier = f", risk tier {pick['tier_pct']:g}%" if pick.get("kind") == "lab" else ""
+    return [f"weekly: {pick['label']} {pick.get('part') or ''} switched LIVE on the DEMO (the pick of "
+            f"{plan['friday']}{tier})".replace("  ", " ")]
 
 
 def _judge_live(data: Path, config_path, state: dict, now: dt.datetime, positions_fn, set_modes: SetModes,
@@ -1320,11 +1831,15 @@ def _judge_live(data: Path, config_path, state: dict, now: dt.datetime, position
             _save_state(data, state)
             continue
         trades, source = live_trades(it, positions, data)
-        verdict, why = live_verdict(trades, float(it.get("risk_gbp") or FALLBACK_RISK_GBP))
+        risk = _median_risk(t.get("risk") for t in trades) if it.get("kind") == "lab" and trades else \
+            float(it.get("risk_gbp") or FALLBACK_RISK_GBP)
+        verdict, why = live_verdict(trades, risk, it["id"])
         if it.get("demoting") or it.get("demote_why"):     # an intent is never dropped by an error
             verdict, why = "demote", it.get("demoting") or it["demote_why"]
         it["record"] = {"trades": len(trades), "net": round(sum(t["net"] for t in trades), 2), "source": source,
                         "checked_utc": _iso(now), "verdict": verdict, "why": why}
+        if it.get("kind") == "lab":                       # beside the demo money, never in it
+            it["record"]["equiv_1500"] = round(sum(float(t.get("equiv_1500") or 0.0) for t in trades), 2)
         if verdict == "keep" and not it.get("kept_utc"):
             it["kept_utc"] = _iso(now)
             _append_history(data, _event("keep", it, now, why))
@@ -1342,7 +1857,7 @@ def _judge_live(data: Path, config_path, state: dict, now: dt.datetime, position
         for g in gone:
             g["demoting"] = g.get("demoting") or (why if g is it else
                                                   f"taken back with {it['label']} {it.get('part')}: {why}")
-        added = _queue_restart(state, it.get("process"))
+        added = _queue_restart(state, it.get("process")) if it.get("kind") != "lab" else False
         _save_state(data, state)                          # the intent first ...
         try:
             apply_change(config_path, ch, now, set_modes, must_not_live=[g["id"] for g in gone])
@@ -1611,7 +2126,8 @@ def weekly_report(data_dir) -> Optional[dict]:
     state = load_state(data_dir)
     keep = ("friday", "made_utc", "release_utc", "status", "pick", "picks", "lab_pick", "reasons", "week", "waiting",
             "skipped_why", "last_error")
-    rep = {"note": "the weekly pick: practice candidates ranked, one to real money a week"}
+    rep = {"note": "the squad's pick: practice candidates ranked every UK trading day, the best qualifiers to "
+                   "the DEMO account's free places"}
     if isinstance(latest, dict):
         rep["plan"] = {k: latest[k] for k in keep if k in latest}
         rep["plan"]["ranking"] = (latest.get("ranking") or [])[:10]
@@ -1628,11 +2144,10 @@ def _data_of(config_path) -> Path:
 
 
 def _line(c: dict) -> str:
-    luck = "-" if c.get("luck") is None else f"{round(c['luck'] * 100)}%"
-    lcb = "-" if c.get("lcb") is None else f"£{c['lcb']:+.2f}"
-    score = "-" if c.get("score") is None else f"£{c['score']:+.2f}/wk"
+    shrunk = "-" if c.get("shrunk_r") is None else f"{c['shrunk_r']:+.2f}R"
+    score = "-" if c.get("score") is None else f"{c['score']:+.2f}R/wk"
     return (f"  {('READY' if c.get('passes') else ''):5} {c['label'][:22]:22} {(c.get('part') or '')[:40]:40} "
-            f"{c.get('trades') or 0:>4} trades  £{(c.get('net') or 0):+8.2f}  luck {luck:>4}  lcb {lcb:>7}  {score}")
+            f"{c.get('trades') or 0:>4} trades  £{(c.get('net') or 0):+8.2f}  shrunk {shrunk:>7}  {score}")
 
 
 def main(argv=None) -> int:

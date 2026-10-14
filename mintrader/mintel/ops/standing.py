@@ -9,9 +9,11 @@ paper bot never touches the broker and so can never appear in it.
 It is the same number MetaTrader shows: the balance now, less the balance at
 the reset. The page shows that sum so it can be checked against the phone.
 
-Under it, the same history split by magic number - one row per bot, plus a
-row for anything that carried no bot's number - so the rows always add up to
-the big figure. The six active bots always have a row; the retired Rapid
+Under it, the same history split by magic number - one row per bot, one for
+the lab ideas trading on the demo (magics 992001-992999, ``mintel/labdemo``),
+and one for anything that carried none of those numbers (placed by hand) - so
+the rows always add up to the big figure. The six active bots always have a
+row; the retired Rapid
 Scalper (magic 990411, replaced by the Rapid Momentum Rider on 9 Oct) keeps
 its row too, because its real trades are still part of the account, and
 the page shows it only while it has money to show.
@@ -218,6 +220,39 @@ BOTS = (  # (id, label): the six active bots in the page's order, then the retir
 ACTIVE_BOTS = BOTS[:6]
 RETIRED = frozenset({"rapid_scalper"})     # a known magic, shown only when it has money to show
 RIDER_MAGIC, IAN_MAGIC, SCALPER_MAGIC = 990_811, 990_911, 990_411
+# 14 Oct: the lab ideas the squad's pick promoted to the DEMO account (mintel/labdemo) each trade under
+# their own magic from this reserved range. Their deals are the robot's, never "placed by hand": they get
+# their own row, LAB (-1 is anything else, -2 the rows no bot claimed while one could not be read).
+try:
+    from ..labdemo.roster import MAGIC_FIRST as LAB_MAGIC_FIRST, MAGIC_LAST as LAB_MAGIC_LAST
+except Exception:                                    # pragma: no cover - the range is fixed in roster.py
+    LAB_MAGIC_FIRST, LAB_MAGIC_LAST = 992_001, 992_999
+LAB = -3
+HAND_LABEL = "Anything else (placed by hand)"
+LAB_LABEL = "Lab ideas on the demo"
+
+
+def is_lab_magic(m) -> bool:
+    """A magic from the lab-demo range (992001-992999)."""
+    try:
+        return LAB_MAGIC_FIRST <= int(m) <= LAB_MAGIC_LAST
+    except (TypeError, ValueError):
+        return False
+
+
+def _row_of(m: int, magics) -> int:
+    """The row a magic's money is shown on: its bot's, the lab ideas' (LAB) or anything else (-1)."""
+    return m if m in magics else (LAB if is_lab_magic(m) else -1)
+
+
+def lab_magics_handed_out(cfg) -> set[int]:
+    """Every lab-demo magic handed out so far (data/labdemo/magics.json), for an older bridge whose
+    deal rows do not say their magic; empty when there are none or the file cannot be read."""
+    try:
+        from ..labdemo.roster import all_magics
+        return {int(m) for m in all_magics(cfg.ops.data_dir) if is_lab_magic(m)}
+    except Exception:
+        return set()
 
 
 def _start(cfg, now: dt.datetime) -> dt.datetime:
@@ -370,7 +405,7 @@ def _split_by_bot(rows, magics: set[int]) -> Optional[dict[int, list]]:
     out: dict[int, list] = {}
     for r in rows:
         m = opener.get(int(r.get("position") or 0), int(r.get("magic") or 0))
-        out.setdefault(m if m in magics else -1, []).append(r)
+        out.setdefault(_row_of(m, magics), []).append(r)
     return out
 
 
@@ -401,7 +436,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     out: dict = {"start": start.isoformat(), "day_start": day.isoformat(), "source": "broker",
                  "made": None, "trading": None, "adjustments": None, "today": None, "open": None,
                  "balance": None, "equity": None, "currency": "", "start_balance": reset_balance or None,
-                 "bots": [], "other": None, "error": ""}
+                 "bots": [], "lab": None, "other": None, "error": ""}
     errors: list[str] = []
 
     def done() -> dict:
@@ -466,7 +501,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     if pos_list is not None:
         for q in pos_list:
             m = int(getattr(q, "magic", 0) or 0)
-            k = m if m in magics else -1
+            k = _row_of(m, magics)
             open_by[k] = open_by.get(k, 0.0) + float(q.profit or 0.0) + float(getattr(q, "swap", 0.0) or 0.0)
             n_open[k] = n_open.get(k, 0) + 1
         out["open"] = round(sum(open_by.values()), 2)
@@ -476,6 +511,7 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     per: dict[int, Optional[list]] = {}
     if split is not None:
         per = {m: split.get(m, []) for m in magics}
+        per[LAB] = split.get(LAB, [])
         per[-1] = split.get(-1, [])
     else:
         # an older bridge: ask per magic; any failure leaves that row and the rest unknown
@@ -485,8 +521,18 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
             except Exception as exc:
                 per[m] = None
                 errors.append(f"magic {m}'s deals not readable: {exc}")
-        known = [r for m in magics if per.get(m) is not None for r in per[m]]
-        if all(per.get(m) is not None for m in magics):
+        # the lab ideas' numbers handed out so far (data/labdemo/magics.json), asked the same way
+        lab_rows: Optional[list] = []
+        for m in sorted(lab_magics_handed_out(cfg) - magics):
+            try:
+                lab_rows.extend(fn(since, m, False) or [])
+            except Exception as exc:
+                lab_rows = None
+                errors.append(f"the lab ideas' deals (magic {m}) not readable: {exc}")
+                break
+        per[LAB] = lab_rows
+        known = [r for m in (*magics, LAB) if per.get(m) is not None for r in per[m]]
+        if all(per.get(m) is not None for m in (*magics, LAB)):
             keys = {(r.get("position"), str(r.get("time")), r.get("profit")) for r in known}
             per[-1] = [r for r in everything if (r.get("position"), str(r.get("time")), r.get("profit")) not in keys]
         else:
@@ -545,15 +591,17 @@ def account_standing(broker, cfg, now: dt.datetime, account=None, positions=None
     out["open_tickets"] = open_tickets
     out["deals"] = tagged
     out["deals_complete"] = all(v is not None for v in per.values())
-    out["unknown_magics"] = [m for m, v in per.items() if v is None and m != -1]
-    rest = per.get(-1)
-    if rest is None:
-        out["other"] = {"label": "Anything else (placed by hand)", "made": None, "today": None,
-                        "open": round(open_by.get(-1, 0.0), 2) if pos_list is not None else None}
-    else:
-        o_since, _, _ = _sum(rest, start)
-        out["other"] = {"label": "Anything else (placed by hand)", "made": o_since, "today": today_of(-1)[0],
-                        "open": round(open_by.get(-1, 0.0), 2) if pos_list is not None else None}
+    out["unknown_magics"] = [m for m, v in per.items() if v is None and m not in (-1, LAB)]
+    # the lab ideas on the demo (magics 992001-992999) and anything placed by hand, each its own row:
+    # robot trades are never called "placed by hand"
+    for key, k, label in (("lab", LAB, LAB_LABEL), ("other", -1, HAND_LABEL)):
+        rest = per.get(k)
+        row_open = round(open_by.get(k, 0.0), 2) if pos_list is not None else None
+        if rest is None:
+            out[key] = {"label": label, "made": None, "today": None, "open": row_open}
+        else:
+            o_since, _, _ = _sum(rest, start)
+            out[key] = {"label": label, "made": o_since, "today": today_of(k)[0], "open": row_open}
     return done()
 
 
@@ -743,13 +791,16 @@ def period_view(sd: dict, deals: list, period: str, date_from: str = "", date_to
     if total:
         trading = moved
         other = round(sum(r["profit"] for r in booked if r["bot_magic"] == -1), 2)
+        lab = round(sum(r["profit"] for r in booked if r["bot_magic"] == LAB), 2)
     else:
         trading = every["made"]
         other = tally([p for p in closed if p["bot_magic"] == -1])["made"]
+        lab = tally([p for p in closed if p["bot_magic"] == LAB])["made"]
     view = {"key": key, "label": label, "start": start.isoformat(), "end": end.isoformat(),
             "trading": trading, "made": trading, "adjustments": None, "trades": every["trades"],
             "wins": every["wins"], "losses": every["losses"], "commission": every["commission"],
             "bots": bots, "other": other if complete else None,     # the hand-trade row is unknown while a bot is
+            "lab": lab if complete else None,                       # the lab ideas on the demo, never "by hand"
             "complete": complete, "balance_moved": moved, "closed": closed, "why": ""}
     if total and sd.get("made") is not None:
         view["made"] = sd["made"]                          # the balance less the balance at the reset

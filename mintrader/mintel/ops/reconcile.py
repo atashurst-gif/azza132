@@ -4,8 +4,9 @@
 
 Prints exactly what the broker recorded for that day: for each magic
 number (Trend & Breakout, Rapid Momentum Rider, Momentum Runner, Band
-Breaker, Crowd Fader, Financial Ian, the retired Rapid Scalper, and
-anything else), the closed positions, the price result,
+Breaker, Crowd Fader, Financial Ian, the retired Rapid Scalper, the lab
+ideas trading on the demo (magics 992001-992999, ``mintel/labdemo``), and
+anything else, placed by hand), the closed positions, the price result,
 the commission and the net, then the account total, which must equal the
 figure at the bottom of MetaTrader's History tab for the same day.
 Read-only; nothing is changed.
@@ -80,14 +81,33 @@ def bots(cfg: Config, scalper_magic: int) -> list[tuple[str, str, int]]:
             ("rs", f"{STRATEGY_LABEL}, retired", int(scalper_magic))]
 
 
+def _lab_rows(rows: list[dict], fetch, cfg: Config, known: set) -> list[dict]:
+    """The deal rows of the lab ideas' positions on the demo (magics
+    992001-992999), each position by the magic that opened it, never one a
+    bot already claimed. An older bridge whose rows do not say their magic
+    is asked per lab magic handed out so far (data/labdemo/magics.json)."""
+    from .standing import is_lab_magic, lab_magics_handed_out
+    if any("magic" not in r for r in rows):
+        return [r for m in sorted(lab_magics_handed_out(cfg)) for r in fetch(m)
+                if int(r.get("position") or 0) not in known]
+    opener: dict[int, int] = {}
+    for r in rows:
+        if r.get("is_entry") and r.get("position"):
+            opener.setdefault(int(r["position"]), int(r.get("magic") or 0))
+    return [r for r in rows if int(r.get("position") or 0) not in known
+            and is_lab_magic(opener.get(int(r.get("position") or 0), r.get("magic") or 0))]
+
+
 def reconcile(broker, cfg: Config, day: dt.date, scalper_magic: int) -> dict:
     """The broker's day split by magic number: one entry per bot (keys "mi",
     "rider", "runner", "bandbreaker", "crowd", "ian", "rs", listed in
-    "bots"), "other" for every closed position that carried none of them,
-    and "all"."""
+    "bots"), "lab" for the lab ideas' positions on the demo (magics
+    992001-992999), "other" for every closed position that carried none of
+    them (placed by hand), and "all"."""
     start, end = _day_bounds(broker, day)
     fetch = lambda magic: broker.deals_since(start, magic, False) or []     # noqa: E731
-    everything = summarise(fetch(0), start, end)
+    rows = fetch(0)
+    everything = summarise(rows, start, end)
     out: dict = {"start": start, "end": end, "all": everything, "bots": []}
     known: set = set()
     for key, label, magic in bots(cfg, scalper_magic):
@@ -97,6 +117,9 @@ def reconcile(broker, cfg: Config, day: dt.date, scalper_magic: int) -> dict:
         out[key] = s
         out["bots"].append(key)
         known |= set(s["by_position"])
+    # 14 Oct: the lab ideas the squad's pick promoted trade real demo orders: their line, never "manual"
+    out["lab"] = summarise(_lab_rows(rows, fetch, cfg, known), start, end)
+    known |= set(out["lab"]["by_position"])
     other = {k: v for k, v in everything["by_position"].items() if k not in known}
     other_net = round(sum(v["net"] for v in other.values()), 2)
     out["other"] = {"positions": len(other), "net": other_net,
@@ -122,6 +145,8 @@ def render(res: dict, cfg: Config, day: dt.date, account=None) -> str:
         label = s.get("label") or k
         magic = s.get("magic")
         lines.append(row(f"{label} (magic {magic})" if magic else label, s))
+    if res.get("lab") is not None:
+        lines.append(row("lab ideas on the demo (992001-992999)", res["lab"]))
     lines += [f"  {'other / manual':<40} positions {res['other']['positions']:3d}"
               f"{'':40} commission {res['other']['commission']:+8.2f}  NET {res['other']['net']:+9.2f}",
               "-" * 118,
@@ -131,7 +156,8 @@ def render(res: dict, cfg: Config, day: dt.date, account=None) -> str:
               f"  with {res['all']['price']:+.2f} on the right (the Profit column before commission).",
               f"  Bots added together: {bots_net:+.2f}; "
               f"difference to the account: {res['all']['net'] - bots_net:+.2f} "
-              f"(anything here is a deal that carried none of the bots' magic numbers)."]
+              f"(anything here is the lab ideas' line above, or a deal that carried none of these magic "
+              f"numbers: placed by hand)."]
     if account is not None:
         lines.append(f"  Account now: balance {account.balance:.2f}, equity {account.equity:.2f}")
     return "\n".join(lines)

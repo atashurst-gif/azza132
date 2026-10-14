@@ -1542,8 +1542,9 @@ def render_standing(snap: dict, top: Optional[dict] = None, strategy: str = "ove
             continue
         cards += _bot_card(snap, b, sel, tot, p_sel, p_tot, cur, now_line=now_lines.get(bid, ""))
     notes = []
-    for v, txt in ((tot.get("other"), "from trades placed by hand"),
-                   (tot.get("adjustments"), "from other changes to the balance (broker charges or corrections)")):
+    for v, txt in ((tot.get("lab"), "from the lab ideas trading on the demo"),
+                   (tot.get("other"), "from trades placed by hand"),
+                   (tot.get("adjustments"),"from other changes to the balance (broker charges or corrections)")):
         if v is not None and abs(float(v)) >= 0.01:
             notes.append(f"{m(v)} {txt}")
     note = (f'<div class="small">Overall also includes {" and ".join(notes)}, so the cards add up to the account.</div>'
@@ -2235,6 +2236,8 @@ _ICONS = {
     "squad": '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 6h3a3 3 0 0 1-3 4M7 6H4a3 3 0 0 0 3 4"/>',
     "demo": '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
     "factory": '<path d="M3 21V10l6 4V10l6 4V6l6 3v12H3z"/><path d="M7 17h2M12 17h2M17 17h1"/>',
+    "leagues": '<path d="M4 20h16M6 20V10M12 20V4M18 20v-7"/>',
+    "road": '<path d="M4 20 10 4M20 20 14 4M12 8v2M12 14v2"/>',
     "home": '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
     "live": '<circle cx="12" cy="12" r="9"/><path d="M14.8 9.2c-.6-.8-1.6-1.2-2.8-1.2-1.7 0-3 .9-3 2.2 0 3 6 1.5 6 '
             '4.5 0 1.3-1.3 2.3-3 2.3-1.3 0-2.4-.5-3-1.3M12 6v2M12 16.8V18"/>',
@@ -2248,12 +2251,13 @@ _ICONS = {
 # 13 Oct (the full frontend redesign): Squad, Demo and Factory are the new front pages (mintel/ops/squad.py, their
 # own top bar); everything that was on the old sidebar is kept, working, under ADVANCED. The old Home is "Overview"
 # at /advanced (a "/" address with the old ?period= / ?bot= / ?show= still opens the old pages, so old links work).
-NAV_GROUPS = (("Squad", (("squad", "Squad", "/"), ("demo", "Demo", "/demo"), ("factory", "Factory", "/factory"))),
+NAV_GROUPS = (("Squad", (("squad", "Squad", "/"), ("leagues", "Leagues", "/leagues"), ("road", "Road to Profit", "/road"),
+                         ("demo", "Demo", "/demo"), ("factory", "Factory", "/factory"))),
               ("Advanced", (("home", "Overview", "/advanced"), ("live", "Real money", "/?show=live"),
                             ("practice", "Practice", "/?show=practice"), ("lab", "The lab", "/lab"),
                             ("coach", "The coach", "/coach"), ("details", "Technical detail", "/details"),
                             ("health", "Health", "/health"))))
-SQUAD_PAGES = ("/", "/demo", "/factory")             # their own timeline: never given the old ?period=
+SQUAD_PAGES = ("/", "/demo", "/factory", "/leagues", "/road")   # their own timeline: never given the old ?period=
 LEGACY_HOME_PARAMS = frozenset({"bot", "show", "period", "from", "to", "strategy"})
 
 
@@ -4337,7 +4341,8 @@ class _Handler(BaseHTTPRequestHandler):
         path = u.path.rstrip("/") or "/"
         if path == "/":
             return None if set(parse_qs(u.query)) & LEGACY_HOME_PARAMS else "squad"
-        return {"/bot": "bot", "/demo": "demo", "/factory": "factory"}.get(path)
+        return {"/bot": "bot", "/demo": "demo", "/factory": "factory", "/leagues": "leagues", "/readiness": "leagues",
+                "/road": "road"}.get(path)
 
     def _squad_page(self, snap: dict, which: str) -> str:
         """The TRADING SQUAD pages, read-only: every paper figure from the tests' own records, every demo
@@ -4352,6 +4357,15 @@ class _Handler(BaseHTTPRequestHandler):
         known = bool(sd.get("start")) and sd.get("made") is not None      # MetaTrader has been read
         b = SQ.board(data_dir, (q.get("t") or [""])[0], now, sd=sd, deals=deals if known else None)
         health = SQ.health_of(snap)
+        # 14 Oct: the leagues, the road, live readiness and a career - read-only, from the same records and deals
+        from . import squad_pages as P
+        test_id = (q.get("id") or [""])[0] if which == "bot" else ""
+        if which in ("squad", "leagues", "road", "bot"):
+            b["x"] = P.extras(b, data_dir, sd, deals if known else None, test_id=test_id)
+        if which == "leagues":
+            return P.render_leagues_page(b, b["x"], health, show_all=(q.get("all") or [""])[0] == "1")
+        if which == "road":
+            return P.render_road_page(b, b["x"], health)
         if which == "bot":
             return SQ.render_bot_page(b, (q.get("id") or [""])[0], health, data_dir)
         if which == "demo":

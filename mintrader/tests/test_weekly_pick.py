@@ -1,5 +1,16 @@
 """13 Oct: the weekly pick (mintel/ops/weekly.py) and Home's headline numbers.
 
+14 Oct (intended changes, Aaron): the pick is made every UK trading day at 22:30
+and released 06:30 the next trading day into the demo's free places
+(demo_target, default 10); the early-promotion bar (10/12/15 trades by
+frequency over 3+ days, PF 1.3, shrinkage, the control benchmark) replaces the
+30-trade bar; the demo judgement is evidence-based (bootstrap bounds after 20,
+net after 40, 15x risk, a drawdown guard); lab ideas have a demo path. The
+tests whose expectations changed say so; every safeguard test (veto, HALT,
+intents, put-back, strict reads, never re-released by the same plan) is
+unchanged. The new rules have their own tests in tests/test_promotion_rules.py
+and tests/test_lab_demo.py.
+
 Aaron: "put everything out of live and into the lab, once they begin proving
 move the best each week into real money and live"; "i want to see headline
 numbers on home somehow of all the well performing ones etc.. not a load of
@@ -107,21 +118,26 @@ class TestTheBar:
     def test_a_steady_record_passes(self):
         j = W.judge(trades_of(good_days()), "bot:runner", T0 + dt.timedelta(days=11))
         assert j["verdict"] == "PROVEN" and j["luck"] <= W.LUCK_MAX and j["passes"]
-        assert j["lcb"] > 0 and j["score"] == round(j["lcb"] * j["per_week"], 2)
+        # 14 Oct (intended change): the score is the shrunk R a trade x trades a week (x the lab-test weight)
+        assert j["lcb"] > 0 and j["shrunk_r"] > 0
+        assert j["score"] == round(j["shrunk_r"] * j["per_week"] * j["weight"], 3)
 
     def test_too_few_trades_or_days_is_not_proven(self):
-        j = W.judge(trades_of(good_days(days=4, per_day=8)), "x", T0 + dt.timedelta(days=5))   # 32 trades, 4 days
-        assert j["verdict"] != "PROVEN" and not j["passes"] and "more UK day" in j["why"]
-        j = W.judge(trades_of(good_days(days=7, per_day=4)), "x", T0 + dt.timedelta(days=8))   # 28 trades
-        assert not j["passes"] and "more trade" in j["why"]
+        # 14 Oct (intended change): 32 trades over 4 days used to be too few days (5 were needed); the early bar
+        # asks for 3 UK days and 15 trades for a frequent test, so it now passes
+        assert W.judge(trades_of(good_days(days=4, per_day=8)), "x", T0 + dt.timedelta(days=5))["passes"]
+        j = W.judge(trades_of(good_days(days=2, per_day=8)), "x", T0 + dt.timedelta(days=2))   # 16 trades, 2 days
+        assert not j["passes"] and "more UK day" in j["why"]
+        j = W.judge(trades_of(good_days(days=3, per_day=4)), "x", T0 + dt.timedelta(days=2, hours=12))
+        assert j["per_day"] >= 3 and not j["passes"] and "3 more trades (15 for a frequent test)" in j["why"]
 
-    def test_proven_by_the_rule_but_it_could_be_luck(self):
-        # 30 trades over 5 days: 3 big wins, 27 small losses - profit factor 1.2, 3 up days and 2 down,
-        # positive; but the whole result hangs on three trades, so the luck check fails it
+    def test_a_short_winning_streak_is_not_proof(self):
+        # 14 Oct (intended change; it was "proven by the rule but it could be luck"): 30 trades over 5 days, 3 big
+        # wins and 27 small losses - a profit factor of 1.2 is under 1.3, and the profit hangs on one trade
         days = [[100.0] + [-250 / 27] * 5 for _ in range(3)] + [[-250 / 27] * 6 for _ in range(2)]
         j = W.judge(trades_of(days), "luck", T0 + dt.timedelta(days=6))
-        assert j["verdict"] == "PROVEN"
-        assert j["luck"] > W.LUCK_MAX and not j["passes"] and "could be luck" in j["why"]
+        assert j["luck"] > W.LUCK_MAX and not j["passes"]
+        assert "profit factor 1.20, under 1.3" in j["why"] and "hangs on one trade" in j["why"]
 
     def test_the_luck_check_is_fixed_by_its_seed(self):
         nets = [3.0, -2.0, 4.0, -1.0, 2.5, -3.0] * 6
@@ -167,17 +183,20 @@ class TestRanking:
 # ================================================= C. Friday, Monday, BST/GMT --
 class TestTiming:
     def test_friday_2230_uk_and_monday_0630_uk(self):
+        # 14 Oct (intended change): every UK trading day picks at 22:30; Friday's still releases on Monday
         assert W.uk_at(FRI_16, W.PICK_AT) == PICK_16
         assert W.release_utc(FRI_16) == REL_19
-        assert W.last_pick_friday(PICK_16 - dt.timedelta(minutes=1)) == dt.date(2026, 10, 9)
-        assert W.last_pick_friday(PICK_16) == FRI_16
+        assert W.last_pick_day(PICK_16 - dt.timedelta(minutes=1)) == dt.date(2026, 10, 15)      # Thursday's
+        assert W.last_pick_day(PICK_16) == FRI_16
+        assert W.last_pick_day(dt.datetime(2026, 10, 18, 12, tzinfo=UTC)) == FRI_16              # the weekend
+        assert W.release_utc(dt.date(2026, 10, 14)) == dt.datetime(2026, 10, 15, 5, 30, tzinfo=UTC)
 
     def test_the_clocks_go_back_on_25_october(self):
         # Friday 23 Oct is still BST (22:30 = 21:30 UTC); Monday 26 Oct is GMT (06:30 = 06:30 UTC)
         assert W.uk_at(FRI_23, W.PICK_AT) == dt.datetime(2026, 10, 23, 21, 30, tzinfo=UTC)
         assert W.release_utc(FRI_23) == dt.datetime(2026, 10, 26, 6, 30, tzinfo=UTC)
-        # and the following Friday is GMT: 22:30 = 22:30 UTC
-        assert W.next_pick_utc(dt.datetime(2026, 10, 26, 7, 0, tzinfo=UTC)) == dt.datetime(2026, 10, 30, 22, 30,
+        # and the next pick, Monday 26 Oct, is GMT: 22:30 = 22:30 UTC (14 Oct: daily, it was the Friday)
+        assert W.next_pick_utc(dt.datetime(2026, 10, 26, 7, 0, tzinfo=UTC)) == dt.datetime(2026, 10, 26, 22, 30,
                                                                                            tzinfo=UTC)
 
     def test_the_tick_picks_on_friday_and_releases_on_monday(self, tmp_path):
@@ -220,27 +239,32 @@ def planned(tmp_path, **modes):
 
 
 class TestWeekRules:
-    def test_at_most_x_promotions_a_week(self, tmp_path):
-        # 13 Oct (intended change): "each week, X amount of winners go live" - one a week became at most
-        # weekly_max_promotions (3 unless data/weekly.json says otherwise); three made already: none more
+    def test_a_full_demo_squad_takes_no_more(self, tmp_path):
+        # 14 Oct (intended change; it was "at most X promotions a week"): the pick fills the demo's free places,
+        # demo_target in data/weekly.json (default 10); with every place taken, nothing is released
         data, cfg = planned(tmp_path)
-        (data / "weekly" / "history.jsonl").write_text("".join(json.dumps(
-            {"ts_utc": "2026-10-19T05:00:00+00:00", "event": "promote", "id": f"bot:{b}", "week": "2026-W43"}) + "\n"
-            for b in ("crowd", "ian", "bandbreaker")))
+        (data / "weekly.json").write_text(json.dumps({"demo_target": 1}))
+        a_state(data, {"id": "bot:crowd", "kind": "bot", "label": "Crowd Fader", "bot": "crowd", "magic": 990_711,
+                       "process": "trader", "plan": "2026-10-09", "since_utc": T0.isoformat()})
+        raw = config(cfg)
+        raw["crowd"]["mode"] = "LIVE"
+        cfg.write_text(json.dumps(raw))
         acts = W.tick(data, cfg, REL_19)
-        assert "at most 3 a week" in acts[0] and config(cfg)["runner"]["mode"] == "PAPER"
+        assert "the demo squad is full (1 of 1 places)" in acts[0] and config(cfg)["runner"]["mode"] == "PAPER"
         assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.SKIPPED
 
-    def test_one_made_already_leaves_room_for_more(self, tmp_path):
+    def test_a_free_place_is_filled(self, tmp_path):
         data, cfg = planned(tmp_path)
         (data / "weekly" / "history.jsonl").write_text(json.dumps(
             {"ts_utc": "2026-10-19T05:00:00+00:00", "event": "promote", "id": "bot:crowd", "week": "2026-W43"}) + "\n")
         W.tick(data, cfg, REL_19)
         assert config(cfg)["runner"]["mode"] == "LIVE"
+        (data / "weekly.json").write_text(json.dumps({"demo_target": 8}))
+        assert W.demo_target(data) == 8
+        (data / "weekly.json").write_text(json.dumps({"demo_target": 99}))
+        assert W.demo_target(data) == W.DEMO_TARGET                           # never more than the cap allows
         (data / "weekly.json").write_text(json.dumps({"weekly_max_promotions": 1}))
-        assert W.max_promotions(data) == 1
-        (data / "weekly.json").write_text(json.dumps({"weekly_max_promotions": 99}))
-        assert W.max_promotions(data) == W.MAX_PROMOTIONS                     # never more than the cap allows
+        assert W.max_promotions(data) == 1 and W.demo_target(data) == W.DEMO_TARGET   # the old setting still reads
 
     def test_veto_before_the_release(self, tmp_path):
         data, cfg = planned(tmp_path)
@@ -283,26 +307,28 @@ class TestWeekRules:
 
 # ===================================== E. no live path; the cross product --
 class TestLiveEdges:
-    def test_the_best_is_a_lab_idea_so_the_best_with_a_live_path_goes(self, tmp_path):
+    def test_the_best_is_a_lab_idea_and_it_now_goes_first(self, tmp_path):
+        # 14 Oct (intended change): a lab idea has a demo path (the lab-demo roster), so the best one is picked
+        # first; it used to be "picked, needs a live path" and passed over
         data, cfg = a_folder(tmp_path)
         own_db(data, "runner.sqlite", good_days(days=10, per_day=4))
         lab_db(data, "lab-0123456789", good_days(days=10, per_day=8))         # twice as busy: the best
         plan = W.make_plan(data, cfg, T0 + dt.timedelta(days=11), FRI_16)
         assert plan["ranking"][0]["id"] == "lab:lab-0123456789"
         assert plan["lab_pick"]["id"] == "lab:lab-0123456789"
-        assert plan["pick"]["id"] == "bot:runner"
-        assert any(W.NEEDS_LIVE_PATH in r for r in plan["reasons"])
+        assert [x["pick"]["id"] for x in plan["picks"]] == ["lab:lab-0123456789", "bot:runner"]
+        assert not any(W.NEEDS_LIVE_PATH in r for r in plan["reasons"])
 
     def test_a_lab_idea_still_practising_is_a_candidate_on_its_own_record(self, tmp_path):
         # 13 Oct (intended change): every lab idea practises and is its own test in the ranking, whatever its stage
         # ("I just want all in practice unless any earn the right"); it used to need READY FOR LIVE. The proof bar
-        # on its own practice trades is what stops luck now, and a lab idea is still never promoted (no live path).
+        # on its own practice trades is what stops luck now. 14 Oct (intended change): it is promoted (demo path).
         data, cfg = a_folder(tmp_path)
         lab_db(data, "lab-00000000aa", good_days(), stage="PRACTICE")
         got = W.candidates(data, cfg, T0 + dt.timedelta(days=11))
         assert [c["id"] for c in got] == ["lab:lab-00000000aa"] and got[0]["kind"] == "lab" and got[0]["passes"]
         plan = W.make_plan(data, cfg, T0 + dt.timedelta(days=11), ranking=got)
-        assert plan["pick"] is None and plan["lab_pick"]["id"] == "lab:lab-00000000aa"
+        assert plan["pick"]["id"] == plan["lab_pick"]["id"] == "lab:lab-00000000aa"
 
     def test_adding_a_part_to_an_empty_live_set(self):
         add = W.tnb_add(TP, "INDEX", frozenset(), frozenset(), set())
@@ -350,11 +376,14 @@ def live_positions(n: int, net_each: float, since: dt.datetime, magic: int = 990
 
 class TestLiveJudgement:
     def test_the_verdict(self):
+        # 14 Oct (intended change): evidence, not a fixed 20 - the bootstrap bounds after 20, net after 40,
+        # 15 x risk at any point (it was 10 x)
         assert W.live_verdict(trades_of([[-1.0] * 19]), 10.0)[0] == "wait"
         assert W.live_verdict(trades_of([[-1.0] * 20]), 10.0)[0] == "demote"
         assert W.live_verdict(trades_of([[1.0, -0.5] * 10]), 10.0)[0] == "keep"
-        v, why = W.live_verdict(trades_of([[-50.0, -50.0]]), 10.0)            # 2 trades, -100 = 10 x 10
-        assert v == "demote" and "10 x" in why
+        assert W.live_verdict(trades_of([[-50.0, -50.0]]), 10.0)[0] == "wait"      # -100 = 10 x: no longer enough
+        v, why = W.live_verdict(trades_of([[-75.0, -75.0]]), 10.0)            # 2 trades, -150 = 15 x 10
+        assert v == "demote" and "15 x" in why
 
     def test_twenty_losing_live_trades_go_back_to_paper(self, tmp_path):
         data, cfg = planned(tmp_path)
@@ -362,7 +391,7 @@ class TestLiveJudgement:
         later = REL_19 + dt.timedelta(hours=5)
         pos = live_positions(20, -0.5, REL_19)
         acts = W.tick(data, cfg, later, positions_fn=lambda: pos)
-        assert config(cfg)["runner"]["mode"] == "PAPER" and "20 live trades" in acts[-1]
+        assert config(cfg)["runner"]["mode"] == "PAPER" and "20 demo trades" in acts[-1]
         dem = W.history(data)[-1]
         assert dem["event"] == "demote" and dem["record"]["source"] == "MetaTrader"
 
@@ -375,10 +404,10 @@ class TestLiveJudgement:
     def test_the_early_exit(self, tmp_path):
         data, cfg = planned(tmp_path)
         W.tick(data, cfg, REL_19)
-        pos = live_positions(4, -25.0, REL_19)                                    # -100: 10 x its 10 risk
+        pos = live_positions(4, -37.5, REL_19)                                    # -150: 15 x its 10 risk (14 Oct)
         W.tick(data, cfg, REL_19 + dt.timedelta(hours=2), positions_fn=lambda: pos)
         assert config(cfg)["runner"]["mode"] == "PAPER"
-        assert "10 x" in W.history(data)[-1]["why"]
+        assert "15 x" in W.history(data)[-1]["why"]
 
     def test_trades_from_before_the_promotion_or_other_magics_do_not_count(self, tmp_path):
         data, cfg = planned(tmp_path)
@@ -391,8 +420,8 @@ class TestLiveJudgement:
     def test_with_the_page_down_its_own_record_can_take_it_back(self, tmp_path):
         data, cfg = planned(tmp_path)
         W.tick(data, cfg, REL_19)
-        own_db(data, "runner.sqlite", [[-30.0] * 4], start=REL_19 + dt.timedelta(minutes=5), mode="LIVE",
-               first_ticket=5000)
+        own_db(data, "runner.sqlite", [[-40.0] * 4], start=REL_19 + dt.timedelta(minutes=5), mode="LIVE",
+               first_ticket=5000)                                               # -160: past 15 x (14 Oct)
         W.tick(data, cfg, REL_19 + dt.timedelta(hours=3), positions_fn=lambda: None)
         assert config(cfg)["runner"]["mode"] == "PAPER"
         assert "own record" in W.history(data)[-1]["record"]["source"]
@@ -509,7 +538,8 @@ class TestHome:
         from mintel.ops.dashboard import render_home, render_weekly_home
         page = render_home({"standing": {}}, {"data_dir": str(tmp_path), "now": T0}, {}, None, "none")
         t = text(page)
-        assert "Nothing on real money — all testing" in t and "next pick Fri 9 Oct 22:30" in t
+        # 14 Oct (intended change): the pick is daily, so the next is that very Monday's
+        assert "Nothing on real money — all testing" in t and "next pick Mon 5 Oct 22:30" in t
         assert W.NOTHING_PROVED in t and "0 tests running" in t
         assert render_weekly_home(None)                    # nothing at all still renders
         assert 'id="weekly"' in render_home({"standing": {}}, None, {}, None, "none")
@@ -525,7 +555,8 @@ class TestHome:
         # making money and losing go by the money alone (13 Oct): the 2-trade crowd test is up, so it counts,
         # marked early beside its name. Financial Ian is on PAPER with no trade: since every lab idea practises
         # (13 Oct) a test with no trade yet is counted as waiting for one, and not listed
-        assert board["counts"] == {"running": 5, "making": 3, "losing": 1, "early": 1, "waiting": 1, "ready": 1}
+        # 14 Oct (intended change): the lab idea (12 trades over 6 days, PF 5) passes the early bar too: 2 ready
+        assert board["counts"] == {"running": 5, "making": 3, "losing": 1, "early": 1, "waiting": 1, "ready": 2}
         assert [x["name"] for x in board["waiting"]] == ["Financial Ian"] and board["tests"] == 5
         # 13 Oct (intended change): Home lists the best ten and the worst three, not the best three; with only four
         # tests they are all the top, and the bottom is empty (no row twice)
@@ -538,7 +569,7 @@ class TestHome:
         assert tot["trades"] == sum(x["trades"] for x in board["all"])
         page = render_weekly_home(board)
         t = text(page)
-        assert "5 tests running" in t and "1 ready for real money" in t and "+£140.00 40 trades · 75% won" in t
+        assert "5 tests running" in t and "2 ready for real money" in t and "+£140.00 40 trades · 75% won" in t
         assert "1 waiting for a trade" in t and "See all 5 tests" in t and 'href="/?show=practice"' in page
         assert page.count('<div class="wk-row" data-test=') == 4 and "All tests together" in t
         assert "Crowd Fader early" in t and "Band Breaker" in t and "LOSING" in t
@@ -665,7 +696,7 @@ class TestReviewFixes:
                    positions_fn=lambda: live_positions(20, -1.0, REL_19))
         assert config(cfg)["runner"]["mode"] == "PAPER"
         st = W.load_state(data)
-        assert st["restart_pending"] == ["trader"] and st["promoted"][0]["demoting"].startswith("20 live trades")
+        assert st["restart_pending"] == ["trader"] and st["promoted"][0]["demoting"].startswith("20 demo trades")
         done = []
         W.tick(data, cfg, REL_19 + dt.timedelta(hours=2, minutes=5), restart=lambda n: (done.append(n), (True, ""))[1])
         ev = W.history(data)[-1]
@@ -789,7 +820,7 @@ class TestReReviewFixes:
         assert any("could not be put back on PAPER" in a for a in acts)
         assert config(cfg)["runner"]["mode"] == "LIVE"                       # the files put back as they were
         st = W.load_state(data)
-        assert st["promoted"][0]["demoting"].startswith("20 live trades")   # the intent kept
+        assert st["promoted"][0]["demoting"].startswith("20 demo trades")   # the intent kept
         # the next check tries again, and the demotion is recorded with its restart
         done = []
         W.tick(data, cfg, REL_19 + dt.timedelta(hours=2, minutes=5), positions_fn=lambda: pos,
@@ -975,37 +1006,39 @@ class TestEveryIdea:
 
 # ======================================== J. X winners a week (13 Oct: "X amount of winners go live") --
 class TestXAWeek:
-    def test_the_best_three_with_a_live_path_go_live_together(self, tmp_path):
+    def test_the_best_qualifiers_fill_the_free_places_together(self, tmp_path):
+        # 14 Oct (intended change): the free places of the demo squad (demo_target, 10) are filled, so the lab idea
+        # (which has a demo path now) goes too, first: it is the busiest; it used to be the best three bots
         data, cfg = a_folder(tmp_path)
         start = T0 + dt.timedelta(days=1)
-        own_db(data, "runner.sqlite", good_days(per_day=6), start=start)            # best
+        own_db(data, "runner.sqlite", good_days(per_day=6), start=start)            # best bot
         own_db(data, "bandbreaker.sqlite", good_days(per_day=5), start=start)
         own_db(data, "crowd.sqlite", good_days(per_day=4), start=start)
-        lab_db(data, "lab-0123456789", good_days(per_day=8))                        # no live path: never a place
+        lab_db(data, "lab-0123456789", good_days(per_day=8))
         W.tick(data, cfg, PICK_16 + dt.timedelta(minutes=5))
         plan = json.loads((data / "weekly" / "latest.json").read_text())
-        assert [x["pick"]["id"] for x in plan["picks"]] == ["bot:runner", "bot:bandbreaker", "bot:crowd"]
-        assert plan["pick"]["id"] == "bot:runner" and plan["limit"] == 3
-        board = W.home_board(data, cfg, REL_19 - dt.timedelta(hours=1), cache_seconds=0)
-        assert board["pick"]["names"] == ["Momentum Runner", "Band Breaker", "Crowd Fader"]
-        from mintel.ops.dashboard import render_weekly_home
-        assert "Momentum Runner<br>Band Breaker<br>Crowd Fader" in render_weekly_home(board)
+        assert [x["pick"]["id"] for x in plan["picks"]] == ["lab:lab-0123456789", "bot:runner", "bot:bandbreaker",
+                                                            "bot:crowd"]
+        assert plan["limit"] == W.DEMO_TARGET == 10
         W.tick(data, cfg, REL_19)
         raw = config(cfg)
         assert (raw["runner"]["mode"], raw["bandbreaker"]["mode"], raw["crowd"]["mode"]) == ("LIVE",) * 3
+        from mintel.labdemo.roster import read_roster
+        assert list(read_roster(data)) == ["lab-0123456789"]
         ev = W.history(data)
-        assert [e["id"] for e in ev if e["event"] == "promote"] == ["bot:runner", "bot:bandbreaker", "bot:crowd"]
+        assert [e["id"] for e in ev if e["event"] == "promote"] == ["lab:lab-0123456789", "bot:runner",
+                                                                    "bot:bandbreaker", "bot:crowd"]
         assert json.loads((data / "weekly" / "latest.json").read_text())["status"] == W.APPLIED
-        assert W.picks_in_week(ev, "2026-W43") == 3
-        # each is judged on its own: the veto takes the whole week's picks back
+        # each is judged on its own: the veto takes the whole pick back
         W.veto(data)
         W.tick(data, cfg, REL_19 + dt.timedelta(minutes=10))
         raw = config(cfg)
         assert (raw["runner"]["mode"], raw["bandbreaker"]["mode"], raw["crowd"]["mode"]) == ("PAPER",) * 3
+        assert read_roster(data) == {}
 
     def test_a_setting_of_two_releases_two(self, tmp_path):
         data, cfg = a_folder(tmp_path)
-        (data / "weekly.json").write_text(json.dumps({"weekly_max_promotions": 2}))
+        (data / "weekly.json").write_text(json.dumps({"demo_target": 2}))           # 14 Oct: the demo target
         start = T0 + dt.timedelta(days=1)
         for name, n in (("runner.sqlite", 6), ("bandbreaker.sqlite", 5), ("crowd.sqlite", 4)):
             own_db(data, name, good_days(per_day=n), start=start)
@@ -1083,7 +1116,7 @@ class TestXAWeek:
         plan = W.make_plan(data, cfg, now, FRI_16)
         assert [x["pick"]["id"] for x in plan["picks"]] == [f"tnb:{MC}:INDEX", f"tnb:{TP}:FX_MINOR"]
         assert plan["picks"][1]["extras"] == [f"tnb:{TP}:INDEX"]
-        assert any("goes live with another of this week's picks" in r for r in plan["reasons"])
+        assert any("goes live with another of today's picks" in r for r in plan["reasons"])
         # released together, the config ends exactly at the checked cross product
         W._write_atomic(W.plan_path(data, FRI_16), plan)
         state = W.load_state(data)

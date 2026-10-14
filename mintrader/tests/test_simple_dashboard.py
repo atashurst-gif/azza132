@@ -891,9 +891,10 @@ class TestOneBotInDetail:
         # sidebar had before is still there and working; the old Home is "Overview" at /advanced
         assert [unescape(x) for x in re.findall(r'<div class="nav-label">([^<]*)</div>', nav)] == [
             "Squad", "Advanced"]
+        # 14 Oct: Leagues and Road to Profit join the squad's pages
         assert [unescape(x) for x in re.findall(r'</svg>([^<]*)</a>', nav)] == [
-            "Squad", "Demo", "Factory", "Overview", "Real money", "Practice", "The lab", "The coach",
-            "Technical detail", "Health"]
+            "Squad", "Leagues", "Road to Profit", "Demo", "Factory", "Overview", "Real money", "Practice", "The lab",
+            "The coach", "Technical detail", "Health"]
         for link in ('href="/"', 'href="/demo"', 'href="/factory"', 'href="/advanced" class="on"',
                      'href="/?show=live"', 'href="/?show=practice"', 'href="/lab"', 'href="/coach"', 'href="/details"',
                      'href="/health"'):

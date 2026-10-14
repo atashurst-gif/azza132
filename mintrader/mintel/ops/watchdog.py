@@ -11,9 +11,11 @@ What it does, every ``watchdog_interval_seconds``:
 1. Reads every component heartbeat and the trader's PID file.
 2. Confirms the MT5 terminal process is running (Windows).
 3. Restarts whatever has died, with exponential backoff and an hourly cap.
-4. Every five minutes, the weekly pick (``mintel.ops.weekly.tick``):
-   Friday's pick, Monday's release, the live judgement, and a restart of
-   the bot whose mode it changed.
+4. Every five minutes, the squad's pick (``mintel.ops.weekly.tick``):
+   every UK trading day's 22:30 pick, its 06:30 release the next trading
+   day, the demo judgement, and a restart of the bot whose mode it changed
+   (14 Oct; a lab idea needs none: the trader's lab-demo engine re-reads its
+   roster).
 5. Writes its own heartbeat, so the dashboard can show the watchdog is alive
    and the trader can report if the watchdog itself has stopped.
 
@@ -636,8 +638,8 @@ class Watchdog:
         return actions
 
     def _check_weekly(self, now: dt.datetime) -> list[str]:
-        """The weekly pick, every ``weekly_seconds`` (``weekly.tick``): Friday's
-        pick when due, Monday's release, the live judgement; a bot whose mode
+        """The squad's pick, every ``weekly_seconds`` (``weekly.tick``): the day's
+        pick when due, its release, the demo judgement; a bot whose mode
         changed is restarted here, the way a hung one is. Never raises: a
         failure is one line in the log and nothing is half applied."""
         if not self.weekly_config:

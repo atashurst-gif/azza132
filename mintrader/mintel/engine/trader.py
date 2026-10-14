@@ -280,6 +280,19 @@ class Trader:
                                         **self._bot_kwargs(CrowdFader))
         except Exception as exc:
             log.warning("Crowd Fader not started: %s", exc)
+        # 14 Oct, the lab ideas the squad's pick promoted to the DEMO account (mintel/labdemo): the lab's own
+        # practice rules, genuine orders under each idea's own magic number with the stop at the broker, DEMO
+        # accounts only (it refuses every order unless the broker says is_demo AND config.json says DEMO).
+        # Never in a dry run; None when the account mode is not DEMO or the lab has no markets yet. Its roster
+        # (data/labdemo/roster.json) is re-read whenever it changes, so a promotion needs no restart.
+        self.labdemo = None
+        try:
+            if not self.dry_run:
+                from ..labdemo.engine import from_trader
+                self.labdemo = from_trader(data_dir, self.real_broker, cfg, entries_allowed=self._bots_may_enter,
+                                           clock=self.clock, calendar=self.calendar_store)
+        except Exception as exc:
+            log.warning("the lab-demo engine not started: %s", exc)
         self.thesis = ThesisTracker()
 
         expected_login = cfg.account_login
@@ -471,6 +484,16 @@ class Trader:
                 continue
             if m > 0 and m != int(self.cfg.magic) and m not in out:
                 out.append(m)
+        # 14 Oct: and every lab idea's magic on the DEMO (each one ever handed out: a demoted idea's deals of
+        # today still count) - the daily-loss stop counts all real (DEMO) money
+        if getattr(self, "labdemo", None) is not None:
+            try:
+                from ..labdemo.roster import all_magics
+                for m in sorted(set(all_magics(self.cfg.ops.data_dir)) | set(self.labdemo.magics())):
+                    if m not in out:
+                        out.append(m)
+            except Exception:
+                pass
         return tuple(out)
 
     def others_real_today(self) -> float:
@@ -495,12 +518,15 @@ class Trader:
             raise RuntimeError("broker has no deal history")
         start = self._strategy_day_start(now)
         total = 0.0
-        for m in self.stop_gated_magics():
-            for r in fn(start, m, False) or []:          # entries too: half the commission sits there
-                if int(r.get("magic", m) or m) == m:
+        # 14 Oct (review): one deal-history read and one positions read for the whole account, filtered by the
+        # gated magics - never two broker calls per magic (every lab idea's magic ever handed out is gated)
+        gated = set(self.stop_gated_magics())
+        if gated:
+            for r in fn(start, 0, False) or []:          # magic 0: the whole account; entries too (commission)
+                if int(r.get("magic") or 0) in gated:
                     total += float(r.get("profit") or 0.0)
-            for p in real.positions(m) or []:
-                if int(getattr(p, "magic", m) or m) == m:
+            for p in real.positions(None) or []:
+                if int(getattr(p, "magic", 0) or 0) in gated:
                     total += float(getattr(p, "profit", 0.0) or 0.0)
         self._others_cache = {"at": now, "value": total}
         return total
@@ -902,6 +928,7 @@ class Trader:
             return [f"positions unreadable: {exc}"]
         self.hb_exec.beat({"positions": len(positions), "light": True})
         if not positions:
+            self._step_labdemo(now)                       # the lab ideas on the demo need no TNB position
             return []
         naked = self.executor.enforce_stops([p for p in positions if not p.sl])
         if naked:
@@ -965,7 +992,19 @@ class Trader:
                     log.info("%s", note)
             except Exception as exc:
                 log.debug("Crowd Fader skipped this pass: %s", exc)
+        self._step_labdemo(now)
         return notes
+
+    def _step_labdemo(self, now: dt.datetime) -> None:
+        """The lab ideas on the demo: their minute's work, once a minute (the engine's own gate)."""
+        eng = getattr(self, "labdemo", None)
+        if eng is None:
+            return
+        try:
+            for note in eng.step(now):
+                log.info("%s", note)
+        except Exception as exc:
+            log.warning("the lab-demo engine skipped this pass: %s", exc)
 
     def _bot_kwargs(self, kls) -> dict:
         """The broker and the account gate, for an engine that can take them

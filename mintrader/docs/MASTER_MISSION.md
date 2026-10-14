@@ -38,17 +38,33 @@ the old bots, their parts and every lab idea.
   earns more.
 - **DEMO:** real orders on the IC Markets demo account. This is "the first
   team". In the code it is called LIVE or "real money".
-- **Promotion:** every Friday at 22:30 UK, up to `weekly_max_promotions` tests
-  (default 3) that pass the bar move up to DEMO from 06:30 UK the next trading
-  day. The bar:
-  - 30+ paper trades over 5+ days in the last 28;
-  - profit after costs;
-  - profit factor of 1.2 or more;
-  - more up days than down;
-  - a luck check.
-- **Demotion:** a test goes back to PAPER after 20 DEMO trades if it is not in
-  profit after costs. It goes back at once if its loss reaches 10× its
-  per-trade risk.
+- **Promotion (14 Oct 2026):** every UK trading day at 22:30 UK the best
+  qualifiers are picked, and move up to DEMO from 06:30 UK the next trading
+  day. They fill the demo squad's free places: `demo_target`, 8 to 12, default
+  10. Lab ideas really trade on the demo, through the lab-demo engine in the
+  trader, with genuine orders and the stop at the broker. The early-promotion
+  bar:
+  - 10, 12 or 15 paper trades, for a slow, medium or frequent test, over 3+ UK
+    days;
+  - positive after all costs, a profit factor of 1.3 or more, and still
+    positive without its best trade;
+  - its result shrunk toward the pool's average must beat the best clock-trade
+    control (the luck benchmark);
+  - at most 2 per market and direction.
+
+  Each promoted lab idea gets a risk tier in turn: 0.5%, 1% or 2% of equity a
+  trade. Every trade records its £1,500-account equivalent. The method in
+  plain words is in `docs/ops/promotion.md`. The 13 Oct Friday cadence and its
+  30-trade bar are in the ledger, marked SUPERSEDED.
+- **Demotion (14 Oct 2026):** judged on the broker's results after costs. A
+  test goes back to PAPER:
+  - after 20 DEMO trades, when even the hopeful bootstrap bound of its average
+    is below zero;
+  - after 40 DEMO trades, when it is not in profit;
+  - at once, at a loss of 15× its per-trade risk or a drawdown of 20× from its
+    best.
+
+  The 13 Oct "20 trades, 10×" rule is in the ledger, marked SUPERSEDED.
 - **The conveyor belt:**
   - Saturdays, automatic: clear losers are retired, winners get neighbouring
     variants, and new ideas refill the pool.

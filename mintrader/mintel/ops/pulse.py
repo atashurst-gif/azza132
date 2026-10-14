@@ -49,6 +49,17 @@ and publishes the latest state to the reports branch:
                                 it has on real money now and its last
                                 promotions and demotions, scrubbed, under
                                 20 KB; only once the weekly pick has run
+    reports/live/readiness.json live readiness (``readiness_json``, 14 Oct):
+                                data/live_readiness.json as the pulse has
+                                just worked it out - the stage, the bots near
+                                real money, the message and its ``notify``
+                                flag for Claude's nightly routine; scrubbed,
+                                under 30 KB
+
+Each pulse also keeps the leagues' daily record (``live_upkeep``, 14 Oct):
+the snapshot of every finished UK trading day that has none yet
+(data/leagues/YYYY-MM-DD.json, written once, never rewritten) and
+data/live_readiness.json.
 
 The nightly report copies the day's pulse lines into
 ``reports/<date>/uptime.log`` and sums the gaps, so an outage is a number
@@ -78,6 +89,8 @@ COACH_PATH = "reports/live/coach.json"
 COACH_MAX_BYTES = 20_000
 WEEKLY_PATH = "reports/live/weekly.json"
 WEEKLY_MAX_BYTES = 20_000
+READINESS_PATH = "reports/live/readiness.json"
+READINESS_MAX_BYTES = 30_000
 
 
 # --------------------------------------------------------------- observe --
@@ -406,7 +419,7 @@ def _gap(outage: list[str], open_ended: bool = False) -> tuple[str, str, int, st
 
 def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
                 lab: Optional[str] = None, coach: Optional[str] = None,
-                weekly: Optional[str] = None) -> dict[str, str]:
+                weekly: Optional[str] = None, readiness: Optional[str] = None) -> dict[str, str]:
     """The files the pulse publishes; ``bots`` (bots_json's text) adds
     reports/live/bots.json, ``lab`` (lab_json's text) reports/live/lab.json,
     ``coach`` (coach_json's text) reports/live/coach.json."""
@@ -425,6 +438,8 @@ def pulse_files(p: dict, lines: list[str], bots: Optional[str] = None,
         files[COACH_PATH] = coach
     if weekly is not None:
         files[WEEKLY_PATH] = weekly
+    if readiness is not None:
+        files[READINESS_PATH] = readiness
     return files
 
 
@@ -1016,6 +1031,44 @@ def weekly_json(cfg: Config, max_bytes: int = WEEKLY_MAX_BYTES) -> Optional[str]
         return json.dumps({"unavailable": f"the weekly pick's report could not be built: {exc}"}) + "\n"
 
 
+def live_upkeep(cfg: Config, config_path, now: Optional[dt.datetime] = None,
+                positions_fn: Optional[Callable[[], Optional[list]]] = None) -> Optional[dict]:
+    """14 Oct: the leagues' daily snapshot(s) and data/live_readiness.json, from the records and MetaTrader's
+    closed positions (the trader's page, ``weekly.fetch_live_positions``; None while it does not answer: a demo
+    figure is then left unknown, never guessed). Returns the readiness written, or None. Never raises."""
+    try:
+        from .leagues import daily_snapshots
+        from .readiness import refresh
+        from .weekly import fetch_live_positions
+        data = cfg.ops.data_dir
+        positions = positions_fn() if positions_fn else fetch_live_positions(config_path)
+        daily_snapshots(data, config_path, now, positions)
+        return refresh(data, config_path, now, positions)
+    except Exception:
+        return None
+
+
+def readiness_json(content: Optional[dict], max_bytes: int = READINESS_MAX_BYTES) -> Optional[str]:
+    """reports/live/readiness.json: the readiness file, scrubbed, under ``max_bytes`` (each bot's longer lists
+    trimmed first). None when there is none."""
+    if not content:
+        return None
+    try:
+        rep = _scrub(json.loads(json.dumps(content, default=str)))
+        text = json.dumps(rep, indent=1, default=str) + "\n"
+        if len(text.encode("utf-8")) > max_bytes:
+            rep["bots"] = (rep.get("bots") or [])[:5]
+            for b in rep["bots"]:
+                b.pop("checks", None)
+            rep["trimmed"] = "some details were left out to keep this file under its size cap"
+            text = json.dumps(rep, indent=1, default=str) + "\n"
+        if len(text.encode("utf-8")) > max_bytes:
+            text = json.dumps({"unavailable": "the readiness report was too big to publish"}) + "\n"
+        return text
+    except Exception as exc:
+        return json.dumps({"unavailable": f"the readiness report could not be built: {exc}"}) + "\n"
+
+
 # ------------------------------------------------------------------ main --
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="record whether the bot is up, and publish it")
@@ -1029,6 +1082,7 @@ def main(argv=None) -> int:
     print(line)
     if args.no_upload:
         return 0
+    ready = live_upkeep(cfg, args.config)            # never raises; the leagues' day record and live readiness
     from .report_upload import UploadIncomplete, read_token, upload
     token = read_token(args.config)
     if not token:
@@ -1038,7 +1092,7 @@ def main(argv=None) -> int:
     lab = lab_json(cfg)                            # never raises; None when the lab has never run
     coach = coach_json(cfg, p)                     # never raises; None when the coach is not switched on
     weekly = weekly_json(cfg)                      # never raises; None before the weekly pick has run
-    files = pulse_files(p, uptime_lines(cfg), bots, lab, coach, weekly)
+    files = pulse_files(p, uptime_lines(cfg), bots, lab, coach, weekly, readiness_json(ready))
     try:
         # the same upload as the nightly report: a clash with another writer is retried with a fresh read
         n = upload(files, cfg.report_repo, cfg.report_branch, token, day="live")

@@ -586,7 +586,8 @@ class TestTheFrontPage:
     def test_the_navigation_and_the_health_dot(self, pages):
         page = pages["/"]
         nav = page.split('<nav class="sq-nav">')[1].split("</nav>")[0]
-        assert re.findall(r">([^<]+)</a>", nav) == ["Squad", "Demo", "Factory", "Advanced"]
+        # 14 Oct: Leagues and Road to Profit join the navigation
+        assert re.findall(r">([^<]+)</a>", nav) == ["Squad", "Leagues", "Road to Profit", "Demo", "Factory", "Advanced"]
         assert 'href="/" class=on' in nav and 'href="/advanced"' in nav
         assert '<span class="sq-health ok" title="The trader"><i></i>running</span>' in page
         assert "Overview" in pages["/advanced"] and "s-acct" in pages["/advanced"]     # the old Home, kept

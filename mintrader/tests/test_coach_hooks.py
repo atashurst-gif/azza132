@@ -22,10 +22,12 @@ import dataclasses
 import datetime as dt
 import json
 import os
+import zlib
 from pathlib import Path
 
 import pytest
 
+from mintel.broker import sim as SIM
 from mintel.coach import (F1_KEY, Block, DemoLimits, Entry, Envelope, Paths, RiskCtx)
 from mintel.coach import gate as G
 from mintel.coach import policy as P
@@ -37,11 +39,45 @@ MC = "MOMENTUM_CONTINUATION"
 US500_KEY = "tnb|SESSION_EXPANSION|INDEX|TREND"
 GER40_KEY = "tnb|MOMENTUM_CONTINUATION|INDEX|TREND"        # an index idea the Runner never rides
 EURJPY_KEY = "tnb|TREND_PULLBACK|FX_MINOR|*"
+SYMBOLS = ("EURGBP", "EURJPY", "US500", "GER40", "EURUSD")
+
+# ================================================================ the same market in every run --
+# SimBroker picks each symbol's market regime by ``hash(symbol)``, which Python salts differently in
+# every process (PYTHONHASHSEED), so the simulated prices - and with them whether the live Runner
+# rides - changed from run to run and these tests passed or failed by chance. Here the regime is
+# SimBroker's own choice with a fixed number per symbol (zlib.crc32) in place of the salted hash:
+# the same scenario in every process. Nothing the tests check is relaxed.
+#
+# SimBroker's own regime table, in its order: block = (i // 400 + hash(sym) % 4) % 4, and hash("") is
+# 0 in every process, so these four calls read it as written in mintel/broker/sim.py
+_SIM_REGIMES = tuple(SIM.SimBroker._regime_for(None, 400 * k, "") for k in range(4))
+
+
+def _fixed_regime_for(self, i, sym):
+    return _SIM_REGIMES[(i // 400 + zlib.crc32(sym.encode()) % 4) % 4]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def same_market_in_every_process():
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(SIM.SimBroker, "_regime_for", _fixed_regime_for)
+        yield
+
+
+def test_the_simulated_market_is_the_same_whatever_the_hash_seed(tmp_path, monkeypatch):
+    """Each salt stands in for another process's PYTHONHASHSEED: the prices must not move with it."""
+    def closes(salt):
+        monkeypatch.setattr(SIM, "hash", lambda o: hash(o) + salt, raising=False)
+        sim, _cfg = setup(tmp_path / f"salt{salt}", symbols=SYMBOLS)
+        return [round(b.close, 6) for s in SYMBOLS for b in sim._bars[s]]
+    base = closes(0)
+    assert base and all(closes(salt) == base for salt in (1, 2, 3))
+    assert len(set(_SIM_REGIMES)) == 4                     # still SimBroker's four regimes, each in turn
 
 
 # ================================================================ helpers --
 def build(tmp_path, *, runner="PAPER", live_tactics=(), manage_leftovers=True, prepare=None, strip=False):
-    sim, cfg = setup(tmp_path, runner=runner, symbols=("EURGBP", "EURJPY", "US500", "GER40", "EURUSD"))
+    sim, cfg = setup(tmp_path, runner=runner, symbols=SYMBOLS)
     sim.margin_factor = 0.01                     # the simulator's margin is not in pounds for a yen cross
     cfg.tnb.live_groups = ("FX_MINOR",)
     cfg.tnb.live_tactics = tuple(live_tactics)
