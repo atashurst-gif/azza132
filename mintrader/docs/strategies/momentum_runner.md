@@ -341,3 +341,4 @@ to be looked at together.
 | 9 Oct | 1 (LIVE) | 0 | -5.50 LIVE (the broker's figure) | +2.50 practice on the same trade (US30, trailed out at +0.47 R) | US30 SELL 0.4 lots at 11:42 UK riding the paper session expansion 960000001: peaked +1.50 R, stopped at -1.00 R (about 5.49 at risk). The shared daily stop was shut 13:46-21:49 UK by Trend & Breakout's practice loss, so no later ride was possible. All 9 rides: +3.23 R against the ladder's +0.72 R (live 2: -2.02 R vs -0.54 R) |
 | 12 Oct | 0 | - | 0 | - | Nothing to ride: Trend & Breakout's only index trade was a JP225 momentum continuation, which the Runner does not ride (version 5), and no minor-pair trade happened. From this build it never rides a trade that has already closed |
 | 13 Oct | 1 PAPER | 0 | -8.84 practice | US30 -8.84 | On practice from the 13 Oct move to paper; one ride, stopped |
+| 14 Oct | 0 PAPER | - | 0 | - | Nothing to ride |
