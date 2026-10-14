@@ -1,5 +1,5 @@
 {
- "ts_utc": "2026-10-14T12:21:21+00:00",
+ "ts_utc": "2026-10-14T12:31:32+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
  "trader_up": true,
  "trader_reason": "",
@@ -36,90 +36,101 @@
    },
    "health": "RUNNING: running with 1 warning(s)",
    "build": "0d78e33a2b",
-   "last_scan": "12:21:18 UTC",
+   "last_scan": "12:31:26 UTC",
    "last_trade": "US30 2026-10-14T09:13",
-   "not_trading_because": [],
-   "positions_on_page": [],
+   "not_trading_because": [
+    "spacing entries out: 9s until the next one may be placed"
+   ],
+   "positions_on_page": [
+    {
+     "symbol": "US500",
+     "side": "SELL",
+     "volume": 3.3,
+     "entry": 7800.49,
+     "stop": 7798.12,
+     "profit": 6.71,
+     "flow_state": "NORMAL_FLOW",
+     "note": "best 1.52R, thesis 71/100"
+    }
+   ],
    "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus any real position left from LIVE; the real ones are also under open_on_account",
    "thinking": [
     {
      "rank": 1,
-     "symbol": "USDCAD",
+     "symbol": "GBPCHF",
      "direction": "LONG",
-     "score": 62.02,
+     "score": 65.4,
      "tier": "NORMAL",
-     "tactic": "SESSION_EXPANSION",
-     "regime": "UNCLEAR / NORMAL VOL",
-     "reason": "USDCAD: UNCLEAR / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 1.0 pips). Structure supports it (80/100; range structure on M5). Momentum argues against it (22/100; efficiency 0.14, ADX 18). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Room to the first obstacle is 4 pips, giving about 0.7 to 1 after 1.3 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; CAD CPI y/y due in 521s - execution unpriceable, no new entries; reward:risk only 0.69 after costs; costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "tactic": "MOMENTUM_CONTINUATION",
+     "regime": "HIGH_VOL / HIGH VOL",
+     "reason": "GBPCHF: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Cross Market supports it (100/100; 4 related markets with a usable relationship; GBP 85 vs CHF 6). Structure supports it (98/100; up structure on M5). Multi Tf supports it (92/100; 6 timeframes weighed, higher ones first). Volatility supports it (80/100; volatility at the 99th percentile). Room to the first obstacle is 999 pips, giving about 2.0 to 1 after 1.1 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 65); NORMAL setup - only STRONG or better is traded; costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
+      "momentum continuation needs a score of 70+ (this is 65)",
       "NORMAL setup - only STRONG or better is traded",
-      "CAD CPI y/y due in 521s - execution unpriceable, no new entries",
-      "reward:risk only 0.69 after costs",
-      "costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": 0.685
+     "reward_risk": 1.963
     },
     {
      "rank": 2,
-     "symbol": "AUDCAD",
-     "direction": "LONG",
-     "score": 58.54,
-     "tier": "NO_TRADE",
-     "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-     "regime": "RANGE / NORMAL VOL",
-     "reason": "AUDCAD: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution supports it (96/100; spread 0.2 pips (0.5x normal), commission 1.0 pips). Multi Tf supports it (86/100; 6 timeframes weighed, higher ones first). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Room to the first obstacle is 3 pips, giving about 0.2 to 1 after 1.3 pips of cost. Blocked because: CAD CPI y/y due in 521s - execution unpriceable, no new entries; reward:risk only 0.18 after costs; costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "symbol": "EURAUD",
+     "direction": "SHORT",
+     "score": 64.87,
+     "tier": "NORMAL",
+     "tactic": "SESSION_EXPANSION",
+     "regime": "HIGH_VOL / HIGH VOL",
+     "reason": "EURAUD: HIGH_VOL / HIGH VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Execution supports it (85/100; spread 0.5 pips (1.0x normal), commission 1.0 pips). Volatility supports it (80/100; volatility at the 100th percentile). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 6 pips, giving about 0.4 to 1 after 1.7 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.42 after costs; entry is 4.9 ATR from the level that invalidates this idea - the move has been missed.",
      "blockers": [
-      "CAD CPI y/y due in 521s - execution unpriceable, no new entries",
-      "reward:risk only 0.18 after costs",
-      "costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "NORMAL setup - only STRONG or better is traded",
+      "reward:risk only 0.42 after costs",
+      "entry is 4.9 ATR from the level that invalidates this idea - the move has been missed"
      ],
-     "reward_risk": 0.179
+     "reward_risk": 0.423
     },
     {
      "rank": 3,
-     "symbol": "EURCAD",
+     "symbol": "XAGAUD",
      "direction": "SHORT",
-     "score": 41.25,
-     "tier": "NO_TRADE",
-     "tactic": "SESSION_EXPANSION",
-     "regime": "UNCLEAR / HIGH VOL",
-     "reason": "EURCAD: UNCLEAR / HIGH VOL market. Best idea is sell using session expansion. Structure supports it (98/100; down structure on M5). Multi Tf supports it (93/100; 6 timeframes weighed, higher ones first). Momentum supports it (78/100; efficiency 0.14, ADX 20). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Room to the first obstacle is 2 pips, giving about 0.7 to 1 after 2.0 pips of cost. Blocked because: CAD CPI y/y due in 521s - execution unpriceable, no new entries; reward:risk only 0.66 after costs; costs would be 22% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "score": 63.85,
+     "tier": "NORMAL",
+     "tactic": "LIQUIDITY_SWEEP_REVERSAL",
+     "regime": "RANGE / HIGH VOL",
+     "reason": "XAGAUD: RANGE / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Multi Tf supports it (86/100; 6 timeframes weighed, higher ones first). Cross Market supports it (83/100; 2 related markets with a usable relationship). Volatility supports it (80/100; volatility at the 100th percentile). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Room to the first obstacle is 179 pips, giving about 0.9 to 1 after 51.1 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 0.90 after costs.",
      "blockers": [
-      "CAD CPI y/y due in 521s - execution unpriceable, no new entries",
-      "reward:risk only 0.66 after costs",
-      "costs would be 22% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "NORMAL setup - only STRONG or better is traded",
+      "reward:risk only 0.90 after costs"
      ],
-     "reward_risk": 0.658
+     "reward_risk": 0.898
     },
     {
      "rank": 4,
-     "symbol": "GBPUSD",
-     "direction": "LONG",
-     "score": 38.61,
+     "symbol": "XAGEUR",
+     "direction": "SHORT",
+     "score": 55.14,
      "tier": "NO_TRADE",
      "tactic": "LIQUIDITY_SWEEP_REVERSAL",
-     "regime": "RANGE / NORMAL VOL",
-     "reason": "GBPUSD: RANGE / NORMAL VOL market. Best idea is buy using liquidity sweep reversal. Structure supports it (100/100; up structure on M5). Execution supports it (85/100; spread 0.2 pips (1.0x normal), commission 0.7 pips). Multi Tf supports it (82/100; 6 timeframes weighed, higher ones first). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Room to the first obstacle is 1 pips, giving about -0.1 to 1 after 1.0 pips of cost. Blocked because: reward:risk only -0.09 after costs.",
+     "regime": "RANGE / HIGH VOL",
+     "reason": "XAGEUR: RANGE / HIGH VOL market. Best idea is sell using liquidity sweep reversal. Multi Tf supports it (83/100; 6 timeframes weighed, higher ones first). Cross Market supports it (83/100; 2 related markets with a usable relationship). Volatility supports it (80/100; volatility at the 100th percentile). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Room to the first obstacle is 92 pips, giving about 0.9 to 1 after 36.6 pips of cost. Blocked because: reward:risk only 0.87 after costs; costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "reward:risk only -0.09 after costs"
+      "reward:risk only 0.87 after costs",
+      "costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": -0.089
+     "reward_risk": 0.87
     },
     {
      "rank": 5,
-     "symbol": "CADJPY",
+     "symbol": "US500",
      "direction": "SHORT",
-     "score": 32.38,
+     "score": 50.46,
      "tier": "NO_TRADE",
-     "tactic": "VWAP_REVERSION",
-     "regime": "RANGE / NORMAL VOL",
-     "reason": "CADJPY: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Regime supports it (85/100; RANGE / NORMAL VOL). Momentum argues against it (17/100; efficiency 0.04, ADX 14). Session supports it (78/100; session: LONDON,NEWYORK,LONDON_NY_OVERLAP). Execution supports it (74/100; spread 0.3 pips (1.5x normal), commission 1.2 pips). Room to the first obstacle is 2 pips, giving about 0.6 to 1 after 1.6 pips of cost. Blocked because: CAD CPI y/y due in 521s - execution unpriceable, no new entries; reward:risk only 0.61 after costs; costs would be 55% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "tactic": "MOMENTUM_CONTINUATION",
+     "regime": "HIGH_VOL / HIGH VOL",
+     "reason": "US500: HIGH_VOL / HIGH VOL market. Best idea is sell using momentum continuation. Cross Market supports it (100/100; 5 related markets with a usable relationship). Structure supports it (86/100; range structure on M5). Execution supports it (85/100; spread 50.0 pips (1.0x normal)). Multi Tf supports it (83/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 400 pips, giving about 2.3 to 1 after 62.5 pips of cost. Blocked because: momentum continuation needs a score of 70+ (this is 50); already long here.",
      "blockers": [
-      "CAD CPI y/y due in 521s - execution unpriceable, no new entries",
-      "reward:risk only 0.61 after costs",
-      "costs would be 55% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "momentum continuation needs a score of 70+ (this is 50)",
+      "already long here"
      ],
-     "reward_risk": 0.608
+     "reward_risk": 2.291
     }
    ],
    "today": {
@@ -146,7 +157,7 @@
    "mode": "PAPER",
    "status_file": "rider-status.json",
    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
-   "report_age_seconds": 335416.8,
+   "report_age_seconds": 336027.8,
    "running": false,
    "health": "RAPID MOMENTUM RIDER - OFF (rider.json says OFF, so it is not started)",
    "entries_allowed": false,
@@ -712,10 +723,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-14T12:21:18.084984+00:00",
-   "report_age_seconds": 2.9,
+   "updated_utc": "2026-10-14T12:31:31.999307+00:00",
+   "report_age_seconds": 0.0,
    "running": true,
-   "health": "WATCHING, PAPER, last report 3 s ago",
+   "health": "WATCHING, PAPER, last report 0 s ago",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
@@ -744,10 +755,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-14T12:21:18.084984+00:00",
-   "report_age_seconds": 2.9,
+   "updated_utc": "2026-10-14T12:31:31.999307+00:00",
+   "report_age_seconds": 0.0,
    "running": true,
-   "health": "OUTSIDE SESSION, PAPER, last report 3 s ago",
+   "health": "OUTSIDE SESSION, PAPER, last report 0 s ago",
    "status": "OUTSIDE SESSION",
    "open_trades": [],
    "today": {
@@ -773,25 +784,12 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-14T12:21:18.084984+00:00",
-   "report_age_seconds": 2.9,
+   "updated_utc": "2026-10-14T12:31:31.999307+00:00",
+   "report_age_seconds": 0.0,
    "running": true,
-   "health": "IN TRADE, PAPER, last report 3 s ago",
+   "health": "IN TRADE, PAPER, last report 0 s ago",
    "status": "IN TRADE",
    "open_trades": [
-    {
-     "ticket": 1996782960,
-     "symbol": "XAUUSD",
-     "side": "SELL",
-     "entry": 4160.09,
-     "stop": 4173.25,
-     "initial_stop": 4173.25,
-     "r_now": 0.92,
-     "peak_r": 1.82,
-     "pnl": 9.11,
-     "opened": "2026-10-13T15:29:02.508740+00:00",
-     "mode": "PAPER"
-    },
     {
      "ticket": 1996782961,
      "symbol": "XAGUSD",
@@ -799,9 +797,9 @@
      "entry": 58.535,
      "stop": 58.904,
      "initial_stop": 58.904,
-     "r_now": -0.22,
-     "peak_r": 0.38,
-     "pnl": -1.83,
+     "r_now": 1.06,
+     "peak_r": 1.82,
+     "pnl": 8.84,
      "opened": "2026-10-14T08:45:01.870005+00:00",
      "mode": "PAPER"
     }
@@ -817,8 +815,8 @@
     "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
    },
    "practice_today": {
-    "result": 17.61,
-    "trades": 1,
+    "result": 37.42,
+    "trades": 2,
     "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
    },
    "open_on_account": []
@@ -829,8 +827,8 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-14T12:21:20.688131+00:00",
-   "report_age_seconds": 0.3,
+   "updated_utc": "2026-10-14T12:31:31.579582+00:00",
+   "report_age_seconds": 0.4,
    "running": true,
    "health": "FINANCIAL IAN - HEALTHY, PAPER, feed LIVE",
    "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
@@ -839,26 +837,26 @@
     "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 10 USDT steps, ETHUSDT in 0.25 USDT steps",
     "vendor": "binance",
     "synthetic": false,
-    "events": 1812780
+    "events": 1974881
    },
    "data_label": "LIVE",
    "metatrader_connected": true,
    "open_trades": [],
    "own_record_today": {
-    "trades": 6,
+    "trades": 7,
     "wins": 3,
-    "losses": 3,
-    "win_rate": 0.5,
-    "net": -5.95,
-    "expectancy": -0.99,
-    "expectancy_r": -0.102,
-    "profit_factor": 0.5,
+    "losses": 4,
+    "win_rate": 0.429,
+    "net": -10.32,
+    "expectancy": -1.47,
+    "expectancy_r": -0.23,
+    "profit_factor": 0.36,
     "avg_win": 1.97,
-    "avg_loss": -3.95,
-    "max_drawdown": -7.27,
-    "mfe_r": 0.441,
-    "mae_r": -0.31,
-    "mfe_capture": -0.231,
+    "avg_loss": -4.05,
+    "max_drawdown": -11.64,
+    "mfe_r": 0.378,
+    "mae_r": -0.409,
+    "mfe_capture": -0.609,
     "data_source": "LIVE FEED"
    },
    "today": {
@@ -872,8 +870,8 @@
     "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
    },
    "practice_today": {
-    "result": -5.95,
-    "trades": 6,
+    "result": -10.32,
+    "trades": 7,
     "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
    },
    "open_on_account": []
