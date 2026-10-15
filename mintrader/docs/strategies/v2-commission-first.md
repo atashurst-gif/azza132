@@ -15,7 +15,7 @@ branch.
 | Commission | never assumed zero; 6.00 a lot until learned, indices 0 | a new account had no history to learn from |
 | Markets off | USDJPY, DE40, XAUGBP, CHFJPY, EURNZD, UK100, GBPJPY, XAUAUD; from 8 Oct (version 4) USDCHF and XAUJPY | negative on two-thirds or more of 6+ days; 125 trades, -219.70; USDCHF 5 of 6 days (-38.77), XAUJPY 7 of 10 (-14.09) |
 | Approaches off | session expansion in a squeeze, plus earlier switch-offs; from 7 Oct (version 3) breakout acceptance in a fast market | negative on 3+ days traded |
-| Approach off in one kind of market | from 8 Oct (version 4): momentum continuation on gold and silver crosses; from 9 Oct (version 5) also on the FX majors | gold/silver: negative on the last three days it traded there (-7.89, -48.52, -28.62; 6 days, 3 negative, net -52.94) while on indices (+52.71) and FX (+38.63) it is the engine. FX majors: negative on 5 of 8 days, 17 trades, -13.87 after 17.48 commission (see Version 5) |
+| Approach off in one kind of market | from 8 Oct (version 4): momentum continuation on gold and silver crosses; from 9 Oct (version 5) also on the FX majors; from 15 Oct (version 6) also on the indices | gold/silver: negative on the last three days it traded there (-7.89, -48.52, -28.62; 6 days, 3 negative, net -52.94) while on 8 Oct it was the engine on indices (+52.71) and FX (+38.63). FX majors: negative on 5 of 8 days, 17 trades, -13.87 after 17.48 commission (see Version 5). Indices, on the trades today's rules allow: DEMO +42.82 to 8 Oct, then PAPER -54.76 with all 4 days down under version 5; combined, 10 of 14 days down, -11.94 (see Version 6) |
 | Top-opportunity size | from 9 Oct (version 5): momentum continuation on FX minor pairs risks up to 40 (under the 1.5% ceiling: 30 on 2,000) and at most 0.5 lots; every other trade keeps the 10 cap | 38 trades over 10 days, 8 up and 2 down, +156.31 after commission (+0.82 R a trade); checked again on the bot's own record before every such trade (see Version 5) |
 | Twin (double target) | off | lost to its sibling on two of three days |
 | Ladder (locks profit at +1R, +2R, +3R, +4R) | on for every trade | no trade that reached +1R ended a loss, 28 Sep - 2 Oct |
@@ -44,6 +44,73 @@ The nightly review adds one line per trading day.
 | 12 Oct (minor pairs LIVE from 07:57 UTC, Formula 1; rest PAPER) | 0 LIVE, 1 practice | 0 | 0 real; -12.41 practice | 0 | - | No minor-pair trade all day, so Formula 1 is still 0 of 20. Practice: one JP225 momentum continuation in a high-volatility market at 14:09 UTC, stopped in 6 minutes (-12.41). The account -7.81, all of it Financial Ian. The coach watched (no say until 14 Oct); the week brake is at its line (last 5 UK trading days -159.26) |
 | 13 Oct (everything PAPER from the 00:15 UK install) | 5 practice | 0 | 0 real; -62.80 practice | 0.26 simulated | - | All five stopped (JP225 -13.81, US30 -12.53 and -10.30, XAUCHF -13.19, US500 -12.97); by the journal, momentum continuation in a fast market 3 (-37.08) and session expansion in a trend 2 (-25.72). The page showed 7 practice trades, -74.49, by 22:35 UK (two more after the 22:10 upload). Momentum continuation in a fast market: down on 12 and 13 Oct (2 days, the 3-day switch-off rule not met yet). Formula 1 off; no Trend & Breakout real trade |
 | 14 Oct (PAPER) | 8 practice | 5 | 0 real; +23.73 practice | 2.98 simulated | Momentum continuation in a fast market: GBPCAD +38.72 at target, three US500 trails in profit | All 8 were momentum continuation in a fast market (HIGH_VOL): +23.73. Losses: US30 -12.25, EURJPY -12.65, US500 -12.76. Average win +12.28 against average loss -12.55. Momentum continuation in a fast market over 12-14 Oct: -12.41, -37.08, +23.73 (2 of 3 days down, so the 3-day switch-off rule is not met) |
+| 15 Oct (PAPER) | 19 practice | 9 | 0 real; -62.33 practice | 22.44 simulated | Session expansion in a trend: 4 trades +35.15 (AUS200 +27.06, which the Runner rode to +40.18) | By approach: momentum continuation in a fast market (HIGH_VOL) 8 trades -62.83 (2 wins; 7 on minor pairs -59.90, 1 on US500 -2.93); momentum continuation in news 6 trades -19.73 (4 wins; all six on minor pairs within 7 minutes from 00:30 UTC; EURAUD -26.33 stopped in a minute); session expansion in a fast market 1 trade -14.92 (US500); session expansion in a trend 4 trades +35.15. Worst markets EURAUD -20.91, US500 -17.85, GBPAUD -17.84, AUDNZD -14.78. Average win +7.49 against average loss -12.97; 8 of 19 lasted under 5 minutes, 5 of them stop-outs (-81.96); all 8 stop-outs cost -124.97. Standing rule met: momentum continuation on the indices, counted as for versions 4 and 5 (all conditions, the trades today's rules allow): DEMO +42.82 to 8 Oct, PAPER -54.76 since with all 4 days down; combined, 10 of 14 days down and net -11.94, so it is off from version 6. On the minor pairs: DEMO +156.31 to 8 Oct, PAPER -93.04 on 18 trades since; combined, down on 4 of 13 days and net +63.27, so the 25 Sep precedent keeps it on, judged again nightly. Momentum continuation in a fast market overall (after version 6, the minor pairs only): combined, 4 of 11 days down, +79.09; stays. The 13-14 Oct rows counted it on paper from 12 Oct only; on that count it would now be met (3 of 4 days down, -88.59). Momentum continuation in news: DEMO +50.12, PAPER -59.21; combined, down on 2 of 5 days, -9.09: not met; a third down day switches it off (see Version 6) |
+
+## Version 6 (15 Oct)
+
+"Commission First (version 6)". The measuring clock is unchanged (still
+from the 5 Oct reset; `STRATEGY_VERSION` untouched). Every version 5 rule
+stays; one thing is added: momentum continuation is off on the indices
+(`scan.disabled_tactic_groups` gains `("MOMENTUM_CONTINUATION", "INDEX")`),
+the same standing approach rule per kind of market as versions 4 and 5.
+Trend & Breakout is on PAPER, so no real order changes.
+
+### The evidence
+
+Counted by the same rules as versions 4 and 5, now with paper trades from
+9 Oct:
+- every momentum continuation trade, in every market condition (a
+  kind-of-market switch-off acts in all of them);
+- counted once by ticket, on the UK day it closed;
+- only the trades today's rules still allow (score 70+, the market not
+  excluded, the condition not switched off).
+
+The source is `reports/<day>/trades.csv` from 17 Sep. The files for 29 Sep
+and 2 Oct are missing, as before. On this count version 5's own figures come
+back exactly: minor pairs to 8 Oct, 38 trades, 2 of 10 days down, +156.31;
+FX majors, 17 trades, 5 of 8 days down, -13.87.
+
+DEMO (the broker's figures on the demo account, to 8 Oct) and PAPER (from
+9 Oct) are shown apart. The standing rule is judged on the whole line, so the
+last column adds the two and says so.
+
+| Kind of market | DEMO, to 8 Oct | PAPER, 9-15 Oct (version 5) | Rule input: demo + paper combined |
+|---|---|---|---|
+| Indices | 26 trades, 6 of 10 days down, +42.82 | 11 trades, 4 of 4 days down, -54.76 | 37 trades, 10 of 14 days down, -11.94 |
+| FX minor pairs | 38 trades, 2 of 10 days down, +156.31 (29.89 commission) | 18 trades, 2 of 3 days down, -93.04 (28.86 simulated commission) | 56 trades, 4 of 13 days down, +63.27 |
+
+- **Indices: the rule is met.**
+  - On PAPER under version 5 it lost every day: 12 Oct -12.41, 13 Oct -37.08, 14 Oct -2.34, 15 Oct -2.93.
+  - The combined line is down on 10 of its 14 days and is no longer net positive, so the 25 Sep precedent does not keep it.
+  - Since the reset, counting every trade: DEMO +33.20 on 12 trades (5-8 Oct), PAPER -54.76 on 11 (12-15 Oct).
+  - On the indices it traded only in a fast market (HIGH_VOL) after the reset.
+- **FX minor pairs: down on 3+ days, but kept on.**
+  - The combined line is down on 4 of its 13 days, a minority, and still net +63.27. Version 5 made the same call for the fast-market line on 9 Oct.
+  - The case is thin. All of the profit is DEMO, from before 9 Oct.
+  - On PAPER under version 5 it is -93.04 on 18 trades: 9 Oct -39.48 in news, 14 Oct +26.07, 15 Oct -79.63.
+  - The DEMO figures are the ones version 5's rules were chosen on, so they flatter.
+  - It is judged again every night under the 3-day rule. By the 25 Sep precedent it can go off even while slightly positive, once it is down on most of its days: a retest line down on 5 of its 7 days was switched off at about +1.
+  - The top-opportunity size on it (`risk.top_segments`) re-checks the bot's own record before every such trade.
+- **The Momentum Runner loses nothing.** It has not ridden momentum continuation since version 5 (`runner.skip_tactics`), and the runner feed list is empty.
+- **Kept:**
+  - Version 5's record stays above and below as it was. Version 6's record starts on 16 Oct.
+  - Session expansion is unchanged everywhere. In a trend on the indices it made DEMO +53.04 on 3 trades and PAPER +14.53 on 2. Of that, AUS200 made +27.06 on 15 Oct, and the Runner rode the same entry to +40.18.
+
+### Looked at and NOT changed
+
+* **Momentum continuation in a fast market** (the approach-in-condition rule, all kinds of market).
+  - **The earlier count.** The 13 and 14 Oct rows counted it on PAPER from 12 Oct only. On that count it is now down on 3 of 4 days, 20 trades, -88.59, which would meet the rule.
+  - **The count every version has used** (all history, as above): DEMO 90 trades, 5 of 11 days down, +104.46. PAPER 20 trades, 3 of 4 days down, -88.59. Combined, 8 of 15 days down, +15.87.
+  - **After version 6** only the minor pairs still trade it. DEMO 29 trades, 3 of 9 days down, +112.92. PAPER 9 trades, 1 of 2 days down, -33.83. Combined, 4 of 11 days down, +79.09.
+  - **Verdict:** down on a minority of its days and in profit, so it stays on. It is judged again every night.
+* **Momentum continuation in news** (all kinds of market, the same count).
+  - DEMO 11 trades, 0 of 3 days down, +50.12. PAPER 9 trades, 2 of 2 days down, -59.21. Combined, down on 2 of 5 days, -9.09.
+  - Not met. The combined line is net negative, so a third down day switches it off.
+* **Session expansion in a fast market on the indices** may now be taken more often.
+  - With momentum continuation off there, it is the only approach left in that condition, and the scanner takes the best signal on offer. The Runner rides it too.
+  - Its record is 2 PAPER trades, -12.42: 9 Oct +2.50, and 15 Oct US500 -14.92, which the Runner rode for -9.77.
+  - Watch under the standing rule.
+* **The quick stop-outs.** On 15 Oct, 8 of 19 trades lasted under 5 minutes, and 5 of those were stop-outs (-81.96). All 8 stop-outs together cost -124.97. As before, nothing on hand tells them apart in advance.
 
 ## Version 5 (9 Oct)
 

@@ -216,8 +216,8 @@ class ScanConfig:
     # MOMENTUM_CONTINUATION on gold and silver crosses was negative on the
     # last three days it traded (5, 6, 7 Oct: -7.89, -48.52, -28.62; 6 days
     # in all, 3 negative, net -52.94), while the same approach on indices
-    # (+52.71) and FX (+38.63) is the bot's engine. Same standard as the
-    # approach-in-condition rule.
+    # (+52.71) and FX (+38.63) was then the bot's engine (indices off from
+    # version 6, 15 Oct). Same standard as the approach-in-condition rule.
     disabled_tactic_groups: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "GOLD"),
         ("MOMENTUM_CONTINUATION", "SILVER"),
@@ -229,6 +229,15 @@ class ScanConfig:
         # the fees ate it). On FX minor pairs the same approach is the
         # best line on record (38 trades, +156.31) and stays on.
         ("MOMENTUM_CONTINUATION", "FX_MAJOR"),
+        # 15 Oct (version 6), same standing rule, counted as for versions 4
+        # and 5 (every condition, the trades today's rules still allow):
+        # momentum continuation on the indices made DEMO +42.82 to 8 Oct (the
+        # broker's), then PAPER -54.76 with all 4 days down under version 5;
+        # demo + paper combined, down on 10 of 14 days, 37 trades, -11.94. The
+        # 25 Sep precedent keeps only a line still in profit, and this one is
+        # not. On FX minor pairs (DEMO +156.31, PAPER -93.04; combined, down on
+        # 4 of 13 days, +63.27) it stays on by that precedent, judged nightly.
+        ("MOMENTUM_CONTINUATION", "INDEX"),
     )
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),
@@ -778,7 +787,11 @@ STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, pap
 # trade can no longer poison, and the Momentum Runner no longer riding
 # momentum continuation. The measuring clock is unchanged: still from the
 # reset. See docs/strategies/v2-commission-first.md, "Version 5".
-STRATEGY_NAME = "Commission First (version 5)"
+# Version 6 from 15 Oct: momentum continuation off on the indices (the
+# approach rule per kind of market, as in versions 4 and 5). Everything else
+# is version 5 unchanged. The measuring clock is unchanged: still from the
+# reset. See docs/strategies/v2-commission-first.md, "Version 6".
+STRATEGY_NAME = "Commission First (version 6)"
 
 
 @dataclass

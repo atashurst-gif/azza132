@@ -9,8 +9,9 @@ from mintel.engine.tactics import blocked_in_group
 class TestRules:
     def test_version_4_names_and_lists(self):
         c = Config()
-        # version 5 (9 Oct) kept every version 4 rule and added to them
-        assert STRATEGY_NAME in ("Commission First (version 4)", "Commission First (version 5)")
+        # versions 5 (9 Oct) and 6 (15 Oct) kept every version 4 rule and added to them
+        assert STRATEGY_NAME in ("Commission First (version 4)", "Commission First (version 5)",
+                                 "Commission First (version 6)")
         assert "USDCHF" in c.universe.excluded_symbols and "XAUJPY" in c.universe.excluded_symbols
         assert ("MOMENTUM_CONTINUATION", "GOLD") in c.scan.disabled_tactic_groups
         assert ("MOMENTUM_CONTINUATION", "SILVER") in c.scan.disabled_tactic_groups
@@ -19,8 +20,8 @@ class TestRules:
         groups = Config().scan.disabled_tactic_groups
         assert blocked_in_group("MOMENTUM_CONTINUATION", "GOLD", groups)
         assert blocked_in_group("MOMENTUM_CONTINUATION", "silver", groups)
-        assert not blocked_in_group("MOMENTUM_CONTINUATION", "INDEX", groups)
-        # FX majors: off from version 5 (9 Oct, tests/test_version5.py); the minors stay on
+        # FX majors: off from version 5 (9 Oct, tests/test_version5.py); indices: off from version 6
+        # (15 Oct, tests/test_version6.py); the minors stay on
         assert not blocked_in_group("MOMENTUM_CONTINUATION", "FX_MINOR", groups)
         assert not blocked_in_group("SESSION_EXPANSION", "GOLD", groups)
 

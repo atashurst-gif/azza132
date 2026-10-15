@@ -170,3 +170,4 @@ either way.
 | 12 Oct | 4 PAPER | 0 | -22.46 practice | USTEC SELL 10:30 NY -3.77 (trailed); US30 BUY 11:00 NY -5.05 (trailed); USTEC SELL 12:30 NY -9.72 (stopped in 5 seconds); USTEC SELL 13:00 NY -3.92 (trailed) | The 12:30 trade had VWAP as its stop only 4 points away, so it took 3.1 lots and was stopped by noise in 5 seconds. Fixed tonight: a VWAP stop nearer than half the hour's noise move gives way to the far band (min_stop_noise 0.5) |
 | 13 Oct | 0 | - | 0 (PAPER) | - | No half-hour close outside the band that it took; the new minimum stop distance (12 Oct) had nothing to act on |
 | 14 Oct | 2 PAPER | 2 | +42.03 practice | US500 +24.19, USTEC +17.84 (both FLAT_BEFORE_CLOSE) | Two trend days held to the 15:55 NY flat: its best practice day |
+| 15 Oct | 2 PAPER | 1 | +8.29 practice | US30 +9.14, US500 -0.85 (both FLAT_BEFORE_CLOSE) | Both held to the 15:55 NY flat. Second profitable practice day in a row (14-15 Oct: +42.03, +8.29) |

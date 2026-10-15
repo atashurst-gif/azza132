@@ -92,7 +92,8 @@ def rm_with(tmp_path, record=earning_record, **risk) -> tuple[RiskManager, Journ
 # ------------------------------------------------------------ the rules --
 class TestRules:
     def test_version_5_name_and_the_clock_is_unchanged(self):
-        assert STRATEGY_NAME == "Commission First (version 5)"
+        # version 6 (15 Oct) kept every version 5 rule and added one (tests/test_version6.py)
+        assert STRATEGY_NAME in ("Commission First (version 5)", "Commission First (version 6)")
         assert STRATEGY_VERSION.startswith("2026-10-05 complete reset to zero")
 
     def test_momentum_continuation_is_off_on_the_fx_majors_and_on_on_the_minors(self):
@@ -100,7 +101,7 @@ class TestRules:
         groups = Config().scan.disabled_tactic_groups
         assert blocked_in_group("MOMENTUM_CONTINUATION", "FX_MAJOR", groups)
         assert not blocked_in_group("MOMENTUM_CONTINUATION", "FX_MINOR", groups)
-        assert not blocked_in_group("MOMENTUM_CONTINUATION", "INDEX", groups)
+        # indices: off from version 6 (15 Oct, tests/test_version6.py)
         assert not blocked_in_group("SESSION_EXPANSION", "FX_MAJOR", groups)
 
     def test_the_new_settings_and_their_defaults(self):
