@@ -9,7 +9,9 @@ A. the cadence: every UK trading day at 22:30, released 06:30 the next trading d
 B. the early bar by frequency (10 / 12 / 15 trades, 3+ UK days, PF 1.3, positive
    without the best trade);
 C. selection-bias protection: empirical-Bayes shrinkage, the control benchmark,
-   the lab tests as a weight;
+   the lab tests as a weight; 15 Oct: the pool's prior with no noise floor (lumpy
+   short records biased its spread low) and exact clones once, the floor kept in
+   each candidate's own shrinkage;
 D. the diversity cap, the spread preference, the demo roster target;
 E. the demo judgement: bootstrap bounds after 20, net after 40, 15 x risk, the
    drawdown guard, kept;
@@ -25,6 +27,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -192,9 +195,88 @@ class TestSelectionBias:
         assert W.shrink(1.0, 0.04, (0.0, 0.04)) == pytest.approx(0.5)             # as noisy as the pool: halfway
         assert W.shrink(1.0, 1e9, (-0.1, 0.04)) == pytest.approx(-0.1)            # all noise: the pool's mean
         pool = [{"mean_r": m, "se2_r": 0.01, "stats": {"trades": 20}} for m in (-0.2, -0.1, 0.0, 0.1, 0.2)]
-        mu0, tau2 = W.pool_prior(pool)
+        mu0, tau2 = W.pool_prior(pool, floor=0.0)                                # the raw method-of-moments estimate
         assert mu0 == pytest.approx(0.0, abs=1e-9) and tau2 == pytest.approx(0.025 - 0.01, abs=1e-6)
         assert W.pool_prior(pool[:3]) == (0.0, W.TAU2_DEFAULT)                    # too small a pool: the fixed prior
+
+    def test_promotion_rule_v2_fast_floors_the_spread_at_0_2_r(self):
+        # 15 Oct, Aaron chose "Fast": the pool's spread is never taken as less than 0.04 (0.2 R); v1 floored it at
+        # 0.0025 (0.05 R). A tight pool (raw spread 0.015) is lifted to the floor in force
+        pool = [{"mean_r": m, "se2_r": 0.01, "stats": {"trades": 20}} for m in (-0.2, -0.1, 0.0, 0.1, 0.2)]
+        assert (W.TAU2_FLOOR, W.TAU2_FLOOR_V1, W.PROMOTION_RULES) == (0.04, 0.0025, "v2")
+        assert W.pool_prior(pool) == (0.0, 0.04)
+        assert W.pool_prior(pool, floor=W.TAU2_FLOOR_V1) == (0.0, 0.015)
+        # tonight's leader on the Mac (14 Oct): mean +1.44 R over 7 trades, SD about 1.1 R, pool mean -0.12 R.
+        # v1 gave it about 3% weight; v2 about a fifth - still well below its own figure, but positive
+        se2 = max(1.1 ** 2, W.VAR_FLOOR_R2) / 7
+        assert W.shrink(1.44, se2, (-0.12, W.TAU2_FLOOR_V1)) < 0 < W.shrink(1.44, se2, (-0.12, W.TAU2_FLOOR))
+
+    def test_lumpy_short_records_no_longer_bias_the_pools_spread_low(self):
+        # 15 Oct: a short lab record is lumpy (a 2:1 test makes +1.9 R or -1.1 R after costs), so six losses in a
+        # row have no spread at all. 14 Oct floored every member's noise at VAR_FLOOR_R2 in the pool's average
+        # noise: the pool looked noisier than it is, its spread tau2 came out too small and every test was shrunk
+        # more than the method means. Here every outcome of six trades appears in exact proportion to its chance,
+        # for true win rates of 33% and 38.5% (true means -0.11 R and +0.055 R): the true tau2 is 0.0068
+        def outcomes(p, n=6, weight=10_000):
+            for k in range(n + 1):
+                for _ in range(round(weight * math.comb(n, k) * p ** k * (1 - p) ** (n - k))):
+                    yield [1.9] * k + [-1.1] * (n - k), 1.9 * p - 1.1 * (1 - p)
+        pool, true = [], []
+        for i, (rs, mu) in enumerate(o for p in (0.33, 0.385) for o in outcomes(p)):
+            mean, own, noise = W.r_noise(rs)
+            pool.append({"mean_r": round(mean, 4), "se2_r": round(own, 6), "se2_pool_r": round(noise, 8),
+                         "stats": {"trades": len(rs)}, "trades_key": f"test{i}"})   # distinct tests, not clones
+            true.append(mu)
+        mt = sum(true) / len(true)
+        true_tau2 = sum((x - mt) ** 2 for x in true) / len(true)
+        assert true_tau2 == pytest.approx(0.0068, abs=1e-4)
+        assert sum(1 for c in pool if c["se2_r"] > c["se2_pool_r"] + 0.01) > 0.05 * len(pool)   # the floor bites
+        mu0, tau2 = W.pool_prior(pool, floor=0.0)                                # the raw estimate (v2's floor aside)
+        assert tau2 == pytest.approx(true_tau2, abs=3e-4)                          # 15 Oct: on the true spread
+        old_mu0, old_tau2 = W.pool_prior([dict(c, se2_pool_r=None) for c in pool], floor=0.0)   # 14 Oct's floored noise
+        assert old_mu0 == mu0 and old_tau2 < true_tau2 - 0.002                    # biased low, by about 0.003
+
+    def test_exact_clones_count_once_in_the_pools_prior(self):
+        # 15 Oct: eight ideas with exactly the same trades are one piece of evidence about the pool, not eight
+        now = T0 + dt.timedelta(days=13)
+        distinct = [cand(f"d{k}", spread(12, 1.0, win=3.0 + k, loss=-6.0 + k % 2), now) for k in range(5)]
+        clones = [cand(f"clone{k}", spread(12, 1.0, win=9.0, loss=-2.0), now) for k in range(8)]
+        assert len({c["trades_key"] for c in clones}) == 1
+        assert len({c["trades_key"] for c in distinct + clones}) == 6
+        once = W.pool_prior(distinct + clones[:1], floor=0.0)                    # raw spread: v2's floor would hide it
+        assert W.pool_prior(distinct + clones, floor=0.0) == once
+        assert W.pool_prior([dict(c, trades_key=None) for c in distinct + clones], floor=0.0) != once   # eight sway it
+        assert once[1] != W.pool_prior([dict(c, trades_key=None) for c in distinct + clones], floor=0.0)[1]   # the spread too
+        near = spread(12, 1.0, win=9.0, loss=-2.0)
+        near[0]["net"] = 8.0                                                      # one trade different: not a clone
+        assert cand("near", near, now)["trades_key"] != clones[0]["trades_key"]
+        # the pool's size counts distinct tests: four and a fifth (eight times) make five, three and a fourth do not
+        assert W.pool_prior(distinct[:4] + clones) == W.pool_prior(distinct[:4] + clones[:1]) != (0.0, W.TAU2_DEFAULT)
+        assert W.pool_prior(distinct[:3] + clones) == (0.0, W.TAU2_DEFAULT)
+        W.score_pool(distinct + clones)                                           # each clone is still judged itself
+        in_force = W.pool_prior(distinct + clones[:1])                            # the prior in force (v2's floor)
+        assert all(c["shrunk_r"] is not None and c["prior"] == list(in_force) for c in clones)
+
+    def test_a_lucky_streak_still_gets_the_floor_in_its_own_shrinkage(self):
+        # 15 Oct: the floor left only the pool's prior. A candidate's own weight keeps it, so ten straight wins of
+        # exactly +0.5 R (no spread at all) still count as a short, noisy record, never as a certain one
+        assert W.r_noise([]) == (None, None, None)
+        assert W.r_noise([1.0]) == (1.0, W.VAR_FLOOR_R2, None)                    # one trade: the floor, no pool figure
+        now = T0 + dt.timedelta(days=13)
+        streak = cand("streak", spread(10, 0.8, win=5.0, loss=5.0), now)
+        pool = [streak] + [cand(f"n{k}", spread(12, 1.0, win=3.0 + k % 3, loss=-6.0 - k % 4), now) for k in range(8)]
+        assert streak["mean_r"] == 0.5 and streak["se2_pool_r"] == 0.0           # the pool's prior: its own spread
+        assert streak["se2_r"] == pytest.approx(W.VAR_FLOOR_R2 / 10)             # its own weight: the floor
+        W.score_pool(pool)
+        prior = W.pool_prior(pool)
+        assert streak["prior"] == list(prior)
+        assert streak["shrunk_r"] == round(W.shrink(0.5, W.VAR_FLOOR_R2 / 10, prior), 4)
+        assert W.shrink(0.5, 0.0, prior) == pytest.approx(0.5)                   # unfloored it would keep all 0.5 R
+        # floored it is still pulled well back (v1 under 0.25; v2 "Fast", 15 Oct, about 0.36 - still well below 0.5)
+        assert streak["shrunk_r"] < W.shrink(0.5, 0.0, prior) - 0.1
+        alone = W.judge(spread(10, 0.8, win=5.0, loss=5.0), "streak", now)       # judged alone, the same floor
+        assert alone["se2_r"] == pytest.approx(W.VAR_FLOOR_R2 / 10)
+        assert alone["shrunk_r"] == round(W.shrink(0.5, W.VAR_FLOOR_R2 / 10, (0.0, W.TAU2_DEFAULT)), 4)
 
     def test_a_few_lucky_trades_rank_below_a_steady_record(self):
         now = T0 + dt.timedelta(days=13)

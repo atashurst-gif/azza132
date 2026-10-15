@@ -63,10 +63,11 @@ def clock_idea(exit_code: str = "time1h", hour: int = 10, side: str = "BUY") -> 
 
 
 def world(tmp_path: Path, *, is_demo: bool = True, balance: float = 2000.0, exit_code: str = "time1h",
-          tier: float = 1.0, side: str = "BUY") -> NS:
+          tier: float = 1.0, side: str = "BUY", start: dt.datetime = None) -> NS:
+    start = start or START
     data = tmp_path / "data"
     data.mkdir(parents=True, exist_ok=True)
-    b = Sim(["EURUSD"], start=START, history_bars=3000, balance=balance, is_demo=is_demo, seed=7)
+    b = Sim(["EURUSD"], start=start, history_bars=3000, balance=balance, is_demo=is_demo, seed=7)
     b.connect()
     paths = LabPaths(data)
     write_universe(paths, [UniverseEntry("EURUSD", "FX_MAJOR", b.spec("EURUSD"))])
@@ -75,7 +76,7 @@ def world(tmp_path: Path, *, is_demo: bool = True, balance: float = 2000.0, exit
     led.register(c, "made-up clock trade")
     led.close()
     promote(data, c, tier)
-    clock = {"t": START}
+    clock = {"t": start}
     logs: list = []
     eng = LabDemo(data, b, cfg_mode="DEMO", now_fn=lambda: clock["t"], log_fn=logs.append, prime_bars=3000)
     return NS(data=data, broker=b, cand=c, clock=clock, logs=logs, eng=eng, paths=paths)
@@ -831,3 +832,151 @@ def test_the_margin_level_keeps_real_headroom_to_the_entrys_own_stop(tmp_path):
         q = w.broker.positions(R.read_roster(w.data)[w.cand.id]["magic"])[0]
         at_stop = (q.entry_price - q.sl) / spec.tick_size * spec.tick_value * q.volume
         assert a.margin_level >= 300.0 and (a.balance - at_stop) / a.margin * 100.0 >= 300.0, bal
+
+
+def test_a_promoted_breakout_signals_on_its_sessions_first_bar_as_practice_and_the_past_test(tmp_path):
+    """14 Oct: the demo engine shares practice's signal code (``Practice._signals``). A session one bar old was
+    read as a session too short to trade, so a London breakout on the 07:00 UTC open (the past test takes it)
+    could never fire on the demo either. MADE-UP bars (tests/test_lab_practice.py ``crafted_columns``)."""
+    from mintel.lab import day_min, epoch_min
+    from mintel.lab import features as FEAT
+    from mintel.lab.practice import Practice
+    from tests.test_lab_practice import LIVE_DAY, breakout_ideas, crafted_columns
+    assert LabDemo._signals is Practice._signals
+    w = world(tmp_path)
+    london, newyork = breakout_ideas()[("LONDON", 120)], breakout_ideas()[("NEWYORK", 120)]
+    led = LabLedger(w.paths.sqlite)
+    for c in (london, newyork):
+        led.register(c, family(c.family).name(c))
+        promote(w.data, c)
+    led.close()
+    w.eng.load_roster()
+    assert {london.id, newyork.id} <= set(w.eng.slots)
+    ser = FEAT.LiveSeries(w.eng.universe["EURUSD"], FEAT.SETS)
+    london_open = day_min(LIVE_DAY) + 7 * 60
+    assert london_open == epoch_min(dt.datetime(2026, 10, 13, 7, 0, tzinfo=UTC))   # 08:00 UK (BST)
+    for row in zip(*crafted_columns()):
+        if row[0] > london_open:
+            break
+        ser.push(*row)
+    w.eng.series["EURUSD"] = ser
+    got = [(slot.cid, i, sg.side) for slot, _sym, i, sg, _dv in w.eng._signals("EURUSD", london_open + 1)]
+    assert got == [(london.id, ser.n - 1, 1)]                     # was []; New York is not open yet
+
+
+# ======================================= the flat comes on the CLOCK (14 Oct) --
+# Seen live on 14 Oct (practice, whose walking the demo shares): AUS200's last bar was 19:59 UTC, and a position
+# was only walked - so only flattened - when its market printed a bar, so the 21:55 UK flat never came and a
+# promoted idea could have held a REAL demo position overnight or over a weekend. The flat now comes on the
+# clock: the close is sent at the flat with the stop untouched until it fills; a close the broker refuses (the
+# market is shut) is sent again every minute, weekends included, never dropped, booked from its deal.
+def _no_bar(w: NS, step) -> None:
+    """A minute in which the market prints nothing (it has stopped for the day): only the clock moves."""
+    w.broker.now += dt.timedelta(minutes=1)
+    w.clock["t"] = w.broker.now + dt.timedelta(seconds=3)
+    step(w.clock["t"])
+
+
+def _steady_to(w: NS, until: dt.datetime, step) -> None:
+    """Hand-made bars that touch neither the stop nor the target, up to the bar stamped ``until``."""
+    while w.broker.now < until:
+        last = w.broker._bars["EURUSD"][-1].close
+        w.broker.push_bar("EURUSD", last, high=last + 0.00002, low=last - 0.00002)
+        w.clock["t"] = w.broker.now + dt.timedelta(seconds=3)
+        step(w.clock["t"])
+
+
+def test_a_market_that_stops_printing_is_closed_at_2155_uk_on_the_demo_and_on_paper_alike(tmp_path):
+    """The market's last bar is 19:59 UTC (13 Oct, BST: 21:55 UK is 20:55 UTC). The demo's close goes to the
+    broker at 21:55 UK and is booked SESSION_END from its deal; practice, on the same prices, decides the very
+    same exit at the very same minute (PAPER and DEMO identical in decision, never mixed in the record)."""
+    from mintel.lab import COOLDOWN_BARS, epoch_min
+    from mintel.lab.practice import Practice
+    w = world(tmp_path, exit_code="t2")                                           # a 2R target, no time exit
+    led = LabLedger(w.paths.sqlite)
+    pr = Practice(w.paths, _PracticeFeed(w.broker), ledger=led, now_fn=lambda: w.clock["t"], log=lambda m: None,
+                  prime_bars=3000)
+
+    def both(t):
+        w.eng.step(t)
+        pr.minute(t)
+    while w.broker.now < ENTRY_AT:
+        w.broker.advance(1)
+        w.clock["t"] = w.broker.now + dt.timedelta(seconds=3)
+        both(w.clock["t"])
+    magic = R.read_roster(w.data)[w.cand.id]["magic"]
+    (q,) = w.broker.positions(magic)
+    assert pr.open and q.sl and q.tp
+    _steady_to(w, dt.datetime(2026, 10, 13, 19, 59, tzinfo=UTC), both)           # its last bar of the day
+    while w.broker.now < dt.datetime(2026, 10, 13, 20, 54, tzinfo=UTC):
+        _no_bar(w, both)
+    assert [p.sl for p in w.broker.positions(magic)] == [q.sl] and pr.open       # 21:54 UK: held, its stop as sent
+    _no_bar(w, both)                                                              # 20:55:03 UTC, 21:55 UK
+    assert w.broker.positions(magic) == [] and w.eng.open == {}                  # was: still open overnight
+    assert pr.open == {}
+    (r,) = demo_trades(w.data)
+    deal = w.broker.closed_deal(q.ticket)
+    assert (r["ticket"], r["exit_reason"], r["closed_utc"]) == (q.ticket, "SESSION_END", "2026-10-13T20:55:00+00:00")
+    assert r["net_gbp"] == round(deal["pnl"], 2) and deal["reason"] == "LAB SESSION_END"   # the broker's figure
+    (p,) = [dict(x) for x in led.query("SELECT * FROM practice_trades")]
+    assert (p["exit_reason"], p["closed_utc"]) == ("SESSION_END", "2026-10-13T20:55:00+00:00")
+    assert w.broker.modify_log == []                                              # the stop was never touched
+    flat = epoch_min(dt.datetime(2026, 10, 13, 20, 55, tzinfo=UTC))
+    assert w.eng.slots[w.cand.id].next_ok["EURUSD"] == pr.slots[w.cand.id].next_ok["EURUSD"] \
+        == flat - 1 + COOLDOWN_BARS
+    led.close()
+
+
+@pytest.mark.parametrize("restart", [False, True], ids=["running", "restarted-on-saturday"])
+def test_the_friday_flat_is_sent_on_the_clock_and_retried_over_the_weekend_until_it_fills(tmp_path, restart):
+    """Friday 16 Oct: the market's last bar is 19:29 UTC and from then the broker refuses every close (MetaTrader's
+    10018, market closed) until it opens again on Monday. The Friday flat (21:00 UK, 20:00 UTC) sends the close -
+    refused, logged, sent again every minute through the weekend, the position never dropped and its stop never
+    touched - and it is booked SESSION_END from the broker's deal when it fills. Started again on the Saturday
+    (the trader was down over Friday's flat), it is the same. It used to wait for Monday's first bar: FEED_GAP."""
+    from mintel.broker.base import OrderResult, RetCode
+    fri = dt.datetime(2026, 10, 16, 6, 0, tzinfo=UTC)
+    w = world(tmp_path, exit_code="t2", start=fri)
+    tick_to(w, fri.replace(hour=9, minute=1))
+    magic = R.read_roster(w.data)[w.cand.id]["magic"]
+    (q,) = w.broker.positions(magic)
+    eng, logs = w.eng, w.logs
+    _steady_to(w, fri.replace(hour=19, minute=29), eng.step)
+    real_close, shut = w.broker.close, {"on": True, "refused": 0}
+
+    def close(ticket, volume=0.0, comment=""):
+        if shut["on"]:
+            shut["refused"] += 1
+            return OrderResult(False, RetCode.MARKET_CLOSED.value, ticket=ticket, comment="Market closed")
+        return real_close(ticket, volume, comment)
+    w.broker.close = close
+    if restart:
+        w.broker.now = fri.replace(hour=19, minute=29) + dt.timedelta(hours=14, minutes=30)     # Saturday 10:00
+        logs = []
+        eng = LabDemo(w.data, w.broker, cfg_mode="DEMO", now_fn=lambda: w.clock["t"], log_fn=logs.append,
+                      prime_bars=3000)
+        for _ in range(3):
+            _no_bar(w, eng.step)
+    else:
+        while w.broker.now < fri.replace(hour=20, minute=0):
+            _no_bar(w, eng.step)
+        assert shut["refused"] == 1                                               # sent at 20:00:03 UTC
+        _no_bar(w, eng.step)
+    assert shut["refused"] >= 2 and any("the SESSION_END close was refused" in m for m in logs)
+    for day, hh in ((17, 15), (18, 21)):                                          # the weekend: sent again
+        w.broker.now = dt.datetime(2026, 10, day, hh, 0, tzinfo=UTC)
+        before = shut["refused"]
+        for _ in range(2):
+            _no_bar(w, eng.step)
+        assert shut["refused"] == before + 2
+        assert [(p.ticket, p.sl) for p in w.broker.positions(magic)] == [(q.ticket, q.sl)]    # stop untouched
+        assert (w.cand.id, "EURUSD") in eng.open and REC.DemoRecord(w.data).open_rows()       # never dropped
+    assert demo_trades(w.data) == []
+    shut["on"] = False                                                            # Monday: the market opens
+    w.broker.now = dt.datetime(2026, 10, 19, 6, 59, tzinfo=UTC)
+    _steady_to(w, dt.datetime(2026, 10, 19, 7, 0, tzinfo=UTC), eng.step)
+    assert w.broker.positions(magic) == [] and eng.open == {}
+    (r,) = demo_trades(w.data)
+    assert (r["ticket"], r["exit_reason"]) == (q.ticket, "SESSION_END")           # was FEED_GAP on Monday
+    assert r["net_gbp"] == round(w.broker.closed_deal(q.ticket)["pnl"], 2)       # from the broker's deal
+    assert w.broker.modify_log == [] and len(w.broker.order_log) == 1            # nothing else was sent

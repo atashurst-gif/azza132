@@ -100,6 +100,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import logging
 import math
@@ -130,8 +131,15 @@ CONTROL_MIN_TRADES = 10         # a control idea counts in the benchmark once it
 POOL_MIN_TRADES = 5             # a test counts in the shrinkage pool once it has this many trades
 POOL_MIN_SIZE = 5               # with fewer tests in the pool, a fixed prior is used
 TAU2_DEFAULT = 0.04             # the fixed prior's spread of true R a trade (0.2 R), around 0
-TAU2_FLOOR = 0.0025             # the pool's spread is never taken as less than 0.05 R
-VAR_FLOOR_R2 = 0.25             # a test's own R spread is never taken as less than 0.5 R (few trades)
+# Promotion rule v2 (Aaron, 15 Oct 2026, "Fast"): the pool's spread of true R a trade is never taken as less
+# than 0.2 R, so a strategy averaging about +1 R a trade reaches demo by about 15 trades roughly 7-9 times in 10 (v1: 1-2 in 10); the control
+# (luck) benchmark, the bar, the diversity cap and the demo judgement still stand. v1 (14 Oct) floored it at
+# 0.05 R (TAU2_FLOOR_V1), kept for comparison (docs/ops/promotion.md, docs/REQUIREMENTS_LEDGER.md).
+TAU2_FLOOR_V1 = 0.0025
+TAU2_FLOOR = 0.04
+PROMOTION_RULES = "v2"
+VAR_FLOOR_R2 = 0.25             # a test's own R spread is never taken as less than 0.5 R (few trades) in its
+                                # own shrinkage; the pool's prior uses the unfloored spread (15 Oct, r_noise)
 WEIGHT_STRONG_NEG, WEIGHT_MILD_NEG = 0.5, 0.85      # past / fresh lab tests: a weight on the rank, not a gate
 DIVERSITY_MAX = 2               # on the demo at once, per market and direction
 SPREAD_MARKET, SPREAD_SESSION = 0.85, 0.90           # the queue's preference for a new market / session
@@ -583,19 +591,63 @@ def shrink(mean: float, se2: float, prior: tuple) -> float:
     return b * mu0 + (1.0 - b) * mean
 
 
-def pool_prior(cands: Sequence[dict]) -> tuple:
+def r_noise(rs: Sequence[float]) -> tuple:
+    """(mean R a trade, its sampling variance for its OWN shrinkage, its sampling
+    variance for the POOL's prior) of one test's R values; (None, None, None) with none.
+
+    Both variances are the sample variance (n - 1 under it, unbiased) divided by n.
+    The first takes the test's R spread as at least VAR_FLOOR_R2 (VAR_FLOOR_R2 / 1 with
+    a single trade), so a short lucky streak whose results barely differ never earns
+    the weight of a steady record. The second (15 Oct) has no floor: short lab records
+    are lumpy (five losses in a row have almost no spread), and flooring them in the
+    pool's average noise pulled tau2 down; it is None under two trades."""
+    n = len(rs)
+    if not n:
+        return None, None, None
+    mean = sum(rs) / n
+    var = sum((x - mean) ** 2 for x in rs) / (n - 1) if n >= 2 else None
+    own = max(VAR_FLOOR_R2 if var is None else var, VAR_FLOOR_R2) / n
+    return mean, own, (None if var is None else var / n)
+
+
+def trades_key(trades: Sequence[dict]) -> Optional[str]:
+    """A fingerprint of a trade list: each trade's close time, market and R, in
+    close order. Two tests with the same key are exact clones (the same trades);
+    the pool's prior counts them once. None for no trades."""
+    if not trades:
+        return None
+    rows = sorted((to_utc(t["closed"]).isoformat(), str(t.get("symbol") or ""), round(r_of(t), 6)) for t in trades)
+    return hashlib.sha1(repr(rows).encode("utf-8")).hexdigest()[:16]
+
+
+def pool_prior(cands: Sequence[dict], floor: Optional[float] = None) -> tuple:
     """(pool mean R a trade, spread of the true means tau2) by the method of
-    moments over the tests with at least POOL_MIN_TRADES trades: tau2 = the variance
-    of their means less their average sampling variance (never under TAU2_FLOOR).
-    With fewer than POOL_MIN_SIZE such tests: the fixed prior (0, TAU2_DEFAULT)."""
-    pts = [(c["mean_r"], c["se2_r"]) for c in cands
-           if c.get("mean_r") is not None and int(c["stats"]["trades"] or 0) >= POOL_MIN_TRADES]
+    moments over the distinct tests with at least POOL_MIN_TRADES trades: tau2 = the
+    variance of their means less their average sampling variance (never under ``floor``,
+    TAU2_FLOOR by default: the promotion rule in force; 0 shows the raw estimate).
+    With fewer than POOL_MIN_SIZE such tests: the fixed prior (0, TAU2_DEFAULT).
+
+    15 Oct: a test's sampling variance HERE is its own unbiased one with no
+    VAR_FLOOR_R2 (``se2_pool_r``; ``se2_r`` when a record has no such figure). The
+    floor stays in each test's own shrinkage (``_finish`` uses ``se2_r``). Exact clones
+    (the same ``trades_key``) count once, in the mean, the spread and the pool's size."""
+    pts, seen = [], set()
+    for c in cands:
+        if c.get("mean_r") is None or int(c["stats"]["trades"] or 0) < POOL_MIN_TRADES:
+            continue
+        key = c.get("trades_key")
+        if key is not None:
+            if key in seen:
+                continue
+            seen.add(key)
+        v = c.get("se2_pool_r")
+        pts.append((c["mean_r"], c["se2_r"] if v is None else v))
     if len(pts) < POOL_MIN_SIZE:
         return 0.0, TAU2_DEFAULT
     ms = [m for m, _ in pts]
     mu0 = sum(ms) / len(ms)
     var = sum((m - mu0) ** 2 for m in ms) / (len(ms) - 1)
-    tau2 = max(TAU2_FLOOR, var - sum(v for _, v in pts) / len(pts))
+    tau2 = max(TAU2_FLOOR if floor is None else float(floor), var - sum(v for _, v in pts) / len(pts))
     return round(mu0, 6), round(tau2, 6)
 
 
@@ -619,11 +671,7 @@ def _raw(trades: Sequence[dict], ident: str, now: dt.datetime) -> dict:
     per_week = round(s["trades"] * 7.0 / span, 2)
     tdays = trading_days_between(uk(first).date(), uk(now).date()) if first else 1
     per_day = round(len(trades) / tdays, 2) if trades else 0.0
-    rs = [r_of(t) for t in trades]
-    n = len(rs)
-    mean_r = sum(rs) / n if n else None
-    var_r = (sum((x - mean_r) ** 2 for x in rs) / (n - 1)) if n >= 2 else VAR_FLOOR_R2
-    se2 = max(var_r, VAR_FLOOR_R2) / n if n else None
+    mean_r, se2, se2_pool = r_noise([r_of(t) for t in trades])
     days = len({uk(to_utc(t["closed"])).date() for t in trades})
     best = max(nets) if nets else 0.0
     wins = sum(x for x in nets if x > 0)
@@ -632,7 +680,8 @@ def _raw(trades: Sequence[dict], ident: str, now: dt.datetime) -> dict:
     return {"stats": s, "verdict": V.decide(s)[0], "luck": p, "lcb": lcb, "per_week": per_week, "per_day": per_day,
             "need": needed_trades(per_day), "days_traded": days, "pf": pf,
             "net_less_best": round(sum(nets) - best, 2) if nets else 0.0,
-            "mean_r": None if mean_r is None else round(mean_r, 4), "se2_r": None if se2 is None else round(se2, 6)}
+            "mean_r": None if mean_r is None else round(mean_r, 4), "se2_r": None if se2 is None else round(se2, 6),
+            "se2_pool_r": None if se2_pool is None else round(se2_pool, 8), "trades_key": trades_key(trades)}
 
 
 def _finish(c: dict, prior: tuple, bar: Optional[float], weight: float = 1.0, control: bool = False) -> dict:

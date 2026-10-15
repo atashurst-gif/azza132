@@ -508,3 +508,246 @@ def test_a_familys_signals_read_only_its_own_settings_and_the_session(code):
     assert not re.search(r"""p\.get\(""", body), code
     if not fam.reads_news:
         assert not re.search(r"\bnews\b", body), code
+
+
+# ------------------------------------- a session's first bar, as the past test (14 Oct) ---
+# A breakout idea's settings and session must change what it trades live exactly as they do in the past test.
+# MADE-UP minutes: EURUSD flat at 1.10000 with a 100-point range every minute (a 5-minute swing of about 100
+# points, so the costs pass), a lone spike high at 04:00 UTC that only the 240-minute high still sees at 07:00,
+# and five planted breakouts on 13 Oct: a close above for one minute, the next minute opening there and falling
+# back (so the stop is hit at once, by the tick fill and the past test's next-open fill alike).
+P0 = 110000
+BREAKS = {(7, 0): 80, (9, 30): 80, (13, 0): 400, (17, 0): 80, (20, 0): 150}      # UTC on 13 Oct -> close above
+
+
+def crafted_columns():
+    t, o, h, l, c, s, v = [], [], [], [], [], [], []
+    for day in ("2026-10-12", LIVE_DAY):
+        for m in range(day_min(day), day_min(day) + 1440):
+            t.append(m), o.append(P0), h.append(P0 + 50), l.append(P0 - 50), c.append(P0), s.append(10), v.append(100)
+    base = day_min(LIVE_DAY)
+    h[t.index(base + 4 * 60)] = P0 + 300
+    for (hh, mm), up in BREAKS.items():
+        k = t.index(base + hh * 60 + mm)
+        c[k], h[k] = P0 + up, P0 + up + 20
+        o[k + 1], h[k + 1] = P0 + up, P0 + up
+    return t, o, h, l, c, s, v
+
+
+def breakout_ideas():
+    """Breakout ideas on the majors that differ ONLY in their lookback (120 / 240) and session (London / NY)."""
+    return {(c.session, c.p("lookback_min")): c for c in family("RANGE_BREAK").grid()
+            if c.markets == "FX_MAJOR" and c.exit == "t2" and c.news == "IGNORE" and c.p("lookback_min") in (120, 240)}
+
+
+def test_breakouts_that_differ_in_lookback_or_session_trade_differently_live_and_as_the_past_test(tmp_path):
+    """London opens at 07:00 UTC (BST): the 07:00 breakout is the London session's FIRST bar. The past test
+    takes it; practice dropped it (a session one bar old was read as a session too short to trade), so live a
+    London breakout could never fire on the open. Each idea here must enter exactly where the past test does on
+    the same bars, and the four must not trade alike."""
+    paths = LabPaths(tmp_path / "data", tmp_path / "logs")
+    store = BarStore(paths)
+    ent = synth.entry_for("EURUSD")
+    cols = crafted_columns()
+    k = cols[0].index(day_min(LIVE_DAY))
+    store.merge_columns("EURUSD", *(x[:k] for x in cols), point=ent.spec.point, digits=ent.spec.digits,
+                        source="SYNTHETIC", now=dt.datetime(2026, 10, 13, 6, tzinfo=UTC))
+    write_universe(paths, [ent])
+    ideas = breakout_ideas()
+    led = LabLedger(paths.sqlite)
+    _register(led, list(ideas.values()), "IDEA")
+    clock = Clock(at(6, 50))
+    bridge = FakeBridge(clock, {"EURUSD": cols}, {"EURUSD": ent})
+    feed = PriceFeed(factory=bridge.factory)
+    feed.ping()
+    eng = Practice(paths, feed, ledger=led, now_fn=clock, log=lambda m: None, prime_bars=3000)
+    run_minutes(eng, clock, at(6, 50), at(20, 10), every_status=600)
+    live = {key: [r["opened_utc"][11:16] for r in trades_of(led) if r["candidate_id"] == c.id]
+            for key, c in ideas.items()}
+    ser = synth.series_from_columns(ent, cols)
+    win = synth.window_of([ser], [LIVE_DAY])
+    past = {key: [tr.opened_utc[11:16] for tr in sim.run(c, win).trades] for key, c in ideas.items()}
+    want = {("LONDON", 120): ["07:01", "09:31", "13:01"], ("LONDON", 240): ["13:01"],
+            ("NEWYORK", 120): ["13:01", "17:01", "20:01"], ("NEWYORK", 240): ["13:01", "20:01"]}
+    assert past == want
+    assert live == want                                   # was: London 120 without its 07:01 entry
+    assert len({tuple(x) for x in live.values()}) == 4    # lookback and session each change the record
+    assert set(bridge.calls) <= ALLOWED
+    led.close()
+
+
+# ------------------------------------------ the flat comes on the CLOCK (14 Oct) ---
+# Seen live on 14 Oct: ten AUS200 practice positions opened 12:38-13:49 UTC were still open at 22:33 UTC. AUS200's
+# last bar was 19:59 UTC, and a position was only walked - so only flattened - when its market printed a new bar:
+# the 21:55 UK flat never came, and the next bar (the next session) would have closed them FEED_GAP, held
+# overnight. The flat now comes on the clock: at 21:55 UK (21:00 on a Friday) every position still open is closed
+# at its market's last price before the flat, as the past test closes it at its last bar before the flat.
+# MADE-UP minutes: an index flat at 8800.0 with a 10-point range every minute, so neither the stop nor the
+# 2R target is ever touched and the position can only leave by the flat.
+AUS_P0 = 88000                                            # points of 0.1
+
+
+def aus200():
+    import dataclasses
+    base = synth.entry_for("US500")                       # made-up index specification, renamed
+    return dataclasses.replace(base, name="AUS200", spec=dataclasses.replace(base.spec, name="AUS200"))
+
+
+def stopping_columns(days, last_bar: dict, reopen: dict = None):
+    """Flat minutes on each UTC day of ``days``; on a day in ``last_bar`` none after that UTC (hh, mm) (the
+    market stops printing), resuming on a day in ``reopen`` from that UTC (hh, mm)."""
+    t, o, h, l, c, s, v = [], [], [], [], [], [], []
+    reopen = reopen or {}
+    for day in days:
+        base = day_min(day)
+        stop = base + last_bar[day][0] * 60 + last_bar[day][1] if day in last_bar else None
+        start = base + reopen[day][0] * 60 + reopen[day][1] if day in reopen else None
+        for m in range(base, base + 1440):
+            if stop is not None and m > stop and (start is None or m < start):
+                continue                                  # the market prints nothing
+            t.append(m), o.append(AUS_P0), h.append(AUS_P0 + 50), l.append(AUS_P0 - 50), c.append(AUS_P0)
+            s.append(10), v.append(100)
+    return t, o, h, l, c, s, v
+
+
+def clock_buy_on_the_index(hour_uk: int = 13):
+    """The clock trade (it trades at a known minute) bought at ``hour_uk`` UK on the index, with a 2R target
+    and no time exit: the flat is its only way out on flat prices."""
+    base = next(c for c in family("CONTROL_TIME_OF_DAY").grid() if c.p("hour_uk") == hour_uk
+                and c.p("side") == "BUY" and c.markets == "FX_MAJOR" and c.exit == "time1h")
+    return base.replace(exit="t2", markets="INDEX")
+
+
+def index_lab(tmp_path, cols, live_day: str, start: dt.datetime):
+    """A MADE-UP lab on the one index: the bars before ``live_day`` stored, the rest served by the fake bridge."""
+    paths = LabPaths(tmp_path / "data", tmp_path / "logs")
+    store = BarStore(paths)
+    ent = aus200()
+    k = cols[0].index(day_min(live_day))
+    store.merge_columns("AUS200", *(x[:k] for x in cols), point=ent.spec.point, digits=ent.spec.digits,
+                        source="SYNTHETIC", now=start)
+    write_universe(paths, [ent])
+    idea = clock_buy_on_the_index()
+    led = LabLedger(paths.sqlite)
+    _register(led, [idea], "IDEA")
+    clock = Clock(start)
+    bridge = FakeBridge(clock, {"AUS200": cols}, {"AUS200": ent})
+    feed = PriceFeed(factory=bridge.factory)
+    feed.ping()
+    eng = Practice(paths, feed, ledger=led, now_fn=clock, log=lambda m: None, prime_bars=3000)
+    return paths, led, clock, bridge, eng, idea, ent
+
+
+def utc(day: str, hh: int, mm: int, ss: int = 3) -> dt.datetime:
+    y, mo, d = (int(x) for x in day.split("-"))
+    return dt.datetime(y, mo, d, hh, mm, ss, tzinfo=UTC)
+
+
+def past_test_exit(idea, ent, cols, day: str):
+    """The past test's own trade on the same bars (its exit is its last bar before the flat)."""
+    ser = synth.series_from_columns(ent, cols)
+    got = sim.run(idea, synth.window_of([ser], [day])).trades
+    assert len(got) == 1
+    return got[0]
+
+
+def test_a_market_that_stops_printing_before_the_flat_is_closed_at_2155_uk_on_the_clock(tmp_path):
+    day = "2026-10-14"                                        # Wednesday (BST): 21:55 UK is 20:55 UTC
+    cols = stopping_columns(["2026-10-13", day], {day: (19, 59)}, {day: (23, 0)})
+    paths, led, clock, bridge, eng, idea, ent = index_lab(tmp_path, cols, day, utc(day, 11, 50))
+    run_minutes(eng, clock, utc(day, 11, 58), utc(day, 20, 54), every_status=600)
+    assert [r["opened_utc"] for r in led.query("SELECT * FROM practice_open")] == ["2026-10-14T12:01:00+00:00"]
+    run_minutes(eng, clock, utc(day, 20, 55), utc(day, 20, 55))
+    assert led.query("SELECT * FROM practice_open") == [] and eng.open == {}      # was: still open at 22:33 UTC
+    run_minutes(eng, clock, utc(day, 20, 56), utc(day, 23, 10), every_status=600)  # the market prints again at 23:00
+    rows = trades_of(led)
+    assert [(r["exit_reason"], r["closed_utc"]) for r in rows] == \
+        [("SESSION_END", "2026-10-14T20:55:00+00:00")]                           # was FEED_GAP at 23:01 UTC
+    # at the market's last price before the flat (its 19:59 UTC bar) with the usual cost against it: the past
+    # test's own exit, to the point
+    past = past_test_exit(idea, ent, cols, day)
+    assert past.exit_reason == "SESSION_END" and past.closed_utc == "2026-10-14T20:00:00+00:00"
+    assert rows[0]["exit_price"] == pytest.approx(past.exit_price)
+    assert rows[0]["exit_price"] < AUS_P0 * ent.spec.point                        # a buy sells at the bid less slip
+    assert rows[0]["stop"] is not None and rows[0]["mode"] == "PRACTICE"
+    assert set(bridge.calls) <= ALLOWED                                           # still prices only
+    led.close()
+
+
+@pytest.mark.parametrize("restart_at", [(20, 30), (21, 30)])
+def test_the_clock_flat_never_books_a_price_from_before_the_position(tmp_path, restart_at):
+    """Review, 15 Oct: practice started again with the bridge answering NO bars (MT5's copy_rates_from_pos gave
+    None, the adapter answers [] with no error) holds only the stored days before the position. The clock flat
+    must not book the position at Tuesday's price (+17 R of invented performance): it waits and tries again.
+    MADE-UP prices: Tuesday 13 Oct at 9000.0, Wednesday 14 Oct at 8800.0; the market stops at 19:59 UTC."""
+    tue, wed = "2026-10-13", "2026-10-14"
+    level = {tue: 90000, wed: 88000}
+    t, o, h, low, c, sp, v = [], [], [], [], [], [], []
+    for d in (tue, wed):
+        base = day_min(d)
+        for m in range(base, base + 1440):
+            if d == wed and m > base + 19 * 60 + 59:
+                continue
+            p = level[d]
+            t.append(m), o.append(p), h.append(p + 50), low.append(p - 50), c.append(p), sp.append(10), v.append(100)
+    cols = (t, o, h, low, c, sp, v)
+    paths, led, clock, bridge, eng, idea, ent = index_lab(tmp_path, cols, wed, utc(wed, 11, 50))
+    run_minutes(eng, clock, utc(wed, 11, 58), utc(wed, 18, 0), every_status=600)
+    assert len(led.query("SELECT * FROM practice_open")) == 1
+    led.close()
+    empty = FakeBridge(clock, {"AUS200": cols}, {"AUS200": ent}, hole=(day_min(tue) - 10 ** 6, 10 ** 9))
+    feed = PriceFeed(factory=empty.factory)
+    feed.ping()
+    led = LabLedger(paths.sqlite)
+    eng2 = Practice(paths, feed, ledger=led, now_fn=clock, log=lambda m: None, prime_bars=3000)
+    hh, mm = restart_at
+    start = utc(wed, hh, mm)
+    run_minutes(eng2, clock, start, start + dt.timedelta(minutes=2), every_status=600)
+    run_minutes(eng2, clock, max(utc(wed, 20, 50), start + dt.timedelta(minutes=3)), utc(wed, 21, 0),
+                every_status=600)
+    booked = trades_of(led)
+    assert all(r["exit_price"] < 8900 for r in booked)            # never Tuesday's 9000-ish price
+    assert booked == [] and len(eng2.open) == 1                    # it waits for a real price, nothing invented
+    led.close()
+    # the bridge answers again: the bars it missed are read back and it is closed at the flat (21:55 UK, 20:55 UTC)
+    # at the market's last price before it - the past test's own exit - never held overnight, never FEED_GAP
+    led = LabLedger(paths.sqlite)
+    eng3 = Practice(paths, PriceFeed(factory=bridge.factory), ledger=led, now_fn=clock, log=lambda m: None,
+                    prime_bars=3000)
+    run_minutes(eng3, clock, utc(wed, 21, 5), utc(wed, 21, 7), every_status=600)
+    rows = trades_of(led)
+    assert [(r["exit_reason"], r["closed_utc"]) for r in rows] == [("SESSION_END", "2026-10-14T20:55:00+00:00")]
+    assert rows[0]["exit_price"] < 8850 and eng3.open == {}        # Wednesday's 8800 less the cost, not Tuesday's
+    led.close()
+
+
+@pytest.mark.parametrize("restart", [False, True], ids=["running", "restarted-on-saturday"])
+def test_the_friday_flat_comes_on_the_clock_and_nothing_is_held_over_the_weekend(tmp_path, restart):
+    """Friday 16 Oct: the market's last bar is 19:29 UTC, before the Friday flat (21:00 UK, 20:00 UTC). Running,
+    it is closed at 21:00 UK; started again on the Saturday (the process was down over Friday's flat), it is
+    closed at once, booked at Friday's flat - never held to Monday's first bar (a FEED_GAP)."""
+    fri, sat, sun = "2026-10-16", "2026-10-17", "2026-10-18"
+    cols = stopping_columns(["2026-10-15", fri, "2026-10-19"], {fri: (19, 29)})
+    paths, led, clock, bridge, eng, idea, ent = index_lab(tmp_path, cols, fri, utc(fri, 11, 50))
+    run_minutes(eng, clock, utc(fri, 11, 58), utc(fri, 18, 0), every_status=600)
+    assert len(led.query("SELECT * FROM practice_open")) == 1
+    if restart:
+        led.close()
+        led = LabLedger(paths.sqlite)
+        eng = Practice(paths, PriceFeed(factory=bridge.factory), ledger=led, now_fn=clock, log=lambda m: None,
+                       prime_bars=3000)
+        clock.t = utc(sat, 9, 0)
+        assert eng.minute(clock.t)["weekend"] is True
+    else:
+        run_minutes(eng, clock, utc(fri, 18, 1), utc(fri, 20, 0), every_status=600)
+    assert led.query("SELECT * FROM practice_open") == [] and eng.open == {}
+    for when in (utc(sat, 10, 0), utc(sun, 12, 0), utc("2026-10-19", 0, 5)):     # Monday's bars change nothing
+        clock.t = when
+        eng.minute(when)
+    rows = trades_of(led)
+    assert [(r["exit_reason"], r["closed_utc"]) for r in rows] == \
+        [("SESSION_END", "2026-10-16T20:00:00+00:00")]                           # was FEED_GAP on Monday
+    past = past_test_exit(idea, ent, cols, fri)
+    assert past.exit_reason == "SESSION_END" and rows[0]["exit_price"] == pytest.approx(past.exit_price)
+    assert set(bridge.calls) <= ALLOWED
+    led.close()

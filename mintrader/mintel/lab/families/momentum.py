@@ -6,8 +6,6 @@ push's extreme within the next hour, with or without a shallow pullback first.
 """
 from __future__ import annotations
 
-import bisect
-
 from .. import Signal
 from ..candidate import SWING_NOTE, FamilyBase, swings
 
@@ -35,17 +33,47 @@ class MomentumContinuation(FamilyBase):
         atr, t, h, l, c = ser.f("atr5"), ser.t, ser.h, ser.l, ser.c
         need = p["impulse_atr"]
         shallow = p["pullback"] == "HALF"
+
+        def fire_of(e, up, ext, size, until):
+            """The first minute after the push (known at minute ``e``) that takes the
+            trade, or None: the push expires, fails, or nothing happens before ``until``."""
+            stop_t = t[e] + self.EXPIRE_MIN
+            dip = 0
+            i = e + 1
+            while i < until and t[i] <= stop_t:
+                if (c[i] > ext) if up else (c[i] < ext):
+                    if not shallow or dip >= self.SHALLOW_MIN * size:
+                        return i
+                    return None                                 # broke before a big enough pullback: gone
+                d = (ext - l[i]) if up else (h[i] - ext)
+                if d > dip:
+                    dip = d
+                if shallow and dip > self.SHALLOW_MAX * size:
+                    return None                                 # too deep: the push has failed
+                i += 1
+            return None
+
+        # Each signal depends only on the bars up to it (what practice sees live): the trade is
+        # taken on the FIRST minute at which any live push breaks its extreme, and that signal
+        # spends every push already known by then. Pushes are read in order; one known at or
+        # after the best minute found so far cannot fire before it, so that minute is final.
+        # (Read push by push, a later push firing first was dropped for an earlier push that
+        # broke afterwards - bars live practice had not yet seen.)
         out = []
-        k = max(a, 5)
-        while k < b:
-            if tb.t[k] - tb.t[k - 5] != 25:                  # a gap inside the six bars
-                k += 1
-                continue
+        last = -1                       # minute of the last signal: pushes known by then are spent
+        best = None                     # (minute, side): the earliest break among pushes not yet spent
+        for k in range(max(a, 5), b):
             e = tb.end_i[k]
+            if best is not None and e >= best[0]:
+                out.append(Signal(best[0], best[1], None, "broke the push's extreme"))
+                last, best = best[0], None
+            if e <= last:
+                continue                                        # known by the last signal: spent
+            if tb.t[k] - tb.t[k - 5] != 25:                     # a gap inside the six bars
+                continue
             at = atr[e]
             move = tb.c[k] - tb.o[k - 5]
             if at <= 0 or abs(move) < need * at:
-                k += 1
                 continue
             up = move > 0
             aligned = 0
@@ -53,30 +81,14 @@ class MomentumContinuation(FamilyBase):
                 if (tb.c[j] > tb.o[j]) if up else (tb.c[j] < tb.o[j]):
                     aligned += 1
             if aligned < 4:
-                k += 1
                 continue
             ext = max(tb.h[k - 5:k + 1]) if up else min(tb.l[k - 5:k + 1])
-            size = abs(move)
-            stop_t = t[e] + self.EXPIRE_MIN
-            dip = 0
-            i = e + 1
-            fired = None
-            while i < hi and t[i] <= stop_t:
-                if (c[i] > ext) if up else (c[i] < ext):
-                    if not shallow or dip >= self.SHALLOW_MIN * size:
-                        fired = i
-                    break
-                d = (ext - l[i]) if up else (h[i] - ext)
-                if d > dip:
-                    dip = d
-                if shallow and dip > self.SHALLOW_MAX * size:
-                    break                                       # too deep: the push has failed
-                i += 1
-            if fired is None:
-                k += 1
-            else:
-                out.append(Signal(fired, 1 if up else -1, None, "broke the push's extreme"))
-                k = bisect.bisect_right(tb.end_i, fired, k + 1, b)
+            # a break at or after the best minute so far is too late (a tie goes to the earlier push)
+            fired = fire_of(e, up, ext, abs(move), hi if best is None else best[0])
+            if fired is not None:
+                best = (fired, 1 if up else -1)
+        if best is not None:
+            out.append(Signal(best[0], best[1], None, "broke the push's extreme"))
         return out
 
     def key_words(self, c):

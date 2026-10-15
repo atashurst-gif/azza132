@@ -81,10 +81,42 @@ look good by chance. Two guards deal with that.
   divided by its number of trades). *Spread* is how far the pool's true
   averages really differ: the variance of the tests' averages minus their
   average noise. Both are measured on the tests that have at least 5 trades.
+  With fewer than 5 such tests, a fixed pool is assumed: an average of 0 and a
+  spread of 0.04 (0.2 R). The spread is never taken as less than 0.04
+  (0.2 R): **promotion rule v2, Aaron's "Fast" choice of 15 Oct 2026**. With
+  it, a strategy averaging about +1 R a trade qualifies by about 15
+  trades roughly 7 to 9 times in 10 once the clock-trade benchmark applies
+  (simulated; v1: about 1 to 2 in 10). Some lucky no-edge ideas may qualify too; the control
+  benchmark, the diversity cap, the 8–12 demo places and the demo judgement
+  (and the 15× early exit) deal with those. v1 (14 Oct) floored it at 0.0025
+  (0.05 R): that was so strict that a +1 R idea usually needed 20–45 trades
+  and a +0.5 R idea almost never qualified within 28 days. v1's value is kept
+  in the code (`TAU2_FLOOR_V1`) for comparison.
 
   A test with few or erratic trades is pulled most of the way to the pool's
   average. A steady test with many trades keeps most of its own figure. The
   shrunk figure must be above zero.
+
+  **Noise is measured two ways (15 Oct).**
+  - *For the test itself*, its R spread is never taken as less than 0.5 R
+    (0.25 R²). Ten wins of exactly the same size have no spread at all, but
+    they are still a short record and must not look certain. So a lucky
+    streak never gets extra weight.
+  - *For the pool's spread*, that floor is not used. Each test's own spread
+    is used as it is, the ordinary unbiased sample figure. Short lab records
+    come in lumps: a test with a 2:1 target makes about +1.9 R or −1.1 R after
+    costs, so five losses in a row have almost no spread. Before 15 Oct the
+    floor was used here too. That made the pool look noisier than it is, so
+    the spread came out too small. In made-up simulations of pools whose
+    tests had 5 to 10 trades each, it was too small by about 0.002 to 0.004,
+    against true spreads of 0.005 to 0.01. Every test was then pulled toward
+    the pool's average more than the method intends. With 10 or more trades
+    a test the difference all but disappears.
+
+  **Clones count once.** Ideas with exactly the same trades (the same close
+  times, markets and R) are one piece of evidence. In the pool's average, its
+  spread and its count of tests, they count once, so eight copies of one idea
+  cannot sway the pool. Each copy is still judged on its own.
 - **The clock-trade benchmark.** The best clock trade's shrunk figure (among
   clock trades with at least 10 trades) is what luck can do. A candidate must
   beat it by at least 0.05 R a trade.

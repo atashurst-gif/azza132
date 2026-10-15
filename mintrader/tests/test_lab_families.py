@@ -369,6 +369,81 @@ def test_momentum_burst_needs_a_steady_push_then_a_break_of_its_extreme():
     assert signals_for(series_of(cols), big) == []
 
 
+# ------------------------- momentum burst: the past test sees what practice sees (14 Oct) ---
+MOMENTUM_SETTINGS = [dict(impulse_atr=a, pullback=pb) for a in (1.5, 2.0, 2.5) for pb in ("NONE", "HALF")]
+
+
+def momentum_as_the_day_grows(cols, entry, p, session="BOTH"):
+    """The momentum family on a whole series and on that series growing a bar at a time, as live practice
+    sees it: (signals on the full series by UK day, the signals ON each newly finished bar - all that practice
+    takes - and the bars at which a growing day's signals so far were not the full day's up to that bar)."""
+    fam = FAM.get("MOMENTUM_CONTINUATION")
+    full = synth.series_from_columns(entry, [list(x) for x in cols])
+    whole = {dv.uk: [(s.i, s.side) for s in fam.signals(dv, p, dv.span(session), None)] for dv in full.dayviews()}
+    live = F.LiveSeries(entry)
+    on_the_bar, differ = [], []
+    for i in range(len(cols[0])):
+        live.push(*(x[i] for x in cols))
+        dvs = live.dayviews()
+        if not dvs or not (dvs[-1].i0 <= i < dvs[-1].i1):
+            continue
+        dv = dvs[-1]
+        lo, hi = dv.span(session)
+        if not (lo <= i < hi):
+            continue
+        got = [(s.i, s.side) for s in fam.signals(dv, p, (lo, hi), None)]
+        on_the_bar += [x for x in got if x[0] == i]
+        if got != [x for x in whole[dv.uk] if x[0] <= i]:
+            differ.append(i)
+    return whole, on_the_bar, differ
+
+
+def test_momentum_burst_takes_a_later_push_that_breaks_first_just_as_live_practice_does():
+    """Push A (10:00-10:30 UTC) has a spike high on its first minute, and so does every push whose six bars
+    hold that minute; push B, the same six bars five minutes later, does not, so its extreme is lower. B breaks
+    at 10:40, the spike at 10:50. Live practice sees B's break at 10:40 and takes it (A has not broken yet). The
+    past test read push by push: A first, it broke at 10:50, so B was skipped - on bars practice could not yet
+    see. Now both take 10:40 (spending A), and 10:50 (a push that ended after 10:40). MADE-UP prices."""
+    cols = wiggle_columns(DAY)
+    px = 110000
+    for k in range(600, 630):                                   # six 5-minute bars, +5 a minute: +150 points
+        px += 5
+        set_bar(cols, k, o=px - 5, h=px + 1, l=px - 6, c=px)
+    set_bar(cols, 600, h=110200)                                # the spike: push A's extreme, not push B's
+    for k in range(630, 640):
+        set_bar(cols, k, o=px, h=px + 2, l=px - 2, c=px)
+    set_bar(cols, 640, o=px, h=px + 12, l=px, c=px + 10)        # above B's extreme, below A's spike
+    for k in range(641, 650):
+        set_bar(cols, k, o=px + 5, h=px + 7, l=px + 3, c=px + 5)
+    set_bar(cols, 650, o=px + 5, h=px + 62, l=px + 5, c=px + 60)  # above A's spike
+    for k in range(651, 700):
+        set_bar(cols, k, o=px + 60, h=px + 62, l=px + 58, c=px + 60)
+    for p in MOMENTUM_SETTINGS:
+        whole, on_the_bar, differ = momentum_as_the_day_grows(cols, EUR, p)
+        want = [(640, 1), (650, 1)] if p["pullback"] == "NONE" else [(650, 1)]   # (B never pulled back)
+        assert whole[DAY] == want, p                            # was: [(650, 1)] for the first-break ideas
+        assert on_the_bar == want and differ == [], p
+
+
+@pytest.mark.parametrize("symbol,seed", [("EURUSD", 7), ("EURJPY", 21)])
+def test_momentum_burst_signals_on_a_whole_day_are_those_found_bar_by_bar_as_the_day_grows(symbol, seed):
+    """For every setting, the past test's signals on whole days are exactly the union of the signals live
+    practice finds on each bar as it finishes, and at every bar a growing day's signals so far are the whole
+    day's up to that bar (each signal depends only on the bars up to it). MADE-UP prices; these two symbol and
+    seed pairs hold later pushes breaking before earlier ones (the old reading failed both)."""
+    ent = synth.entry_for(symbol)
+    cols = synth.gen_columns(ent, synth.weekdays("2026-07-01", 5), seed=seed)
+    n = 0
+    for p in MOMENTUM_SETTINGS:
+        whole, on_the_bar, differ = momentum_as_the_day_grows(cols, ent, p)
+        everything = sorted(x for sigs in whole.values() for x in sigs)
+        assert sorted(on_the_bar) == everything, p
+        assert len(set(on_the_bar)) == len(on_the_bar), p       # no bar signalled twice
+        assert differ == [], (p, differ[:5])
+        n += len(everything)
+    assert n > 100, "the check proved nothing: too few signals"
+
+
 def quiet_hour(cols, k0, k1, base=110000):
     """Perfectly level bars: the session's price has no spread at all yet."""
     for k in range(k0, k1):

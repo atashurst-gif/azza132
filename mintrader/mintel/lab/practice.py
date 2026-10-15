@@ -26,6 +26,15 @@ Every minute, three seconds past it:
   simulator's own ``step`` (the stop first, then the target, the trail, the time
   and the 21:55 UK flat); a feed silent for more than 5 minutes with a position
   open closes it at the first bar back (FEED_GAP);
+* the flat comes on the CLOCK (14 Oct): at 21:55 UK (21:00 on a Friday) a
+  position whose market printed no bar that closes at the flat (AUS200 stops at
+  19:59 UTC) is closed once that market's bars have been read, at its last bar
+  before the flat - the past test's own exit, its last bar before the flat -
+  booked SESSION_END at the flat; a bar that comes after the flat never walks a
+  position the flat should have closed (it is closed at the flat, never a
+  FEED_GAP the next morning). On a UK weekend a position still open (the process
+  was down over Friday's flat) is closed the same way, and nothing else happens.
+  The time exit stays the simulator's: measured on the bars, as the past test;
 * each idea's family looks at the newest finished bar. Ideas that differ only in
   their exit, markets or news rule see the very same signals, so a family's
   ``signals`` runs once per (settings, session) a market a bar and the answer is
@@ -50,6 +59,7 @@ like scouts".
 from __future__ import annotations
 
 import argparse
+import bisect
 import datetime as dt
 import json
 import os
@@ -103,6 +113,7 @@ class Open:
     signal_bar_utc: str
     tick_json: str
     last_t: int                     # the last bar it was walked through (epoch minutes)
+    flat_waiting: bool = False      # its flat has come with no fresh price yet (said once in the log)
 
 
 @dataclass
@@ -495,6 +506,8 @@ class Practice:
         self.roll_day(today)
         if dt.date.fromisoformat(today).weekday() >= 5:
             done["weekend"] = True
+            if self.open:                              # held over Friday's flat (the process was down then)
+                self._weekend_flat(now_min)
             return done
         wants: list = []
         try:
@@ -532,7 +545,14 @@ class Practice:
             self._walk(sym, r)
             self.done_t[sym] = r[0]
         # positions whose market is no longer read still need walking: nothing to walk them with
+        self._flat_clock(sym, now_min)                 # its bars are read up to the minute: the flat on the clock
         return len(rows)
+
+    def _bar_spread(self, sym: str, t: int, s) -> float:
+        """The spread a bar is walked with: its own, floored at that UTC hour's median (the default for its
+        kind when the bar recorded none)."""
+        med = float(self.series[sym].hours[(t // 60) % 24])
+        return max(float(s), med) if s > 0 else max(self.inst(sym).dflt_spread, med)
 
     def _walk(self, sym: str, r: tuple) -> None:
         t, o, h, l, c, s, _v = r
@@ -543,21 +563,89 @@ class Practice:
             if t <= op.last_t:
                 continue
             pos = op.pos
-            inst = self.inst(sym)
-            sp = max(float(s), float(self.series[sym].hours[(t // 60) % 24])) if s > 0 else max(
-                inst.dflt_spread, float(self.series[sym].hours[(t // 60) % 24]))
+            flat = self._flat_of(op)
+            if flat is not None and t >= flat and self._flat_close(op, flat):
+                continue                               # the flat came before this bar: closed at the flat
+            sp = self._bar_spread(sym, t, s)
             gap = t - op.last_t
             if gap > FEED_GAP_MINUTES and op.last_t >= pos.t_open:
                 self._book(op, sim.feed_gap_fill(pos, float(c), sp), t)
                 continue
             off_roster = op.cid not in self.slots
-            last = (t + 1 >= flat_min(op.day)) or off_roster
+            last = (flat is None or t + 1 >= flat) or off_roster      # a day that cannot be read: flat at once
             fill = sim.step(pos, t, float(o), float(h), float(l), float(c), sp, last)
             op.last_t = t
             if fill is not None:
                 self._book(op, fill, t)
             else:
                 self._update_open(op)
+
+    # ------------------------------------------------- the flat, on the clock --
+    def _flat_of(self, op) -> Optional[int]:
+        """The minute a position's UK day is flat by (21:55 UK, 21:00 on a Friday: ``flat_min``), from the
+        day it opened on - its open's own UK day when that cannot be read; None when neither can."""
+        try:
+            return flat_min(op.day)
+        except (TypeError, ValueError):
+            pass
+        try:
+            return flat_min(_uk_date(int(op.pos.t_open)))
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            return None
+
+    def _flat_clock(self, sym: str, now_min: int) -> None:
+        """14 Oct: the 21:55 UK flat (21:00 on a Friday) on the CLOCK, once this market's bars have been read
+        up to the minute. A position is otherwise flattened only by a bar that closes at the flat; a market
+        that stops printing before it (AUS200's last bar is 19:59 UTC) never gives one, and the position was
+        held to its next bar - the next session - and closed FEED_GAP: held overnight."""
+        for key in [k for k in self.open if k[1] == sym]:
+            op = self.open.get(key)
+            if op is None:
+                continue
+            flat = self._flat_of(op)
+            if flat is not None and now_min >= flat:
+                self._flat_close(op, flat)
+
+    def _flat_close(self, op, flat: int) -> bool:
+        """Close a practice position at the flat: at its market's last bar before the flat, at that bar's
+        close with the spread and slip against us (the simulator's own fill for an exit at a bar's close) -
+        what the past test does at its last bar before the flat - booked SESSION_END at the flat minute.
+        False (still open, tried again next minute) when no bar before the flat is known."""
+        ser = self.series.get(op.symbol)
+        j = bisect.bisect_left(ser.t, flat) - 1 if ser is not None and ser.n else -1
+        if j < 0 or int(ser.t[j]) < int(op.last_t):
+            # no bar before the flat, or only bars older than the one it was last walked through (a restart whose
+            # bar read came back empty holds only stored days): never book a price from before the position -
+            # that would be invented performance (review, 15 Oct). Tried again next minute.
+            if not op.flat_waiting:                                    # said once, not every minute of a long wait
+                op.flat_waiting = True
+                self.log(f"{op.cid} {op.symbol}: the flat has come but no price since it was last walked is known: "
+                         f"waiting for one")
+            return False
+        t, c = int(ser.t[j]), float(ser.c[j])
+        price, _gap, slip, spread = sim.feed_gap_fill(op.pos, c, self._bar_spread(op.symbol, t, ser.s[j]))
+        when = minute_to_dt(flat).astimezone(TZ_LONDON).strftime("%H:%M")
+        self.log(f"{op.cid} {op.symbol}: the {when} UK flat came with no bar from its market since "
+                 f"{iso_utc(t)}: closed on the clock at that bar's close")
+        self._book(op, (price, "SESSION_END", slip, spread), flat - 1)    # stamped at the flat (an exit at a close)
+        return True
+
+    def _weekend_flat(self, now_min: int) -> None:
+        """A position still open on a UK Saturday or Sunday: its flat has come. Its market's bars are read
+        (the ones it missed walked) and it is closed on the clock; no signal, no entry."""
+        try:
+            for sym in sorted({k[1] for k in self.open}):
+                if sym not in self.universe:
+                    continue
+                if sym not in self.series:
+                    self.prime(sym, now_min)
+                self._advance(sym, now_min, {})
+            self.feed_ok, self.last_error = True, ""
+        except Exception as exc:                       # the feed went away: tried again next minute
+            self.feed_ok, self.last_error = False, f"{type(exc).__name__}: {exc}"
+            self.log(f"feed: {self.last_error}")
+        self._flush_open()
+        self.save_state()
 
     def _signals(self, sym: str, now_min: int) -> list:
         """Every idea's signals on this market's newest finished bar. The bar's
@@ -595,7 +683,10 @@ class Practice:
             if span is None:
                 span = spans[c.session] = dv.span(c.session)
             lo, hi = span
-            if hi - lo < 2 or not (lo <= i < hi):
+            # on a day still being traded a span of one bar is a session that has just opened (its later
+            # bars are still to come), not one too short to trade: the past test, which sees the whole day,
+            # takes a signal on a session's first bar (a London breakout on the open), so practice does too
+            if not (lo <= i < hi) or (hi - lo < 2 and not dv.open_ended):
                 continue
             key = (slot.sig_key, lo, hi)
             sigs = shared.get(key)

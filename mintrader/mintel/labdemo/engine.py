@@ -11,7 +11,11 @@ read-only feed, for the promoted ideas alone: the very same feature code
 three open per idea, a five-bar pause after an exit, six entries per market per
 UK day), news-avoid rule, and simulator exits (``sim.step``: the stop first, the
 target, the trail, the time exit, the 21:55 UK flat - 21:00 on Fridays - and a
-feed gap). The lab itself is untouched and still cannot place an order; its
+feed gap). The flat comes on the CLOCK, as practice (14 Oct): a position whose
+market stops printing before it (AUS200's last bar is 19:59 UTC) is closed at
+the broker at the flat - its stop untouched until the close fills; a close the
+broker refuses (the market is shut) is sent again every minute, weekends
+included, and booked from the deal when it fills. The lab itself is untouched and still cannot place an order; its
 practice process keeps practising every idea, these included, on paper, so the
 paper shadow and the demo can be compared side by side.
 
@@ -42,7 +46,7 @@ WHAT IS DIFFERENT ON THE DEMO:
   account has no stop. The trade's R is measured on the money really at its
   stop;
 * a trail tightens the broker's stop (only ever in the trade's favour); a target,
-  time, session-end, feed-gap or demotion exit is a market close; a stop or
+  time, session-end (the flat, on the clock), feed-gap or demotion exit is a market close; a stop or
   take-profit the broker filled is noticed when the position is gone;
 * every closed position is booked from the BROKER's closed-deal record
   (``LiveExecutor.closed_deal``) into data/labdemo/labdemo.sqlite, keyed by idea
@@ -536,6 +540,7 @@ class LabDemo(Practice):
             return done
         if dt.date.fromisoformat(today).weekday() >= 5:
             done["weekend"] = True
+            self._flat_all(now_min)                        # held over Friday's flat: closed (sent) now
             self.save_state()
             return done
         wants: list = []
@@ -557,6 +562,7 @@ class LabDemo(Practice):
         except Exception as exc:
             self.feed_ok, self.last_error = False, f"{type(exc).__name__}: {exc}"
             self.log(f"prices: {self.last_error}")
+        self._flat_all(now_min)                            # a market not read this minute: the flat still comes
         self.save_state()
         return done
 
@@ -636,10 +642,16 @@ class LabDemo(Practice):
         if op.closing or t <= op.last_t:
             return
         pos = op.pos
-        inst = self.inst(sym)
-        hours = self.series[sym].hours
-        sp = max(float(s), float(hours[(t // 60) % 24])) if s > 0 else max(inst.dflt_spread,
-                                                                           float(hours[(t // 60) % 24]))
+        flat = self._flat_of(op)
+        if flat is not None and t >= flat:
+            # the flat came before this bar (as practice, Practice._walk): a SESSION_END at the flat, sent now -
+            # never a FEED_GAP or a step on a bar the position should not have been held to. An exit already
+            # decided and refused is sent again by _reconcile, never twice in a minute
+            op.last_t = t
+            if not op.exit_retry:
+                self._exit(op, "SESSION_END", flat - 1)
+            return
+        sp = self._bar_spread(sym, t, s)
         gap = t - op.last_t
         if gap > FEED_GAP_MINUTES and op.last_t >= pos.t_open:
             op.last_t = t
@@ -647,7 +659,7 @@ class LabDemo(Practice):
             return
         # off the roster only when the roster is known (as _reconcile): an unread one decides nothing
         off = self.roster_ok and self.roster_key is not None and op.cid not in self.slots
-        last = (t + 1 >= flat_min(op.day)) or off
+        last = (flat is None or t + 1 >= flat) or off      # a day that cannot be read: flat at once
         before = pos.stop
         fill = sim.step(pos, t, float(o_), float(h), float(l), float(c), sp, last)
         op.last_t = t
@@ -655,6 +667,37 @@ class LabDemo(Practice):
             self._exit(op, fill[1], t)
         elif pos.stop != before and move_stop:
             self._move_stop(op)
+
+    def _flat_clock(self, sym: str, now_min: int) -> None:
+        """Practice's flat on the clock (``Practice._flat_clock``), at the broker: once this market's bars are
+        read, a position still open at 21:55 UK (21:00 on a Friday) is closed with a market close. The broker
+        holds its stop until the close fills; one refused (the market is shut) is sent again every minute."""
+        for key in [k for k in self.open if k[1] == sym]:
+            o = self.open.get(key)
+            if o is not None:
+                self._flat_due(o, now_min)
+
+    def _flat_all(self, now_min: int) -> None:
+        """The flat for every open position, whether or not its market's bars could be read this minute (not
+        primed yet, an error, the weekend): the close is priced by the broker, so no bar is needed, and a
+        position is never held past the flat for want of one."""
+        for o in list(self.open.values()):
+            try:
+                self._flat_due(o, now_min)
+            except Exception as exc:                       # never stops the minute; tried again next minute
+                self.log(f"{o.cid} {o.symbol}: the flat's close failed ({type(exc).__name__}: {exc}); "
+                         "tried again next minute")
+
+    def _flat_due(self, o: DemoOpen, now_min: int) -> None:
+        if o.closing or o.exit_retry or o.cid.startswith("orphan:") or self.open.get((o.cid, o.symbol)) is not o:
+            return                                         # closed, or an exit already decided (sent again)
+        flat = self._flat_of(o)
+        if flat is None or now_min < flat:
+            return
+        when = minute_to_dt(flat).astimezone(TZ_LONDON).strftime("%H:%M")
+        self.log(f"{o.cid} {o.symbol}: the {when} UK flat has come with ticket {o.ticket} open (no bar from its "
+                 f"market closed it): closed at the broker on the clock")
+        self._exit(o, "SESSION_END", flat - 1)             # the pause from the flat's bar, as practice
 
     def _catch_up(self, o: DemoOpen) -> None:
         """A closing mark cleared (the broker still held the position): the bars it was not walked through
