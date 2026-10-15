@@ -1,5 +1,5 @@
 {
- "ts_utc": "2026-10-15T02:44:13+00:00",
+ "ts_utc": "2026-10-15T02:54:40+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
  "trader_up": true,
  "trader_reason": "",
@@ -30,90 +30,111 @@
    "live_groups": [],
    "live_since_utc": "",
    "open_paper_trades": {
-    "trades": [],
-    "count": 0,
+    "trades": [
+     {
+      "ticket": 960000090,
+      "symbol": "EURCAD",
+      "side": "BUY",
+      "volume": 0.4,
+      "entry": 1.59516,
+      "stop": 1.59455,
+      "opened": "2026-10-15T02:44:48.544000+00:00"
+     }
+    ],
+    "count": 1,
     "source": "the paper record (tnb_paper.sqlite), read-only: simulated orders, not money"
    },
    "health": "RUNNING: running with 1 warning(s)",
    "build": "71cbd0be44",
-   "last_scan": "02:44:07 UTC",
+   "last_scan": "02:54:35 UTC",
    "last_trade": "EURAUD 2026-10-15T01:19",
    "not_trading_because": [],
-   "positions_on_page": [],
+   "positions_on_page": [
+    {
+     "symbol": "EURCAD",
+     "side": "BUY",
+     "volume": 0.4,
+     "entry": 1.59516,
+     "stop": 1.59455,
+     "profit": 8.71,
+     "flow_state": "PROVING",
+     "note": "best 0.69R, thesis 75/100"
+    }
+   ],
    "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus any real position left from LIVE; the real ones are also under open_on_account",
    "thinking": [
     {
      "rank": 1,
-     "symbol": "EURCAD",
-     "direction": "LONG",
-     "score": 79.14,
+     "symbol": "XAGAUD",
+     "direction": "SHORT",
+     "score": 77.79,
      "tier": "STRONG",
-     "tactic": "MOMENTUM_CONTINUATION",
-     "regime": "HIGH_VOL / HIGH VOL",
-     "reason": "EURCAD: HIGH_VOL / HIGH VOL market. Best idea is buy using momentum continuation. Structure supports it (100/100; up structure on M5). Execution supports it (100/100; spread 0.4 pips (0.0x normal), commission 1.0 pips). Regime supports it (80/100; HIGH_VOL / HIGH VOL). Volatility supports it (78/100; volatility at the 94th percentile). Room to the first obstacle is 999 pips, giving about 0.8 to 1 after 1.5 pips of cost. Blocked because: reward:risk only 0.81 after costs.",
+     "tactic": "VWAP_REVERSION",
+     "regime": "RANGE / NORMAL VOL",
+     "reason": "XAGAUD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (99/100; spread 14.0 pips (0.4x normal), commission 10.4 pips). Structure supports it (82/100; unclear structure on M5). Multi Tf supports it (80/100; 6 timeframes weighed, higher ones first). Momentum supports it (74/100; efficiency 0.03, ADX 12). Room to the first obstacle is 275 pips, giving about 1.1 to 1 after 27.9 pips of cost. Blocked because: reward:risk only 1.12 after costs.",
      "blockers": [
-      "reward:risk only 0.81 after costs"
+      "reward:risk only 1.12 after costs"
      ],
-     "reward_risk": 0.809
+     "reward_risk": 1.122
     },
     {
      "rank": 2,
-     "symbol": "EURJPY",
-     "direction": "LONG",
-     "score": 72.26,
-     "tier": "STRONG",
-     "tactic": "SESSION_EXPANSION",
-     "regime": "HIGH_VOL / HIGH VOL",
-     "reason": "EURJPY: HIGH_VOL / HIGH VOL market. Best idea is buy using session expansion. Execution supports it (100/100; spread 1.1 pips (0.1x normal), commission 1.1 pips). Volatility supports it (78/100; volatility at the 95th percentile). Structure supports it (76/100; range structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 38 pips, giving about 0.6 to 1 after 2.5 pips of cost. Blocked because: reward:risk only 0.58 after costs; entry is 3.6 ATR from the level that invalidates this idea - the move has been missed.",
+     "symbol": "XTIUSD",
+     "direction": "SHORT",
+     "score": 58.96,
+     "tier": "NO_TRADE",
+     "tactic": "BREAKOUT_ACCEPTANCE",
+     "regime": "UNCLEAR / NORMAL VOL",
+     "reason": "XTIUSD: UNCLEAR / NORMAL VOL market. Best idea is sell using breakout acceptance. Execution supports it (85/100; spread 20.0 pips (1.0x normal), commission 79.2 pips). Volatility supports it (71/100; volatility at the 77th percentile). Multi Tf supports it (67/100; 6 timeframes weighed, higher ones first). Momentum argues against it (37/100; efficiency 0.17, ADX 34). Room to the first obstacle is 255 pips, giving about 0.4 to 1 after 104.2 pips of cost. Blocked because: reward:risk only 0.41 after costs; costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "reward:risk only 0.58 after costs",
-      "entry is 3.6 ATR from the level that invalidates this idea - the move has been missed"
+      "reward:risk only 0.41 after costs",
+      "costs would be 23% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": 0.579
+     "reward_risk": 0.411
     },
     {
      "rank": 3,
-     "symbol": "XAUUSD",
-     "direction": "LONG",
-     "score": 44.76,
+     "symbol": "XBRUSD",
+     "direction": "SHORT",
+     "score": 56.11,
      "tier": "NO_TRADE",
-     "tactic": "SESSION_EXPANSION",
-     "regime": "TREND / NORMAL VOL",
-     "reason": "XAUUSD: TREND / NORMAL VOL market. Best idea is buy using session expansion. Structure supports it (100/100; up structure on M5). Execution supports it (100/100; spread 5.0 pips (0.1x normal), commission 7.9 pips). Regime supports it (74/100; TREND / NORMAL VOL). Momentum supports it (70/100; efficiency 0.11, ADX 36). Room to the first obstacle is 185 pips, giving about 0.8 to 1 after 14.2 pips of cost. Blocked because: reward:risk only 0.85 after costs; entry is 3.0 ATR from the level that invalidates this idea - the move has been missed.",
+     "tactic": "SQUEEZE_RELEASE",
+     "regime": "SQUEEZE / NORMAL VOL",
+     "reason": "XBRUSD: SQUEEZE / NORMAL VOL market. Best idea is sell using squeeze release. Execution supports it (85/100; spread 10.0 pips (1.0x normal), commission 79.2 pips). Volatility supports it (73/100; volatility at the 82th percentile). Structure supports it (70/100; range structure on M5). Regime supports it (62/100; SQUEEZE / NORMAL VOL). Room to the first obstacle is 245 pips, giving about 1.0 to 1 after 91.7 pips of cost. Blocked because: reward:risk only 0.99 after costs; costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "reward:risk only 0.85 after costs",
-      "entry is 3.0 ATR from the level that invalidates this idea - the move has been missed"
+      "reward:risk only 0.99 after costs",
+      "costs would be 29% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": 0.847
+     "reward_risk": 0.99
     },
     {
      "rank": 4,
-     "symbol": "NZDJPY",
-     "direction": "LONG",
-     "score": 39.64,
+     "symbol": "XAGUSD",
+     "direction": "SHORT",
+     "score": 45.09,
      "tier": "NO_TRADE",
-     "tactic": "SESSION_EXPANSION",
-     "regime": "TREND / HIGH VOL",
-     "reason": "NZDJPY: TREND / HIGH VOL market. Best idea is buy using session expansion. Structure supports it (100/100; up structure on M5). Execution supports it (100/100; spread 1.1 pips (0.1x normal), commission 1.2 pips). Regime supports it (74/100; TREND / HIGH VOL). Volatility supports it (65/100; volatility at the 88th percentile). Room to the first obstacle is 2 pips, giving about 1.0 to 1 after 2.5 pips of cost. Blocked because: reward:risk only 1.01 after costs.",
+     "tactic": "VWAP_REVERSION",
+     "regime": "RANGE / NORMAL VOL",
+     "reason": "XAGUSD: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (98/100; spread 9.0 pips (0.4x normal), commission 7.2 pips). Structure supports it (82/100; unclear structure on M5). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Momentum supports it (72/100; efficiency 0.06, ADX 12). Room to the first obstacle is 50 pips, giving about 0.7 to 1 after 18.4 pips of cost. Blocked because: reward:risk only 0.73 after costs.",
      "blockers": [
-      "reward:risk only 1.01 after costs"
+      "reward:risk only 0.73 after costs"
      ],
-     "reward_risk": 1.01
+     "reward_risk": 0.729
     },
     {
      "rank": 5,
      "symbol": "NZDCHF",
      "direction": "SHORT",
-     "score": 39.31,
+     "score": 43.38,
      "tier": "NO_TRADE",
      "tactic": "SESSION_EXPANSION",
      "regime": "UNCLEAR / NORMAL VOL",
-     "reason": "NZDCHF: UNCLEAR / NORMAL VOL market. Best idea is sell using session expansion. Execution supports it (100/100; spread 0.6 pips (0.0x normal), commission 0.6 pips). Structure argues against it (16/100; up structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Momentum supports it (62/100; efficiency 0.21, ADX 22). Room to the first obstacle is 2 pips, giving about 0.6 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 0.56 after costs; costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "reason": "NZDCHF: UNCLEAR / NORMAL VOL market. Best idea is sell using session expansion. Execution supports it (100/100; spread 0.3 pips (0.0x normal), commission 0.6 pips). Structure argues against it (16/100; up structure on M5). Multi Tf supports it (76/100; 6 timeframes weighed, higher ones first). Session supports it (62/100; session: ASIA). Room to the first obstacle is 1 pips, giving about 1.1 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 1.06 after costs; costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "reward:risk only 0.56 after costs",
-      "costs would be 21% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "reward:risk only 1.06 after costs",
+      "costs would be 26% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": 0.558
+     "reward_risk": 1.062
     }
    ],
    "today": {
@@ -140,7 +161,7 @@
    "mode": "PAPER",
    "status_file": "rider-status.json",
    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
-   "report_age_seconds": 387188.8,
+   "report_age_seconds": 387815.8,
    "running": false,
    "health": "RAPID MOMENTUM RIDER - OFF (rider.json says OFF, so it is not started)",
    "entries_allowed": false,
@@ -706,10 +727,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-15T02:44:12.684413+00:00",
-   "report_age_seconds": 0.3,
+   "updated_utc": "2026-10-15T02:54:38.089593+00:00",
+   "report_age_seconds": 1.9,
    "running": true,
-   "health": "WATCHING, PAPER, last report 0 s ago",
+   "health": "WATCHING, PAPER, last report 2 s ago",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
@@ -738,10 +759,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-15T02:44:12.684413+00:00",
-   "report_age_seconds": 0.3,
+   "updated_utc": "2026-10-15T02:54:38.089593+00:00",
+   "report_age_seconds": 1.9,
    "running": true,
-   "health": "OUTSIDE SESSION, PAPER, last report 0 s ago",
+   "health": "OUTSIDE SESSION, PAPER, last report 2 s ago",
    "status": "OUTSIDE SESSION",
    "open_trades": [],
    "today": {
@@ -767,10 +788,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-15T02:44:12.684413+00:00",
-   "report_age_seconds": 0.3,
+   "updated_utc": "2026-10-15T02:54:38.089593+00:00",
+   "report_age_seconds": 1.9,
    "running": true,
-   "health": "IN TRADE, PAPER, last report 0 s ago",
+   "health": "IN TRADE, PAPER, last report 2 s ago",
    "status": "IN TRADE",
    "open_trades": [
     {
@@ -780,9 +801,9 @@
      "entry": 56.252,
      "stop": 56.488,
      "initial_stop": 56.488,
-     "r_now": 0.68,
+     "r_now": 0.02,
      "peak_r": 3.33,
-     "pnl": 6.08,
+     "pnl": 0.19,
      "opened": "2026-10-14T15:00:00.954681+00:00",
      "mode": "PAPER"
     }
@@ -810,54 +831,36 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-15T02:44:12.253656+00:00",
-   "report_age_seconds": 0.7,
+   "updated_utc": "2026-10-15T02:54:39.576727+00:00",
+   "report_age_seconds": 0.4,
    "running": true,
    "health": "FINANCIAL IAN - HEALTHY, PAPER, feed LIVE",
-   "status": "IN 1 TRADE(S) - Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
+   "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
    "feed": {
     "state": "LIVE",
     "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 10 USDT steps, ETHUSDT in 0.5 USDT steps; this computer's clock is 1.4 s behind Binance's - check its time settings",
     "vendor": "binance",
     "synthetic": false,
-    "events": 3616226
+    "events": 3780222
    },
    "data_label": "LIVE",
    "metatrader_connected": true,
-   "open_trades": [
-    {
-     "ticket": 2003532227,
-     "symbol": "ETHUSD",
-     "future": "ETHUSDT",
-     "side": "SELL",
-     "volume": 0.5,
-     "entry": 2370.41,
-     "stop": 2375.99,
-     "initial_stop": 2383.25,
-     "r_now": -0.2,
-     "best_r": -0.0,
-     "pnl": -0.99,
-     "trail": "stop 2376.04 -> 2375.9900000000002: the other side is absorbing the move",
-     "opened": "2026-10-15T02:44:09.131927+00:00",
-     "mode": "PAPER",
-     "not_seen_since": null
-    }
-   ],
+   "open_trades": [],
    "own_record_today": {
-    "trades": 7,
+    "trades": 9,
     "wins": 2,
-    "losses": 5,
-    "win_rate": 0.286,
-    "net": -7.15,
-    "expectancy": -1.02,
-    "expectancy_r": -0.125,
-    "profit_factor": 0.49,
+    "losses": 7,
+    "win_rate": 0.222,
+    "net": -10.12,
+    "expectancy": -1.12,
+    "expectancy_r": -0.166,
+    "profit_factor": 0.41,
     "avg_win": 3.49,
-    "avg_loss": -2.83,
-    "max_drawdown": -9.77,
-    "mfe_r": 0.323,
-    "mae_r": -0.317,
-    "mfe_capture": -0.386,
+    "avg_loss": -2.44,
+    "max_drawdown": -12.74,
+    "mfe_r": 0.295,
+    "mae_r": -0.325,
+    "mfe_capture": -0.563,
     "data_source": "LIVE FEED"
    },
    "today": {
@@ -871,8 +874,8 @@
     "source": "the page's standing block: MetaTrader's own record for this bot's magic number, real money, for the page's today; paper trades are never in it"
    },
    "practice_today": {
-    "result": -7.15,
-    "trades": 7,
+    "result": -10.12,
+    "trades": 9,
     "note": "PAPER trades from the bot's own records (the page's strategy tab for today): practice, not money, never in the account"
    },
    "open_on_account": []
