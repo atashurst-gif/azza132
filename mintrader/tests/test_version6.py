@@ -17,7 +17,8 @@ V5_TACTICS = ("NEWS_CONTINUATION", "TREND_PULLBACK", "FAILED_BREAKOUT_RECLAIM")
 
 
 def test_version_6_name_and_the_clock_is_unchanged():
-    assert STRATEGY_NAME == "Commission First (version 6)"
+    # version 7 (16 Oct) kept every version 6 rule and added markets off (tests/test_version7.py)
+    assert STRATEGY_NAME in ("Commission First (version 6)", "Commission First (version 7)")
     assert STRATEGY_VERSION.startswith("2026-10-05 complete reset to zero")
 
 

@@ -171,3 +171,4 @@ either way.
 | 13 Oct | 0 | - | 0 (PAPER) | - | No half-hour close outside the band that it took; the new minimum stop distance (12 Oct) had nothing to act on |
 | 14 Oct | 2 PAPER | 2 | +42.03 practice | US500 +24.19, USTEC +17.84 (both FLAT_BEFORE_CLOSE) | Two trend days held to the 15:55 NY flat: its best practice day |
 | 15 Oct | 2 PAPER | 1 | +8.29 practice | US30 +9.14, US500 -0.85 (both FLAT_BEFORE_CLOSE) | Both held to the 15:55 NY flat. Second profitable practice day in a row (14-15 Oct: +42.03, +8.29) |
+| 16 Oct | 4 PAPER | 2 | +30.25 practice | USTEC SELL -3.58 and -8.91 (TRAIL_STOP); US500 SELL +20.97 and USTEC SELL +21.77 (both FLAT_BEFORE_CLOSE, about +2.3 R) | Two shorts held to the 15:55 NY flat on a down day. Third profitable practice day in a row (14-16 Oct: +42.03, +8.29, +30.25) |

@@ -571,7 +571,7 @@ class TestTrendAndBreakoutsHistory:
         con = sqlite3.connect(d.data / "journal.sqlite")
         con.executescript(SCHEMA)
         rows = [(101, "GBPCHF", "MOMENTUM_CONTINUATION", "HIGH_VOL", t(2026, 9, 29, 10), 12.0),
-                (102, "EURCAD", "MOMENTUM_CONTINUATION", "NEWS", t(2026, 9, 30, 10), -4.0),
+                (102, "EURAUD", "MOMENTUM_CONTINUATION", "NEWS", t(2026, 9, 30, 10), -4.0),   # EURCAD until version 7 took it off
                 (103, "AUDJPY", "MOMENTUM_CONTINUATION_2X", "HIGH_VOL", t(2026, 10, 1, 10), 8.0),
                 (104, "EURUSD", "MOMENTUM_CONTINUATION", "HIGH_VOL", t(2026, 10, 1, 11), -6.0),
                 (105, "GBPCHF", "MOMENTUM_CONTINUATION", "TREND", t(2026, 10, 2, 10), -3.0),

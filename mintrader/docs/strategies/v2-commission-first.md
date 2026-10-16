@@ -13,7 +13,7 @@ branch.
 | Reward after costs | at least 1.8 times the risk | unchanged |
 | Costs | at most 20% of the stop distance | 281 trades showed no cleaner line |
 | Commission | never assumed zero; 6.00 a lot until learned, indices 0 | a new account had no history to learn from |
-| Markets off | USDJPY, DE40, XAUGBP, CHFJPY, EURNZD, UK100, GBPJPY, XAUAUD; from 8 Oct (version 4) USDCHF and XAUJPY | negative on two-thirds or more of 6+ days; 125 trades, -219.70; USDCHF 5 of 6 days (-38.77), XAUJPY 7 of 10 (-14.09) |
+| Markets off | USDJPY, DE40, XAUGBP, CHFJPY, EURNZD, UK100, GBPJPY, XAUAUD; from 8 Oct (version 4) USDCHF and XAUJPY; from 16 Oct (version 7) CADJPY, EURCAD, EURUSD, GBPAUD, GBPCAD | negative on two-thirds or more of 6+ days; 125 trades, -219.70; USDCHF 5 of 6 days (-38.77), XAUJPY 7 of 10 (-14.09); version 7 on the coach's count of the Mac's whole record (see Version 7) |
 | Approaches off | session expansion in a squeeze, plus earlier switch-offs; from 7 Oct (version 3) breakout acceptance in a fast market | negative on 3+ days traded |
 | Approach off in one kind of market | from 8 Oct (version 4): momentum continuation on gold and silver crosses; from 9 Oct (version 5) also on the FX majors; from 15 Oct (version 6) also on the indices | gold/silver: negative on the last three days it traded there (-7.89, -48.52, -28.62; 6 days, 3 negative, net -52.94) while on 8 Oct it was the engine on indices (+52.71) and FX (+38.63). FX majors: negative on 5 of 8 days, 17 trades, -13.87 after 17.48 commission (see Version 5). Indices, on the trades today's rules allow: DEMO +42.82 to 8 Oct, then PAPER -54.76 with all 4 days down under version 5; combined, 10 of 14 days down, -11.94 (see Version 6) |
 | Top-opportunity size | from 9 Oct (version 5): momentum continuation on FX minor pairs risks up to 40 (under the 1.5% ceiling: 30 on 2,000) and at most 0.5 lots; every other trade keeps the 10 cap | 38 trades over 10 days, 8 up and 2 down, +156.31 after commission (+0.82 R a trade); checked again on the bot's own record before every such trade (see Version 5) |
@@ -45,6 +45,74 @@ The nightly review adds one line per trading day.
 | 13 Oct (everything PAPER from the 00:15 UK install) | 5 practice | 0 | 0 real; -62.80 practice | 0.26 simulated | - | All five stopped (JP225 -13.81, US30 -12.53 and -10.30, XAUCHF -13.19, US500 -12.97); by the journal, momentum continuation in a fast market 3 (-37.08) and session expansion in a trend 2 (-25.72). The page showed 7 practice trades, -74.49, by 22:35 UK (two more after the 22:10 upload). Momentum continuation in a fast market: down on 12 and 13 Oct (2 days, the 3-day switch-off rule not met yet). Formula 1 off; no Trend & Breakout real trade |
 | 14 Oct (PAPER) | 8 practice | 5 | 0 real; +23.73 practice | 2.98 simulated | Momentum continuation in a fast market: GBPCAD +38.72 at target, three US500 trails in profit | All 8 were momentum continuation in a fast market (HIGH_VOL): +23.73. Losses: US30 -12.25, EURJPY -12.65, US500 -12.76. Average win +12.28 against average loss -12.55. Momentum continuation in a fast market over 12-14 Oct: -12.41, -37.08, +23.73 (2 of 3 days down, so the 3-day switch-off rule is not met) |
 | 15 Oct (PAPER) | 19 practice | 9 | 0 real; -62.33 practice | 22.44 simulated | Session expansion in a trend: 4 trades +35.15 (AUS200 +27.06, which the Runner rode to +40.18) | By approach: momentum continuation in a fast market (HIGH_VOL) 8 trades -62.83 (2 wins; 7 on minor pairs -59.90, 1 on US500 -2.93); momentum continuation in news 6 trades -19.73 (4 wins; all six on minor pairs within 7 minutes from 00:30 UTC; EURAUD -26.33 stopped in a minute); session expansion in a fast market 1 trade -14.92 (US500); session expansion in a trend 4 trades +35.15. Worst markets EURAUD -20.91, US500 -17.85, GBPAUD -17.84, AUDNZD -14.78. Average win +7.49 against average loss -12.97; 8 of 19 lasted under 5 minutes, 5 of them stop-outs (-81.96); all 8 stop-outs cost -124.97. Standing rule met: momentum continuation on the indices, counted as for versions 4 and 5 (all conditions, the trades today's rules allow): DEMO +42.82 to 8 Oct, PAPER -54.76 since with all 4 days down; combined, 10 of 14 days down and net -11.94, so it is off from version 6. On the minor pairs: DEMO +156.31 to 8 Oct, PAPER -93.04 on 18 trades since; combined, down on 4 of 13 days and net +63.27, so the 25 Sep precedent keeps it on, judged again nightly. Momentum continuation in a fast market overall (after version 6, the minor pairs only): combined, 4 of 11 days down, +79.09; stays. The 13-14 Oct rows counted it on paper from 12 Oct only; on that count it would now be met (3 of 4 days down, -88.59). Momentum continuation in news: DEMO +50.12, PAPER -59.21; combined, down on 2 of 5 days, -9.09: not met; a third down day switches it off (see Version 6) |
+| 16 Oct (PAPER; version 6 from the 09:12 UK restart) | 6 practice | 3 | 0 real; -18.98 practice | 7.88 simulated | Session expansion in a trend, 4 trades -9.33 (the smaller loss): GBPNZD +4.22 and GBPUSD +3.14 trailed out in profit | By approach: momentum continuation in a fast market 2 trades -9.65 (JP225 SELL at 00:01 UTC -13.94, stopped in under half a minute, before the version 6 restart; GBPNZD +4.29 trailed); session expansion in a trend 4 trades -9.33 (GBPUSD +3.14 and -15.25, XAUUSD -1.44 when its thesis broke, GBPNZD +4.22). Average win +3.88 against average loss -10.21. Version 6 working: no momentum continuation on an index after the restart. Standing rule met: the market rule, on the coach's S2 count of the Mac's whole record (DEMO trades, every trade in the market as in versions 4-5): CADJPY 4 of 6 days negative, EURCAD 5 of 6, EURUSD 8 of 12, GBPAUD 5 of 7, GBPCAD 4 of 6. They are off from version 7. The coach has listed them since 12 Oct. The 13-15 Oct nightly reviews said no market rule was met, because the reports copy has fewer days; that was wrong. Approaches without the five, counted as for versions 4-6 (the trades today's rules allow, DEMO + PAPER combined): momentum continuation on the minor pairs 12 days, 2 down, +96.45; in news 3 days, 1 down, +5.70; session expansion on the minor pairs 7 days, 1 down, +29.47; in a trend 10 days, 2 down, +74.58. None met (see Version 7) |
+
+## Version 7 (16 Oct)
+
+"Commission First (version 7)". The measuring clock is unchanged (still
+from the 5 Oct reset; `STRATEGY_VERSION` untouched). Every version 6 rule
+stays. Five markets are added to `universe.excluded_symbols`: CADJPY,
+EURCAD, EURUSD, GBPAUD and GBPCAD. This is the standing market rule (negative
+on two-thirds or more of 6+ traded days), as in version 4. Trend & Breakout
+is on PAPER, so no real order changes. The lab keeps every market.
+
+### The evidence
+
+The count is the coach's S2 (`mintel/coach/rules.py` `s2`, the rule as
+code; `tests/test_coach_rules.py` shows it reproduces the 4 Oct and 8 Oct
+exclusions). It reads Trend & Breakout's whole record on the Mac, using its
+real (DEMO) trades, net after commission, by UK day. Like versions 4 and 5,
+it counts every trade in the market. Its nightly digest has listed these five
+since 12 Oct:
+
+| Market | Days traded (DEMO) | Days negative | Net |
+|---|---|---|---|
+| CADJPY | 6 | 4 | -10.82 |
+| EURCAD | 6 | 5 | -36.85 |
+| EURUSD | 12 | 8 | -30.41 |
+| GBPAUD | 7 | 5 | -4.59 |
+| GBPCAD | 6 | 4 | -10.38 |
+
+**What this count is, and is not.** It is the literal market rule, read the
+way versions 4 and 5 read it: every trade in the market. Most of these
+markets' losing trades came from approaches, conditions or scores that are
+already switched off. Of EURUSD's trades on the reports copy, none would be
+allowed by today's rules. Only EURCAD's evidence (momentum continuation in a
+fast market on minor pairs, 5 and 7 Oct) is mostly behaviour today's rules
+still allow. So version 7 follows the rule and its precedent. It does not
+show that these markets lose under version 6. Counting markets only on the
+trades today's rules allow would be a refinement of the rule, and would need
+Aaron's word to change how the rule is read.
+
+**Why the nightly reviews missed them.** The 13-15 Oct nightly reviews
+(`reports/<day>/claude_review.md`) said "no market rule met". They counted
+from the reports branch's `trades.csv` copy, which has fewer days than the
+Mac's record:
+- the copy starts on 17 Sep, while the Mac's demo record goes back to about
+  14-16 Sep;
+- it lacks 29 Sep (no trades.csv) and 2 Oct (no folder).
+
+On the copy, DEMO only, GBPAUD is 5 days, 3 negative, +0.52, and EURCAD is
+3 days, 3 negative, -27.34. Those are fewer days than the coach sees, so
+the copy cannot settle it. From now on the nightly market check reads the
+coach's S2 list, published in `reports/live/coach.json`.
+
+### Looked at and NOT changed
+
+* **The approach lines** without the five markets, counted as for versions
+  4-6 (the trades today's rules allow; DEMO to 8 Oct plus PAPER since,
+  combined):
+  - momentum continuation on the minor pairs: 12 days, 2 down, +96.45 (DEMO
+    32 trades +165.54, PAPER 11 trades -69.09);
+  - in news: 3 days, 1 down, +5.70;
+  - session expansion on the minor pairs: 7 days, 1 down, +29.47;
+  - session expansion in a trend: 10 days, 2 down, +74.58.
+
+  None is met.
+* **JP225:** DEMO 1 day (-0.54), PAPER 4 days, 3 negative (-34.46), all of
+  it momentum continuation in a fast market, which has been off on the
+  indices since version 6. On S2's count (practice only, until it has 6 real
+  days) it has 4 days, so it needs 2 more before the rule can apply. Watch.
 
 ## Version 6 (15 Oct)
 
