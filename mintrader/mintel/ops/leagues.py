@@ -382,11 +382,12 @@ def demo_trades(stints: Sequence[dict], positions: Optional[list], data_dir, lab
 
 
 # ------------------------------------------------------------------ the three leagues --
-def _row(t: dict, trades: Sequence[dict], until: Optional[dt.datetime] = None) -> dict:
+def _row(t: dict, trades: Sequence[dict], until: Optional[dt.datetime] = None,
+         record: Optional[Sequence[dict]] = None, open_day: Optional[dt.date] = None) -> dict:
     from .squad import figures
     q = quality(trades, until)
     return dict({k: t.get(k) for k in ("id", "nick", "desc", "kind", "retired", "live", "ready")},
-                **figures(trades), quality=q, stars=q["stars"])
+                **figures(trades, record, open_day), quality=q, stars=q["stars"])
 
 
 def pace_end(stints: Optional[Sequence[dict]], at: dt.datetime) -> Optional[dt.datetime]:
@@ -401,12 +402,16 @@ def pace_end(stints: Optional[Sequence[dict]], at: dt.datetime) -> Optional[dt.d
 
 
 def league_rows(tests: dict, trades_by: dict, start: dt.datetime, end: dt.datetime, known: Optional[dict] = None,
-                until_by: Optional[dict] = None) -> list[dict]:
+                until_by: Optional[dict] = None, now: Optional[dt.datetime] = None) -> list[dict]:
     """One league's rows for [start, end): every strategy with a trade in it, best £ after costs first (then
     the better quality, then the name), with ``pos`` from 1. ``trades_by``: {id: that league's trades}.
     ``until_by``: {id: where its pace stops (None: its last trade)} for a strategy that has left (a retired idea,
-    a DEMO record whose stints have all ended), capped at the window's end; the window's end otherwise."""
+    a DEMO record whose stints have all ended), capped at the window's end; the window's end otherwise. A
+    streak is counted on the whole record in this league up to ``end`` (``now``: today, unfinished, never
+    ends one)."""
+    from .squad import open_day_of, record_until
     at = end - dt.timedelta(microseconds=1)
+    od = open_day_of(end, to_utc(now) if now is not None else utcnow())
     rows = []
     for cid, trades in trades_by.items():
         tr = [x for x in trades if start <= x["closed"] < end]
@@ -414,7 +419,8 @@ def league_rows(tests: dict, trades_by: dict, start: dt.datetime, end: dt.dateti
             continue
         t = tests.get(cid) or {"id": cid, "nick": cid, "desc": ""}
         u = (until_by or {}).get(cid, at)
-        r = _row(t, tr, None if u is None else min(u, at))     # its pace over its trading days here
+        # its pace over its trading days here; its streak over its whole record in this league up to the end
+        r = _row(t, tr, None if u is None else min(u, at), record_until(trades, end), od)
         r["known"] = (known or {}).get(cid, True)
         rows.append(r)
     rows.sort(key=lambda r: (-r["net"], -r["stars"], str(r.get("nick")), str(r["id"])))

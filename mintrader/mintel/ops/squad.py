@@ -163,28 +163,72 @@ def day_nets(trades: Iterable[dict]) -> dict:
     return {k: round(v, 2) for k, v in out.items()}
 
 
-def streak_of(trades: Iterable[dict]) -> int:
+def streak_of(trades: Iterable[dict], open_day: Optional[dt.date] = None) -> int:
     """Consecutive profitable UK trading days up to its latest: counted back from the latest UK day on which
     it traded, every day it traded and finished in profit after costs; the first day it traded and did not
-    (a loss or exactly level) ends it. A day it did not trade neither breaks nor extends it."""
+    (a loss or exactly level) ends it. A day it did not trade neither breaks nor extends it. ``open_day``: the
+    UK day still in progress (today); it adds to a streak when in profit so far but, unfinished, never ends one.
+
+    16 Oct, Aaron ("the best streak is one day, that's not right"): pass the test's whole record up to the
+    period's end, never only the period's trades - on TODAY that capped every streak at one day."""
+    return _streak_days(sorted(day_nets(trades).items(), reverse=True), None, open_day)
+
+
+def _streak_days(days_desc: Sequence[tuple], last_day: Optional[dt.date], open_day: Optional[dt.date]) -> int:
+    """streak_of on {UK day: net} pairs, latest first; days after ``last_day`` (after the period) left out."""
     n = 0
-    for _d_, net in sorted(day_nets(trades).items(), reverse=True):
+    for d, net in days_desc:
+        if last_day is not None and d > last_day:
+            continue
         if net > 0:
             n += 1
+        elif open_day is not None and d == open_day:
+            continue
         else:
             break
     return n
 
 
-def figures(trades: Sequence[dict]) -> dict:
+def streak_until(t: dict, end: dt.datetime, now: Optional[dt.datetime] = None) -> int:
+    """A test's streak on its whole record up to ``end`` (a period's end). Its days are worked out once per
+    loaded world (the 30 s cache) when ``end`` is a UK midnight, as every timeline's is; otherwise its trades
+    up to ``end`` are counted afresh."""
+    trades = t.get("trades") or ()
+    od = open_day_of(end, now)
+    last = uk_date(end - dt.timedelta(microseconds=1))
+    if uk_midnight(last + dt.timedelta(days=1)) != end:
+        return streak_of(record_until(trades, end), od)
+    cached = t.get("_days")
+    if not (isinstance(cached, tuple) and cached[0] == len(trades)):
+        cached = (len(trades), sorted(day_nets(trades).items(), reverse=True))
+        t["_days"] = cached
+    return _streak_days(cached[1], last, od)
+
+
+def record_until(trades: Iterable[dict], end: dt.datetime) -> list[dict]:
+    """A test's whole record up to a period's end (what a streak is counted on)."""
+    return [t for t in trades if t["closed"] < end]
+
+
+def open_day_of(end: dt.datetime, now: Optional[dt.datetime]) -> Optional[dt.date]:
+    """The UK day still in progress when a period [.., end) reaches past ``now``; None for a finished period."""
+    if now is None or end <= now:
+        return None
+    return uk_date(now)
+
+
+def figures(trades: Sequence[dict], record: Optional[Sequence[dict]] = None,
+            open_day: Optional[dt.date] = None) -> dict:
     """{net, trades, wins, win_rate, streak, avg_win, avg_loss} of some trades, after costs. A win made money
-    after costs; every other trade counts against the win rate (as the pages have always counted)."""
+    after costs; every other trade counts against the win rate (as the pages have always counted). The streak
+    is counted on ``record`` (the test's whole record up to the period's end) when given, else on ``trades``."""
     nets = [float(t["net"]) for t in trades]
     wins = [v for v in nets if v > 0]
     losses = [v for v in nets if v < 0]
     n = len(nets)
     return {"net": round(sum(nets), 2), "trades": n, "wins": len(wins),
-            "win_rate": (100.0 * len(wins) / n) if n else None, "streak": streak_of(trades),
+            "win_rate": (100.0 * len(wins) / n) if n else None,
+            "streak": streak_of(trades if record is None else record, open_day),
             "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
             "avg_loss": round(-sum(losses) / len(losses), 2) if losses else None}
 
@@ -203,7 +247,7 @@ def badge_of(row: dict) -> str:
         return CHAMPION
     if (row.get("move") or 0) >= RISING_PLACES:
         return RISING
-    if int(row.get("streak") or 0) >= HOT_STREAK:
+    if int(row.get("streak") or 0) >= HOT_STREAK and float(row.get("net") or 0.0) > 0:    # never HOT while losing
         return HOT
     if row.get("retired"):
         return BENCHED
@@ -214,16 +258,20 @@ def badge_of(row: dict) -> str:
     return ""
 
 
-def league_of(tests: dict, start: dt.datetime, end: dt.datetime) -> list[dict]:
+def league_of(tests: dict, start: dt.datetime, end: dt.datetime,
+              now: Optional[dt.datetime] = None, streaks: bool = True) -> list[dict]:
     """Every test with a paper trade closed in [start, end), best £ after costs first (then the better win
-    rate, then the name), with its place ``pos`` from 1."""
+    rate, then the name), with its place ``pos`` from 1. Its streak is counted on its whole record up to
+    ``end`` (``now``: today, still in progress, never ends one); ``streaks=False`` leaves it out (None), for
+    a league only its places are read from (the previous day's, for the arrows)."""
     rows = []
     for t in tests.values():
         tr = in_window(t.get("trades") or (), start, end)
         if not tr:
             continue
+        f = dict(figures(tr, ()), streak=streak_until(t, end, now) if streaks else None)
         rows.append(dict({k: t.get(k) for k in ("id", "nick", "desc", "kind", "ref", "ready", "live", "retired")},
-                         **figures(tr), last=max(x["closed"] for x in tr)))
+                         **f, last=max(x["closed"] for x in tr)))
     rows.sort(key=lambda r: (-r["net"], -(r["win_rate"] or 0.0), str(r["nick"]), str(r["id"])))
     for i, r in enumerate(rows, 1):
         r["pos"] = i
@@ -266,6 +314,42 @@ def headline(rows: Sequence[dict]) -> dict:
             "win_rate": (100.0 * wins / trades) if trades else None,
             "winning": sum(1 for r in rows if r["net"] > 0), "traded": len(rows),
             "streak": ({"id": best["id"], "nick": best["nick"], "days": best["streak"]} if best else None)}
+
+
+def best_streak(tests: dict, rows: Sequence[dict], end: dt.datetime,
+                now: Optional[dt.datetime] = None, promoted: Sequence[dict] = ()) -> Optional[dict]:
+    """BEST STREAK: the longest run of profitable UK days among every test still in the squad - not retired,
+    with a trade in the last FIVE_DAYS UK trading days up to the period's end - whether or not it has traded
+    in the period itself, on its whole record up to ``end``; a tie goes to more £ in the period, then the id.
+    A test on DEMO whose paper record stopped when it went there (``promoted``: the weekly state's items) is
+    left out: its paper run is over, frozen. 16 Oct: counted on the period's rows only, the card said "1 day"
+    every morning and nothing at weekends."""
+    paper_ended = {}
+    for it in promoted or ():
+        try:
+            paper_ended[str(it.get("id"))] = to_utc(dt.datetime.fromisoformat(str(it.get("since_utc"))))
+        except (TypeError, ValueError):
+            continue
+    since = uk_midnight(trading_days_back(uk_date(end - dt.timedelta(microseconds=1)), FIVE_DAYS)[-1])
+    net_in = {r["id"]: float(r.get("net") or 0.0) for r in rows}
+    done = {r["id"]: r["streak"] for r in rows if r.get("streak") is not None}     # the league's, same record
+    best = None
+    for t in tests.values():
+        if t.get("retired"):
+            continue
+        trades = t.get("trades") or ()
+        if not any(since <= x["closed"] < end for x in trades):
+            continue
+        stop = paper_ended.get(str(t.get("id")))
+        if t.get("live") and stop is not None and not any(x["closed"] >= stop for x in trades):
+            continue                                       # its paper record ended when it went to DEMO
+        n = done[t["id"]] if t["id"] in done else streak_until(t, end, now)
+        if n <= 0:
+            continue
+        key = (n, net_in.get(t["id"], 0.0), str(t["id"]))
+        if best is None or key > best[0]:
+            best = (key, t)
+    return {"id": best[1]["id"], "nick": best[1]["nick"], "days": best[0][0]} if best else None
 
 
 def factory_counts(pool: Sequence[dict], rows: Sequence[dict], lab_rows: Sequence[dict], now: dt.datetime) -> dict:
@@ -636,7 +720,8 @@ def demo_account(sd: Optional[dict], deals, key: str, start: dt.datetime, end: d
             "win_rate": (100.0 * wins / trades) if trades else None}
 
 
-def demo_squad(world: dict, data_dir, deals, open_tickets, start: dt.datetime, end: dt.datetime) -> list[dict]:
+def demo_squad(world: dict, data_dir, deals, open_tickets, start: dt.datetime, end: dt.datetime,
+               now: Optional[dt.datetime] = None) -> list[dict]:
     """The first team: one row per test the weekly pick has on DEMO, from MetaTrader's closed positions
     (``weekly.live_trades``) in the period - BOT, PROFIT, WIN RATE, TRADES, STREAK. Its figures are None
     while MetaTrader has not been read (never the bots' own records: those only ever take a pick back)."""
@@ -654,7 +739,7 @@ def demo_squad(world: dict, data_dir, deals, open_tickets, start: dt.datetime, e
                 log.warning("squad: demo %s: %s", it.get("id"), exc)
                 trades, row["known"] = [], False
             trades = [dict(x, closed=to_utc(x["closed"])) for x in trades if x.get("closed")]
-            row.update(figures(in_window(trades, start, end)))
+            row.update(figures(in_window(trades, start, end), record_until(trades, end), open_day_of(end, now)))
         else:
             row.update({"net": None, "trades": None, "wins": None, "win_rate": None, "streak": None})
         out.append(row)
@@ -688,10 +773,12 @@ def board(data_dir, timeline: str = DEFAULT_TIMELINE, now: Optional[dt.datetime]
         log.warning("squad: %s", exc)
         return out
     tests = world["tests"]
-    rows = league_of(tests, start, end)
-    prev = league_of(tests, p_start, min(p_end, end))
+    rows = league_of(tests, start, end, now)
+    prev = league_of(tests, p_start, min(p_end, end), now, streaks=False)
     apply_moves(rows, prev)
-    out.update(league=rows, prev=prev, head=headline(rows), tests=tests,
+    head = headline(rows)
+    head["streak"] = best_streak(tests, rows, end, now, world.get("promoted") or ())
+    out.update(league=rows, prev=prev, head=head, tests=tests,
                factory=factory_counts(world["pool"], rows, world["lab_rows"], now))
 
     def nick_of(cid: str, e: dict) -> str:
@@ -709,7 +796,7 @@ def board(data_dir, timeline: str = DEFAULT_TIMELINE, now: Optional[dt.datetime]
         log.warning("squad: latest action: %s", exc)
     try:
         out["demo"] = demo_account(sd, deals, key, start, end, now)
-        out["demo_rows"] = demo_squad(world, data_dir, deals, (sd or {}).get("open_tickets"), start, end)
+        out["demo_rows"] = demo_squad(world, data_dir, deals, (sd or {}).get("open_tickets"), start, end, now)
     except Exception as exc:
         log.warning("squad: demo: %s", exc)
     out["show_demo"] = bool(out["demo_rows"]) or bool(out["demo"] and out["demo"]["trades"])
@@ -932,7 +1019,7 @@ def bot_view(b: dict, test_id: str, data_dir=None) -> Optional[dict]:
     if t is None:
         return None
     trades = in_window(t.get("trades") or (), b["start"], b["end"])
-    f = figures(trades)
+    f = dict(figures(trades, ()), streak=streak_until(t, b["end"], b.get("now")))
     row = next((r for r in b.get("league") or () if r["id"] == test_id), None)
     title, why = why_lines(f, trades)
     demo = next((r for r in b.get("demo_rows") or () if r["id"] == test_id), None)

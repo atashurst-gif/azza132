@@ -283,9 +283,86 @@ class TestStreaks:
         assert SQ.day_nets([_trade(late, 5)]) == {dt.date(2026, 10, 9): 5}
         assert SQ.streak_of([_trade(self.d(8, 12), -2), _trade(late, 5)]) == 1
 
+    def test_a_day_still_in_progress_adds_to_a_streak_but_never_ends_one(self):
+        run = [_trade(self.d(13), 2), _trade(self.d(14), 3), _trade(self.d(15), 1)]
+        today = dt.date(2026, 10, 16)
+        assert SQ.streak_of(run + [_trade(self.d(16), -4)], open_day=today) == 3      # not over yet
+        assert SQ.streak_of(run + [_trade(self.d(16), 5)], open_day=today) == 4       # in profit so far
+        assert SQ.streak_of(run + [_trade(self.d(16), -4)]) == 0                      # once the day is over
+        assert SQ.streak_of(run + [_trade(self.d(16), -4)], open_day=dt.date(2026, 10, 17)) == 0
+
+    def test_16_oct_the_streak_is_the_whole_record_not_only_the_period_shown(self):
+        """16 Oct, Aaron: "the best streak is one day, that's not right". On TODAY a streak was counted on
+        today's trades only, so it could never be more than one day."""
+        tests = {t["id"]: t for t in (
+            a_test("runner", {dt.date(2026, 10, 13): [2.0], dt.date(2026, 10, 14): [3.0],
+                              dt.date(2026, 10, 15): [1.0], dt.date(2026, 10, 16): [4.0]}),
+            a_test("dipper", {dt.date(2026, 10, 14): [5.0], dt.date(2026, 10, 15): [6.0],
+                              dt.date(2026, 10, 16): [-1.0]}),
+            a_test("newbie", {dt.date(2026, 10, 16): [9.0]}))}
+        now = dt.datetime(2026, 10, 16, 10, 0, tzinfo=UTC)                         # Friday, 11:00 UK
+        start, end = SQ.bounds("today", now, RESET)
+        rows = {r["id"]: r for r in SQ.league_of(tests, start, end, now)}
+        assert rows["runner"]["streak"] == 4 and rows["runner"]["trades"] == 1 and rows["runner"]["net"] == 4.0
+        assert rows["dipper"]["streak"] == 2                    # down so far today: today is not over yet
+        assert rows["newbie"]["streak"] == 1
+        assert SQ.headline(list(rows.values()))["streak"] == {"id": "runner", "nick": "Runner", "days": 4}
+        later = dt.datetime(2026, 10, 17, 9, 0, tzinfo=UTC)                        # the day is over
+        done = {r["id"]: r for r in SQ.league_of(tests, start, end, later)}
+        assert done["dipper"]["streak"] == 0 and done["runner"]["streak"] == 4
+        # the trades after a period's end never count: the 15 Oct league ends before 16 Oct's trades
+        s15, e15 = SQ.bounds("today", now, RESET, as_of=dt.date(2026, 10, 15))
+        r15 = {r["id"]: r for r in SQ.league_of(tests, s15, e15, now)}
+        assert r15["runner"]["streak"] == 3 and r15["dipper"]["streak"] == 2 and "newbie" not in r15
+
+    def test_16_oct_on_the_page_a_streak_is_the_same_whatever_the_timeline(self, world):
+        # every timeline ending today counts a streak on the same whole record: TODAY, 5 DAYS and ALL TIME agree,
+        # in the league, on the bot's own page and in the DEMO SQUAD; and on TODAY some run is longer than a day
+        boards = {k: board_of(world, k) for k in ("today", "5d", "all")}
+        today = {r["id"]: r for r in boards["today"]["league"]}
+        assert today and max(r["streak"] for r in today.values()) > 1
+        for k in ("5d", "all"):
+            other = {r["id"]: r["streak"] for r in boards[k]["league"]}
+            assert all(other[i] == r["streak"] for i, r in today.items()), k
+            assert [r["streak"] for r in boards[k]["demo_rows"]] == [r["streak"] for r in boards["today"]["demo_rows"]]
+        start, end = SQ.bounds("today", world.now, RESET)
+        od = SQ.open_day_of(end, world.now)
+        for i, r in list(today.items())[:25]:
+            t = boards["today"]["tests"][i]
+            assert r["streak"] == SQ.streak_of(SQ.record_until(t["trades"], end), od)
+            assert SQ.bot_view(boards["today"], i)["figures"]["streak"] == r["streak"]
+
+    def test_16_oct_the_best_streak_card_counts_every_test_still_trading(self, world):
+        b = board_of(world, "today")
+        start, end = SQ.bounds("today", world.now, RESET)
+        od = SQ.open_day_of(end, world.now)
+        since = SQ.uk_midnight(SQ.trading_days_back(uk_date(world.now), SQ.FIVE_DAYS)[-1])
+        live = [t for t in b["tests"].values() if not t.get("retired") and t["trades"]
+                and max(x["closed"] for x in t["trades"]) >= since]
+        want = max(SQ.streak_of(SQ.record_until(t["trades"], end), od) for t in live)
+        assert want > 1 and b["head"]["streak"]["days"] == want
+        assert f'🔥 {want} days' in card(SQ.render_squad(b), "BEST STREAK")
+        # Saturday: nothing traded today, and the card still shows the run (it said "no profitable day yet")
+        sat = board_of(world, "today", now=dt.datetime(2026, 10, 17, 11, 0, tzinfo=UTC))
+        assert sat["league"] == [] and sat["head"]["streak"] is not None and sat["head"]["streak"]["days"] > 1
+        assert "no profitable day yet" not in card(SQ.render_squad(sat), "BEST STREAK")
+        # a test that stopped trading more than five trading days ago does not hold the card
+        late = board_of(world, "today", now=dt.datetime(2026, 10, 23, 11, 0, tzinfo=UTC))
+        assert late["head"]["streak"] is None
+
+    def test_16_oct_a_bot_whose_paper_record_ended_on_demo_never_holds_the_card(self, tmp_path):
+        # made up: the Runner went to DEMO on Mon 12 Oct, so its paper record stops on Fri 9 Oct with a 5-day
+        # run; with no lab ideas nothing else is on a run, and the card must not show the Runner's frozen run
+        w = made_up_world(tmp_path, ideas=0)
+        b = board_of(w, "today")
+        assert b["tests"]["bot:runner"]["live"] and b["head"]["streak"]["id"] != "bot:runner"
+        assert "Momentum Runner" not in card(SQ.render_squad(b), "BEST STREAK")
+        off = made_up_world(tmp_path / "off", ideas=0, promoted=False)            # not on DEMO: its run counts
+        assert board_of(off, "today")["head"]["streak"]["id"] == "bot:runner"
+
     def test_the_league_and_the_best_streak_card(self, world):
         b = board_of(world, "5d")
-        best = max(b["league"], key=lambda r: (r["streak"], r["net"], r["id"]))
+        best = max((r for r in b["league"] if not r["retired"]), key=lambda r: (r["streak"], r["net"], r["id"]))
         assert b["head"]["streak"] == {"id": best["id"], "nick": best["nick"], "days": best["streak"]}
         page = SQ.render_squad(b)
         assert f'🔥 {best["streak"]} days' in card(page, "BEST STREAK") and f'data-streak="{best["streak"]}"' in page
@@ -296,6 +373,11 @@ class TestStreaks:
 class TestBadges:
     def r(self, **kw) -> dict:
         return dict({"ready": False, "move": None, "streak": 0, "retired": False, "trades": 15, "net": 5.0}, **kw)
+
+    def test_16_oct_a_losing_row_is_never_hot(self):
+        assert SQ.badge_of(self.r(streak=3, net=5.0)) == SQ.HOT
+        assert SQ.badge_of(self.r(streak=4, net=-2.0)) != SQ.HOT          # on a run, but losing so far today
+        assert SQ.badge_of(self.r(streak=4, net=-30.0, trades=25)) == SQ.BENCHED
 
     def test_each_badge_and_their_order(self):
         b = SQ.badge_of

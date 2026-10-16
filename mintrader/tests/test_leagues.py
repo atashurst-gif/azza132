@@ -110,6 +110,22 @@ class TestThreeLeagues:
         rows = L.league_rows({}, {"bot:w": trades}, RESET - dt.timedelta(days=30), uk_midnight(dt.date(2026, 10, 17)))
         assert rows[0]["quality"]["per_day"] == 0.6 and rows[0]["stars"] == 3
 
+    def test_16_oct_a_streak_in_a_league_is_its_whole_record_not_only_the_period(self):
+        # 16 Oct, Aaron: "the best streak is one day, that's not right". Made up: profitable 13, 14 and 15 Oct,
+        # and in profit so far on Fri 16 Oct; another down so far today after two good days
+        from mintel.ops.standing import uk_midnight
+        def on(day, net):
+            return {"closed": dt.datetime(2026, 10, day, 9, tzinfo=UTC), "net": net}
+        by = {"lab:a": [on(13, 2.0), on(14, 3.0), on(15, 1.0), on(16, 4.0)],
+              "lab:b": [on(14, 5.0), on(15, 6.0), on(16, -1.0)]}
+        now = dt.datetime(2026, 10, 16, 10, tzinfo=UTC)
+        today = (uk_midnight(dt.date(2026, 10, 16)), uk_midnight(dt.date(2026, 10, 17)))
+        rows = {r["id"]: r for r in L.league_rows({}, by, *today, now=now)}
+        assert rows["lab:a"]["streak"] == 4 and rows["lab:a"]["trades"] == 1
+        assert rows["lab:b"]["streak"] == 2                       # today is not over yet
+        done = {r["id"]: r for r in L.league_rows({}, by, *today, now=dt.datetime(2026, 10, 17, 9, tzinfo=UTC))}
+        assert done["lab:b"]["streak"] == 0 and done["lab:a"]["streak"] == 4
+
     def test_the_pace_never_stops_before_its_last_trade(self):
         # rv14 S2/S3: a lab idea's last demo position closes after its demote. Made up: 3 trades a UK trading day
         # Mon 5 to Fri 16 Oct, its pace end Fri 9 Oct - counted to its last trade (10 days), not to 9 Oct (5)
