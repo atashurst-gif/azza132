@@ -1,5 +1,5 @@
 {
- "ts_utc": "2026-10-16T06:56:58+00:00",
+ "ts_utc": "2026-10-16T07:07:09+00:00",
  "about": "One entry per bot, written by the ten-minute pulse from each bot's own status file and the trader's page (read-only). 'today' is copied from the page's standing block (MetaTrader's own record for the bot's magic number, for the page's today) - real money. 'practice_today' is paper: not money. Nothing here is worked out again.",
  "trader_up": true,
  "trader_reason": "",
@@ -30,47 +30,113 @@
    "live_groups": [],
    "live_since_utc": "",
    "open_paper_trades": {
-    "trades": [],
-    "count": 0,
+    "trades": [
+     {
+      "ticket": 960000130,
+      "symbol": "GBPUSD",
+      "side": "BUY",
+      "volume": 0.38,
+      "entry": 1.33145,
+      "stop": 1.33103,
+      "opened": "2026-10-16T07:04:26.950000+00:00"
+     }
+    ],
+    "count": 1,
     "source": "the paper record (tnb_paper.sqlite), read-only: simulated orders, not money"
    },
    "health": "RUNNING: running with 1 warning(s)",
    "build": "71cbd0be44",
-   "last_scan": "06:56:51 UTC",
+   "last_scan": "07:07:01 UTC",
    "last_trade": "JP225 2026-10-16T00:01",
    "not_trading_because": [],
-   "positions_on_page": [],
+   "positions_on_page": [
+    {
+     "symbol": "GBPUSD",
+     "side": "BUY",
+     "volume": 0.38,
+     "entry": 1.33145,
+     "stop": 1.33103,
+     "profit": -3.42,
+     "flow_state": "INITIAL",
+     "note": "best 0.00R, thesis 74/100"
+    }
+   ],
    "positions_on_page_note": "as its page lists them: on PAPER its paper book (simulated) plus any real position left from LIVE; the real ones are also under open_on_account",
    "thinking": [
     {
      "rank": 1,
-     "symbol": "GBPCHF",
-     "direction": "SHORT",
-     "score": 40.23,
-     "tier": "NO_TRADE",
-     "tactic": "VWAP_REVERSION",
-     "regime": "RANGE / NORMAL VOL",
-     "reason": "GBPCHF: RANGE / NORMAL VOL market. Best idea is sell using vwap reversion. Execution supports it (99/100; spread 0.3 pips (0.0x normal), commission 0.6 pips). Momentum argues against it (15/100; efficiency 0.01, ADX 13). Cross Market argues against it (19/100; 1 related markets with a usable relationship; GBP 80 vs CHF 23). Regime supports it (65/100; RANGE / NORMAL VOL). Room to the first obstacle is 2 pips, giving about 0.7 to 1 after 1.0 pips of cost. Blocked because: reward:risk only 0.66 after costs; costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "symbol": "EURJPY",
+     "direction": "LONG",
+     "score": 79.21,
+     "tier": "STRONG",
+     "tactic": "SESSION_EXPANSION",
+     "regime": "TREND / NORMAL VOL",
+     "reason": "EURJPY: TREND / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (99/100; spread 0.6 pips (0.1x normal), commission 1.1 pips). Structure supports it (76/100; range structure on M5). Session supports it (73/100; session: LONDON). Multi Tf supports it (72/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 999 pips, giving about 1.6 to 1 after 1.9 pips of cost. Blocked because: reward:risk only 1.64 after costs; costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself.",
      "blockers": [
-      "reward:risk only 0.66 after costs",
-      "costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself"
+      "reward:risk only 1.64 after costs",
+      "costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself"
      ],
-     "reward_risk": 0.661
+     "reward_risk": 1.644
     },
     {
      "rank": 2,
-     "symbol": "EURUSD",
+     "symbol": "AUDJPY",
      "direction": "LONG",
-     "score": 26.87,
-     "tier": "NO_TRADE",
-     "tactic": "BREAKOUT_ACCEPTANCE",
-     "regime": "UNCLEAR / NORMAL VOL",
-     "reason": "EURUSD: UNCLEAR / NORMAL VOL market. Best idea is buy using breakout acceptance. Execution argues against it (0/100; spread 0.0 pips (0.0x normal), commission 0.7 pips). Multi Tf supports it (89/100; 6 timeframes weighed, higher ones first). Structure supports it (76/100; range structure on M5). Cross Market supports it (66/100; 0 related markets with a usable relationship; EUR 44 vs USD 4). Room to the first obstacle is 2 pips, giving about 0.9 to 1 after 0.7 pips of cost. Blocked because: no spread quoted; reward:risk only 0.94 after costs.",
+     "score": 77.83,
+     "tier": "STRONG",
+     "tactic": "SESSION_EXPANSION",
+     "regime": "TREND / NORMAL VOL",
+     "reason": "AUDJPY: TREND / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (100/100; spread 0.2 pips (0.0x normal), commission 1.1 pips). Multi Tf supports it (74/100; 6 timeframes weighed, higher ones first). Session supports it (73/100; session: LONDON). Cross Market supports it (70/100; 0 related markets with a usable relationship; AUD 98 vs JPY 2). Room to the first obstacle is 16 pips, giving about 1.0 to 1 after 1.4 pips of cost. Blocked because: reward:risk only 1.03 after costs.",
      "blockers": [
-      "no spread quoted",
-      "reward:risk only 0.94 after costs"
+      "reward:risk only 1.03 after costs"
      ],
-     "reward_risk": 0.943
+     "reward_risk": 1.029
+    },
+    {
+     "rank": 3,
+     "symbol": "CADJPY",
+     "direction": "LONG",
+     "score": 68.77,
+     "tier": "NORMAL",
+     "tactic": "SESSION_EXPANSION",
+     "regime": "TREND / NORMAL VOL",
+     "reason": "CADJPY: TREND / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (100/100; spread 0.2 pips (0.0x normal), commission 1.2 pips). Structure supports it (98/100; up structure on M5). Regime supports it (85/100; TREND / NORMAL VOL). Multi Tf supports it (78/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 4 pips, giving about 1.4 to 1 after 1.4 pips of cost. Blocked because: NORMAL setup - only STRONG or better is traded; reward:risk only 1.39 after costs; costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "NORMAL setup - only STRONG or better is traded",
+      "reward:risk only 1.39 after costs",
+      "costs would be 28% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 1.391
+    },
+    {
+     "rank": 4,
+     "symbol": "AUDUSD",
+     "direction": "LONG",
+     "score": 49.12,
+     "tier": "NO_TRADE",
+     "tactic": "SESSION_EXPANSION",
+     "regime": "TREND / NORMAL VOL",
+     "reason": "AUDUSD: TREND / NORMAL VOL market. Best idea is buy using session expansion. Execution supports it (98/100; spread 0.1 pips (0.0x normal), commission 0.7 pips). Cross Market supports it (75/100; 0 related markets with a usable relationship; AUD 98 vs USD 3). Session supports it (73/100; session: LONDON). Multi Tf supports it (67/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 1.5 to 1 after 0.8 pips of cost. Blocked because: reward:risk only 1.50 after costs; costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself.",
+     "blockers": [
+      "reward:risk only 1.50 after costs",
+      "costs would be 25% of the stop distance (limit 20%) - too small a trade to pay for itself"
+     ],
+     "reward_risk": 1.496
+    },
+    {
+     "rank": 5,
+     "symbol": "GBPUSD",
+     "direction": "LONG",
+     "score": 40.94,
+     "tier": "NO_TRADE",
+     "tactic": "SESSION_EXPANSION",
+     "regime": "TREND / NORMAL VOL",
+     "reason": "GBPUSD: TREND / NORMAL VOL market. Best idea is buy using session expansion. Structure supports it (100/100; up structure on M5). Execution supports it (100/100; spread 0.1 pips (0.0x normal), commission 0.7 pips). Regime supports it (85/100; TREND / NORMAL VOL). Multi Tf supports it (85/100; 6 timeframes weighed, higher ones first). Room to the first obstacle is 1 pips, giving about 2.4 to 1 after 0.8 pips of cost. Blocked because: costs would be 22% of the stop distance (limit 20%) - too small a trade to pay for itself; already long here.",
+     "blockers": [
+      "costs would be 22% of the stop distance (limit 20%) - too small a trade to pay for itself",
+      "already long here"
+     ],
+     "reward_risk": 2.369
     }
    ],
    "today": {
@@ -97,7 +163,7 @@
    "mode": "PAPER",
    "status_file": "rider-status.json",
    "updated_utc": "2026-10-10T15:11:04.238776+00:00",
-   "report_age_seconds": 488753.8,
+   "report_age_seconds": 489364.8,
    "running": false,
    "health": "RAPID MOMENTUM RIDER - OFF (rider.json says OFF, so it is not started)",
    "entries_allowed": false,
@@ -663,10 +729,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "runner-status.json",
-   "updated_utc": "2026-10-16T06:56:57.594795+00:00",
-   "report_age_seconds": 0.4,
+   "updated_utc": "2026-10-16T07:07:09.398535+00:00",
+   "report_age_seconds": -0.4,
    "running": true,
-   "health": "WATCHING, PAPER, last report 0 s ago",
+   "health": "WATCHING, PAPER, last report -0 s ago",
    "status": "WATCHING",
    "open_trades": [],
    "note": "",
@@ -695,10 +761,10 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "bandbreaker-status.json",
-   "updated_utc": "2026-10-16T06:56:57.594795+00:00",
-   "report_age_seconds": 0.4,
+   "updated_utc": "2026-10-16T07:07:09.398535+00:00",
+   "report_age_seconds": -0.4,
    "running": true,
-   "health": "OUTSIDE SESSION, PAPER, last report 0 s ago",
+   "health": "OUTSIDE SESSION, PAPER, last report -0 s ago",
    "status": "OUTSIDE SESSION",
    "open_trades": [],
    "today": {
@@ -724,11 +790,11 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "crowd-status.json",
-   "updated_utc": "2026-10-16T06:56:57.594795+00:00",
-   "report_age_seconds": 0.4,
+   "updated_utc": "2026-10-16T07:07:05.953093+00:00",
+   "report_age_seconds": 3.0,
    "running": true,
-   "health": "OUTSIDE HOURS (managing only), PAPER, last report 0 s ago",
-   "status": "OUTSIDE HOURS (managing only)",
+   "health": "WATCHING, PAPER, last report 3 s ago",
+   "status": "WATCHING",
    "open_trades": [],
    "today": {
     "result": 0,
@@ -753,8 +819,8 @@
    "mode_set": "PAPER",
    "mode": "PAPER",
    "status_file": "ian-status.json",
-   "updated_utc": "2026-10-16T06:56:56.274709+00:00",
-   "report_age_seconds": 1.7,
+   "updated_utc": "2026-10-16T07:07:08.027966+00:00",
+   "report_age_seconds": 1.0,
    "running": true,
    "health": "FINANCIAL IAN - HEALTHY, PAPER, feed LIVE",
    "status": "WATCHING the Binance public order book (crypto exchange) - traded through IC Markets BTCUSD and ETHUSD CFDs",
@@ -763,7 +829,7 @@
     "reason": "Binance public order book (crypto exchange), BTCUSDT and ETHUSDT over WebSocket (websocket-client); book grouped: BTCUSDT in 10 USDT steps, ETHUSDT in 0.5 USDT steps; this computer's clock is 1.4 s behind Binance's - check its time settings",
     "vendor": "binance",
     "synthetic": false,
-    "events": 17311231
+    "events": 17382135
    },
    "data_label": "LIVE",
    "metatrader_connected": true,
