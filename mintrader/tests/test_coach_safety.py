@@ -175,10 +175,7 @@ def test_a_simulated_week_writes_only_under_data_coach_and_never_opens_the_secre
     (data / "coach").mkdir(exist_ok=True)
     Paths.of(data).approvals.write_text('[{"id": "1", "action": "veto", "plan": "", "by": "aaron", "ts": ""}]')
     write_rows(data, [journal_row(GOOD_KEY, 0.4, dt.datetime(2026, 11, 9, 9, 0, tzinfo=UTC))])
-    from tests.test_version8 import NEWS_EVENTS, _calendar
-    _calendar(data, NEWS_EVENTS + [(dt.datetime(2026, 11, 9, 9, 5, tzinfo=UTC), "USD", "Made-up Release", 3)])
-    keep = {name: (data / name).read_bytes() for name in ("config.json", "coach.json", "secrets.json",
-                                                            "calendar.sqlite")}   # 17 Oct: the news window reads it
+    keep = {name: (data / name).read_bytes() for name in ("config.json", "coach.json", "secrets.json")}
     approvals = Paths.of(data).approvals.read_bytes()
     before = _snapshot(data)
     opened: list[str] = []

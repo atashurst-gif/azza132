@@ -187,8 +187,9 @@ def s2(trades: Iterable, as_of: dt.datetime, *, haircuts: Optional[Mapping] = No
     on at least two thirds of 6 or more traded UK days. ``allowed`` (a trade ->
     bool): count only the trades it allows. 17 Oct, Aaron ("Keep the approaches
     off and continue with how we should be if they weren't there"): the coach
-    passes today's rules (engine.tactics.allowed_by_rules), so a market is not
-    judged on approaches already switched off. Without it, every trade counts:
+    passes today's approach rules (decide.todays_rules, built on
+    engine.tactics.allowed_by_rules), so a market is not judged on approaches
+    already switched off. Without it, every trade counts:
     the reading of the 4 and 8 Oct exclusions."""
     as_of = R.to_utc(as_of)
     want = set(bots) if bots is not None else None

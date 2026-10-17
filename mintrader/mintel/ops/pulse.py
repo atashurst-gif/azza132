@@ -906,13 +906,12 @@ def lab_json(cfg: Config, max_bytes: int = LAB_MAX_BYTES) -> Optional[str]:
 # The coach (12 Oct): its status (data/coach/status.json, written every minute) and the page's
 # coach_progress (real money since 12 Oct, from /api), copied key by key - never a whole file -
 # through _scrub, for the nightly review. Trimmed in order: the decision log, keys beyond 12, the market
-# rule's rows beyond 20, the news window's trades beyond 5, then the lean step.
+# rule's rows beyond 20, then the lean step.
 COACH_STATUS_KEYS = ("schema", "written_utc", "synthetic", "test_data_note", "mode", "words", "policy",
                      "grants_allowed", "data", "account", "brakes", "brake_words", "headroom_gbp", "stop_pct", "demo",
                      "demo_line", "keys", "plan", "changes", "needs_you", "needs_your_yes", "suggestions", "luck",
                      "scorecard", "board", "phase", "outlook", "envelope_error", "error", "sources",
-                     "market_rule",      # 17 Oct: the market rule's combined count, for the nightly review
-                     "news_window")      # 17 Oct: what today's news window took out of that count
+                     "market_rule")      # 17 Oct: the market rule's combined count, for the nightly review
 COACH_KEY_KEYS = ("key", "words", "state", "step", "route", "money", "rule", "why", "p_plus", "lcb80", "p_plus_real",
                   "trades", "real_trades")
 COACH_CHANGE_KEYS = ("ts_utc", "kind", "target", "rule", "words", "by")
@@ -922,8 +921,7 @@ COACH_PROGRESS_KEYS = ("from", "to", "until", "ok", "why", "total", "trades", "t
 
 def _coach_trim_steps():
     """Applied in turn while coach.json is over its cap: the decision log first, then keys beyond 12, then the
-    market rule's rows beyond 20 (riskiest kept), the news window's trades beyond 5 (newest kept), then the
-    suggestions, plan, brake words and sources."""
+    market rule's rows beyond 20 (riskiest kept), then the suggestions, plan, brake words and sources."""
     def changes(rep):
         st = rep.get("status", {})
         if isinstance(st.get("changes"), list) and st["changes"]:
@@ -942,11 +940,6 @@ def _coach_trim_steps():
             st["market_rule_left_out"] = len(st["market_rule"]) - 20
             st["market_rule"] = st["market_rule"][:20]           # riskiest first, so the ones that matter stay
 
-    def news_5(rep):
-        nw = rep.get("status", {}).get("news_window")
-        if isinstance(nw, dict) and isinstance(nw.get("left_out"), list) and len(nw["left_out"]) > 5:
-            nw["left_out"] = nw["left_out"][:5]                  # newest first; left_out_count keeps the total
-
     def lean(rep):
         st = rep.get("status", {})
         for k in ("suggestions", "plan", "brake_words", "sources"):
@@ -954,7 +947,7 @@ def _coach_trim_steps():
         if isinstance(rep.get("progress"), dict):
             rep["progress"].pop("days", None)
 
-    return [changes, beyond_12, market_rule_20, news_5, lean]
+    return [changes, beyond_12, market_rule_20, lean]
 
 
 def coach_json(cfg: Config, p: Optional[dict] = None, max_bytes: int = COACH_MAX_BYTES) -> Optional[str]:

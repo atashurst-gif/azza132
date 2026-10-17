@@ -96,21 +96,31 @@ def test_an_old_merged_row_is_left_out_once_its_releases_are_on_record_one_by_on
     store.close()
 
 
-def test_the_coach_reads_the_archive_by_the_same_rule(tmp_path):
-    from mintel.coach import newswin as NW
-    from mintel.config import Config
+def test_the_first_refresh_after_the_fix_already_sees_a_release_an_old_row_stood_for(tmp_path):
+    # the old merged row's (currency, name) IS a real release at that minute: it must not lend that release its
+    # old id (and be hidden with it) on the very first refresh
+    store = CalendarStore(tmp_path / "calendar.sqlite")
+    _merged_row(store, AT, "USD", "Unemployment Claims", 3)
+    thursday = [{"title": t, "country": "USD", "date": "2026-10-02T08:30:00-04:00", "impact": i}
+                for t, i in (("Philly Fed Manufacturing Index", "Medium"), ("Unemployment Claims", "High"),
+                             ("Current Account", "Low"))]
+    eng = engine(store, thursday)
+    assert eng.refresh(NOW, force=True)
+    before = AT - dt.timedelta(minutes=10)
+    assert [e.name for e in eng.upcoming(("EUR", "USD"), before, 900.0, 3)] == ["Unemployment Claims"]
+    assert sorted(e.name for e in store.query(AT, AT)) == ["Current Account", "Philly Fed Manufacturing Index",
+                                                         "Unemployment Claims"]
+    store.close()
+
+
+def test_financial_ians_research_reads_the_archive_by_the_same_rule(tmp_path):
+    from mintel.ian.research.backtest import load_calendar
     store = CalendarStore(tmp_path / "calendar.sqlite")
     _merged_row(store, AT, "CAD", "Non-Farm Employment Change", 3)
-    cfg = Config()
-    cfg.news.blackout_before_seconds = 900.0
-    span = (AT - dt.timedelta(days=1), AT + dt.timedelta(days=1))
-    store.close()
-    win = NW.load(tmp_path, cfg, *span)                         # before the fix: one CAD row, EURUSD not seen
-    assert win.inside("GBPCAD", AT - dt.timedelta(minutes=10)) is True
-    assert win.inside("EURUSD", AT - dt.timedelta(minutes=10)) is not True
-    store = CalendarStore(tmp_path / "calendar.sqlite")
     assert engine(store).refresh(NOW, force=True)
     store.close()
-    win = NW.load(tmp_path, cfg, *span)
-    assert win.inside("EURUSD", AT - dt.timedelta(minutes=10)) is True
-    assert win.release("EURUSD", AT - dt.timedelta(minutes=10)).startswith("USD ")
+    got = load_calendar(tmp_path / "calendar.sqlite", AT - dt.timedelta(days=1), AT + dt.timedelta(days=1))
+    events = got[0] if isinstance(got, tuple) else got
+    at_minute = {(e.currency, e.name) for e in events if e.time_utc == AT}
+    assert ("CAD", "Non-Farm Employment Change") not in at_minute
+    assert ("USD", "Non-Farm Employment Change") in at_minute

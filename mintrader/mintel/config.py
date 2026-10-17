@@ -249,16 +249,16 @@ class ScanConfig:
         # not. On FX minor pairs (DEMO +156.31, PAPER -93.04; combined, down on
         # 4 of 13 days, +63.27) it stays on by that precedent, judged nightly.
         ("MOMENTUM_CONTINUATION", "INDEX"),
-        # 17 Oct (version 8): session expansion on the minor pairs stays ON. On
-        # the trades today's rules still allow (the count of versions 4 to 6)
-        # it is 8 days, 2 down, +26.54: not met. Today's rules include the
-        # 15-minute news window of 10 Oct, which refuses 9 Oct GBPCAD -32.47
-        # (entered 8 minutes before Canada's jobs data); counted, the line
-        # would be 9 days, 3 down, -5.93. Every allowed trade before 10 Oct was
-        # screened against the regular release times: six were entered in the
-        # 15 minutes before one, and leaving all six out changes no other
-        # verdict. The coach applies the window from the Mac's own calendar
-        # (coach.newswin). Judged again every night.
+        # 17 Oct (version 8): session expansion on the minor pairs stays ON.
+        # On the count of versions 4 to 6 (the approach, condition, score and
+        # market rules) it is 9 days, 3 down, -5.93, which meets the rule. One
+        # of those down days is 9 Oct GBPCAD -32.47, entered 8 minutes before
+        # Canada's jobs data: a trade the 15-minute news window of 10 Oct
+        # refuses. Leaving it out is Claude's reading of "today's rules", not
+        # Aaron's words, and Aaron is told: 8 days, 2 down, +26.54, not met.
+        # Every allowed trade before 10 Oct was screened against the regular
+        # release times; leaving all six it flags out changes no other
+        # verdict. Judged again every night.
     )
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),

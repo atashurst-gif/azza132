@@ -194,7 +194,11 @@ class StoreBackedAdapter(BaseAdapter):
 
     def fetch_calendar(self, start: dt.datetime,
                        end: dt.datetime) -> list[CalendarEvent]:
-        return self.store.query(start, end)
+        # A row merged before 17 Oct ("<source>:<time>", calendar_store.NOT_MERGED) never joins the merge again:
+        # a fresh release with its (currency, name) would take its old id and be hidden with it. The engine
+        # still reads the archive itself (store.query), so the days before the fix keep those rows.
+        return [e for e in self.store.query(start, end)
+                if "#" in e.event_id or e.event_id != f"{e.source}:{e.time_utc.isoformat()}"]
 
 
 class JsonCalendarAdapter(BaseAdapter):

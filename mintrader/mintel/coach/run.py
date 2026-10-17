@@ -809,7 +809,6 @@ class Coach:
             changes=[{"ts_utc": c.ts_utc, "kind": c.kind, "target": c.target, "rule": c.rule, "words": c.words,
                       "by": c.by} for c in recent],
             needs_you=needs_you, needs_your_yes=yes, suggestions=sugg, market_rule=D.market_watch(w),
-            news_window=D.news_watch(w),
             luck=luck, scorecard=sc[-1] if sc else None,
             board=W.words(fd.weather, now, self.board.update(fd.weather.symbols, now) if fd.weather.ok else None),
             phase=W.session_phase(now))

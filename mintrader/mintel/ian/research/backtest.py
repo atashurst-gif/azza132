@@ -1389,8 +1389,9 @@ def load_calendar(path: str | Path, start: dt.datetime, end: dt.datetime) -> tup
         try:
             con.row_factory = sqlite3.Row
             lo, hi = (start - dt.timedelta(days=1)).isoformat(), (end + dt.timedelta(days=1)).isoformat()
-            for r in con.execute("SELECT * FROM events WHERE time_utc >= ? AND time_utc <= ? ORDER BY time_utc",
-                                 (lo, hi)):
+            from ...news.calendar_store import NOT_MERGED          # 17 Oct: not a row merged before the fix
+            for r in con.execute("SELECT * FROM events WHERE time_utc >= ? AND time_utc <= ? AND " + NOT_MERGED
+                                 + " ORDER BY time_utc", (lo, hi)):
                 try:
                     t = dt.datetime.fromisoformat(str(r["time_utc"]))
                 except ValueError:

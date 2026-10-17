@@ -741,7 +741,7 @@ Stop the coach: double-click "The Coach" on the desktop and choose 2 - everythin
 - the honest arithmetic of §17;
 - the sources.
 
-**The pulse adds `reports/live/coach.json`** (≤ 20 KB, trimmed in order: decision log, keys beyond 12, the market rule's rows beyond 20, the news window's trades beyond 5, then suggestions, plan, brake words and sources). It is built from `status.json` and `/api`'s `coach_progress`.
+**The pulse adds `reports/live/coach.json`** (≤ 20 KB, trimmed in order: decision log, keys beyond 12, the market rule's rows beyond 20, then suggestions, plan, brake words and sources). It is built from `status.json` and `/api`'s `coach_progress`.
 
 **Nightly upload:** `reports/coach/<date>/` holding `report.md`, `decisions.csv`, `plan.json` and `policy.json`, sent through `report_upload.upload(..., day=f"coach/{date}")`.
 
