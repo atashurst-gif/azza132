@@ -83,6 +83,7 @@ F_RISK_ESTIMATED = "risk_estimated"               # no risk column: the bot's co
 F_COMMISSION_UNKNOWN = "commission_unknown"       # the record holds no commission figure (counted 0)
 F_ESTIMATED_EXIT = "estimated_exit"               # a LIVE row booked from the last price ("?" exit)
 F_COACH_REAL = "coach_real"                       # the gate routed this ticket REAL on a coach grant
+F_TWIN = "twin"                                   # a twin ("_2X") trade: approach_of drops the suffix (17 Oct)
 
 # Index names contracts.infer_group does not know (its INDEX_HINTS lack them);
 # the trader classifies them from the broker's spec, which the coach has not got.
@@ -546,6 +547,8 @@ class _Reader:
             coach_real = getattr(self.paper, "is_coach_real", None)
             if real and callable(coach_real) and coach_real(ticket):
                 self._flag(flags, F_COACH_REAL)            # sent real on a coach grant (the paper record's table)
+            if tactic.strip().upper().endswith("_2X"):
+                self._flag(flags, F_TWIN)                  # the approach keeps its base name; today's rules need to know
             self._keep(self._base(r, approach=approach_of(tactic) or "UNKNOWN", kind=kind_of(sym),
                                   condition=_part(r.get("regime")), symbol=sym, side=_side(r.get("side")),
                                   real=real, net=net, commission=commission, risk=_num(r.get("risk_money")),

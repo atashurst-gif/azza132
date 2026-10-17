@@ -11,7 +11,8 @@ class TestRules:
         c = Config()
         # versions 5 (9 Oct) and 6 (15 Oct) kept every version 4 rule and added to them
         assert STRATEGY_NAME in ("Commission First (version 4)", "Commission First (version 5)",
-                                 "Commission First (version 6)", "Commission First (version 7)")
+                                 "Commission First (version 6)", "Commission First (version 7)",
+                                 "Commission First (version 8)")
         assert "USDCHF" in c.universe.excluded_symbols and "XAUJPY" in c.universe.excluded_symbols
         assert ("MOMENTUM_CONTINUATION", "GOLD") in c.scan.disabled_tactic_groups
         assert ("MOMENTUM_CONTINUATION", "SILVER") in c.scan.disabled_tactic_groups

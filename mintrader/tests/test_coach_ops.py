@@ -139,6 +139,42 @@ def test_the_pulse_publishes_the_coach_once_it_is_switched_on(tmp_path):
     assert files[PL.COACH_PATH] == text and PL.COACH_PATH == "reports/live/coach.json"
 
 
+def test_the_market_rule_count_is_published_riskiest_first_and_trimmed_last(tmp_path):
+    # 17 Oct: the coach's combined market count (status "market_rule") reaches reports/live/coach.json
+    cfg = _cfg(tmp_path)
+    data = Path(cfg.ops.data_dir)
+    (data / "coach").mkdir(parents=True)
+    (data / "coach.json").write_text(json.dumps({"schema": 1, "mode": "PILOT"}))
+    st = json.loads(FIXTURE.read_text())
+    st["market_rule"] = [{"bot": "tnb", "symbol": "EURCAD", "days": 6, "negative_days": 4, "combined_net_gbp": -6.0,
+                          "real_net_gbp": -10.0, "practice_net_gbp": 4.0, "real_days": 2, "practice_days": 4,
+                          "trades": 6, "meets": True}]
+    st["news_window"] = {"window_minutes": 15.0, "calendar": True, "calendar_days": 30, "unchecked": 2,
+                         "left_out": [{"ticket": 960000007, "symbol": "GBPCAD", "opened_utc": "2026-10-09T12:21:00+00:00",
+                                       "real": False, "net_gbp": -32.47, "before": "CAD Employment Change at 12:30 UTC"}],
+                         "left_out_count": 1}
+    (data / "coach" / "status.json").write_text(json.dumps(st))
+    rep = json.loads(PL.coach_json(cfg, {"status": {"unavailable": "down"}}))
+    assert rep["status"]["market_rule"][0]["symbol"] == "EURCAD" and rep["status"]["market_rule"][0]["meets"]
+    assert rep["status"]["news_window"]["left_out"][0]["ticket"] == 960000007       # what the news window took out
+    big = _status_big()
+    big["needs_you"] = ["n" * 400] * 8                                    # big enough that the fourth step runs
+    big["market_rule"] = [dict(st["market_rule"][0], symbol=f"M{k:02d}") for k in range(35)]
+    big["news_window"] = dict(st["news_window"], left_out_count=12,
+                              left_out=[dict(st["news_window"]["left_out"][0], ticket=k) for k in range(12)])
+    (data / "coach" / "status.json").write_text(json.dumps(big))
+    text = PL.coach_json(cfg, {"status": {"unavailable": "down"}})
+    assert len(text.encode()) <= PL.COACH_MAX_BYTES
+    out = json.loads(text)["status"]
+    assert out["changes"] == [] and len(out["keys"]) == 12                 # the log and the keys went first
+    assert len(out["market_rule"]) == 20 and out["market_rule_left_out"] == 15
+    assert out["market_rule"][0]["symbol"] == "M00" and out["market_rule"][-1]["symbol"] == "M19"
+    assert [r["ticket"] for r in out["news_window"]["left_out"]] == [0, 1, 2, 3, 4]    # newest five kept ...
+    assert out["news_window"]["left_out_count"] == 12                                 # ... and the total said
+    for k in ("mode", "words", "policy", "needs_you", "board", "phase"):                # never trimmed away
+        assert k in out, k
+
+
 def test_a_small_status_is_not_trimmed_and_a_broken_one_is_said(tmp_path):
     cfg = _cfg(tmp_path)
     data = Path(cfg.ops.data_dir)
@@ -370,3 +406,23 @@ def test_the_installer_never_writes_config_or_reads_secrets():
     assert "baseline_config" in py and "Config.load" not in py
     writes = re.findall(r"open\(([^,]+), \"w\"", py)
     assert writes == ["tmp"] and 'path = data / "coach.json"' in py
+
+
+def test_the_trim_takes_the_decision_log_first_and_leaves_the_market_count_when_that_is_enough(tmp_path):
+    cfg = _cfg(tmp_path)
+    data = Path(cfg.ops.data_dir)
+    (data / "coach").mkdir(parents=True)
+    (data / "coach.json").write_text(json.dumps({"schema": 1, "mode": "PILOT"}))
+    st = json.loads(FIXTURE.read_text())
+    row = {"bot": "tnb", "symbol": "EURCAD", "days": 6, "negative_days": 4, "combined_net_gbp": -6.0,
+           "real_net_gbp": -10.0, "practice_net_gbp": 4.0, "real_days": 2, "practice_days": 4, "trades": 6,
+           "meets": True}
+    st["market_rule"] = [dict(row, symbol=f"M{k:02d}") for k in range(30)]
+    st["news_window"] = {"window_minutes": 15.0, "left_out_count": 8,
+                         "left_out": [{"ticket": k, "symbol": "GBPCAD", "before": "CAD at 12:30 UTC"} for k in range(8)]}
+    st["changes"] = [dict(st["changes"][0], words="c" * 400) for _ in range(30)]          # the log is what is big
+    (data / "coach" / "status.json").write_text(json.dumps(st))
+    out = json.loads(PL.coach_json(cfg, {"status": {"unavailable": "down"}}))["status"]
+    assert out["changes"] == []                                                         # the first step ran ...
+    assert len(out["market_rule"]) == 30 and "market_rule_left_out" not in out           # ... and was enough
+    assert len(out["news_window"]["left_out"]) == 8

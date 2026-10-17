@@ -546,7 +546,8 @@ def pinned_rules(w: World, key: str, s1_results: Optional[Sequence] = None,
             out.append(f"the 3-days rule would switch it off in {c.replace('_', ' ').lower()} markets "
                        f"({r.negative_days} of {r.days} UK days negative, net {gbp(r.net_gbp, True)}): your call")
     try:
-        res2 = s2_results if s2_results is not None else RU.s2(w.trades, w.now, haircuts=w.haircuts, bots=[BOT_TNB])
+        res2 = s2_results if s2_results is not None else RU.s2(w.trades, w.now, haircuts=w.haircuts, bots=[BOT_TNB],
+                                                               allowed=todays_rules(w))
     except Exception:
         res2 = []
     for r in res2:
@@ -654,11 +655,126 @@ def s1_moves(segs: dict, w: World) -> list[Move]:
     return out
 
 
+class TodaysRules:
+    """The standing rules' filter (17 Oct): does today's Trend & Breakout take this trade? Two parts:
+
+    * the approach rules in ``cfg`` (engine.tactics.allowed_by_rules: approach, market condition, kind of
+      market, twins, the score floors; the market list aside);
+    * today's news window (coach.newswin, the Mac's own calendar archive): a Trend & Breakout trade entered
+      before the window came in (newswin.WINDOW_SINCE, 10 Oct) in the ``news.blackout_before_seconds`` before
+      a release that closes it (15 minutes) does not count. Trades from 10 Oct were taken with the window in
+      force, so they are not checked again. A day the archive does not cover counts the trade, as before.
+
+    Called with a trade, it says True (counts) or False; it never raises (an error counts the trade). What the
+    news window took out is kept in ``left_out`` (ticket -> what), and Trend & Breakout trades it could not
+    check in ``unchecked``."""
+
+    def __init__(self, cfg, news=None):
+        from ..engine.tactics import allowed_by_rules
+        self.cfg, self.news, self._allowed = cfg, news, allowed_by_rules
+        self.suffix = str(getattr(cfg.scan, "twin_suffix", "") or "_2X")
+        self.left_out: dict = {}
+        self.unchecked: set = set()
+
+    def __call__(self, t) -> bool:
+        try:
+            approach = t.approach + self.suffix if R.F_TWIN in (t.flags or ()) else t.approach
+            if not self._allowed(self.cfg, approach, t.condition, t.kind, t.score):
+                return False
+        except Exception:
+            pass
+        if self.news is None or getattr(t, "bot", None) != BOT_TNB:
+            return True
+        try:
+            from .newswin import WINDOW_SINCE
+            if t.opened_utc >= WINDOW_SINCE:
+                return True
+        except Exception:
+            return True
+        try:
+            inside = self.news.inside(t.symbol, t.opened_utc)
+            if inside is None:
+                self.unchecked.add(t.ticket)
+                return True
+            if inside:
+                self.left_out[t.ticket] = {"ticket": t.ticket, "symbol": t.symbol,
+                                           "opened_utc": t.opened_utc.isoformat(), "real": bool(t.real),
+                                           "net_gbp": round(float(t.net_gbp), 2),
+                                           "before": self.news.release(t.symbol, t.opened_utc)}
+                return False
+        except Exception:
+            pass
+        return True
+
+
+def todays_rules(w: World):
+    """S2's and the market read-out's filter (17 Oct): a TodaysRules on ``w.cfg`` and the calendar archive in
+    ``w.data_dir``, built once for each World. The approach part follows Aaron's "Keep the approaches off and
+    continue with how we should be if they weren't there"; the news part is Claude's reading of "today's rules"
+    (the 10 Oct window is one of them), shown to Aaron with the one verdict it decides. None without a readable
+    config (every trade counts, as before). Never raises."""
+    cfg = getattr(w, "cfg", None)
+    if cfg is None or getattr(cfg, "scan", None) is None:
+        return None
+    got = getattr(w, "_todays_rules", None)
+    if got is not None:
+        return got
+    news = None
+    try:
+        from . import newswin as NW
+        mine = [t.opened_utc for t in w.trades if t.bot == BOT_TNB]
+        if mine:
+            news = NW.load(getattr(w, "data_dir", None), cfg, min(mine), max(mine))
+    except Exception:
+        news = None
+    try:
+        got = TodaysRules(cfg, news)
+    except Exception:
+        return None
+    try:
+        w._todays_rules = got
+    except Exception:
+        pass
+    return got
+
+
+def market_watch(w: World) -> list[dict]:
+    """The market rule on Trend & Breakout's whole record, DEMO and PAPER added together, on the trades today's
+    rules allow (rules.market_counts): what the nightly review reads to judge the rule (17 Oct). Reported only.
+    Never raises."""
+    try:
+        return RU.market_counts(w.trades, w.now, bots=[BOT_TNB], allowed=todays_rules(w))
+    except Exception:
+        return []
+
+
+def news_watch(w: World) -> dict:
+    """What today's news window took out of the standing rules' count (17 Oct), for the nightly review: the
+    window, the trades it left out (at most 20, newest first) and how many Trend & Breakout trades the calendar
+    archive could not check. Reported only. Never raises."""
+    try:
+        f = todays_rules(w)
+        if f is None:
+            return {"window_minutes": None, "calendar": False, "left_out": [], "left_out_count": 0, "unchecked": 0}
+        for t in w.trades:                           # the filter notes what it leaves out as it is used
+            if t.bot == BOT_TNB and t.closed_utc <= w.now:
+                f(t)
+        rows = sorted(f.left_out.values(), key=lambda r: r["opened_utc"], reverse=True)
+        return {"window_minutes": round(f.news.window_s / 60.0, 2) if f.news else None,
+                "calendar": f.news is not None,
+                "calendar_days": len(f.news.days) if f.news else 0,
+                "left_out": rows[:20], "left_out_count": len(rows), "unchecked": len(f.unchecked)}
+    except Exception:
+        return {"window_minutes": None, "calendar": False, "left_out": [], "left_out_count": 0, "unchecked": 0,
+                "error": "not read"}
+
+
 def s2_blocks(w: World) -> list:
     """S2, Aaron's rule: a symbol negative on at least 2/3 of 6 or more traded days is practice-only for the
     coach's keys. Returns the rules' results that fire (Trend & Breakout)."""
     try:
-        return [r for r in RU.s2(w.trades, w.now, haircuts=w.haircuts, bots=[BOT_TNB]) if r.fires]
+        return [r for r in RU.s2(w.trades, w.now, haircuts=w.haircuts, bots=[BOT_TNB], allowed=todays_rules(w))
+                if r.fires]
     except Exception:
         return []
 

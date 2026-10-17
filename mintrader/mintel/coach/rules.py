@@ -182,14 +182,21 @@ def _s1(nets: Mapping) -> bool:
 
 
 def s2(trades: Iterable, as_of: dt.datetime, *, haircuts: Optional[Mapping] = None,
-       bots: Optional[Iterable[str]] = None) -> list[RuleResult]:
+       bots: Optional[Iterable[str]] = None, allowed=None) -> list[RuleResult]:
     """S2 for every (bot, symbol) on its whole record to ``as_of``: negative
-    on at least two thirds of 6 or more traded UK days."""
+    on at least two thirds of 6 or more traded UK days. ``allowed`` (a trade ->
+    bool): count only the trades it allows. 17 Oct, Aaron ("Keep the approaches
+    off and continue with how we should be if they weren't there"): the coach
+    passes today's rules (engine.tactics.allowed_by_rules), so a market is not
+    judged on approaches already switched off. Without it, every trade counts:
+    the reading of the 4 and 8 Oct exclusions."""
     as_of = R.to_utc(as_of)
     want = set(bots) if bots is not None else None
     groups: dict[tuple[str, str], list] = {}
     for t in trades:
         if t.closed_utc > as_of or (want is not None and t.bot not in want):
+            continue
+        if allowed is not None and not allowed(t):
             continue
         groups.setdefault((t.bot, R._core(t.symbol)), []).append(t)
     out = []
@@ -201,6 +208,42 @@ def s2(trades: Iterable, as_of: dt.datetime, *, haircuts: Optional[Mapping] = No
         out.append(RuleResult(S2, bot, sym, fires, source, len(nets), neg, round(sum(nets.values()), 2),
                               tuple(sorted(nets.items()))))
     return out
+
+
+def market_counts(trades: Iterable, as_of: dt.datetime, *, bots: Optional[Iterable[str]] = None,
+                  allowed=None, limit: int = 40) -> list[dict]:
+    """The market rule on the combined record, for the nightly review (17 Oct): per (bot, symbol), the trades
+    ``allowed`` lets through (today's rules), real and practice ADDED TOGETHER - the rule input the nightly
+    review has used since 9 Oct, always labelled - with each side's days shown apart. Money after costs, no practice haircut. Only ever
+    reported: S2 above stays the coach's rule (real when 6+ days, else practice, never mixed). Riskiest first,
+    at most ``limit``."""
+    as_of = R.to_utc(as_of)
+    want = set(bots) if bots is not None else None
+    groups: dict[tuple[str, str], list] = {}
+    for t in trades:
+        if t.closed_utc > as_of or (want is not None and t.bot not in want):
+            continue
+        if allowed is not None and not allowed(t):
+            continue
+        groups.setdefault((t.bot, R._core(t.symbol)), []).append(t)
+    out = []
+    for (bot, sym), rows in groups.items():
+        raw: dict = {}
+        for t in rows:                                  # money after costs as recorded: no practice haircut
+            raw[t.uk_day] = raw.get(t.uk_day, 0.0) + t.net_gbp
+        nets = {d: round(v, 2) for d, v in raw.items()}
+        neg = sum(1 for v in nets.values() if v < 0)
+        real_days = len({t.uk_day for t in rows if t.real})
+        practice_days = len({t.uk_day for t in rows if not t.real})
+        out.append({"bot": bot, "symbol": sym, "days": len(nets), "negative_days": neg,
+                    "combined_net_gbp": round(sum(nets.values()), 2),           # the rule's input, labelled so
+                    "real_net_gbp": round(sum(t.net_gbp for t in rows if t.real), 2),
+                    "practice_net_gbp": round(sum(t.net_gbp for t in rows if not t.real), 2),
+                    "real_days": real_days, "practice_days": practice_days, "trades": len(rows),
+                    "meets": len(nets) >= S2_MIN_DAYS and neg >= S2_SHARE * len(nets) - 1e-9})
+    out.sort(key=lambda r: (not r["meets"], -(r["negative_days"] / r["days"] if r["days"] else 0), -r["days"],
+                            r["symbol"]))
+    return out[:max(0, int(limit))]
 
 
 def judgement_allowed(trades: Iterable) -> bool:

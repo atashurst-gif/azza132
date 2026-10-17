@@ -487,6 +487,53 @@ def blocked_in_group(name: str, group: str, disabled_in_group: Sequence[tuple[st
     return any(n == name and str(gr).upper() == g for n, gr in disabled_in_group)
 
 
+# A signal name that a tactic reports besides its own (best_signal checks both names against every list).
+SIGNAL_PARENT = {"BREAKOUT_RETEST": "BREAKOUT_ACCEPTANCE"}
+
+
+def allowed_by_rules(cfg, approach: str, condition: str, kind: str, score: Optional[float] = None) -> bool:
+    """Would Trend & Breakout's rules in ``cfg`` take a trade of this approach, market condition, kind of market
+    and score today - the market list (``universe.excluded_symbols``) aside? As best_signal and the scanner's
+    tier check decide: the approach (and, for a signal like BREAKOUT_RETEST, the tactic it comes from) is not
+    switched off everywhere, in that condition or in that kind of market; a twin (``_2X``) only while twins are
+    on and its approach is a twin approach; and the score reaches the entry tier's floor and the approach's own
+    floor. Names are compared as the scanner compares them (in upper case). A score not on record does not
+    exclude it.
+
+    17 Oct, Aaron: "Keep the approaches off and continue with how we should be if they weren't there": the
+    market rule is judged on the trades these rules still allow, as the approach rules already were."""
+    scan = cfg.scan
+    name = str(approach or "").strip().upper()                 # the scanner's names are upper case
+    suffix = str(getattr(scan, "twin_suffix", "") or "").upper()
+    base = name[:-len(suffix)] if suffix and name.endswith(suffix) else name
+    if base != name and not (getattr(scan, "twin_enabled", False)
+                             and base in (getattr(scan, "twin_tactics", ()) or ())):
+        return False
+    names = [base] + ([SIGNAL_PARENT[base]] if base in SIGNAL_PARENT else [])
+    off = getattr(scan, "disabled_tactics", ()) or ()
+    cond = str(condition or "").upper()
+    regimes = getattr(scan, "disabled_tactic_regimes", ()) or ()
+    groups = getattr(scan, "disabled_tactic_groups", ()) or ()
+    for n in names:
+        if n in off:
+            return False
+        if any(x == n and str(r).upper() == cond for x, r in regimes):
+            return False
+        if blocked_in_group(n, kind, groups):
+            return False
+    if score is None:
+        return True
+    tiers = {"NORMAL": scan.tier_normal, "STRONG": scan.tier_strong, "EXCEPTIONAL": scan.tier_exceptional}
+    floor = float(tiers.get(str(getattr(scan, "entry_tier", "NORMAL") or "NORMAL").upper(), scan.tier_normal))
+    own = (getattr(scan, "tactic_min_score", None) or {}).get(base)
+    if own is not None:
+        floor = max(floor, float(own))
+    try:
+        return float(score) >= floor
+    except (TypeError, ValueError):
+        return True
+
+
 def best_signal(ctx: SymbolContext, side: int,
                 regime: Regime,
                 disabled: Sequence[str] = (),

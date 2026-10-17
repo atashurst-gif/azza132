@@ -808,7 +808,8 @@ class Coach:
                                             "notes": plan.notes, "floors": plan.floors, "luck": plan.luck},
             changes=[{"ts_utc": c.ts_utc, "kind": c.kind, "target": c.target, "rule": c.rule, "words": c.words,
                       "by": c.by} for c in recent],
-            needs_you=needs_you, needs_your_yes=yes, suggestions=sugg,
+            needs_you=needs_you, needs_your_yes=yes, suggestions=sugg, market_rule=D.market_watch(w),
+            news_window=D.news_watch(w),
             luck=luck, scorecard=sc[-1] if sc else None,
             board=W.words(fd.weather, now, self.board.update(fd.weather.symbols, now) if fd.weather.ok else None),
             phase=W.session_phase(now))
@@ -865,7 +866,8 @@ def load_reports_csv(path: "str | Path") -> list:
                            r["regime"].upper(), r["symbol"], r["side"], R.parse_utc(r["opened_utc"]),
                            R.parse_utc(r["closed_utc"]), r["mode"] != "PAPER", net, abs(com),
                            risk if risk > 0 else median, num(r.get("score")) or None,
-                           flags=() if risk > 0 else (R.F_RISK_ESTIMATED,)))
+                           flags=(() if risk > 0 else (R.F_RISK_ESTIMATED,))
+                           + ((R.F_TWIN,) if str(r["tactic"]).strip().upper().endswith("_2X") else ())))
     return R.assign_clusters(out)
 
 

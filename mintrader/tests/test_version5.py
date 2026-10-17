@@ -94,7 +94,7 @@ class TestRules:
     def test_version_5_name_and_the_clock_is_unchanged(self):
         # version 6 (15 Oct) kept every version 5 rule and added one (tests/test_version6.py)
         assert STRATEGY_NAME in ("Commission First (version 5)", "Commission First (version 6)",
-                                 "Commission First (version 7)")
+                                 "Commission First (version 7)", "Commission First (version 8)")
         assert STRATEGY_VERSION.startswith("2026-10-05 complete reset to zero")
 
     def test_momentum_continuation_is_off_on_the_fx_majors_and_on_on_the_minors(self):

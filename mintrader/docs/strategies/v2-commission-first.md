@@ -13,7 +13,7 @@ branch.
 | Reward after costs | at least 1.8 times the risk | unchanged |
 | Costs | at most 20% of the stop distance | 281 trades showed no cleaner line |
 | Commission | never assumed zero; 6.00 a lot until learned, indices 0 | a new account had no history to learn from |
-| Markets off | USDJPY, DE40, XAUGBP, CHFJPY, EURNZD, UK100, GBPJPY, XAUAUD; from 8 Oct (version 4) USDCHF and XAUJPY; from 16 Oct (version 7) CADJPY, EURCAD, EURUSD, GBPAUD, GBPCAD | negative on two-thirds or more of 6+ days; 125 trades, -219.70; USDCHF 5 of 6 days (-38.77), XAUJPY 7 of 10 (-14.09); version 7 on the coach's count of the Mac's whole record (see Version 7) |
+| Markets off | USDJPY, DE40, XAUGBP, CHFJPY, EURNZD, UK100, GBPJPY, XAUAUD; from 8 Oct (version 4) USDCHF and XAUJPY (version 7 also took off CADJPY, EURCAD, EURUSD, GBPAUD and GBPCAD; version 8 put them back, see Version 8) | negative on two-thirds or more of 6+ days; 125 trades, -219.70; USDCHF 5 of 6 days (-38.77), XAUJPY 7 of 10 (-14.09). From 17 Oct (Aaron) the rule counts only the trades today's rules still allow |
 | Approaches off | session expansion in a squeeze, plus earlier switch-offs; from 7 Oct (version 3) breakout acceptance in a fast market | negative on 3+ days traded |
 | Approach off in one kind of market | from 8 Oct (version 4): momentum continuation on gold and silver crosses; from 9 Oct (version 5) also on the FX majors; from 15 Oct (version 6) also on the indices | gold/silver: negative on the last three days it traded there (-7.89, -48.52, -28.62; 6 days, 3 negative, net -52.94) while on 8 Oct it was the engine on indices (+52.71) and FX (+38.63). FX majors: negative on 5 of 8 days, 17 trades, -13.87 after 17.48 commission (see Version 5). Indices, on the trades today's rules allow: DEMO +42.82 to 8 Oct, then PAPER -54.76 with all 4 days down under version 5; combined, 10 of 14 days down, -11.94 (see Version 6) |
 | Top-opportunity size | from 9 Oct (version 5): momentum continuation on FX minor pairs risks up to 40 (under the 1.5% ceiling: 30 on 2,000) and at most 0.5 lots; every other trade keeps the 10 cap | 38 trades over 10 days, 8 up and 2 down, +156.31 after commission (+0.82 R a trade); checked again on the bot's own record before every such trade (see Version 5) |
@@ -47,7 +47,172 @@ The nightly review adds one line per trading day.
 | 15 Oct (PAPER) | 19 practice | 9 | 0 real; -62.33 practice | 22.44 simulated | Session expansion in a trend: 4 trades +35.15 (AUS200 +27.06, which the Runner rode to +40.18) | By approach: momentum continuation in a fast market (HIGH_VOL) 8 trades -62.83 (2 wins; 7 on minor pairs -59.90, 1 on US500 -2.93); momentum continuation in news 6 trades -19.73 (4 wins; all six on minor pairs within 7 minutes from 00:30 UTC; EURAUD -26.33 stopped in a minute); session expansion in a fast market 1 trade -14.92 (US500); session expansion in a trend 4 trades +35.15. Worst markets EURAUD -20.91, US500 -17.85, GBPAUD -17.84, AUDNZD -14.78. Average win +7.49 against average loss -12.97; 8 of 19 lasted under 5 minutes, 5 of them stop-outs (-81.96); all 8 stop-outs cost -124.97. Standing rule met: momentum continuation on the indices, counted as for versions 4 and 5 (all conditions, the trades today's rules allow): DEMO +42.82 to 8 Oct, PAPER -54.76 since with all 4 days down; combined, 10 of 14 days down and net -11.94, so it is off from version 6. On the minor pairs: DEMO +156.31 to 8 Oct, PAPER -93.04 on 18 trades since; combined, down on 4 of 13 days and net +63.27, so the 25 Sep precedent keeps it on, judged again nightly. Momentum continuation in a fast market overall (after version 6, the minor pairs only): combined, 4 of 11 days down, +79.09; stays. The 13-14 Oct rows counted it on paper from 12 Oct only; on that count it would now be met (3 of 4 days down, -88.59). Momentum continuation in news: DEMO +50.12, PAPER -59.21; combined, down on 2 of 5 days, -9.09: not met; a third down day switches it off (see Version 6) |
 | 16 Oct (PAPER; version 6 from the 09:12 UK restart) | 6 practice | 3 | 0 real; -18.98 practice | 7.88 simulated | Session expansion in a trend, 4 trades -9.33 (the smaller loss): GBPNZD +4.22 and GBPUSD +3.14 trailed out in profit | By approach: momentum continuation in a fast market 2 trades -9.65 (JP225 SELL at 00:01 UTC -13.94, stopped in under half a minute, before the version 6 restart; GBPNZD +4.29 trailed); session expansion in a trend 4 trades -9.33 (GBPUSD +3.14 and -15.25, XAUUSD -1.44 when its thesis broke, GBPNZD +4.22). Average win +3.88 against average loss -10.21. Version 6 working: no momentum continuation on an index after the restart. Standing rule met: the market rule, on the coach's S2 count of the Mac's whole record (DEMO trades, every trade in the market as in versions 4-5): CADJPY 4 of 6 days negative, EURCAD 5 of 6, EURUSD 8 of 12, GBPAUD 5 of 7, GBPCAD 4 of 6. They are off from version 7. The coach has listed them since 12 Oct. The 13-15 Oct nightly reviews said no market rule was met, because the reports copy has fewer days; that was wrong. Approaches without the five, counted as for versions 4-6 (the trades today's rules allow, DEMO + PAPER combined): momentum continuation on the minor pairs 12 days, 2 down, +96.45; in news 3 days, 1 down, +5.70; session expansion on the minor pairs 7 days, 1 down, +29.47; in a trend 10 days, 2 down, +74.58. None met (see Version 7) |
 
-## Version 7 (16 Oct)
+## Version 8 (17 Oct)
+
+"Commission First (version 8)". Aaron, 17 Oct: "Keep the approaches off and
+continue with how we should be if they weren't there".
+
+**The approaches stay off.** Every approach switch-off, from before the
+reset through version 6, is kept. No new one is added.
+
+**Both standing rules are judged on the trades today's rules still allow.**
+This covers the market rule (negative on two-thirds or more of 6+ traded
+days) and the approach rule. The approach filter is the same for both: a
+trade counts only when:
+- its approach is not off everywhere, in its market condition or in its kind
+  of market (for BREAKOUT_RETEST, its tactic BREAKOUT_ACCEPTANCE too);
+- it is not a twin while twins are off;
+- its score reaches the STRONG entry floor (70) and the approach's own
+  floor.
+
+One function decides it: `engine.tactics.allowed_by_rules`, which mirrors
+best_signal and the scanner's tier check. The two rules differ only on the
+market list:
+- **The approach rule** also leaves out trades on markets that are off,
+  since today's rules would not trade them (version 6's reading).
+- **The market rule** sets the market list aside, because otherwise no
+  excluded market could ever be judged again.
+
+**Today's news window is one of today's rules (Claude's reading).** Since
+10 Oct Trend & Breakout takes no new trade in the 15 minutes before a
+high-importance release on either currency (ledger, 10 Oct). Version 6
+wrote its count as score 70+, the market not excluded and the condition not
+switched off; it did not list the news window. Version 8 adds it: a trade
+from before 10 Oct entered inside that window is not one today's rules
+would take, so it leaves both counts. Aaron's 17 Oct words are about the
+approaches that are off, so this part is Claude's reading of "today's
+rules". It decides one verdict (below), and Aaron is told both figures.
+- **The coach applies it** (`coach.newswin`). It uses the Mac's own calendar
+  archive (`data/calendar.sqlite`, read only) and the Mac's window
+  (`news.blackout_before_seconds`, 900 s), for trades before 10 Oct only.
+  Every later trade was taken with the window in force. A day the archive
+  does not cover counts the trade, as before. The coach's status
+  (`news_window`, from each full tick) lists the trades the window took out,
+  up to 20 with the total, each with the release it came before, and says
+  how many it could not check.
+- **The archive merged releases that share a time** until the fix of 17 Oct
+  (below): one row a time, with one currency. So the nightly review checks
+  each trade the coach lists against the published calendar before relying
+  on it.
+- **On the reports copy**, which has no calendar, every allowed trade before
+  10 Oct was screened against the regular release times of both its
+  currencies, including the Australian and New Zealand clock changes. A slot
+  is not always a high-importance release, and an unscheduled release would
+  not be caught. Six trades were entered in the 15 minutes before a slot:
+
+  | Entered (UTC) | Trade | Net | Before |
+  |---|---|---|---|
+  | 22 Sep 08:48 | EURJPY momentum continuation | +6.60 | EUR 09:00 |
+  | 24 Sep 08:51 | DE40 session expansion (market off) | -4.43 | EUR 09:00 |
+  | 1 Oct 07:47 | EURCHF momentum continuation | +0.64 | EUR 08:00 |
+  | 1 Oct 07:52 | EURCHF momentum continuation | -3.93 | EUR 08:00 |
+  | 7 Oct 07:57 | EURCAD momentum continuation | -12.07 | EUR 08:00 |
+  | 9 Oct 12:21 | GBPCAD session expansion, ticket 960000007 | -32.47 | CAD 12:30, Canada's jobs data |
+
+  Leaving all six out changes no verdict except session expansion on the
+  minor pairs. There, 9 Oct GBPCAD is the only flagged trade, and Canada's
+  jobs data is a known high-importance release, so it is left out below.
+  The other five stay in until the Mac's archive shows a release. Either
+  way no verdict changes, except EURCAD's market count (below).
+
+**The coach on the Mac's whole record:**
+- **S2**, its own rule, uses the same filter (`coach.decide.todays_rules`;
+  the journal loader marks twins with `records.F_TWIN`). It still counts real
+  trades when they cover 6+ days, and practice otherwise, never adding the
+  two.
+- **The filter** is `coach.decide.TodaysRules`: the approach rules above,
+  then today's news window from the Mac's calendar.
+- **A new read-out, `market_rule`** in `reports/live/coach.json`, adds DEMO
+  and PAPER together on the same filter (`coach.rules.market_counts`):
+  `combined_net_gbp` as the rule input, with `real_net_gbp` and
+  `practice_net_gbp` shown apart. This is the count the nightly review judges
+  the market rule on. It only reports; it gates nothing. Beside it,
+  `news_window` lists what the news window took out.
+- **What this changes in the coach:** with the filter, S2 no longer puts
+  the five markets under its practice-only block for coach-granted keys.
+  None of them has 6 real days of allowed trades, even with the Mac's extra
+  days. The block was on them under version 6. It matters only
+  once the coach may grant again; its envelope has allowed no grant since 13
+  Oct.
+
+### What version 8 does
+
+**Version 7's five markets are back on.** Version 7 never ran on the Mac.
+On the reports copy, counting the trades today's rules allow, none has 6
+days:
+
+| Market | Allowed trades | DEMO | PAPER | Combined |
+|---|---|---|---|---|
+| EURUSD | 0 of 13 | - | - | 0 days |
+| CADJPY | 1 of 7 | 1 day, +8.54 | - | 1 day |
+| GBPAUD | 7 of 17 | 2 days, 1 down, -0.06 | 1 day, 1 down, -17.84 | 3 days, 2 down, -17.90 |
+| GBPCAD | 3 of 8 (9 Oct's news-window trade out) | 1 day, 1 down, -8.16 | 2 days, 1 down, +12.50 | 3 days, 2 down, +4.34 |
+| EURCAD | 5 of 6 | 2 days, 2 down, -17.16 | 2 days, 1 down, -9.64 | 4 days, 3 down, -26.80 |
+
+**Not settled for EURCAD.** The Mac has 3 more EURCAD DEMO days that the
+reports copy cannot see. Counting every trade, 2 of those days are negative.
+From 4 days, 3 down, EURCAD meets the rule if 2 more days hold allowed
+trades with at least 1 of them down (6 days, 4 down), or 3 more with at least
+2 down (7 days, 5 down). If the Mac's calendar puts the 7 Oct EURCAD trade
+(-12.07, 2 minutes before 08:00 UTC) inside the news window, the reports-copy
+count is 3 days, 2 down, and it needs 3 more days, 2 of them down. Its real
+days stay under 6, so S2 cannot fire on it. The coach's `market_rule`
+read-out, news window applied, settles it the first night after the install,
+and EURCAD goes off then if it meets the rule. Until then Trend & Breakout
+trades it on PAPER, as under version 6.
+
+### Looked at and NOT changed (version 8's rules with the markets that are off left out, DEMO + PAPER combined, reports copy)
+
+* **Session expansion on the minor pairs stays on.**
+  - On the trades today's rules allow, it is 8 days, 2 down, +26.54: not met.
+  - The 9 Oct GBPCAD trade (-32.47), inside today's news window, is not
+    counted. Counted, the line would be 9 days, 3 down, -5.93, which meets
+    the rule. This is the one verdict the news window decides.
+  - Judged again every night. A third down day on allowed trades, while net
+    negative, switches it off.
+* **Momentum continuation:**
+  - on the minor pairs: 14 days, 4 down, +67.56;
+  - in a fast market: 12 days, 4 down, +83.38;
+  - in news: 5 days, 2 down, -15.82. Not met, but a third down day switches
+    it off.
+* **Session expansion elsewhere:**
+  - in a trend: 11 days, 3 down, +71.65 (with the GBPCAD trade, 11 days,
+    4 down, +39.18: not met either way);
+  - on gold: 2 days, both down;
+  - in a fast market: 2 days, 1 down.
+
+  Watch the last two.
+* **Markets:**
+  - none meets the rule;
+  - EURCAD is 4 days, 3 down (above);
+  - GBPNZD is 4 days, 3 down;
+  - AUDJPY is 7 days, 3 down, +23.63.
+
+  The ten markets of 4 and 8 Oct stay off, because earlier tweaks are never
+  undone without Aaron's word. On this count none of them would meet the
+  rule today either.
+* **Tests:**
+  - tests/test_version8.py:
+    - the rules, and the filter agreeing with best_signal on every approach,
+      market condition and kind of market;
+    - the score floors and names in any case;
+    - S2 with the filter, the coach's list, twins from the journal, and the
+      combined count;
+    - the news window from a calendar archive: inside, outside, a currency
+      not the pair's, a day not covered, the code's own 90 seconds, both
+      edges, nothing after a release, across midnight, trades from 10 Oct
+      not judged again, and a folder with odd characters;
+    - random switch-off lists against best_signal, and the pinned rules;
+    - no archive, a broken archive and news off all count every trade, and
+      the archive is never changed;
+  - test_coach_ops: both read-outs reach the upload and are trimmed in
+    order;
+  - test_coach_run: the status carries both, and a full tick with a
+    calendar leaves out the trade inside the window;
+  - test_coach_safety: a simulated week with a calendar changes nothing
+    outside data/coach/.
+
+## Version 7 (16 Oct) - superseded by version 8 on 17 Oct, never ran
 
 "Commission First (version 7)". The measuring clock is unchanged (still
 from the 5 Oct reset; `STRATEGY_VERSION` untouched). Every version 6 rule

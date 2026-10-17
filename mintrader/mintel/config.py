@@ -157,17 +157,20 @@ class UniverseConfig:
     # 125 trades, -219.70 together.
     # 8 Oct, same rule on the record to 7 Oct: USDCHF negative on 5 of 6 days
     # (-38.77), XAUJPY on 7 of 10 (-14.09).
-    # 16 Oct (version 7), same rule, as the coach's S2 reads it on the Mac's
-    # whole Trend & Breakout record (its real trades, every trade in the market
-    # as in version 4, net after commission; mintel/coach/rules.py s2): CADJPY
-    # negative on 4 of 6 days (-10.82), EURCAD 5 of 6 (-36.85), EURUSD 8 of 12
-    # (-30.41), GBPAUD 5 of 7 (-4.59), GBPCAD 4 of 6 (-10.38). Listed by the
-    # coach since 12 Oct; the reports branch's copy starts on 17 Sep and lacks
-    # 29 Sep and 2 Oct, so the nightly count there showed fewer days.
+    # 16 Oct (version 7, never ran): CADJPY, EURCAD, EURUSD, GBPAUD and GBPCAD
+    # off on the coach's S2 count of every trade in the market. 17 Oct
+    # (version 8), Aaron: "Keep the approaches off and continue with how we
+    # should be if they weren't there" - the market rule now counts only the
+    # trades today's approach rules still allow (engine.tactics.allowed_by_rules;
+    # the market list itself set aside, or no excluded market could ever be
+    # judged again). On that count none of the five has 6 days (reports
+    # copy, DEMO + PAPER combined, with version 8's approach rules: EURUSD
+    # none of its 13 trades, CADJPY 1 day, GBPAUD 3, GBPCAD 3, EURCAD 4 with 3
+    # down): all five are back on. The ten markets of 4 and 8 Oct stay off
+    # (earlier tweaks are kept).
     excluded_symbols: tuple[str, ...] = ("USDJPY", "DE40", "XAUGBP", "CHFJPY",
                                          "EURNZD", "UK100", "GBPJPY", "XAUAUD",
-                                         "USDCHF", "XAUJPY",
-                                         "CADJPY", "EURCAD", "EURUSD", "GBPAUD", "GBPCAD")
+                                         "USDCHF", "XAUJPY")
     require_full_spec: bool = True
 
 
@@ -246,6 +249,16 @@ class ScanConfig:
         # not. On FX minor pairs (DEMO +156.31, PAPER -93.04; combined, down on
         # 4 of 13 days, +63.27) it stays on by that precedent, judged nightly.
         ("MOMENTUM_CONTINUATION", "INDEX"),
+        # 17 Oct (version 8): session expansion on the minor pairs stays ON. On
+        # the trades today's rules still allow (the count of versions 4 to 6)
+        # it is 8 days, 2 down, +26.54: not met. Today's rules include the
+        # 15-minute news window of 10 Oct, which refuses 9 Oct GBPCAD -32.47
+        # (entered 8 minutes before Canada's jobs data); counted, the line
+        # would be 9 days, 3 down, -5.93. Every allowed trade before 10 Oct was
+        # screened against the regular release times: six were entered in the
+        # 15 minutes before one, and leaving all six out changes no other
+        # verdict. The coach applies the window from the Mac's own calendar
+        # (coach.newswin). Judged again every night.
     )
     disabled_tactic_regimes: tuple[tuple[str, str], ...] = (
         ("MOMENTUM_CONTINUATION", "TREND"),
@@ -799,11 +812,14 @@ STRATEGY_VERSION = "2026-10-05 complete reset to zero - fresh 2,000 account, pap
 # approach rule per kind of market, as in versions 4 and 5). Everything else
 # is version 5 unchanged. The measuring clock is unchanged: still from the
 # reset. See docs/strategies/v2-commission-first.md, "Version 6".
-# Version 7 from 16 Oct: CADJPY, EURCAD, EURUSD, GBPAUD and GBPCAD off (the
-# market rule, as in version 4). Everything else is version 6 unchanged. The
-# measuring clock is unchanged: still from the reset. See
-# docs/strategies/v2-commission-first.md, "Version 7".
-STRATEGY_NAME = "Commission First (version 7)"
+# Version 7 (16 Oct, never ran): CADJPY, EURCAD, EURUSD, GBPAUD and GBPCAD
+# off. Version 8 from 17 Oct (Aaron: "Keep the approaches off and continue
+# with how we should be if they weren't there"): the market rule counts only
+# the trades today's rules still allow, so those five are back on. Every
+# approach rule is version 6's.
+# The measuring clock is unchanged: still from the reset. See
+# docs/strategies/v2-commission-first.md, "Version 8".
+STRATEGY_NAME = "Commission First (version 8)"
 
 
 @dataclass

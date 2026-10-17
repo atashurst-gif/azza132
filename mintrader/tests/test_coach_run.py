@@ -40,6 +40,8 @@ def test_a_tick_on_a_fake_clock_writes_the_policy_and_the_status_and_no_heartbea
     assert out["ok"] and out["policy"]["written_utc"] == TUE.isoformat() and out["policy"]["valid_s"] == 180.0
     doc = S.read(Paths.of(data))
     assert doc["written_utc"] == TUE.isoformat() and doc["mode"] == "PILOT"
+    assert isinstance(doc.get("market_rule"), list)                     # 17 Oct: the combined market count, published
+    assert isinstance(doc.get("news_window"), dict) and "left_out" in doc["news_window"]   # and what the window left out
     assert not (data / "heartbeats").exists() or not list((data / "heartbeats").glob("*coach*"))
     assert "in charge within your limits" in S.one_line(doc, TUE)
     co.close()
@@ -373,3 +375,27 @@ def test_show_once_prints_the_one_line_status(tmp_path, capsys):
     assert cli(["show", "--data", str(data)]) == 0
     text = capsys.readouterr().out
     assert "Real money now:" in text and "Formula 1" not in text or "momentum continuation on minor pairs" in text
+
+
+def test_a_tick_applies_todays_news_window_from_the_macs_calendar(tmp_path):
+    # 17 Oct: the coach reads the trader's calendar archive; a made-up GBPCAD trade from before 10 Oct entered
+    # 10 minutes before a high-importance CAD release leaves the market count, and the status says so
+    from tests.test_version8 import _calendar
+    data, c, _ = data_folder(tmp_path)
+    c.news.blackout_before_seconds = 900.0                                # the Mac's 15 minutes
+    inside = dt.datetime(2026, 10, 9, 12, 40, tzinfo=UTC)                 # opened 12:20, release at 12:30
+    write_rows(data, [journal_row("tnb|SESSION_EXPANSION|FX_MINOR|TREND", -3.2, inside, ticket=7001, symbol="GBPCAD"),
+                      journal_row("tnb|SESSION_EXPANSION|FX_MINOR|TREND", 0.5, inside + dt.timedelta(days=3),
+                                  ticket=7002, symbol="GBPCAD")])
+    _calendar(data, [(dt.datetime(2026, 10, 9, 12, 30, tzinfo=UTC), "CAD", "Employment Change", 3),
+                     (dt.datetime(2026, 10, 12, 12, 30, tzinfo=UTC), "USD", "Made-up Release", 1)])
+    co, box = coach_at(data, c, TUE)
+    assert co.tick()["ok"]
+    doc = S.read(Paths.of(data))
+    nw = doc["news_window"]
+    assert nw["calendar"] is True and nw["window_minutes"] == 15.0
+    assert [r["ticket"] for r in nw["left_out"]] == [7001] and nw["left_out_count"] == 1
+    assert nw["left_out"][0]["before"] == "CAD Employment Change at 12:30 UTC"
+    rows = {r["symbol"]: r for r in doc["market_rule"]}
+    assert rows["GBPCAD"]["trades"] == 1                                 # 7002 counts; 7001 is left out
+    co.close()
