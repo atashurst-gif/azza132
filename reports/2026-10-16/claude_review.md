@@ -99,3 +99,37 @@ Stage: none, fingerprint 8ed204f367dce7e8, notify false. Nothing was sent.
 
 ## For Aaron
 Install version 7 any time before Monday 06:30 (markets are shut for the weekend). If the Mac is closed or off, opening it lets Friday's pick run.
+
+## Addendum, Saturday 17 October: version 7 superseded by version 8
+
+**The pick ran.**
+- `weekly.json`, uploaded when the Mac woke at 06:22 UTC, shows that Friday's plan was made at 21:34 UTC on 16 Oct (22:34 UK). The last pulse before the gap was 21:17 UTC.
+- The plan is PLANNED, with release at 05:30 UTC on 19 Oct (Mon 06:30 UK). Its picks are two lab twins:
+  - opening range, indices, New York 30 min, swing stop, 2:1;
+  - the same idea with "avoids news".
+- Each twin has 15 trades over 4 UK days: net +£131.92, profit factor 2.74, win rate 60%, shrunk +0.03 R a trade against the best clock trade's −0.14 R.
+- Both twins take the same entries when no news is near. So each signal is taken twice, each at its own demo tier. This is inside the diversity cap (2 per INDEX/BOTH) and the 10% combined-risk cap.
+- Real demo orders get their first check against the broker on Monday.
+
+**Version 8 replaces version 7.**
+- Aaron (17 Oct): "Keep the approaches off and continue with how we should be if they weren't there".
+- The market rule is now counted like the approach rule: only the trades today's rules still allow (`engine.tactics.allowed_by_rules`, which mirrors the scanner, with the market list set aside).
+- Claude's reading, not Aaron's words: today's rules include the 15-minute news window (10 Oct), so a trade from before 10 Oct entered inside it does not count either. Every allowed trade before 10 Oct was screened against the regular release times of both its currencies. Six were entered in the 15 minutes before a slot. Leaving them out changes no verdict except session expansion on the minor pairs. There, the 9 Oct GBPCAD ticket 960000007, entered 8 minutes before Canada's jobs data, is the only flagged trade, so it is left out by hand. Counted (the count of versions 4 to 6), that line is 9 days, 3 down, −5.93, which meets the approach rule; without it, 8 days, 2 down, +26.54. Aaron is told both figures.
+- The coach does not apply the news window: the Mac's calendar archive cannot say it reliably for the days before 10 Oct (next point).
+- **A news bug, fixed (pre-existing).** The public calendar feed has no ids, so the archive kept ONE row for all the releases sharing a time, with the first one's currency. The 15-minute window could therefore miss, say, US payrolls when Canada's jobs data shared its minute, and the lab's news-avoiding ideas could too. Each release now has its own row, from the first refresh after the install that reaches the feed (commit 169c1d69 and its review fixes).
+- On the reports copy (combined DEMO+PAPER, labelled), none of the five meets the rule:
+  - EURUSD: none of its 13 trades is allowed today;
+  - CADJPY: 1 day;
+  - GBPAUD: 3 days, 2 down;
+  - GBPCAD: 3 days, 2 down;
+  - EURCAD: 4 days, 3 down.
+- So they are back on, and `excluded_symbols` is version 6's ten again. Every approach switch-off is unchanged.
+- Version 7 never ran on the Mac. Version 8's trading rules are exactly those of the Mac's current build (2cb8120aee). The news fix makes the existing news rules see every release.
+- The coach's S2 now uses the same approach filter, with twins flagged. It publishes `market_rule` in `coach.json`: each market's combined days, negative days and real/practice split. The nightly review takes the GBPCAD news-window trade out of it by hand (GBPCAD's days and down days are the same either way).
+- **EURCAD may meet** on the Mac's full record, which has DEMO days the reports copy lacks. Its 7 Oct trade (−12.07, 2 minutes before 08:00 UTC) is one of the six, beside a slot with no known high-importance release, so it counts. The next review reads `market_rule` to settle it.
+
+**The earlier "My miss" paragraph.** Its point about the coach's list still holds. But that list counted every trade, which is the reading version 8 drops.
+
+**Build:** version 8, the news fix and their review fixes are commits 6b51858b, 169c1d69 and a616d489 on claude/eager-newton-ra06qu (build stamp 6b998f2625 at a616d489). Any later commit before the install changes the stamp. Install before Monday 06:30 UK.
+
+**Reviews:** two adversarial review rounds (seven reviewers, each finding checked by a skeptic) and a final check. The first round found the archive bug. The second found the coach's news check could not be relied on (it was taken out) and a one-refresh gap in the fix (closed). Full suite: only the known flaky tests (the day-one stop floor and the Formula 1 daily-stop tests), which fail the same way on a81d767b.
