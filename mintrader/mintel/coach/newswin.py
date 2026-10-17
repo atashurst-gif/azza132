@@ -31,6 +31,7 @@ from typing import Iterable, Optional
 
 from ..clock import to_utc
 from ..contracts import classify_fx
+from ..news.calendar_store import NOT_MERGED          # the trader's own rule for rows merged before 17 Oct
 
 CALENDAR = "calendar.sqlite"
 # The 15-minute window's first day (ledger, 10 Oct News row; coach.epochs "news block"). Every trade from then on
@@ -114,7 +115,7 @@ def _read(path: Path, lo: str, hi: str, importance: int) -> Optional[tuple[list,
         try:
             with closing(sqlite3.connect(uri, uri=True, timeout=5.0)) as c:
                 rows = c.execute("SELECT currency, time_utc, name FROM events WHERE time_utc >= ? AND time_utc <= ? "
-                                 "AND importance >= ?", (lo, hi, int(importance))).fetchall()
+                                 "AND importance >= ? AND " + NOT_MERGED, (lo, hi, int(importance))).fetchall()
                 days = c.execute("SELECT day FROM coverage").fetchall()
                 return rows, days
         except Exception:

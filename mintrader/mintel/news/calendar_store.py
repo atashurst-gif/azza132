@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS coverage (
 """
 
 
+# Until 17 Oct a feed without ids gave every release at one time the same id, "<source>:<time>", so the archive
+# kept ONE row for them all: the first release's currency, the last one's name and importance (they swapped on
+# every refresh). Releases now have their own ids ("<source>#<currency>#<name>#<time>"). A merged row is left
+# out wherever the releases of its time are on record one by one; where they are not (before the fix) it is
+# all there is, and stays.
+NOT_MERGED = ("NOT (instr(event_id, '#') = 0 AND event_id = source || ':' || time_utc AND EXISTS ("
+              "SELECT 1 FROM events AS one WHERE one.source = events.source AND one.time_utc = events.time_utc "
+              "AND instr(one.event_id, '#') > 0))")
+
+
 @dataclass
 class Coverage:
     start: Optional[dt.date]
@@ -180,7 +190,7 @@ class CalendarStore:
               currencies: Sequence[str] = (),
               min_importance: int = 0) -> list[CalendarEvent]:
         sql = ("SELECT * FROM events WHERE time_utc >= ? AND time_utc <= ? "
-               "AND importance >= ?")
+               "AND importance >= ? AND " + NOT_MERGED)
         args: list = [to_utc(start).isoformat(), to_utc(end).isoformat(),
                       int(min_importance)]
         if currencies:
@@ -212,7 +222,7 @@ class CalendarStore:
             rows = self._conn.execute("""
                 SELECT * FROM events
                 WHERE name = ? AND currency = ? AND time_utc < ?
-                      AND actual IS NOT NULL
+                      AND actual IS NOT NULL AND """ + NOT_MERGED + """
                 ORDER BY time_utc DESC LIMIT ?
             """, (event_name, currency.upper(), to_utc(before).isoformat(),
                   int(limit))).fetchall()

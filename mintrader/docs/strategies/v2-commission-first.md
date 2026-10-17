@@ -91,7 +91,10 @@ rules". It decides one verdict (below), and Aaron is told both figures.
   up to 20 with the total, each with the release it came before, and says
   how many it could not check.
 - **The archive merged releases that share a time** until the fix of 17 Oct
-  (below): one row a time, with one currency. So the nightly review checks
+  (ledger, 17 Oct News row): one row a time, with one currency, so the live
+  window itself could miss a release that shared its minute with another.
+  Each release now has its own row; the merged rows stay only for the days
+  before the fix. So the nightly review checks
   each trade the coach lists against the published calendar before relying
   on it.
 - **On the reports copy**, which has no calendar, every allowed trade before

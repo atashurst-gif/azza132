@@ -235,12 +235,17 @@ class JsonCalendarAdapter(BaseAdapter):
                 ts = _parse_time(it.get(fm["time"]))
                 if ts is None:
                     continue
+                currency = str(it.get(fm["currency"], "")).upper()[:3]
+                name = str(it.get(fm["name"], ""))
                 out.append(CalendarEvent(
-                    event_id=str(it.get(fm["id"], "")) or f"{self.name}:{ts.isoformat()}",
+                    # A feed without ids (the public weekly feed has none): one id for each release. Until 17
+                    # Oct this was "<source>:<time>", so every release sharing a time was ONE archive row (its
+                    # first currency, its last name and importance) - calendar_store hides those rows now.
+                    event_id=str(it.get(fm["id"], "")) or f"{self.name}#{currency}#{name}#{ts.isoformat()}",
                     time_utc=ts,
-                    currency=str(it.get(fm["currency"], "")).upper()[:3],
+                    currency=currency,
                     country=str(it.get("country", "")),
-                    name=str(it.get(fm["name"], "")),
+                    name=name,
                     importance=_importance(it.get(fm["importance"])),
                     actual=_num(it.get(fm["actual"])),
                     forecast=_num(it.get(fm["forecast"])),
@@ -388,7 +393,8 @@ class AdapterRegistry:
                 errors.append(f"{ad.name}: {exc}")
                 continue
             for e in events:
-                key = (e.name.lower().strip(), e.time_utc.isoformat())
+                # the same release from two sources merges; two currencies' releases of one name never do
+                key = (e.currency.upper().strip(), e.name.lower().strip(), e.time_utc.isoformat())
                 cur = merged.get(key)
                 if cur is None:
                     merged[key] = e
