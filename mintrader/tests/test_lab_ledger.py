@@ -597,7 +597,7 @@ def test_a_night_in_miniature_on_a_simulated_broker_store(tmp_path):
     days = store.trading_days([e.name for e in universe])
     stretch, moved = CUT.ensure_cut(paths, days, ids, now, ledger=led)
     assert moved and stretch.cut_day == days[-CUT.fresh_days_for(len(days))]
-    assert len(ids) == 632 and ids == [c.id for c in CAND.registered()]                    # stable
+    assert len(ids) == 732 and ids == [c.id for c in CAND.registered()]                    # stable
     with pytest.raises(CUT.CutError):
         CUT.set_cut(paths, days[0], grid_ids=ids, now=now, ledger=led)                        # never backwards
 

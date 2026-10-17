@@ -113,7 +113,7 @@ def test_a_night_on_a_synthetic_store_writes_a_synthetic_board(home):
     assert summary["store"]["ready"] and summary["store"]["stretch_id"] == "F-2026-10"
     assert summary["nightly"]["date"] == NIGHT and summary["nightly"]["tested"] == 12
     assert summary["nightly"]["ok"] is True
-    assert summary["funnel"]["ideas"] == 632 and summary["trials"]["lab"] == 12
+    assert summary["funnel"]["ideas"] == 732 and summary["trials"]["lab"] == 12
     run_dir = p.run_dir(NIGHT)
     assert (run_dir / "done").exists()
     report = (run_dir / "report.md").read_text()

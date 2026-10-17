@@ -548,7 +548,7 @@ class TestEmptyAndTestData:
         # before its first night: how many ideas wait (its registered grid, never a guess) and when it first tests
         from mintel.lab.families import all_families
         n = sum(f.GRID_SIZE for f in all_families())
-        assert n == 632 and lab_line(home) == f"{n} ideas waiting first test tonight 23:10"
+        assert n == 732 and lab_line(home) == f"{n} ideas waiting first test tonight 23:10"
         assert not lab_rows(home)
         assert "The lab has not run yet." in board
         assert "No such idea." in one

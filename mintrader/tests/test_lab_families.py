@@ -1,7 +1,8 @@
-"""The nine families, their grids, their names, their signals, and the features
-they read.
+"""The families (the nine first, then those found by file name: INTRADAY_MOMENTUM
+and VWAP_TREND, 17 Oct), their grids, their names, their signals, and the
+features they read.
 
-Pinned here: the registered grid sizes (144/108/108/48/108/48/36/32/32), ids
+Pinned here: the registered grid sizes (144/108/108/48/108/48/36/32/32, then 36/64), ids
 that are stable across runs and machines, generated plain-word names, the
 sibling candidates a plateau check needs, the control family, the dormant news
 family, that nothing looks ahead (signals and features at bar i are the same
@@ -33,7 +34,7 @@ UTC = dt.timezone.utc
 NOW = dt.datetime(2026, 9, 28, 12, 0, tzinfo=UTC)
 SIZES = {"OPENING_RANGE": 144, "RANGE_BREAK": 108, "MOMENTUM_CONTINUATION": 108, "TREND_PULLBACK": 48,
          "VWAP_FADE": 108, "PREV_DAY_LEVELS": 48, "SQUEEZE_RELEASE": 36, "NEWS_MOVE": 32,
-         "CONTROL_TIME_OF_DAY": 32}
+         "CONTROL_TIME_OF_DAY": 32, "INTRADAY_MOMENTUM": 36, "VWAP_TREND": 64}
 
 
 # ------------------------------------------------------------------- the grids ---
@@ -41,7 +42,7 @@ def test_grid_sizes_are_exactly_the_registered_ones():
     assert {code: len(f.grid()) for code, f in FAM.FAMILIES.items()} == SIZES
     assert FAM.GRID_SIZES == SIZES
     assert list(FAM.FAMILIES) == list(SIZES)
-    assert len(C.registered(False)) == 632 and len(C.registered(True)) == 664
+    assert len(C.registered(False)) == 732 and len(C.registered(True)) == 764
 
 
 def test_the_dormant_news_family_wakes_only_when_asked():
@@ -71,6 +72,14 @@ def test_each_axis_is_as_registered():
     assert ax["NEWS_MOVE"]["markets"] == ["FX_MAJOR", "FX_MINOR"]
     assert ax["CONTROL_TIME_OF_DAY"]["hour_uk"] == [8, 10, 13, 15] and ax["CONTROL_TIME_OF_DAY"]["side"] == ["BUY", "SELL"]
     assert ax["CONTROL_TIME_OF_DAY"]["markets"] == ["FX_MAJOR", "FX_MINOR"]
+    assert list(ax["INTRADAY_MOMENTUM"].items()) == [("exit", ["time1h", "tr1", "t2"]), ("markets", ["INDEX"]),
+                                                     ("session", ["US_CASH"]), ("news", ["IGNORE"]),
+                                                     ("entry_ny", ["15:00", "15:30"]), ("day_agrees", ["NO", "YES"]),
+                                                     ("strength", [0.0, 0.5, 0.75])]
+    assert ax["VWAP_TREND"] == {"markets": ["INDEX", "FX_MAJOR"], "exit": ["t2", "tr2"], "news": ["IGNORE"],
+                                "session": ["US_CASH", "LONDON"], "trend_tf": ["M15", "H1"],
+                                "touch_sd": [0.25, 0.5], "side_min": [30, 60]}
+    assert list(ax["VWAP_TREND"]) == ["markets", "exit", "news", "session", "trend_tf", "touch_sd", "side_min"]
 
 
 def test_the_control_family_is_the_clock_trade():
@@ -89,7 +98,8 @@ def test_aarons_names_for_the_families():
                       "MOMENTUM_CONTINUATION": "Momentum burst", "TREND_PULLBACK": "Trend pullback",
                       "VWAP_FADE": "Back to the average", "PREV_DAY_LEVELS": "Yesterday's high and low",
                       "SQUEEZE_RELEASE": "Squeeze release", "NEWS_MOVE": "After the news",
-                      "CONTROL_TIME_OF_DAY": "Clock trade (control)"}
+                      "CONTROL_TIME_OF_DAY": "Clock trade (control)", "INTRADAY_MOMENTUM": "Into the close",
+                      "VWAP_TREND": "Bounce off the average"}
 
 
 # ------------------------------------------------------------------------ ids ---
@@ -110,13 +120,16 @@ def test_ids_are_the_hash_of_the_definition_alone():
 
 def test_all_registered_ids_are_distinct_and_pinned():
     ids = [c.id for c in C.registered(True)]
-    assert len(set(ids)) == 664
+    assert len(set(ids)) == 764
     digest = hashlib.sha1("\n".join(sorted(ids)).encode()).hexdigest()
     # if this changes, a definition changed: bump the family's version on purpose, never by accident
     assert digest == PINNED_GRID_DIGEST, digest
 
 
-PINNED_GRID_DIGEST = "21ba9a386edb1b961834c1f692a039ab8b300ff1"
+# 764 ids: the nine families' 664 (21ba9a386edb1b961834c1f692a039ab8b300ff1, unchanged), INTRADAY_MOMENTUM's 36
+# (with the 664: 8ad73e6e0070495101d967b900d939722b38219d) and VWAP_TREND's 64 (with the 664:
+# d1ff37ec29d257c0f7f4552d04c9a0a4ddd1d029), both 17 Oct
+PINNED_GRID_DIGEST = "8cc65b10df1aaed71789936df53dd040005160a9"
 
 
 def test_ids_are_identical_in_another_process_with_another_hash_seed():
@@ -217,6 +230,8 @@ def test_the_sensitive_settings_are_the_numeric_ones():
     assert FAM.get("VWAP_FADE").sensitive == ("sigma", "stop_atr")
     assert FAM.get("SQUEEZE_RELEASE").sensitive == ("width_pct", "buffer_atr")
     assert FAM.get("PREV_DAY_LEVELS").sensitive == () and FAM.get("CONTROL_TIME_OF_DAY").sensitive == ()
+    assert FAM.get("INTRADAY_MOMENTUM").sensitive == ("strength",)
+    assert FAM.get("VWAP_TREND").sensitive == ("side_min", "touch_sd")
     for fam in FAM.FAMILIES.values():
         for p in fam.sensitive:
             assert all(isinstance(v, (int, float)) for v in fam.axis_values(p)), (fam.code, p)
@@ -592,6 +607,14 @@ def test_signals_do_not_look_ahead(code):
     if code == "NEWS_MOVE":
         sample = grid[:4]
     k = 5 * 1440 + 11 * 60 + 17                       # a point in the middle of the sixth day
+    if code == "INTRADAY_MOMENTUM":
+        # it signals only on a US stock index (profit currency USD), in the US afternoon: a US500 series cut at
+        # 3:17pm New York on the sixth day (8 Jul, New York on summer time: 19:17 UTC), between its 3pm and 3:30pm
+        # signal minutes, so the cut day has signals on both sides of the cut
+        ser, ent, days = random_series(7, seed=21, symbol="US500")
+        assert ent.spec.profit_currency == "USD" and days[5] == "2026-07-08"
+        k = next(j for j in range(ser.n) if ser.t[j] >= day_min(days[5]) + 19 * 60 + 17)
+        assert {c.p("entry_ny") for c in sample} == {"15:00", "15:30"}
     short = truncated(ser, ent, k)
     news_full = array("i", [-1] * ser.n)
     news_short = array("i", [-1] * short.n)
@@ -602,6 +625,7 @@ def test_signals_do_not_look_ahead(code):
     ser._feat["news_min"] = news_full
     short._feat["news_min"] = news_short
     seen = 0
+    cut_day = {"15:00": [], "15:30": []}             # INTRADAY_MOMENTUM's whole-series signals on the cut day
     for cand in sample:
         p = sim.family_params(cand)
         full_days = {d.uk: d for d in ser.dayviews()}
@@ -609,12 +633,17 @@ def test_signals_do_not_look_ahead(code):
             a = fam.signals(dv, p, dv.span(cand.session), news_short if code == "NEWS_MOVE" else None)
             fdv = full_days[dv.uk]
             b = fam.signals(fdv, p, fdv.span(cand.session), news_full if code == "NEWS_MOVE" else None)
+            if code == "INTRADAY_MOMENTUM" and dv.uk == days[5]:
+                cut_day[cand.p("entry_ny")] += [(x.i < k - 1, x.i >= k) for x in b]
             a = [(s.i, s.side, s.stop_points) for s in a if s.i < k - 1]
             b = [(s.i, s.side, s.stop_points) for s in b if s.i < k - 1]
             assert a == b, (code, cand.id, dv.uk)
             seen += len(b)
     if code != "NEWS_MOVE":                          # (it needs releases on the calendar; tested by hand above)
         assert seen > 0, "the check proved nothing: this family made no signal before the cut"
+    if code == "INTRADAY_MOMENTUM":                  # the cut day: 3pm signals before the cut, 3:30pm ones after it
+        assert cut_day["15:00"] and all(x == (True, False) for x in cut_day["15:00"]), cut_day
+        assert cut_day["15:30"] and all(x == (False, True) for x in cut_day["15:30"]), cut_day
 
 
 def test_the_families_do_make_signals_on_random_prices():
@@ -963,7 +992,8 @@ def test_a_calendar_with_holes_in_it_does_not_count_its_whole_span_as_covered(tm
 def test_avoid_news_candidates_wait_for_enough_calendar_rather_than_being_binned_for_want_of_it():
     avoid = [c for c in C.registered() if c.news == "AVOID_15M"]
     ignore = [c for c in C.registered() if c.news == "IGNORE"]
-    assert len(avoid) == 144 // 2 + 108 // 2 + 108 // 2 + 108 // 2 and len(avoid) + len(ignore) == 632
+    assert len(avoid) == 144 // 2 + 108 // 2 + 108 // 2 + 108 // 2 and len(avoid) + len(ignore) == 732
+    assert not any(c.family in ("INTRADAY_MOMENTUM", "VWAP_TREND") for c in avoid)  # they ignore the news only
     assert all(C.waiting_for_calendar(c, 19) for c in avoid)
     assert not any(C.waiting_for_calendar(c, 20) for c in avoid)
     assert not any(C.waiting_for_calendar(c, 0) for c in ignore)
@@ -992,7 +1022,7 @@ def test_every_idea_has_its_own_short_readable_name():
     from mintel.lab.candidate import registered, short_name_of
     cands = registered(news_awake=True)
     names = [short_name_of(c) for c in cands]
-    assert len(set(names)) == len(cands) == 664 and max(len(n) for n in names) <= 90
+    assert len(set(names)) == len(cands) == 764 and max(len(n) for n in names) <= 90
     from mintel.lab.families import get
     rb = next(c for c in get("RANGE_BREAK").grid() if c.p("lookback_min") == 60 and c.session == "LONDON"
               and c.markets == "FX_MAJOR" and c.exit == "t2" and c.news == "IGNORE")

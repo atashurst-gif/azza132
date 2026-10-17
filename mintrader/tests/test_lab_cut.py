@@ -73,7 +73,7 @@ def test_the_first_cut_is_set_once_forty_days_are_held(paths, led):
     state, moved = C.ensure_cut(paths, days, ids, at(2026, 8, 3), ledger=led)
     assert moved and state.cut_day == days[-20]
     assert state.stretch_id == "F-2026-08" and state.fresh_used == 0 and state.fresh_cap == 30
-    assert state.grid_hash == C.grid_hash(ids) and state.grid_n == 632
+    assert state.grid_hash == C.grid_hash(ids) and state.grid_n == 732
     assert state.complete_days == 40 and state.fresh_days == 20 and state.short_history
     on_disk = json.loads(paths.cut.read_text())
     assert on_disk["cut_day"] == state.cut_day and on_disk["history"] == []
@@ -180,12 +180,13 @@ def test_the_grid_hash_freezes_the_registered_set_for_the_stretch(paths, led):
     # NEWS_MOVE joins at a roll, and the new stretch records the new hash
     s2 = C.set_cut(paths, day(80)[-10], grid_ids=registered_ids(True), now=at(2026, 9, 2), ledger=led,
                    news_awake=True)
-    assert s2.grid_n == 664 and s2.news_awake and s2.grid_hash != s.grid_hash
+    assert s2.grid_n == 764 and s2.news_awake and s2.grid_hash != s.grid_hash
     C.check_grid(s2, registered_ids(True))
 
 
-def test_the_night_one_grid_is_632_and_the_hash_is_of_ids_only():
-    assert len(registered_ids()) == 632 and len(registered_ids(True)) == 664
+def test_the_registered_grid_is_732_and_the_hash_is_of_ids_only():
+    # night one's 632 (664 awake), then INTRADAY_MOMENTUM's 36 and VWAP_TREND's 64 since 17 Oct
+    assert len(registered_ids()) == 732 and len(registered_ids(True)) == 764
     h1 = C.grid_hash(registered_ids())
     assert len(h1) == 40 and h1 == C.grid_hash(sorted(registered_ids()))
     assert h1 != C.grid_hash(registered_ids(True))
@@ -206,7 +207,7 @@ def test_news_move_joins_the_grid_only_at_a_roll_and_only_with_enough_covered_da
     from mintel.news.calendar_store import CalendarStore
     days = day(90)
     target, awake, ids = C.plan_roll(days, None)
-    assert target == days[-22] and awake is False and len(ids) == 632                # no calendar: dormant
+    assert target == days[-22] and awake is False and len(ids) == 732                # no calendar: dormant
     cal = CalendarStore(tmp_path / "calendar.sqlite")
 
     def releases(on_days):                       # one release on each of these days
@@ -218,9 +219,9 @@ def test_news_move_joins_the_grid_only_at_a_roll_and_only_with_enough_covered_da
     assert C.plan_roll(days, cal)[1] is False                                         # a long span is not coverage
     cal.upsert(releases(days[20:60]))
     target, awake, ids = C.plan_roll(days, cal)
-    assert awake is True and len(ids) == 664
+    assert awake is True and len(ids) == 764
     state, moved = C.ensure_cut(paths, days, ids, at(2026, 11, 2), ledger=led, news_awake=awake)
-    assert moved and state.news_awake and state.grid_n == 664
+    assert moved and state.news_awake and state.grid_n == 764
     C.check_grid(state, registered_ids(state.news_awake))                              # the same set every night of the stretch
     with pytest.raises(GridChanged):
         C.check_grid(state, registered_ids(False))

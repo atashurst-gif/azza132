@@ -334,12 +334,16 @@ def test_every_family_signals_on_the_newest_bar_of_a_live_day(code):
     """Practice acts on the newest finished bar only. Every signal the past test would
     take at a bar must also be there when that bar is the newest of a day still being
     traded. (This found the clock trade's live-day fault, fixed on 12 Oct.)"""
-    ent = synth.entry_for("EURUSD")
+    fam = FAM.get(code)
+    grid = fam.grid()
+    fx = [c for c in grid if c.markets in ("FX_MAJOR", "FX_MINOR")]
+    # a family with no FX ideas (INTRADAY_MOMENTUM: the US stock indices only, which it tells by the series' own
+    # spec) is checked on made-up US500 days instead
+    ent = synth.entry_for("EURUSD" if fx else "US500")
     days = synth.weekdays("2026-07-01", 7)
     cols = synth.gen_columns(ent, days, seed=21)
     ser = synth.series_from_columns(ent, list(cols))
-    fam = FAM.get(code)
-    sample = [c for c in fam.grid() if c.markets in ("FX_MAJOR", "FX_MINOR")][::7][:5]
+    sample = (fx or grid)[::7][:5]
     checked = 0
     for cand in sample:
         p = sim.family_params(cand)

@@ -197,7 +197,7 @@ def test_a_new_family_file_is_found_with_no_other_change(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     found = FAM.discover([str(pkg)], "newfams")
     assert [c.code for c in found] == ["DIP_BUY_TEST"]                  # the broken one is left out
-    assert {c.code for c in FAM.discover()} == set(FAM.FAMILIES)          # this folder: the nine, found the same way
+    assert {c.code for c in FAM.discover()} == set(FAM.FAMILIES)          # this folder: every family, found the same way
     # once registered (as a file in mintel/lab/families/ would be), its grid joins the pool at the refresh
     monkeypatch.setitem(FAM.FAMILIES, "DIP_BUY_TEST", found[0]())
     new = [c for c in registered() if c.family == "DIP_BUY_TEST"]
@@ -205,10 +205,12 @@ def test_a_new_family_file_is_found_with_no_other_change(tmp_path, monkeypatch):
     paths = LabPaths(tmp_path / "data")
     paths.root.mkdir(parents=True)
     led = LabLedger(paths.sqlite)
-    for c in registered()[:632]:
+    pooled = [c for c in registered() if c.family != "DIP_BUY_TEST"]      # every other idea is in the pool
+    for c in pooled:
         add(led, c)
-    rep = RF.refresh_pool(led, paths, LabSettings(), night=NIGHT, now=NOW)
-    assert sorted(x["id"] for x in rep["new"]) == sorted(c.id for c in new) and rep["pool"] == 636
+    rep = RF.refresh_pool(led, paths, LabSettings.from_dict({"pool_target": len(pooled) + 8}), night=NIGHT,
+                          now=NOW)
+    assert sorted(x["id"] for x in rep["new"]) == sorted(c.id for c in new) and rep["pool"] == len(pooled) + 4
     assert sys.modules["newfams.dip_buy"]
     led.close()
 

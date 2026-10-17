@@ -7,6 +7,13 @@ calendar has 40 covered trading days), CONTROL_TIME_OF_DAY 32. Total 632, or
 664 when NEWS_MOVE wakes. Not expressible from bars, so present only as bots
 with their own records: Crowd Fader, Financial Ian, the Rider.
 
+Found by file name since then (pinned by the same test), both 17 Oct:
+INTRADAY_MOMENTUM 36 (``intraday_momentum.py``, "Into the close": the US
+first half hour followed into the 4pm close, on the US stock indices only) and
+VWAP_TREND 64 (``vwap_trend.py``, "Bounce off the average": the opposite of
+VWAP_FADE, joining a trend again after a dip back to the session's average).
+Total now 732, or 764 when NEWS_MOVE wakes.
+
 A NEW FAMILY IS ONE NEW FILE HERE (13 Oct: "we add in new strategies to the mix
 to replace and continue this cycle"). Every module in this folder is read when
 the lab starts; each class in it that subclasses ``candidate.FamilyBase`` and

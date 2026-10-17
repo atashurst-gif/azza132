@@ -141,12 +141,12 @@ def test_every_registered_idea_is_due_and_committed_before_anything_runs(led):
     led.move(binned.id, BINNED, "made-up bin", now=NOW)
     gen = ST.generate(led, st, covered_past_days=0, now=NOW)
     ids = registered_ids()
-    assert len(ids) == 632 and gen.registered == 631                    # NEWS_MOVE asleep; the binned id known
+    assert len(ids) == 732 and gen.registered == 731                    # NEWS_MOVE asleep; the binned id known
     avoid = [c for c in registered() if waiting_for_calendar(c, 0)]
     assert sorted(gen.waiting) == sorted(c.id for c in avoid if c.id != binned.id)
     # every due idea has its running row committed now: N is known before a simulation starts
     begun = led.query("SELECT candidate_id, status FROM tests WHERE kind='past'")
-    assert len(begun) == len(gen.begun) == 632 - 1 - len(gen.waiting)
+    assert len(begun) == len(gen.begun) == 732 - 1 - len(gen.waiting)
     assert {r["status"] for r in begun} == {"running"}
     assert binned.id not in {r["candidate_id"] for r in begun}           # BINNED never regenerated
     assert led.n_tests() == len(begun)

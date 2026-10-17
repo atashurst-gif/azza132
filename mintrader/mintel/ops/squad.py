@@ -493,6 +493,16 @@ def lab_noun(family: str, params: dict) -> str:
         return "News Chaser" if p.get("direction") == "WITH" else "News Fader"
     if family == "CONTROL_TIME_OF_DAY":
         return "Clockwork"
+    if family == "INTRADAY_MOMENTUM":
+        if not p.get("entry_ny"):
+            return "Closer"
+        from ..lab.families.intraday_momentum import clock_words
+        try:
+            return f"Closer {clock_words(p['entry_ny'])}"            # 'Closer 3pm', 'Closer 3:30pm'
+        except (TypeError, ValueError):
+            return f"Closer {p['entry_ny']}"
+    if family == "VWAP_TREND":
+        return f"Cruiser {p.get('side_min')}" if p.get("side_min") else "Cruiser"
     words = str(family or "Idea").replace("_", " ").title().split()
     return words[0] if words else "Idea"
 
@@ -825,6 +835,11 @@ FAMILY_PLAIN = {
     "NEWS_MOVE": "Trades the first move after big economic news: {news_words}",
     "CONTROL_TIME_OF_DAY": "A deliberate 'no idea' test: it trades at the same time every day, whatever the market "
                            "does. It is there to check the tests are fair.",
+    "INTRADAY_MOMENTUM": "Notes which way the US stock market went in its first half hour (9:30 to 10am New York "
+                         "time), then joins that direction at {entry_ny} New York time for the run {close_words}.",
+    "VWAP_TREND": "Finds a market that has stayed on one side of the session's average price for {side_min} "
+                  "minutes, with the bigger trend agreeing, waits for a dip back to near the session's average "
+                  "price, then joins the trend again as the price moves away, provided the trend is still on.",
 }
 BOT_PLAIN = {
     "runner": "Follows Trend & Breakout's trades on the stock indices and holds on for longer: it leaves its stop "
@@ -877,6 +892,9 @@ def what_it_does(t: dict) -> str:
         return f"An idea from the lab: {t.get('desc') or ''}."
     p.setdefault("lookback_min", "60")
     p.setdefault("range_min", "15")
+    p.setdefault("side_min", "30")
+    if fam == "INTRADAY_MOMENTUM":
+        p["close_words"] = _close_words(p.get("entry_ny"), t.get("exit"))
     p["mode_words"] = ("it joins the move when the price breaks through one of them." if p.get("mode") == "BREAK"
                        else "it bets the price turns back when it reaches one of them.")
     p["news_words"] = ("it goes the same way as that move." if p.get("direction") == "WITH"
@@ -889,13 +907,34 @@ def what_it_does(t: dict) -> str:
         text = text.replace("jumps on board", "waits for a small pullback before it jumps on board")
     bits = [text]
     try:
-        from ..lab.candidate import EXIT_SHORT, MARKET_NAMES
-        if t.get("markets") in MARKET_NAMES:
-            bits.append(f"It trades {MARKET_NAMES[t['markets']]}" + (
-                f" and {EXIT_SHORT[t['exit']]}." if t.get("exit") in EXIT_SHORT else "."))
+        from ..lab.candidate import EXIT_SHORT
+        mk = _markets_words(fam, str(t.get("markets") or ""))
+        if mk:
+            bits.append(f"It trades {mk}" + (f" and {EXIT_SHORT[t['exit']]}." if t.get("exit") in EXIT_SHORT else "."))
     except Exception:
         pass
     return " ".join(bits)
+
+
+def _markets_words(fam: str, markets: str) -> str:
+    """An idea's markets in plain words: its family's own where the family narrows its kind of market
+    (INTRADAY_MOMENTUM trades only the US stock indices among the lab's indices), else the kind's ('the stock
+    indices'); '' when not known."""
+    from ..lab.candidate import MARKET_NAMES
+    if fam == "INTRADAY_MOMENTUM" and markets == "INDEX":
+        from ..lab.families.intraday_momentum import US_WORDS
+        return US_WORDS
+    return MARKET_NAMES.get(markets, "")
+
+
+def _close_words(entry_ny, exit_code) -> str:
+    """INTRADAY_MOMENTUM's 'into the 4pm close' or 'into (and sometimes past) the 4pm close', as its own words
+    have it for that entry time and exit."""
+    try:
+        from ..lab.families.intraday_momentum import close_run_words
+        return close_run_words(entry_ny, exit_code)
+    except Exception:
+        return "into (and sometimes past) the 4pm close"
 
 
 def _uk_hour(t: dt.datetime) -> int:
@@ -918,8 +957,7 @@ def when_it_trades(t: dict, trades: Sequence[dict]) -> list[str]:
         out.append(f"{W._kind_words(str(t.get('group') or '')).capitalize()}, whenever its setup appears.")
     elif t.get("session"):
         try:
-            from ..lab.candidate import MARKET_NAMES
-            mk = MARKET_NAMES.get(str(t.get("markets")), "its markets")
+            mk = _markets_words(str(t.get("family") or ""), str(t.get("markets") or "")) or "its markets"
         except Exception:
             mk = "its markets"
         out.append(f"{mk[0].upper() + mk[1:]}, during {SESSION_PLAIN.get(str(t.get('session')), 'the trading day')}.")

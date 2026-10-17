@@ -17,7 +17,13 @@ and fresh tests still run and are shown; they no longer decide who practises. Wh
 real money is the weekly pick's call (`mintel/ops/weekly.py`), on each idea's own practice
 record. Features are worked out once a market a bar and shared; measured on made-up prices,
 632 ideas x 24 markets cost about 0.1 s a minute (0.3 s at worst) after a start-up of about
-13 s.
+13 s. The grid is 732 ideas since 17 Oct (764 when NEWS_MOVE wakes). The 36 "Into the close"
+ideas (INTRADAY_MOMENTUM) add 12 signal calls a market a minute on the indices only, during
+the US session, each a few look-ups (on an index that is not a US one, a currency check and
+nothing more). That cost was not measured separately. The 64 "Bounce off the average" ideas
+(VWAP_TREND) add 16 signal settings, about 1.5 ms a market in their worst minute (the London
+close; measured on made-up prices, 17 ms for 7 majors and 4 indices), so about 0.02 s on up to
+13 markets.
 
 Every Saturday night the nightly's `refresh` step (or `python -m mintel.lab refresh`) refreshes
 the pool (`mintel/lab/refresh.py`): an idea with 20+ practice trades in 28 days, net <= 0 and
